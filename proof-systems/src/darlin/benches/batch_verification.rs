@@ -41,7 +41,7 @@ fn bench_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest>(
     ) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
-        num_constraints,
+        num_constraints - 1,
         segment_size,
         &params_g1,
         &params_g2,

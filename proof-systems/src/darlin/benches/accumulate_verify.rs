@@ -42,7 +42,7 @@ fn bench_verify<G1: AffineCurve, G2: AffineCurve, D: Digest>(
 
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
-        num_constraints,
+        num_constraints - 1,
         segment_size,
         &params_g1,
         &params_g2,
@@ -110,7 +110,7 @@ fn bench_accumulate<G1: AffineCurve, G2: AffineCurve, D: Digest>(
     );
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
-        num_constraints,
+        num_constraints - 1,
         segment_size,
         &params_g1,
         &params_g2,

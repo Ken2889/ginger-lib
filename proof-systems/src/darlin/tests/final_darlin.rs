@@ -17,7 +17,8 @@ use poly_commit::{
     ipa_pc::{InnerProductArgPC, CommitterKey, UniversalParams},
     Error as PCError
 };
-use rand::{ Rng, RngCore };
+//use rand::{ Rng, RngCore };
+use rand::RngCore;
 use digest::Digest;
 use r1cs_std::{
     alloc::AllocGadget,
@@ -198,7 +199,7 @@ impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
             || self.d.ok_or(SynthesisError::AssignmentMissing)
         )?;
 
-        for i in 0..(self.num_variables - 7 - (2 * deferred_len)) {
+        for i in 0..(self.num_variables - 7 - (4 * deferred_len)) {
             let _ = cs.alloc(
                 || format!("var {}", i),
                 || self.a.ok_or(SynthesisError::AssignmentMissing),
