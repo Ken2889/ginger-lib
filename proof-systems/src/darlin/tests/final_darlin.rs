@@ -17,8 +17,7 @@ use poly_commit::{
     ipa_pc::{InnerProductArgPC, CommitterKey, UniversalParams},
     Error as PCError
 };
-//use rand::{ Rng, RngCore };
-use rand::RngCore;
+use rand::{ Rng, RngCore };
 use digest::Digest;
 use r1cs_std::{
     alloc::AllocGadget,

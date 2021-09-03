@@ -94,6 +94,14 @@ required-features = [
 ]
 
 [[bench]]
+name = "darlin_batch_verification_detailed_bench"
+path = "src/darlin/benches/batch_verification_detailed.rs"
+harness = false
+required-features = [
+    "darlin", "llvm_asm", "algebra/tweedle",
+]
+
+[[bench]]
 name = "darlin_accumulate_verify_bench"
 path = "src/darlin/benches/accumulate_verify.rs"
 harness = false

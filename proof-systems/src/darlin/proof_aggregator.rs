@@ -29,7 +29,7 @@ use rayon::prelude::*;
 /// In case of failure, return the indices of the proofs that have caused the failure (if it's possible
 /// to establish it). 
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey `g1_ck` and `g2_ck`.
-pub(crate) fn get_accumulators<G1, G2, D: Digest>(
+pub fn get_accumulators<G1, G2, D: Digest>(
     pcds:      &[GeneralPCD<G1, G2, D>],
     vks:       &[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
     g1_ck:     &DLogCommitterKey<G1>,
