@@ -1,4 +1,4 @@
-use algebra::{AffineCurve, ToConstraintField};
+use algebra::{AffineCurve, ToConstraintField, serialize::*};
 use poly_commit::{
     PolynomialCommitment,
     ipa_pc::InnerProductArgPC
@@ -38,6 +38,8 @@ fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: D
     //Generate DLOG keys
     let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
     let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    println!("Key G1 size: {}", params_g1.comm_key.len());
+    println!("Key G2 size: {}", params_g2.comm_key.len());
 
     let (
         _, verifier_key_g1,
@@ -56,15 +58,18 @@ fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: D
             rng
         );
 
+        println!("Proof size: {}", final_darlin_pcd[0].final_darlin_proof.serialized_size());
+        println!("Vk size: {}", index_vk[0].serialized_size());
+
         // Collect PCDs and vks
         let pcds = vec![GeneralPCD::FinalDarlin(final_darlin_pcd[0].clone()); num_proofs];
         let vks = vec![index_vk[0].clone(); num_proofs];
 
         group.bench_with_input(BenchmarkId::from_parameter(num_constraints), &num_constraints, |bn, _num_constraints| {
             bn.iter(|| {
-                pcds.clone()
+                pcds.as_slice()
                     .into_par_iter()
-                    .zip(vks.clone())
+                    .zip(vks.as_slice())
                     .for_each(|(pcd, vk)| {
                         // recall that we use FinalDarlinVerifierKeys to handle
                         // polymorphic verification of final Darlin/simpleM arlin PCDs
@@ -100,6 +105,8 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
     //Generate DLOG keys
     let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
     let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    println!("Key G1 size: {}", params_g1.comm_key.len());
+    println!("Key G2 size: {}", params_g2.comm_key.len());
 
     let (
         _, verifier_key_g1,
@@ -117,6 +124,9 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
             1,
             rng
         );
+
+        println!("Proof size: {}", final_darlin_pcd[0].final_darlin_proof.serialized_size());
+        println!("Vk size: {}", index_vk[0].serialized_size());
 
         // Collect PCDs and vks
         let pcds = vec![GeneralPCD::FinalDarlin(final_darlin_pcd[0].clone()); num_proofs];

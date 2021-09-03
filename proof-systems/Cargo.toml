@@ -24,7 +24,7 @@ algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "pro
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "proof_size_optimization" }
 bench-utils = { path = "../bench-utils" }
 
-marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "proof_size_optimization", optional = true }
+marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "proof_size_optimization_benches", optional = true }
 poly-commit = { git = "https://github.com/HorizenLabs/poly-commit", branch = "proof_size_optimization", optional = true }
 
 r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
