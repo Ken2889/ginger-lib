@@ -185,7 +185,9 @@ impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
         test_constraints = cs.num_constraints() - test_constraints;
 
         // The following is equal to the SimpleMarlin circuit
-
+	// TODO: although this circuit fortunately does not produce undersized Marlin polynomials,
+	// let us pad with constraints in a more careful manner (e.g., as in our test circuit 1c 
+	// of Marlin.
         let a = cs.alloc(|| "a", || self.a.ok_or(SynthesisError::AssignmentMissing))?;
         let b = cs.alloc(|| "b", || self.b.ok_or(SynthesisError::AssignmentMissing))?;
         let c_prev = cs.alloc(|| "c_prev", || self.c_prev.ok_or(SynthesisError::AssignmentMissing))?;
