@@ -8,9 +8,12 @@ use crate::darlin::{
     pcd::simple_marlin::MarlinProof,
     accumulators::dlog::DLogItem
 };
-use poly_commit::ipa_pc::{
-    SuccinctCheckPolynomial, InnerProductArgPC,
-    CommitterKey as DLogCommitterKey, Commitment,
+use poly_commit::{
+    PolynomialCommitment,
+    ipa_pc::{
+        SuccinctCheckPolynomial, InnerProductArgPC,
+        CommitterKey as DLogCommitterKey, Commitment,
+    }
 };
 use digest::Digest;
 use rand::RngCore;
@@ -52,7 +55,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         let random_xi_s_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
             (0..log_key_len_g1 as usize).map(|_| u128::rand(rng).into()).collect()
         );
-        let g_final_g1 = InnerProductArgPC::<G1, D>::cm_commit(
+        let g_final_g1 = InnerProductArgPC::<G1, D>::commit(
             committer_key_g1.comm_key.as_slice(),
             random_xi_s_g1.compute_coeffs().as_slice(),
             None,
@@ -60,7 +63,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         ).unwrap();
 
         let acc_g1 = DLogItem::<G1> {
-            g_final: Commitment::<G1> {comm: vec![g_final_g1.into_affine()], shifted_comm: None },
+            g_final: Commitment::<G1> {comm: vec![g_final_g1.into_affine()] },
             xi_s: random_xi_s_g1
         };
 
@@ -70,7 +73,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
             (0..log_key_len_g2 as usize).map(|_| u128::rand(rng).into()).collect()
         );
 
-        let g_final_g2 = InnerProductArgPC::<G2, D>::cm_commit(
+        let g_final_g2 = InnerProductArgPC::<G2, D>::commit(
             committer_key_g2.comm_key.as_slice(),
             random_xi_s_g2.compute_coeffs().as_slice(),
             None,
@@ -78,7 +81,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         ).unwrap();
 
         let acc_g2 = DLogItem::<G2> {
-            g_final: Commitment::<G2> {comm: vec![g_final_g2.into_affine()], shifted_comm: None },
+            g_final: Commitment::<G2> {comm: vec![g_final_g2.into_affine()] },
             xi_s: random_xi_s_g2
         };
 

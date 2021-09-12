@@ -2,7 +2,7 @@
 //! two public inputs satisfying a simple quadratic relation.
 use algebra::{Field, AffineCurve, UniformRand};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use poly_commit::ipa_pc::{InnerProductArgPC, CommitterKey, UniversalParams};
+use poly_commit::ipa_pc::{InnerProductArgPC, CommitterKey, Parameters};
 use marlin::{
     Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey,
 };
@@ -87,7 +87,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 #[allow(dead_code)]
 pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
-    marlin_pk: &MarlinProverKey<G::ScalarField, InnerProductArgPC<G, D>>,
+    marlin_pk: &MarlinProverKey<G, InnerProductArgPC<G, D>>,
     num_constraints: usize,
     zk: bool,
     rng: &mut R,
@@ -107,7 +107,7 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let proof = Marlin::<G::ScalarField, InnerProductArgPC<G, D>, D>::prove(
+    let proof = Marlin::<G, InnerProductArgPC<G, D>, D>::prove(
         marlin_pk,
         pc_ck,
         circ,
@@ -124,12 +124,12 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
 pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
-    params: &UniversalParams<G>,
+    params: &Parameters<G>,
     num_proofs: usize,
     rng: &mut R,
 ) -> (
     Vec<SimpleMarlinPCD<'a, G, D>>,
-    Vec<MarlinVerifierKey<G::ScalarField, InnerProductArgPC<G, D>>>
+    Vec<MarlinVerifierKey<G, InnerProductArgPC<G, D>>>
 )
 {
     // Trim committer key and verifier key
@@ -144,7 +144,7 @@ pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let (index_pk, index_vk) = Marlin::<G::ScalarField, InnerProductArgPC<G, D>, D>::index(
+    let (index_pk, index_vk) = Marlin::<G, InnerProductArgPC<G, D>, D>::index(
         &committer_key, circ.clone()
     ).unwrap();
 

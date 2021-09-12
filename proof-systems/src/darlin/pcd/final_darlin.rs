@@ -9,7 +9,7 @@ use poly_commit::{
         VerifierKey as DLogVerifierKey,
         Commitment,
     },
-    rng::FiatShamirRng,
+    fiat_shamir_rng::FiatShamirRng,
 };
 use crate::darlin::{
     accumulators::dlog::{DLogItem, DualDLogItem, DualDLogItemAccumulator},
@@ -49,7 +49,7 @@ impl<'a, G1, G2, D> FinalDarlinPCD<'a, G1, G2, D>
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the 
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
 pub struct FinalDarlinPCDVerifierKey<'a, G1: AffineCurve, G2: AffineCurve, D: Digest> {
-    pub final_darlin_vk: &'a FinalDarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>,
+    pub final_darlin_vk: &'a FinalDarlinVerifierKey<G1, InnerProductArgPC<G1, D>>,
     pub dlog_vks:        (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)
 }
 
@@ -92,7 +92,7 @@ where
         fs_rng.absorb(&self.final_darlin_proof.proof.evaluations);
 
         // Succinct verify DLOG proof
-        let (xi_s, g_final) = InnerProductArgPC::<G1, D>::succinct_batch_check_individual_opening_challenges(
+        let (xi_s, g_final) = InnerProductArgPC::<G1, D>::succinct_multi_point_multi_poly_verify(
             vk.dlog_vks.0,
             &labeled_comms,
             &query_set,
@@ -106,7 +106,7 @@ where
 
         // Verification successfull: return new accumulator
         let acc = DLogItem::<G1> {
-            g_final: Commitment::<G1> { comm: vec![g_final], shifted_comm: None},
+            g_final: Commitment::<G1> { comm: vec![g_final] },
             xi_s,
         };
 

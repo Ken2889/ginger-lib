@@ -11,7 +11,7 @@ use poly_commit::{ipa_pc::{
     Commitment,
     VerifierKey, CommitterKey,
     SuccinctCheckPolynomial,
-}, rng::{FiatShamirRng, FiatShamirRngSeed}, LabeledCommitment, Error, PolynomialCommitment};
+}, fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed}, LabeledCommitment, Error, PolynomialCommitment};
 use crate::darlin::accumulators::{
     ItemAccumulator, AccumulationProof,
 };
@@ -71,7 +71,6 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
         // GFinal will always be 1 segment and without any shift
         let g_final = Commitment {
             comm: vec![CanonicalDeserialize::deserialize(&mut reader)?],
-            shifted_comm: None
         };
 
         let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -86,7 +85,6 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
         // GFinal will always be 1 segment and without any shift
         let g_final = Commitment {
             comm: vec![CanonicalDeserialize::deserialize_unchecked(&mut reader)?],
-            shifted_comm: None
         };
 
         let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
@@ -102,7 +100,6 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
         // GFinal will always be 1 segment and without any shift
         let g_final = Commitment {
             comm: vec![CanonicalDeserialize::deserialize_uncompressed(&mut reader)?],
-            shifted_comm: None
         };
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
@@ -118,7 +115,6 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
         // GFinal will always be 1 segment and without any shift
         let g_final = Commitment {
             comm: vec![CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?],
-            shifted_comm: None
         };
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
@@ -134,7 +130,6 @@ impl<G: AffineCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
         self.g_final.is_valid() &&
             self.g_final.comm.len() == 1 &&
-            self.g_final.shifted_comm.is_none() &&
             self.xi_s.0.is_valid()
     }
 }
@@ -190,7 +185,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
 
         // Initialize Fiat-Shamir rng
         let fs_rng_init_seed = {
-            let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
             seed_builder.add_bytes(&vk.hash)?;
 
@@ -200,7 +195,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
             seed_builder.add_bytes(&previous_accumulators)?;
             seed_builder.finalize()
         };
-        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_init_seed);
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
@@ -216,13 +211,11 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
                 let labeled_comm = {
                     let comm = Commitment {
                         comm: final_comm_key,
-                        shifted_comm: None
                     };
 
                     LabeledCommitment::new(
                         format!("check_poly_{}", i),
                         comm,
-                        None,
                     )
                 };
 
@@ -246,7 +239,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
 
         // Succinctly verify the dlog opening proof, 
         // and get the new reduction polynomial (the new xi's).
-        let xi_s = InnerProductArgPC::<G, D>::succinct_check(
+        let xi_s = InnerProductArgPC::<G, D>::succinct_single_point_multi_poly_verify(
             vk, comms.iter(), z, values, &proof.pc_proof, &mut fs_rng
         ).map_err(|e| {
             end_timer!(check_time);
@@ -259,7 +252,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
 
         if xi_s.is_some() {
             Ok(Some(DLogItem::<G>{
-                g_final: Commitment::<G>{ comm: vec![proof.pc_proof.final_comm_key.clone()], shifted_comm: None },
+                g_final: Commitment::<G>{ comm: vec![proof.pc_proof.final_comm_key.clone()] },
                 xi_s: xi_s.unwrap(),
             }))
         } else {
@@ -316,7 +309,7 @@ impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
         // Where combined_h_i = lambda_1 * h_1_i + ... + lambda_n * h_n_i
         // We do final verification and the batching of the GFin in a single MSM
         let hard_time = start_timer!(|| "Batch verify hard parts");
-        let final_val = InnerProductArgPC::<G, D>::cm_commit(
+        let final_val = InnerProductArgPC::<G, D>::commit(
             // The vk might be oversized, but the VariableBaseMSM function, will "trim"
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
@@ -350,14 +343,14 @@ impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
 
         // Initialize Fiat-Shamir rng
         let fs_rng_init_seed = {
-            let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
             seed_builder.add_bytes(&ck.hash)?;
             // TODO: Shall we decompose this further when passing it to the seed builder ?
             seed_builder.add_bytes(&accumulators)?;
             seed_builder.finalize()
         };
-        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_init_seed);
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
@@ -371,7 +364,7 @@ impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
 
         // Compute multi-poly single-point opening proof for the G_f's, i.e. 
         // the commitments of the item polys.
-        let opening_proof = InnerProductArgPC::<G, D>::open_check_polys(
+        let opening_proof = InnerProductArgPC::<G, D>::open_reduction_polynomials(
             &ck,
             xi_s.iter(),
             z,
@@ -540,20 +533,20 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
 mod test {
     use super::*;
     use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc::{
-        BatchProof, UniversalParams,
-    }, PolynomialCommitment};
+        MultiPointProof, Parameters,
+    }, PCParameters, PolynomialCommitment};
 
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
     use digest::Digest;
     use blake2::Blake2s;
 
-    fn get_test_fs_rng<G: AffineCurve, D: Digest>() -> <InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle
+    fn get_test_fs_rng<G: AffineCurve, D: Digest>() -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle
     {
-        let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle as FiatShamirRng>::Seed::new();
+        let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize();
-        <InnerProductArgPC<G, D> as PolynomialCommitment<G::ScalarField>>::RandomOracle::from_seed(fs_rng_seed)
+        <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed)
     }
 
     #[derive(Copy, Clone, Default)]
@@ -574,7 +567,7 @@ mod test {
         comms:                   Vec<LabeledCommitment<Commitment<G>>>,
         query_set:               QuerySet<'a, G::ScalarField>,
         values:                  Evaluations<'a, G::ScalarField>,
-        proof:                   BatchProof<G>,
+        proof:                   MultiPointProof<G>,
         polynomials:             Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials:         usize,
         num_points_in_query_set: usize,
@@ -585,7 +578,7 @@ mod test {
     // specifications in the TestInfo. 
     fn get_data_for_verifier<'a, G, D>(
         info: TestInfo,
-        pp: Option<UniversalParams<G>>
+        pp: Option<Parameters<G>>
     ) -> Result<VerifierData<'a, G>, Error>
         where
             G: AffineCurve,
@@ -652,48 +645,15 @@ mod test {
             }
             let poly = Polynomial::rand(degree, rng);
 
-            let degree_bound = if let Some(degree_bounds) = &mut degree_bounds {
-                let degree_bound;
-                if segmented {
-                    degree_bound = degree;
-                } else {
-                    let range = rand::distributions::Uniform::from(degree..=supported_degree);
-                    degree_bound = range.sample(rng);
-                }
-                degree_bounds.push(degree_bound);
-                Some(degree_bound)
-            } else {
-                None
-            };
-
-            let hiding_bound = if hiding {
-                if num_points_in_query_set >= degree {
-                    Some(degree)
-                } else {
-                    Some(num_points_in_query_set)
-                }
-            } else {
-                None
-            };
-            println!("Hiding bound: {:?}", hiding_bound);
-
             polynomials.push(LabeledPolynomial::new(
                 label,
                 poly,
-                degree_bound,
-                hiding_bound,
+                hiding,
             ))
         }
-        let supported_hiding_bound = polynomials
-            .iter()
-            .map(|p| p.hiding_bound().unwrap_or(0))
-            .max()
-            .unwrap_or(0);
         println!("supported degree: {:?}", supported_degree);
-        println!("supported hiding bound: {:?}", supported_hiding_bound);
         println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-        let (ck, vk) = InnerProductArgPC::<G, D>::trim(
-            &pp,
+        let (ck, vk) = pp.trim(
             supported_degree,
         )?;
         println!("Trimmed");
@@ -701,7 +661,7 @@ mod test {
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
 
-        let (comms, rands) = InnerProductArgPC::<G, D>::commit(&ck, &polynomials, Some(rng))?;
+        let (comms, rands) = InnerProductArgPC::<G, D>::commit_vec(&ck, &polynomials, Some(rng))?;
 
         // Construct "symmetric" query set: every polynomial is evaluated at every
         // point.
@@ -719,7 +679,7 @@ mod test {
         println!("Generated query set");
 
         let mut fs_rng = get_test_fs_rng::<G, D>();
-        let proof = InnerProductArgPC::<G, D>::batch_open(
+        let proof = InnerProductArgPC::<G, D>::multi_point_multi_poly_open(
             &ck,
             &polynomials,
             &comms,
@@ -766,7 +726,7 @@ mod test {
 
         test_canonical_serialize_deserialize(true, &pp);
 
-        let (ck, vk) = InnerProductArgPC::<G, D>::trim(&pp, max_degree)?;
+        let (ck, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
@@ -803,7 +763,7 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::succinct_batch_check(
+            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),
@@ -816,7 +776,7 @@ mod test {
                 .into_iter()
                 .zip(g_fins)
                 .map(|(xi_s, g_final)| {
-                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final], shifted_comm: None},  xi_s };
+                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final]},  xi_s };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
                 }).collect::<Vec<_>>();
@@ -866,7 +826,7 @@ mod test {
         };
 
         let pp = InnerProductArgPC::<G, D>::setup(max_degree)?;
-        let (_, vk) = InnerProductArgPC::<G, D>::trim(&pp, max_degree)?;
+        let (_, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
         test_canonical_serialize_deserialize(true, &vk);
@@ -903,7 +863,7 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::succinct_batch_check(
+            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),
@@ -916,7 +876,7 @@ mod test {
                 .into_iter()
                 .zip(g_fins)
                 .map(|(xi_s, g_final)| {
-                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final], shifted_comm: None},  xi_s };
+                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final]},  xi_s };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
                 }).collect::<Vec<_>>();

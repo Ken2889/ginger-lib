@@ -6,11 +6,12 @@
 use algebra::{AffineCurve, ToConstraintField, UniformRand};
 use r1cs_core::ConstraintSynthesizer;
 use poly_commit::{
+    PCParameters,
     ipa_pc::{
-        InnerProductArgPC, UniversalParams,
+        Parameters,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     },
-    PolynomialCommitment, Error as PCError
+    Error as PCError
 };
 use crate::darlin::{
     accumulators::{
@@ -44,11 +45,10 @@ impl PCDParameters {
     /// specified in the config.
     pub fn universal_setup<G: AffineCurve, D: Digest>(
         &self,
-        params: &UniversalParams<G>
+        params: &Parameters<G>
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError>
     {
-        InnerProductArgPC::<G, D>::trim(
-            params,
+        params.trim(
             self.segment_size - 1,
         )
     }

@@ -1,10 +1,9 @@
 //! Test suite for PCD post processing (batch-verification, aggregation)
 use algebra::AffineCurve;
 use poly_commit::{
-    PCUniversalParams, PolynomialCommitment,
+    PCParameters,
     ipa_pc::{
-        InnerProductArgPC,
-        UniversalParams,
+        Parameters,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     }
 };
@@ -14,19 +13,17 @@ pub mod simple_marlin;
 pub mod final_darlin;
 
 #[allow(dead_code)]
-/// Extract DLogCommitterKey and DLogVerifierKey from UniversalParams struct
+/// Extract DLogCommitterKey and DLogVerifierKey from Parameters struct
 pub fn get_keys<G1: AffineCurve, G2: AffineCurve, D: Digest>(
-    params_g1: &UniversalParams<G1>,
-    params_g2: &UniversalParams<G2>,
+    params_g1: &Parameters<G1>,
+    params_g2: &Parameters<G2>,
 ) -> (DLogCommitterKey<G1>, DLogVerifierKey<G1>, DLogCommitterKey<G2>, DLogVerifierKey<G2>)
 {
-    let (ck_g1, vk_g1) = InnerProductArgPC::<G1, D>::trim(
-        params_g1,
+    let (ck_g1, vk_g1) = params_g1.trim(
         params_g1.max_degree(),
     ).unwrap();
 
-    let (ck_g2, vk_g2) = InnerProductArgPC::<G2, D>::trim(
-        params_g2,
+    let (ck_g2, vk_g2) = params_g2.trim(
         params_g2.max_degree(),
     ).unwrap();
 
@@ -39,6 +36,10 @@ mod test {
     use algebra::{curves::tweedle::{
         dee::Affine as DeeAffine, dum::Affine as DumAffine,
     }, UniformRand, ToConstraintField, serialize::test_canonical_serialize_deserialize, SemanticallyValid, CanonicalSerialize, CanonicalDeserialize};
+    use poly_commit::{
+        PolynomialCommitment,
+        ipa_pc::InnerProductArgPC
+    };
     use marlin::VerifierKey as MarlinVerifierKey;
     use crate::darlin::{
         pcd::GeneralPCD,
@@ -70,13 +71,13 @@ mod test {
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
     fn test_accumulation<'a, G1: AffineCurve, G2: AffineCurve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+        vks: &mut [MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>]>,
+        fake_vks: Option<&[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>]>,
         rng: &mut R
     )
         where
@@ -206,11 +207,11 @@ mod test {
     /// Generic test for `batch_verify_proofs`
     fn test_batch_verification<'a, G1: AffineCurve, G2: AffineCurve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+        vks: &mut [MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>]>,
+        fake_vks: Option<&[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>]>,
         rng: &mut R
     )
         where
@@ -333,7 +334,7 @@ mod test {
 
         //Generate fake params
         let mut params_g1_fake = TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.copy_params(&params_g1);
+        params_g1_fake.ut_copy_params(&params_g1);
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -439,9 +440,9 @@ mod test {
 
         //Generate fake params
         let mut params_g1_fake = TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.copy_params(&params_g1);
+        params_g1_fake.ut_copy_params(&params_g1);
         let mut params_g2_fake = TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g2_fake.copy_params(&params_g2);
+        params_g2_fake.ut_copy_params(&params_g2);
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -549,9 +550,9 @@ mod test {
 
         //Generate fake params
         let mut params_g1_fake = TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.copy_params(&params_g1);
+        params_g1_fake.ut_copy_params(&params_g1);
         let mut params_g2_fake = TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g2_fake.copy_params(&params_g2);
+        params_g2_fake.ut_copy_params(&params_g2);
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);

@@ -31,7 +31,7 @@ use rayon::prelude::*;
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey `g1_ck` and `g2_ck`.
 pub fn get_accumulators<G1, G2, D: Digest>(
     pcds:      &[GeneralPCD<G1, G2, D>],
-    vks:       &[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+    vks:       &[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
     g1_ck:     &DLogCommitterKey<G1>,
     g2_ck:     &DLogCommitterKey<G2>,
 ) -> Result<(Vec<DLogItem<G1>>, Vec<DLogItem<G2>>), Option<Vec<usize>>>
@@ -87,7 +87,7 @@ pub fn get_accumulators<G1, G2, D: Digest>(
 /// `g1_ck` and `g2_ck`.
 pub fn accumulate_proofs<G1, G2, D: Digest>(
     pcds:      &[GeneralPCD<G1, G2, D>],
-    vks:       &[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+    vks:       &[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
     g1_ck:     &DLogCommitterKey<G1>,
     g2_ck:     &DLogCommitterKey<G2>,
 ) -> Result<
@@ -149,7 +149,7 @@ pub fn accumulate_proofs<G1, G2, D: Digest>(
 /// `g1_ck` and `g2_ck`.
 pub fn verify_aggregated_proofs<G1, G2, D: Digest, R: RngCore>(
     pcds:                   &[GeneralPCD<G1, G2, D>],
-    vks:                    &[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+    vks:                    &[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
     accumulation_proof_g1:  &Option<AccumulationProof<G1>>,
     accumulation_proof_g2:  &Option<AccumulationProof<G2>>,
     g1_vk:                  &DLogVerifierKey<G1>,
@@ -208,7 +208,7 @@ pub fn verify_aggregated_proofs<G1, G2, D: Digest, R: RngCore>(
 /// `g1_ck` and `g2_ck`.
 pub fn batch_verify_proofs<G1, G2, D: Digest, R: RngCore>(
     pcds:                   &[GeneralPCD<G1, G2, D>],
-    vks:                    &[MarlinVerifierKey<G1::ScalarField, InnerProductArgPC<G1, D>>],
+    vks:                    &[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
     g1_vk:                  &DLogVerifierKey<G1>,
     g2_vk:                  &DLogVerifierKey<G2>,
     rng:                    &mut R
