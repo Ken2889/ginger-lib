@@ -554,7 +554,6 @@ mod test {
         max_degree: Option<usize>,
         supported_degree: Option<usize>,
         num_polynomials: usize,
-        enforce_degree_bounds: bool,
         hiding: bool,
         max_num_queries: usize,
         segmented: bool
@@ -588,7 +587,6 @@ mod test {
             max_degree, // maximum degree supported by the dlog commitment scheme
             supported_degree, // the supported maximum degree after trimming
             num_polynomials, // number of random polynomials involved in the opening proof
-            enforce_degree_bounds, // provide degree bound proofs or not
             max_num_queries, // size of the random query set for the opening proof
             segmented, // use segmentation or not
             hiding, // hiding or not
@@ -612,11 +610,6 @@ mod test {
             "max_degree < supported_degree"
         );
         let mut polynomials = Vec::new();
-        let mut degree_bounds = if enforce_degree_bounds {
-            Some(Vec::new())
-        } else {
-            None
-        };
 
         // random degree multiplier when using segementation
         let seg_mul = rand::distributions::Uniform::from(5..=15).sample(rng);
@@ -738,7 +731,6 @@ mod test {
             // Generate all proofs and the data needed by the verifier to verify them
             for _ in 0..num_proofs {
                 // Modify requirements at random
-                info.enforce_degree_bounds = rng.gen();
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
                 verifier_data_vec.push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
@@ -838,7 +830,6 @@ mod test {
             // Generate all proofs and the data needed by the verifier to verify them
             for _ in 0..num_proofs {
                 // Modify requirements at random
-                info.enforce_degree_bounds = rng.gen();
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
                 verifier_data_vec.push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
