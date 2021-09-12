@@ -24,7 +24,7 @@ algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "ref
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_pc_dev" }
 bench-utils = { path = "../bench-utils" }
 
-marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "refactor_pc_dev_benches", optional = true }
+marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "refactor_pc_dev", optional = true }
 poly-commit = { git = "https://github.com/HorizenLabs/poly-commit", branch = "refactor_pc_dev", optional = true }
 
 r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
