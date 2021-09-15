@@ -190,16 +190,15 @@ macro_rules! impl_Fp {
 
             impl_field_square_in_place!($limbs);
 
+            /// Guajardo Kumar Paar Pelzl
+            /// Efficient Software-Implementation of Finite Fields with Applications to
+            /// Cryptography
+            /// Algorithm 17 (Montgomery Inversion in Fp).
             #[inline]
             fn inverse(&self) -> Option<Self> {
                 if self.is_zero() {
                     None
                 } else {
-                    // Guajardo Kumar Paar Pelzl
-                    // Efficient Software-Implementation of Finite Fields with Applications to
-                    // Cryptography
-                    // Algorithm 17 corrected (Montgomery Inversion in Fp).
-
                     let zero = $BigInteger::from(0);
 
                     let mut v = self.0;
@@ -208,7 +207,7 @@ macro_rules! impl_Fp {
                     let mut s = $BigInteger::from(1);
                     let mut k: u16 = 0;
                     // TODO: Make it independent from the limb size
-                    let two_n : u16 = 128 * $limbs; // R2 = 2^two_n mod MODULUS
+                    let two_n : u16 = 2 * 64 * $limbs; // R2 = 2^two_n mod MODULUS
                     // At each step we want to have the following equalities:
                     // something * p + r*A = - u,    something * p + s*A = v
                     // The inverse at the end will be -r mod p. The sign is due to the fact
