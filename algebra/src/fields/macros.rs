@@ -198,52 +198,65 @@ macro_rules! impl_Fp {
                     // Guajardo Kumar Paar Pelzl
                     // Efficient Software-Implementation of Finite Fields with Applications to
                     // Cryptography
-                    // Algorithm 16 (BEA for Inversion in Fp)
+                    // Algorithm 17 corrected (Montgomery Inversion in Fp).
 
-                    let one = $BigInteger::from(1);
+                    let zero = $BigInteger::from(0);
 
-                    let mut u = self.0;
-                    let mut v = P::MODULUS;
-                    let mut b = $Fp::<P>(P::R2, PhantomData); // Avoids unnecessary reduction step.
-                    let mut c = Self::zero();
-
-                    while u != one && v != one {
+                    let mut v = self.0;
+                    let mut u = P::MODULUS;
+                    let mut r = $BigInteger::from(0); 
+                    let mut s = $BigInteger::from(1);
+                    let mut k: u16 = 0;
+                    // TODO: Make it independent from the limb size
+                    let two_n : u16 = 128 * $limbs; // R2 = 2^two_n mod MODULUS
+                    // At each step we want to have the following equalities:
+                    // something * p + r*A = - u,    something * p + s*A = v
+                    // The inverse at the end will be -r mod p. The sign is due to the fact
+                    // that our big integers are unsigned so we can work with positive numbers.
+                    // The arithmetic can be improved drastically since, at the beginning,
+                    // r and s are very small. 
+                    while v != zero {
                         while u.is_even() {
                             u.div2();
-
-                            if b.0.is_even() {
-                                b.0.div2();
+                            if v.is_even() {
+                                v.div2();
                             } else {
-                                b.0.add_nocarry(&P::MODULUS);
-                                b.0.div2();
+                                s.mul2();
                             }
+                            k += 1;
                         }
 
                         while v.is_even() {
                             v.div2();
-
-                            if c.0.is_even() {
-                                c.0.div2();
-                            } else {
-                                c.0.add_nocarry(&P::MODULUS);
-                                c.0.div2();
-                            }
+                            r.mul2();
+                            k += 1;
                         }
 
-                        if v < u {
+                        if u > v {
                             u.sub_noborrow(&v);
-                            b.sub_assign(&c);
+                            u.div2();
+                            r.add_nocarry(&s);
+                            s.mul2();
                         } else {
                             v.sub_noborrow(&u);
-                            c.sub_assign(&b);
+                            v.div2();
+                            s.add_nocarry(&r);
+                            r.mul2();
+                        }
+                        k += 1;
+                    }
+                    // Up to now, r*A = - 2^k mod p for k in range(n,2n)
+                    k = two_n - k;
+                    if r >= P::MODULUS {
+                        r.sub_noborrow(&P::MODULUS);
+                    }
+                    for _ in 0..k {
+                        r.mul2();
+                        if r >= P::MODULUS {
+                            r.sub_noborrow(&P::MODULUS);
                         }
                     }
-
-                    if u == one {
-                        Some(b)
-                    } else {
-                        Some(c)
-                    }
+                    return - Self::from_repr(r);
                 }
             }
 
