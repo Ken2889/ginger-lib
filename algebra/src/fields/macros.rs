@@ -256,7 +256,7 @@ macro_rules! impl_Fp {
                             r.sub_noborrow(&P::MODULUS);
                         }
                     }
-                    return - Self::from_repr(r);
+                    return Some(-Self::from_repr_raw(r));
                 }
             }
 
