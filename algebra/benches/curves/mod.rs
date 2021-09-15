@@ -12,3 +12,6 @@ mod mnt4_753;
 
 #[cfg(feature = "mnt6_753")]
 mod mnt6_753;
+
+#[cfg(feature = "tweedle")]
+mod tweedle;

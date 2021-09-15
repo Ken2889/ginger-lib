@@ -12,8 +12,8 @@ macro_rules! ec_bench {
 
             let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
-            let v: Vec<(G1, Fr)> = (0..SAMPLES)
-                .map(|_| (G1::rand(&mut rng), Fr::rand(&mut rng)))
+            let v: Vec<(G1, Fq)> = (0..SAMPLES)
+                .map(|_| (G1::rand(&mut rng), Fq::rand(&mut rng)))
                 .collect();
 
             let mut count = 0;
