@@ -52,7 +52,7 @@ llvm_asm = []
 derive = ["algebra-derive"]
 
 bls12_377 = []
-bls12_381 = []
+bls12_381 = ["jubjub"]
 edwards_bls12 = ["bls12_377"]
 edwards_sw6 = ["sw6"]
 jubjub = []

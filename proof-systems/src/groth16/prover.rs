@@ -13,10 +13,7 @@ use r1cs_core::{
     ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable,
 };
 
-use std::{
-    ops::{AddAssign, SubAssign},
-    sync::Arc,
-};
+use std::ops::{AddAssign, SubAssign};
 
 pub struct ProvingAssignment<E: PairingEngine> {
     // Constraints
@@ -155,25 +152,34 @@ where
 
     let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
     let h = R1CStoQAP::witness_map::<E>(&prover)?;
+
+    let input_assignment = prover.input_assignment[1..]
+        .iter()
+        .map(|s| s.into_repr())
+        .collect::<Vec<_>>();
+
+    let aux_assignment = prover.aux_assignment
+        .into_par_iter()
+        .map(|s| s.into_repr())
+        .collect::<Vec<_>>();
+
     end_timer!(witness_map_time);
 
-    let input_assignment = Arc::new(
-        prover.input_assignment[1..]
-            .into_iter()
-            .map(|s| s.into_repr())
-            .collect::<Vec<_>>(),
-    );
+    let c_acc_time = start_timer!(|| "Compute C");
+    let h_assignment = h.into_par_iter().map(|s| s.into_repr()).collect::<Vec<_>>();
+    let h_query = params.get_h_query_full()?;
+    let h_acc = VariableBaseMSM::multi_scalar_mul(&h_query, &h_assignment)?;
+    drop(h_assignment);
 
-    let aux_assignment = Arc::new(
-        prover.aux_assignment
-            .into_par_iter()
-            .map(|s| s.into_repr())
-            .collect::<Vec<_>>(),
-    );
+    let l_aux_source = params.get_l_query_full()?;
+    let l_aux_acc = VariableBaseMSM::multi_scalar_mul(l_aux_source, &aux_assignment)?;
+
+    let r_s_delta_g1 = params.delta_g1.into_projective().mul(&r).mul(&s);
+    end_timer!(c_acc_time);
 
     let assignment = [&input_assignment[..], &aux_assignment[..]].concat();
-
-    let h_assignment = h.into_par_iter().map(|s| s.into_repr()).collect::<Vec<_>>();
+    drop(aux_assignment);
+    drop(input_assignment);
 
     // Compute A
     let a_acc_time = start_timer!(|| "Compute A");
@@ -181,7 +187,7 @@ where
     let a_query = params.get_a_query_full()?;
     let r_g1 = params.delta_g1.mul(r);
     let g_a = calculate_coeff(r_g1, a_query, &params.alpha_g1, &assignment)?;
-
+    let s_g_a = g_a.mul(&s);
     end_timer!(a_acc_time);
 
     // Compute B in G1 if needed
@@ -198,36 +204,21 @@ where
         <E::G1Projective as ProjectiveCurve>::zero()
     };
 
-
     // Compute B in G2
     let b_g2_acc_time = start_timer!(|| "Compute B in G2");
 
     let b_query = params.get_b_g2_query_full()?;
     let s_g2 = params.delta_g2.mul(s);
     let g2_b = calculate_coeff(s_g2, b_query, &params.beta_g2, &assignment)?;
-
-    end_timer!(b_g2_acc_time);
-
-    // Compute C
-    let c_acc_time = start_timer!(|| "Compute C");
-
-    let h_query = params.get_h_query_full()?;
-    let h_acc = VariableBaseMSM::multi_scalar_mul(&h_query, &h_assignment)?;
-
-    let l_aux_source = params.get_l_query_full()?;
-    let l_aux_acc = VariableBaseMSM::multi_scalar_mul(l_aux_source, &aux_assignment)?;
-
-    let s_g_a = g_a.mul(&s);
     let r_g1_b = g1_b.mul(&r);
-    let r_s_delta_g1 = params.delta_g1.into_projective().mul(&r).mul(&s);
+    drop(assignment);
+    end_timer!(b_g2_acc_time);
 
     let mut g_c = s_g_a;
     g_c.add_assign(&r_g1_b);
     g_c.sub_assign(&r_s_delta_g1);
     g_c.add_assign(&l_aux_acc);
     g_c.add_assign(&h_acc);
-
-    end_timer!(c_acc_time);
 
     end_timer!(prover_time);
 
