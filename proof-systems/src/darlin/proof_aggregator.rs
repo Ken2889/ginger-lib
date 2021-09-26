@@ -5,7 +5,7 @@ use algebra::{
 };
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
-    ipa_pc::{
+    ipa_pc_de::{
         InnerProductArgPC,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     },

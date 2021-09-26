@@ -6,7 +6,7 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use algebra::{SemanticallyValid, Field, AffineCurve, ProjectiveCurve, ToBytes, to_bytes, UniformRand, serialize::*};
 use algebra::polynomial::DensePolynomial as Polynomial;
-use poly_commit::{ipa_pc::{
+use poly_commit::{ipa_pc_de::{
     InnerProductArgPC,
     Commitment,
     VerifierKey, CommitterKey,
@@ -309,7 +309,7 @@ impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
         // Where combined_h_i = lambda_1 * h_1_i + ... + lambda_n * h_n_i
         // We do final verification and the batching of the GFin in a single MSM
         let hard_time = start_timer!(|| "Batch verify hard parts");
-        let final_val = InnerProductArgPC::<G, D>::commit(
+        let final_val = InnerProductArgPC::<G, D>::inner_commit(
             // The vk might be oversized, but the VariableBaseMSM function, will "trim"
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
@@ -532,7 +532,7 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
 #[cfg(test)]
 mod test {
     use super::*;
-    use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc::{
+    use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc_de::{
         MultiPointProof, Parameters,
     }, PCParameters, PolynomialCommitment};
 
@@ -563,7 +563,7 @@ mod test {
     #[derivative(Clone(bound = ""))]
     struct VerifierData<'a, G: AffineCurve> {
         vk:                      VerifierKey<G>,
-        comms:                   Vec<LabeledCommitment<Commitment<G>>>,
+        comms:                   Vec<LabeledCommitment<G, Commitment<G>>>,
         query_set:               QuerySet<'a, G::ScalarField>,
         values:                  Evaluations<'a, G::ScalarField>,
         proof:                   MultiPointProof<G>,

@@ -21,7 +21,7 @@ pub mod error;
 pub mod tests;
 
 use algebra::{AffineCurve, ToConstraintField};
-use poly_commit::{ ipa_pc::{
+use poly_commit::{ ipa_pc_de::{
     Parameters, InnerProductArgPC,
     CommitterKey as DLogProverKey,
     VerifierKey as DLogVerifierKey,
@@ -186,7 +186,7 @@ impl<'a, G1, G2, D>FinalDarlin<'a, G1, G2, D>
     )  -> Result<(
         QuerySet<'a, G1::ScalarField>,
         Evaluations<'a, G1::ScalarField>,
-        Vec<LabeledCommitment<Commitment<G1>>>,
+        Vec<LabeledCommitment<G1, Commitment<G1>>>,
         <InnerProductArgPC<G1, D> as PolynomialCommitment<G1>>::RandomOracle,
     ), FinalDarlinError>
     {
@@ -211,7 +211,7 @@ impl<'a, G1, G2, D>FinalDarlin<'a, G1, G2, D>
     pub fn verify_opening(
         pc_vk:          &DLogVerifierKey<G1>,
         proof:          &FinalDarlinProof<G1, G2, D>,
-        labeled_comms:  Vec<LabeledCommitment<Commitment<G1>>>,
+        labeled_comms:  Vec<LabeledCommitment<G1, Commitment<G1>>>,
         query_set:      QuerySet<'a, G1::ScalarField>,
         evaluations:    Evaluations<'a, G1::ScalarField>,
         fs_rng:         &mut <InnerProductArgPC<G1, D> as PolynomialCommitment<G1>>::RandomOracle,

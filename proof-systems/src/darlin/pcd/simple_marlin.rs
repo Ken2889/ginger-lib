@@ -3,7 +3,7 @@ use algebra::{AffineCurve, SemanticallyValid, serialize::*};
 use digest::Digest;
 use marlin::{VerifierKey as MarlinVerifierKey, Proof, Marlin, AHPForR1CS};
 use poly_commit::{
-    ipa_pc::{
+    ipa_pc_de::{
         InnerProductArgPC, VerifierKey as DLogVerifierKey
     },
     fiat_shamir_rng::FiatShamirRng,
@@ -14,7 +14,7 @@ use crate::darlin::{
         dlog::{DLogItem, DLogItemAccumulator}, ItemAccumulator
     },
 };
-use poly_commit::ipa_pc::Commitment;
+use poly_commit::ipa_pc_de::Commitment;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 

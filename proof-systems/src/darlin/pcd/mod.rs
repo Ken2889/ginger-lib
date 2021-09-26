@@ -7,7 +7,7 @@ use algebra::{AffineCurve, ToConstraintField, UniformRand};
 use r1cs_core::ConstraintSynthesizer;
 use poly_commit::{
     PCParameters,
-    ipa_pc::{
+    ipa_pc_de::{
         Parameters,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     },

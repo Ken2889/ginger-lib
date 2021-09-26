@@ -9,8 +9,7 @@ use crate::darlin::{
     accumulators::dlog::DLogItem
 };
 use poly_commit::{
-    PolynomialCommitment,
-    ipa_pc::{
+    ipa_pc_de::{
         SuccinctCheckPolynomial, InnerProductArgPC,
         CommitterKey as DLogCommitterKey, Commitment,
     }
@@ -55,7 +54,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         let random_xi_s_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
             (0..log_key_len_g1 as usize).map(|_| u128::rand(rng).into()).collect()
         );
-        let g_final_g1 = InnerProductArgPC::<G1, D>::commit(
+        let g_final_g1 = InnerProductArgPC::<G1, D>::inner_commit(
             committer_key_g1.comm_key.as_slice(),
             random_xi_s_g1.compute_coeffs().as_slice(),
             None,
@@ -73,7 +72,7 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
             (0..log_key_len_g2 as usize).map(|_| u128::rand(rng).into()).collect()
         );
 
-        let g_final_g2 = InnerProductArgPC::<G2, D>::commit(
+        let g_final_g2 = InnerProductArgPC::<G2, D>::inner_commit(
             committer_key_g2.comm_key.as_slice(),
             random_xi_s_g2.compute_coeffs().as_slice(),
             None,

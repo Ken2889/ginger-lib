@@ -14,7 +14,7 @@ use crate::darlin::{
     FinalDarlinProverKey, FinalDarlinVerifierKey, FinalDarlin,
 };
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, CommitterKey, Parameters},
+    ipa_pc_de::{InnerProductArgPC, CommitterKey, Parameters},
     Error as PCError
 };
 //use rand::{ Rng, RngCore };

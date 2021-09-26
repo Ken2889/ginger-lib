@@ -2,7 +2,7 @@
 //! two public inputs satisfying a simple quadratic relation.
 use algebra::{Field, AffineCurve, UniformRand};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use poly_commit::ipa_pc::{InnerProductArgPC, CommitterKey, Parameters};
+use poly_commit::ipa_pc_de::{InnerProductArgPC, CommitterKey, Parameters};
 use marlin::{
     Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey,
 };

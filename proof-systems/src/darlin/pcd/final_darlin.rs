@@ -4,7 +4,7 @@
 use algebra::{AffineCurve, ToConstraintField};
 use digest::Digest;
 use poly_commit::{
-    ipa_pc::{
+    ipa_pc_de::{
         InnerProductArgPC,
         VerifierKey as DLogVerifierKey,
         Commitment,
