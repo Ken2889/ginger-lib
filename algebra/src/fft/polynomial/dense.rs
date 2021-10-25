@@ -227,6 +227,12 @@ impl<'a, 'b, F: Field> AddAssign<&'a DensePolynomial<F>> for DensePolynomial<F> 
     }
 }
 
+impl<F: Field> AddAssign<DensePolynomial<F>> for DensePolynomial<F> {
+    fn add_assign(&mut self, other: DensePolynomial<F>) {
+        self.add_assign(&other);
+    }
+}
+
 impl<'a, 'b, F: Field> AddAssign<(F, &'a DensePolynomial<F>)> for DensePolynomial<F> {
     fn add_assign(&mut self, (f, other): (F, &'a DensePolynomial<F>)) {
         if self.is_zero() {
@@ -366,6 +372,14 @@ impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<
             self_evals *= &other_evals;
             self_evals.interpolate()
         }
+    }
+}
+
+impl<F: PrimeField> Mul<F> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn mul(self, other: F) -> DensePolynomial<F> {
+        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(&self, &DensePolynomial::from_coefficients_slice(&[other]))
     }
 }
 
