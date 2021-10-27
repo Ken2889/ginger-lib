@@ -1,5 +1,10 @@
-//! Degree 6 extension field of prime fields Fp with p = 1 mod 3 as cubic extension of
-//! Fp2.
+/* Model for sextic extension field F6 as towered extension
+
+     F6 = F2[Y]/(Y^3- NONRESIDUE),
+     F2 = Fp[X]/(X^2 - alpha),
+
+using quadratic and cubic non-residues alpha and NONRESIDUE, respectively.
+*/
 
 use rand::{Rng, distributions::{Standard, Distribution}};
 use crate::{UniformRand, ToBits, FromBits, PrimeField, Error};

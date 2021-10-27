@@ -1,6 +1,6 @@
 [package]
 name = "r1cs-crypto"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     "Sean Bowe",
     "Alessandro Chiesa",
@@ -27,8 +27,8 @@ r1cs-std = { path = "../std"}
 proof-systems = { path = "../../../proof-systems", features = ["groth16", "gm17"], optional = true }
 bench-utils = { path = "../../../bench-utils" }
 
-digest = { version = "0.7", optional = true }
-blake2 = { version = "0.7", optional = true }
+digest = { version = "0.8", optional = true }
+blake2 = { version = "0.8.1", optional = true }
 
 rand = { version = "0.7" }
 derivative = "1"

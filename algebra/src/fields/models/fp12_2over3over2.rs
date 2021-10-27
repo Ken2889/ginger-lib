@@ -1,6 +1,11 @@
-//! Degree 12 extension field of prime fields Fp with p = 1 mod 12 as
-//! towered extension of Fp2 using fp6_3over2 as intermediate field.
-//! Includes pairing embedding field operations.
+/* Model for order 12 extension F12 as towered extension
+
+    F12 = F6[Z]/(Z^2 - Y),
+     F6 = F2[Y]/(Y^3- NONRESIDUE),
+     F2 = Fp[X]/(X^2 - alpha),
+
+using quadratic and cubic non-residues alpha, NONRESIDUE, and Y, respectively.
+*/
 
 use rand::{Rng, distributions::{Standard, Distribution}};
 use crate::{UniformRand, ToBits, FromBits, PrimeField, Error};
