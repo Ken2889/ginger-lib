@@ -16,7 +16,7 @@ use r1cs_core::{ConstraintSystem, SynthesisError};
 use algebra::curves::models::mnt6::MNT6Parameters;
 
 use std::fmt::Debug;
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 use crate::bits::boolean::Boolean;
 
 pub mod mnt6753;
@@ -166,22 +166,14 @@ impl<P: MNT6Parameters>G2PreparedGadget<P> {
         s: &G2Gadget<P>,
     ) -> Result<(G2Gadget<P>, G2CoefficientsGadget<P>), SynthesisError>
     {
-        /*
-          CAUTION
-          only the value generation of three_sx_squared_plus_a is implemented,  IS NOT
-          ENFORCED by any constraints to equal 3*s.x^2 + a.
-          See the code for mnt4 how it is done correctly
-        */
+        //Compute gamma
+        let s_x_squared = s.x.square(cs.ns(||"s_x^2"))?;
+        let three_sx_squared_plus_a = s_x_squared
+            .double(cs.ns(|| "2s_x^2"))?
+            .add(cs.ns(|| "3s_x^2"), &s_x_squared)?
+            .add_constant(cs.ns(|| "3s_x^2 + a"), &P::TWIST_COEFF_A)?;
 
-        //Allocate gamma, the F3-slope of the tangent at S
-        let three_sx_squared_plus_a = Fp3G::<P>::alloc(cs.ns(|| "allocate 3s_x^2 + a"), || {
-            let sx_squared = s.x.get_value().get()?.square();
-            let three_sx_squared_plus_a_val = sx_squared.double().add(&sx_squared).add(&P::TWIST_COEFF_A);
-            Ok(three_sx_squared_plus_a_val)
-        })?;
-
-        // allocate and enforce 2s_y = 2*s.y
-        let two_sy = s.y.double(cs.ns(|| "allocate 2s_y"))?;
+        let two_sy = s.y.double(cs.ns(||"2s_y"))?;
 
         let gamma = Fp3G::<P>::alloc(cs.ns(|| "allocate gamma"), || {
             Ok(three_sx_squared_plus_a.get_value().get()?.mul(&two_sy.get_value().get()?.inverse().get()?))

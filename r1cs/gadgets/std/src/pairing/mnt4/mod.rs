@@ -127,12 +127,9 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
                     f = f.mul_by_023(cs.ns(||"add compute f"), &g_rq_at_p)?;
                 }
             }
-
-            /*
-            CAUTION, if clause missing!
-            as in the pairing primitive, unitary inverse if and only if P::ATE_IS_LOOP_COUNT_NEG == TRUE
-            */
-            f = f.unitary_inverse(cs.ns(|| "f unitary inverse"))?;
+            if P::ATE_IS_LOOP_COUNT_NEG {
+                f = f.unitary_inverse(cs.ns(|| "f unitary inverse"))?;
+            }
             result.mul_in_place(cs.ns(|| format!("mul_assign_{}", i)), &f)?;
         }
         Ok(result)
@@ -145,33 +142,31 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
         // Final exp first chunk, the "easy" part,
         // using the Frobenius map and value_inv= elt^{-1} to compute value^(q^2-1)
         let value_inv = value.inverse(cs.ns(|| "value_inverse"))?;
-        // elt = value^(q^2 - 1)
+
+        //Final exp first chunk
+        //use the Frobenius map a to compute value^(q^2-1)
         let elt = value.clone()
             .frobenius_map(cs.ns(|| "value_frobenius_2"), 2)?
             .mul(cs.ns(|| "value_frobenius_2_div_value"), &value_inv)?;
-        // and its inverse for later purpose
-        let elt_inv = value_inv.clone()
-            .frobenius_map(cs.ns(|| "value_inv_frobenius_2"), 2)?
-            .mul(cs.ns(|| "value_inv_frobenius_2_div_value"), &value)?;
 
-        // Final exp last chunk, the "hard part", i.e. the
-        // remaining exponentiaton by m_1*q + m_0, m_0 can be signed.
+        //Final exp last chunk (p^2 +1)/r = m_1*q + m_0, m_0 can be signed.
+        //compute elt^q
         let elt_q = elt.clone()
             .frobenius_map(cs.ns(|| "elt_q_frobenius_1"), 1)?;
 
-        // exponentiation by m_1 and m_0 using optimized exponentiation for r-th roots of unity
-        // elt^{q*m_1}
+        //compute elt^{m1*q}
         let w1_part = elt_q
             .cyclotomic_exp(cs.ns(|| "compute w1"), P::FINAL_EXPONENT_LAST_CHUNK_1)?;
 
-        /* CAUTION, code not generic here
-        as in the pairing primitive, depending on P::FINAL_EXPONENT_LAST_CHUNK_W0_IS_NEG we have to
-        choose either elt or elt_inv to compute w0
-        */
-
-        //elt^{m_0}
-        let w0_part = elt_inv.clone()
-            .cyclotomic_exp(cs.ns(|| "compute w0"),P::FINAL_EXPONENT_LAST_CHUNK_ABS_OF_W0)?;
+        let w0_part = if P::FINAL_EXPONENT_LAST_CHUNK_W0_IS_NEG {
+            // we need the inverse of elt in this case, by recomputing first chunk exp
+            let elt_inv = value_inv
+                .frobenius_map(cs.ns(|| "value_inv_frobenius_2"), 2)?
+                .mul(cs.ns(|| "value_inv_frobenius_2_div_value"), &value)?;
+            elt_inv.cyclotomic_exp(cs.ns(|| "compute w0"),P::FINAL_EXPONENT_LAST_CHUNK_ABS_OF_W0)
+        } else {
+            elt.cyclotomic_exp(cs.ns(|| "compute w0"),P::FINAL_EXPONENT_LAST_CHUNK_ABS_OF_W0)
+        }?;
 
         w1_part.mul(cs.ns(|| "w0 * w1"), &w0_part)
 

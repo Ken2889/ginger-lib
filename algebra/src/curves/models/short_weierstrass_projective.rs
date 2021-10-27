@@ -1,7 +1,4 @@
-/*
-Def. GroupAffine and GroupProjective and their CurveAffine/CurveProjective implementation
-for short Weierstrass curve.
-*/
+//! Module for affine and (homogeneous) projective Weierstrass arithmetics.
 
 use rand::{Rng, distributions::{Standard, Distribution}};
 use crate::{UniformRand, ToCompressedBits, FromCompressedBits, Error, BitSerializationError};
@@ -28,6 +25,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
     Debug(bound = "P: Parameters"),
     Hash(bound = "P: Parameters")
 )]
+/// The affine representation of a curve point (re-naming appreciated)
 pub struct GroupAffine<P: Parameters> {
     pub x: P::BaseField,
     pub y: P::BaseField,
@@ -287,6 +285,7 @@ impl<P: Parameters> Default for GroupAffine<P> {
     Debug(bound = "P: Parameters"),
     Hash(bound = "P: Parameters")
 )]
+/// Homogeneous coordinates representation of a curve point (re-naming appreciated)
 pub struct GroupProjective<P: Parameters> {
     pub x:   P::BaseField,
     pub y:   P::BaseField,
