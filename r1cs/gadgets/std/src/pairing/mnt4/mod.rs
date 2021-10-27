@@ -1,3 +1,14 @@
+/*
+Pairing gadget for MNT4 curves:
+    - MNT4PairingGadget, and
+    - the implementation of the PairingGadget in alignment to its primitive
+      (Ate pairing with flipped Miller loop, using pre-computations).
+
+To do: generic treatment of the sign of the trace  using  ATE_IS_LOOP_COUNT_NEG as well as
+the sign of the last chunk component using FINAL_EXPONENT_LAST_CHUNK_W0_IS_NEG,
+see below.
+*/
+
 use r1cs_core::{ConstraintSystem, SynthesisError};
 
 use crate::{fields::{fp4::Fp4Gadget, FieldGadget}, groups::curves::short_weierstrass::mnt::mnt4::{G1Gadget, G2Gadget, G1PreparedGadget, G2PreparedGadget},
@@ -40,6 +51,9 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
     type G2PreparedGadget = G2PreparedGadget<P>;
     type GTGadget = Fp4Gadget<P::Fp4Params, P::Fp>;
 
+    /* Miller loop for the computing pairing product of a slice of (P,Q)-values
+    (using the precomputed G1- and G2PreparedGadgets)
+    */
     fn miller_loop<CS: ConstraintSystem<P::Fp>>(
         mut cs: CS,
         p: &[Self::G1PreparedGadget],
@@ -64,8 +78,16 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
                 let c = &qs.coeffs[idx];
                 idx += 1;
 
-                //Double step
-                //Compute g_rr_at_p_c0
+                /* evaluate the tangent line g_{R,R} at P in F4 (scaled by twist^2) using the
+                pre-computed data:
+                    g_{R,R}(P) = (y_P - lambda*x_p - d) * twist^2,
+                where
+                     lambda = gamma * Y/twist,
+                     d = (y'-gamma * x')* Y/twist^2,
+                with (x',y') being the twist coordinates of R. Thus
+                    g_{R,R}(P) = y_p*twist^2 + (gamma*x'- gamma*twist*x_p - y') *Y.
+                The scale factor twist^2 from F2 is cancelled out by the final exponentiation.
+                */
                 let g_rr_at_p_c0 = ps.clone().p_y_twist_squared;
 
                 let mut t = c.gamma.mul_by_constant(cs.ns(|| "double compute gamma_twist"), &P::TWIST)?;
@@ -81,7 +103,8 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
                 f = f.square(cs.ns(|| "f^2"))?.mul_by_023(cs.ns(||"double compute f"), &g_rr_at_p)?;
 
                 if n != 0 {
-                    //Addition Step
+                    // Addition/substraction step
+                    // evaluate chord g_{RQ}(P) in F4 using pre-computed data as above
                     let c = &qs.coeffs[idx];
                     idx += 1;
 
@@ -116,6 +139,8 @@ impl<P: MNT4Parameters> PairingGadget<MNT4p<P>, P::Fp> for MNT4PairingGadget<P>
         mut cs: CS,
         value: &Self::GTGadget,
     ) -> Result<Self::GTGadget, SynthesisError>{
+        // Final exp first chunk, the "easy" part,
+        // using the Frobenius map and value_inv= elt^{-1} to compute value^(q^2-1)
         let value_inv = value.inverse(cs.ns(|| "value_inverse"))?;
 
         //Final exp first chunk
