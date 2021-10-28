@@ -252,3 +252,35 @@ macro_rules! generate_all_algebraic_crypto_types {
         generate_vrf_types!($projective_curve, $affine_curve);
     };
 }
+
+/// Pre-conditions: Field types already generated
+#[cfg(feature = "groth16")]
+#[macro_export]
+macro_rules! _generate_groth16_types {
+    ($curve: ident) => {
+        use proof_systems::groth16::{Parameters, Proof, VerifyingKey, PreparedVerifyingKey};
+
+        pub type PairingCurve = $curve;
+        pub type Parameters = Parameters<$curve>;
+        pub type Proof = Proof<$curve>;
+        pub type VerifyingKey = VerifyingKey<$curve>;
+        pub type PreparedVerifyingKey = PreparedVerifyingKey<$curve>;
+
+        pub const GROUP_2_SIZE: usize = 4 * FIELD_SIZE + 1;
+
+        pub const ZK_PROOF_SIZE: usize = 2 * GROUP_SIZE + GROUP_2_SIZE;
+    };
+}
+
+#[cfg(feature = "groth16")]
+#[macro_export]
+macro_rules! generate_groth16_types {
+    ($curve: ident, $curve_parameters: ty) => {{
+        generate_algebraic_types!($curve, $curve_parameters);
+        _generate_groth16_types!($curve);
+    }};
+
+    ($curve: ident) => {
+        _generate_groth16_types!($curve);
+    }
+}

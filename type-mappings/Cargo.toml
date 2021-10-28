@@ -11,11 +11,15 @@ authors = [
 edition = "2018"
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "feat/concrete_instantiations" }
-primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "feat/concrete_instantiations" }
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
+primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
+proof-systems = { features = ["groth16"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
 
 lazy_static = "1"
 rand = { version = "0.8.4" }
 rand_xorshift = { version = "0.3.0" }
 blake2s_simd = "0.5"
 bit-vec = "0.6.1"
+
+[features]
+groth16 = ["proof-systems/groth16"]

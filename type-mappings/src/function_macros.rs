@@ -770,3 +770,101 @@ macro_rules! generate_all_functions {
         generate_vrf_functions!();
     };
 }
+
+#[cfg(feature = "groth16")]
+#[macro_export]
+/// Pre-conditions: Groth16, FieldElement types and serialization functions already generated
+macro_rules! _generate_groth16_functions {
+    () => {
+        pub fn generate_and_save_random_parameters_to_file<C: ConstraintSynthesizer<FieldElement>>(
+            circuit: C,
+            circuit_name: &str,
+            proving_key_path: &str,
+            verification_key_path: &str,
+        ) -> Result<Parameters, Error>
+        {
+            use proof_systems::groth16::generate_parameters;
+    
+            let params = generate_random_parameters::<PairingCurve, _, _>(c, &mut OsRng::default())
+            .map_err(|e| {
+                format!(
+                    "Unable to generate (pk, vk) for {:?} circuit: {:?}",
+                    circuit_name,
+                    e
+                )
+            })?;
+        
+            // Save them at specified paths
+            write_to_file(&params, proving_key_path, Some(false))
+                .map_err(|e| format!("Unable to save pk to file {:?} : {:?}", proving_key_path, e))?;
+        
+            write_to_file(&(params.vk), verification_key_path, Some(false)).map_err(|e| {
+                format!(
+                    "Unable to save vk to file {:?} : {:?}",
+                    verification_key_path, e
+                )
+            })?;
+            Ok(())
+        }
+    
+        pub fn create_random_proof<C: ConstraintSynthesizer<FieldElement>>(
+            circuit: C,
+            proving_key_path: &str,
+        ) -> Result<Proof, Error> {
+            use proof_systems::groth16::create_random_proof;
+    
+            // Read proving key
+            let params = read_from_file(proving_key_path, Some(false), Some(false))?;
+    
+            // Create proof
+            let proof = create_random_proof(c, &params, &mut OsRng::default())?;
+    
+            Ok(proof)
+        }
+    
+        pub fn verify_proof(
+            public_inputs: &[FieldElement],
+            verification_key_path: &str,
+        ) -> Result<bool, Error> {
+            use proof_systems::groth16::{prepare_verifying_key, verify_proof};
+    
+            // Read verification key
+            let vk = read_from_file(verification_key_path, Some(false), Some(false))?;
+    
+            // Prepare verification key
+            let pvk = prepare_verifying_key(&vk);
+    
+            // Construct public inputs
+            let pub_ins = vec![
+                *cumulative_merkle_root,
+                *address_merkle_root,
+                *payment_hash,
+                *hsec,
+                *nullifier,
+            ];
+    
+            // Verify proof
+            let result = verify_proof(&pvk, &proof, pub_ins.as_slice())?;
+    
+            Ok(result)
+        }
+    }   
+}
+
+#[cfg(feature = "groth16")]
+#[macro_export]
+macro_rules! generate_groth16_functions {
+    ($curve: ident, $curve_type: ident) => {{
+        generate_groth16_types!($curve, $curve_type):
+        _generate_groth16_functions!();
+    }};
+
+    ($curve: ident) => {{
+        generate_groth16_types!($curve):
+        _generate_groth16_functions!();
+    }};
+
+    () => {
+        _generate_groth16_functions!();
+    }
+}
