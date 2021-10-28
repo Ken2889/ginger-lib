@@ -13,6 +13,8 @@ edition = "2018"
 [dependencies]
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
 primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
+
+r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
 proof-systems = { features = ["groth16"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
 
 lazy_static = "1"
@@ -22,4 +24,4 @@ blake2s_simd = "0.5"
 bit-vec = "0.6.1"
 
 [features]
-groth16 = ["proof-systems/groth16"]
+groth16 = ["proof-systems/groth16", "r1cs-core"]

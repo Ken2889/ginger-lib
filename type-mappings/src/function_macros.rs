@@ -193,10 +193,10 @@ macro_rules! _generate_field_element_functions {
 
 #[macro_export]
 macro_rules! generate_field_element_functions {
-    ($curve: ident, $curve_parameters: ty) => {{
+    ($curve: ident, $curve_parameters: ty) => {
         generate_algebraic_types!($curve, $curve_parameters);
         _generate_field_element_functions!();
-    }};
+    };
 
     // Pre-requisite: FieldElement types generated
     () => {
@@ -301,17 +301,17 @@ macro_rules! _generate_poseidon_hash_functions {
 
 #[macro_export]
 macro_rules! generate_poseidon_hash_functions {
-    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {{
+    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {
         generate_algebraic_types!($curve, $curve_parameters);
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_poseidon_hash_functions!();
-    }};
+    };
 
     // Pre-requisite: FieldElement types generated
-    ($field_hash: ident, $batch_field_hash: ident) => {{
+    ($field_hash: ident, $batch_field_hash: ident) => {
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_poseidon_hash_functions!();
-    }};
+    };
 
     // Pre-requisite: FieldElement and FieldHash types generated
     () => {
@@ -476,22 +476,22 @@ macro_rules! _generate_merkle_tree_functions {
 #[macro_export]
 macro_rules! generate_merkle_tree_functions {
     // No pre-conditions:
-    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {{
+    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {
         generate_merkle_tree_types!($curve, $curve_parameters, $field_hash, $batch_field_hash, $tree_params, $tree_arity);
         _generate_merkle_tree_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {
         generate_merkle_tree_types!($field_hash, $batch_field_hash, $tree_params, $tree_arity);
         _generate_merkle_tree_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($tree_params: ident, $tree_arity: expr) => {{
+    ($tree_params: ident, $tree_arity: expr) => {
         generate_merkle_tree_types!($tree_params, $tree_arity);
         _generate_merkle_tree_functions!();
-    }};
+    };
 
     // Pre-conditions: MerkleTree types already generated
     () => {
@@ -590,22 +590,22 @@ macro_rules! _generate_schnorr_signature_functions {
 #[macro_export]
 macro_rules! generate_schnorr_signature_functions {
     // No pre-conditions:
-    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {{
+    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {
         generate_schnorr_signature_types!($affine_curve, $projective_curve, $curve_parameters, $field_hash, $batch_field_hash);
         _generate_schnorr_signature_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {
         generate_schnorr_signature_types!($field_hash, $batch_field_hash, $affine_curve, $projective_curve);
         _generate_schnorr_signature_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($projective_curve: ident, $affine_curve: ident) => {{
+    ($projective_curve: ident, $affine_curve: ident) => {
         generate_schnorr_signature_types!($projective_curve, $affine_curve);
         _generate_schnorr_signature_functions!();
-    }};
+    };
 
     // Pre-conditions: FieldElement and SchnorrSignature types already generated
     () => {
@@ -735,22 +735,22 @@ macro_rules! _generate_vrf_functions {
 #[macro_export]
 macro_rules! generate_vrf_functions {
     // No pre-conditions:
-    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {{
+    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {
         generate_vrf_types!($affine_curve, $projective_curve, $curve_parameters, $field_hash, $batch_field_hash);
         _generate_vrf_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {
         generate_vrf_types!($field_hash, $batch_field_hash, $affine_curve, $projective_curve);
         _generate_vrf_functions!();
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($projective_curve: ident, $affine_curve: ident) => {{
+    ($projective_curve: ident, $affine_curve: ident) => {
         generate_vrf_types!($projective_curve, $affine_curve);
         _generate_vrf_functions!();
-    }};
+    };
 
     // Pre-conditions: FieldElement, FieldHash and VRF types already generated
     () => {
@@ -776,16 +776,18 @@ macro_rules! generate_all_functions {
 /// Pre-conditions: Groth16, FieldElement types and serialization functions already generated
 macro_rules! _generate_groth16_functions {
     () => {
+        use r1cs_core::ConstraintSynthesizer;
+
         pub fn generate_and_save_random_parameters_to_file<C: ConstraintSynthesizer<FieldElement>>(
             circuit: C,
             circuit_name: &str,
             proving_key_path: &str,
             verification_key_path: &str,
-        ) -> Result<Parameters, Error>
+        ) -> Result<Groth16Parameters, Error>
         {
-            use proof_systems::groth16::generate_parameters;
+            use proof_systems::groth16::generate_random_parameters;
     
-            let params = generate_random_parameters::<PairingCurve, _, _>(c, &mut OsRng::default())
+            let params = generate_random_parameters::<PairingCurve, _, _>(circuit, &mut OsRng::default())
             .map_err(|e| {
                 format!(
                     "Unable to generate (pk, vk) for {:?} circuit: {:?}",
@@ -804,25 +806,27 @@ macro_rules! _generate_groth16_functions {
                     verification_key_path, e
                 )
             })?;
-            Ok(())
+
+            Ok(params)
         }
     
         pub fn create_random_proof<C: ConstraintSynthesizer<FieldElement>>(
             circuit: C,
             proving_key_path: &str,
-        ) -> Result<Proof, Error> {
+        ) -> Result<Groth16Proof, Error> {
             use proof_systems::groth16::create_random_proof;
     
             // Read proving key
             let params = read_from_file(proving_key_path, Some(false), Some(false))?;
     
             // Create proof
-            let proof = create_random_proof(c, &params, &mut OsRng::default())?;
+            let proof = create_random_proof(circuit, &params, &mut OsRng::default())?;
     
             Ok(proof)
         }
     
         pub fn verify_proof(
+            proof: Groth16Proof,
             public_inputs: &[FieldElement],
             verification_key_path: &str,
         ) -> Result<bool, Error> {
@@ -834,17 +838,8 @@ macro_rules! _generate_groth16_functions {
             // Prepare verification key
             let pvk = prepare_verifying_key(&vk);
     
-            // Construct public inputs
-            let pub_ins = vec![
-                *cumulative_merkle_root,
-                *address_merkle_root,
-                *payment_hash,
-                *hsec,
-                *nullifier,
-            ];
-    
             // Verify proof
-            let result = verify_proof(&pvk, &proof, pub_ins.as_slice())?;
+            let result = verify_proof(&pvk, &proof, public_inputs)?;
     
             Ok(result)
         }
@@ -854,15 +849,10 @@ macro_rules! _generate_groth16_functions {
 #[cfg(feature = "groth16")]
 #[macro_export]
 macro_rules! generate_groth16_functions {
-    ($curve: ident, $curve_type: ident) => {{
-        generate_groth16_types!($curve, $curve_type):
+    ($curve: ident) => {
+        generate_groth16_types!($curve);
         _generate_groth16_functions!();
-    }};
-
-    ($curve: ident) => {{
-        generate_groth16_types!($curve):
-        _generate_groth16_functions!();
-    }};
+    };
 
     () => {
         _generate_groth16_functions!();

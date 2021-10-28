@@ -69,17 +69,17 @@ macro_rules! _generate_merkle_tree_types {
 #[macro_export]
 macro_rules! generate_merkle_tree_types {
     // No pre-conditions:
-    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {{
+    ($curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {
         generate_algebraic_types($curve, $curve_parameters);
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_merkle_tree_types!($tree_params, $tree_arity);
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $tree_params: ident, $tree_arity: expr) => {
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_merkle_tree_types!($tree_params, $tree_arity);
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
     ($tree_params: ident, $tree_arity: expr) => {
@@ -106,17 +106,17 @@ macro_rules! _generate_schnorr_signature_types {
 #[macro_export]
 macro_rules! generate_schnorr_signature_types {
     // No pre-conditions:
-    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {{
+    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {
         generate_algebraic_types($affine_curve, $curve_parameters);
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_schnorr_signature_types!($projective_curve, $affine_curve);
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_schnorr_signature_types!($projective_curve, $affine_curve);
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
     ($projective_curve: ident, $affine_curve: ident) => {
@@ -201,17 +201,17 @@ macro_rules! _generate_vrf_types {
 #[macro_export]
 macro_rules! generate_vrf_types {
     // No pre-conditions:
-    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {{
+    ($affine_curve: ident, $projective_curve: ident, $curve_parameters: ty, $field_hash: ident, $batch_field_hash: ident) => {
         generate_algebraic_types($affine_curve, $curve_parameters);
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_vrf_types!($projective_curve, $affine_curve);
-    }};
+    };
 
     // Pre-conditions: algebraic types already generated
-    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {{
+    ($field_hash: ident, $batch_field_hash: ident, $affine_curve: ident, $projective_curve: ident) => {
         generate_poseidon_hash_types!($field_hash, $batch_field_hash);
         _generate_vrf_types!($projective_curve, $affine_curve);
-    }};
+    };
 
     // Pre-conditions: algebraic and poseidon hash types already generated
     ($projective_curve: ident, $affine_curve: ident) => {
@@ -256,31 +256,18 @@ macro_rules! generate_all_algebraic_crypto_types {
 /// Pre-conditions: Field types already generated
 #[cfg(feature = "groth16")]
 #[macro_export]
-macro_rules! _generate_groth16_types {
-    ($curve: ident) => {
+macro_rules! generate_groth16_types {
+    ($pairing_curve: ident) => {
         use proof_systems::groth16::{Parameters, Proof, VerifyingKey, PreparedVerifyingKey};
 
-        pub type PairingCurve = $curve;
-        pub type Parameters = Parameters<$curve>;
-        pub type Proof = Proof<$curve>;
-        pub type VerifyingKey = VerifyingKey<$curve>;
-        pub type PreparedVerifyingKey = PreparedVerifyingKey<$curve>;
+        pub type PairingCurve = $pairing_curve;
+        pub type Groth16Parameters = Parameters<PairingCurve>;
+        pub type Groth16Proof = Proof<PairingCurve>;
+        pub type Groth16VerifyingKey = VerifyingKey<PairingCurve>;
+        pub type Groth16PreparedVerifyingKey = PreparedVerifyingKey<PairingCurve>;
 
         pub const GROUP_2_SIZE: usize = 4 * FIELD_SIZE + 1;
 
         pub const ZK_PROOF_SIZE: usize = 2 * GROUP_SIZE + GROUP_2_SIZE;
     };
-}
-
-#[cfg(feature = "groth16")]
-#[macro_export]
-macro_rules! generate_groth16_types {
-    ($curve: ident, $curve_parameters: ty) => {{
-        generate_algebraic_types!($curve, $curve_parameters);
-        _generate_groth16_types!($curve);
-    }};
-
-    ($curve: ident) => {
-        _generate_groth16_types!($curve);
-    }
 }
