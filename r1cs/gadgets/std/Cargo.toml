@@ -23,8 +23,8 @@ license = "MIT/Apache-2.0"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
-r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "feat/concrete_instantiations" }
+r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "feat/concrete_instantiations" }
 derivative = "2.2.0"
 
 num-traits = { version = "0.2", default-features = false, optional = true }

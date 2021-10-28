@@ -11,8 +11,8 @@ authors = [
 edition = "2018"
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
-primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "feat/concrete_instantiations" }
+primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "feat/concrete_instantiations" }
 
 lazy_static = "1"
 rand = { version = "0.8.4" }
