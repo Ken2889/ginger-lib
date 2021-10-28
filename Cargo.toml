@@ -8,6 +8,7 @@ members = [
     "r1cs/core",
     "r1cs/gadgets/std",
     "r1cs/gadgets/crypto",
+    "type-mappings",
 ]
 
 [profile.release]
