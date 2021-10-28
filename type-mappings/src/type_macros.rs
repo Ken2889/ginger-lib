@@ -41,6 +41,7 @@ macro_rules! generate_poseidon_hash_types {
 }
 
 /// Pre-conditions: algebraic and poseidon hash types already generated
+#[macro_export]
 macro_rules! _generate_merkle_tree_types {
     ($tree_params: ident, $tree_arity: expr) => {
         #[derive(Clone, Debug)]
@@ -81,12 +82,13 @@ macro_rules! generate_merkle_tree_types {
     }};
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($tree_params: ident, $tree_arity: expr) => {{
+    ($tree_params: ident, $tree_arity: expr) => {
         _generate_merkle_tree_types!($tree_params, $tree_arity);
-    }};
+    };
 }
 
 /// Pre-conditions: algebraic and poseidon hash types already generated
+#[macro_export]
 macro_rules! _generate_schnorr_signature_types {
     ($projective_curve: ident, $affine_curve: ident) => {
         pub const SCHNORR_PK_SIZE: usize = GROUP_COMPRESSED_SIZE;
@@ -117,12 +119,13 @@ macro_rules! generate_schnorr_signature_types {
     }};
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($projective_curve: ident, $affine_curve: ident) => {{
+    ($projective_curve: ident, $affine_curve: ident) => {
         _generate_schnorr_signature_types!($projective_curve, $affine_curve);
-    }};
+    };
 }
 
 /// Pre-conditions: algebraic and poseidon hash types already generated
+#[macro_export]
 macro_rules! _generate_vrf_types {
     ($projective_curve: ident, $affine_curve: ident) => {
         // Group hash personalizations
@@ -211,9 +214,9 @@ macro_rules! generate_vrf_types {
     }};
 
     // Pre-conditions: algebraic and poseidon hash types already generated
-    ($projective_curve: ident, $affine_curve: ident) => {{
+    ($projective_curve: ident, $affine_curve: ident) => {
         _generate_vrf_types!($projective_curve, $affine_curve);
-    }};
+    };
 }
 
 /// Pre-conditions: schnorr signature types already generated

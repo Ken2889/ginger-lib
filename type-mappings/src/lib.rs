@@ -1,3 +1,37 @@
+#![allow(unused_imports)]
+pub use {
+    algebra::{
+        serialize::*, AffineCurve, Field, FpParameters, FromCompressedBits, ModelParameters, PrimeField, ProjectiveCurve,
+        SemanticallyValid, ToConstraintField, UniformRand,
+    },
+    bit_vec::BitVec,
+    blake2s_simd::{Hash, Params},
+    lazy_static::lazy_static,
+    primitives::{
+        crh::{
+            bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters},
+            pedersen::PedersenWindow,
+        },
+        merkle_tree::*,
+        signature::{
+            schnorr::field_based_schnorr::{
+                FieldBasedSchnorrPk, FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme,
+            },
+            FieldBasedSignatureScheme,
+        },
+        vrf::{
+            ecvrf::{FieldBasedEcVrf, FieldBasedEcVrfPk, FieldBasedEcVrfProof},
+            FieldBasedVrf,
+        },
+    },
+    rand::{rngs::OsRng, SeedableRng},
+    rand_xorshift::XorShiftRng,
+    std::fs::*,
+    std::io::{BufReader, BufWriter, Cursor, Error as IoError, ErrorKind, Read, Write},
+};
+
+pub type Error = Box<dyn std::error::Error>;
+
 #[macro_use]
 pub mod type_macros;
 pub use type_macros::*;
@@ -13,10 +47,6 @@ macro_rules! generate_all_types_and_functions {
         generate_all_functions!();
     };
 }
-
-use algebra::{AffineCurve, FpParameters, FromCompressedBits, PrimeField};
-use bit_vec::BitVec;
-use blake2s_simd::{Hash, Params};
 
 const GH_FIRST_BLOCK: &[u8; 64] =
     b"53756e4d65726375727956656e757345617274684d6172734a75706974657253";
