@@ -134,8 +134,8 @@ macro_rules! generate_serialization_functions {
         pub fn is_valid<T: SemanticallyValid>(to_check: &T) -> bool {
             T::is_valid(to_check)
         }
-
-        pub(crate) fn into_i8(v: Vec<u8>) -> Vec<i8> {
+        
+        pub fn into_i8(v: Vec<u8>) -> Vec<i8> {
             // first, make sure v's destructor doesn't free the data
             // it thinks it owns when it goes out of scope
             let mut v = std::mem::ManuallyDrop::new(v);
@@ -323,8 +323,6 @@ macro_rules! generate_poseidon_hash_functions {
 #[macro_export]
 macro_rules! _generate_merkle_tree_functions {
     () => {
-        use super::*;
-        use primitives::merkle_tree::*;
         pub fn new_ginger_mht(height: usize, processing_step: usize) -> Result<GingerMHT, Error> {
             GingerMHT::init(height, processing_step)
         }

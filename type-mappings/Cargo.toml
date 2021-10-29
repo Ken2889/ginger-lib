@@ -25,3 +25,5 @@ bit-vec = "0.6.1"
 
 [features]
 groth16 = ["proof-systems/groth16", "r1cs-core"]
+bn_382 = ["algebra/bn_382", "primitives/bn_382"]
+tweedle = ["algebra/tweedle", "primitives/tweedle"]
