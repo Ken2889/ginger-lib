@@ -62,6 +62,7 @@ macro_rules! _generate_merkle_tree_types {
 
         pub type GingerMHT = FieldBasedOptimizedMHT<GingerMHTParams>;
         pub type GingerMHTPath = FieldBasedBinaryMHTPath<GingerMHTParams>;
+        pub const GINGER_MHT_POSEIDON_PARAMETERS: FieldBasedMerkleTreePrecomputedZeroConstants<'static, FieldHash> = $tree_params;
     };
 }
 
@@ -270,4 +271,54 @@ macro_rules! generate_groth16_types {
 
         pub const ZK_PROOF_SIZE: usize = 2 * GROUP_SIZE + GROUP_2_SIZE;
     };
+}
+
+/// Pre-conditions: Field types already generated
+#[cfg(feature = "darlin")]
+#[macro_export]
+macro_rules! _generate_darlin_types {
+    ($dual_group_affine: ident, $dual_group_projective: ident) => {
+        use blake2::Blake2s;
+        use poly_commit::ipa_pc::*;
+        use proof_systems::darlin::pcd::simple_marlin::MarlinProof;
+        use proof_systems::darlin::{data_structures::*, *};
+
+        // Basic algebraic types
+        pub type DualGroup = $dual_group_affine;
+        pub type DualGroupProjective = $dual_group_projective;
+
+        // Polynomial Commitment instantiations
+        pub type Digest = Blake2s;
+        pub type IPAPC = InnerProductArgPC<$dual_group_affine, Digest>;
+        pub type CommitterKeyDualGroup = CommitterKey<$dual_group_affine>;
+        pub type CommitterKeyGroup = CommitterKey<Group>;
+
+        // Coboundary Marlin instantiations
+        pub type CoboundaryMarlin = marlin::Marlin<FieldElement, IPAPC, Digest>;
+        pub type CoboundaryMarlinProof = MarlinProof<$dual_group_affine, Digest>;
+        pub type CoboundaryMarlinProverKey = marlin::ProverKey<FieldElement, IPAPC>;
+        pub type CoboundaryMarlinVerifierKey = marlin::VerifierKey<FieldElement, IPAPC>;
+
+        // (Final) Darlin instantiations
+        pub type Darlin<'a> = FinalDarlin<'a, $dual_group_affine, Group, Digest>;
+        pub type DarlinProof = FinalDarlinProof<$dual_group_affine, Group, Digest>;
+        pub type DarlinProverKey = FinalDarlinProverKey<FieldElement, IPAPC>;
+        pub type DarlinVerifierKey = FinalDarlinVerifierKey<FieldElement, IPAPC>;
+    };
+}
+
+#[cfg(feature = "darlin")]
+#[macro_export]
+macro_rules! generate_darlin_types {
+
+    // No pre-conditions
+    ($group: ident, $group_parameters: ty, $dual_group_affine: ident, $dual_group_projective: ident) => {
+        generate_algebraic_types!($group, $group_parameters);
+        _generate_darlin_types!($dual_group_affine, $dual_group_projective);
+    };
+
+    // Pre-conditions: Field types already generated
+    ($dual_group_affine: ident, $dual_group_projective: ident) => {
+        _generate_darlin_types!($dual_group_affine, $dual_group_projective);
+    }
 }

@@ -16,6 +16,10 @@ primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://gi
 
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
 proof-systems = { features = ["groth16"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
+marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "dev", optional = true }
+poly-commit = { git = "https://github.com/HorizenLabs/poly-commit", branch = "dev", optional = true }
+
+blake2 = { version = "0.8.1", default-features = false, optional = true }
 
 lazy_static = "1"
 rand = { version = "0.8.4" }
@@ -27,3 +31,4 @@ bit-vec = "0.6.1"
 groth16 = ["proof-systems/groth16", "r1cs-core"]
 bn_382 = ["algebra/bn_382", "primitives/bn_382"]
 tweedle = ["algebra/tweedle", "primitives/tweedle"]
+darlin = ["proof-systems/darlin", "marlin", "poly-commit", "blake2"]
