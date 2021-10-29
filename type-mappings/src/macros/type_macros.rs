@@ -8,6 +8,7 @@ macro_rules! generate_algebraic_types {
         pub type ScalarFieldElement = <$curve_parameters as ModelParameters>::ScalarField;
 
         pub type Group = $curve;
+        pub type GroupProjective = <$curve as AffineCurve>::Projective;
 
         pub type BigInteger = <<FieldElement as Field>::BasePrimeField as PrimeField>::BigInt;
 
@@ -280,7 +281,7 @@ macro_rules! _generate_darlin_types {
     ($dual_group_affine: ident, $dual_group_projective: ident) => {
         use blake2::Blake2s;
         use poly_commit::ipa_pc::*;
-        use proof_systems::darlin::pcd::simple_marlin::MarlinProof;
+        pub use proof_systems::darlin::pcd::simple_marlin::MarlinProof;
         use proof_systems::darlin::{data_structures::*, *};
 
         // Basic algebraic types
