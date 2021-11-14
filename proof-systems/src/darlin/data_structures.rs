@@ -8,12 +8,10 @@ use crate::darlin::{
     pcd::simple_marlin::MarlinProof,
     accumulators::dlog::DLogItem
 };
-use poly_commit::{
-    ipa_pc_de::{
-        SuccinctCheckPolynomial, InnerProductArgPC,
-        CommitterKey as DLogCommitterKey, Commitment,
-    }
-};
+use poly_commit::{ipa_pc::{
+    SuccinctCheckPolynomial, InnerProductArgPC,
+    CommitterKey as DLogCommitterKey, Commitment,
+}, DomainExtendedCommitment};
 use digest::Digest;
 use rand::RngCore;
 
@@ -62,7 +60,9 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         ).unwrap();
 
         let acc_g1 = DLogItem::<G1> {
-            g_final: Commitment::<G1> {comm: vec![g_final_g1.into_affine()] },
+            g_final: DomainExtendedCommitment::<G1, Commitment<G1>>::new (
+                vec! [ Commitment::<G1> { comm: g_final_g1.into_affine() } ]
+            ),
             xi_s: random_xi_s_g1
         };
 
@@ -80,7 +80,9 @@ impl<G1, G2> FinalDarlinDeferredData<G1, G2>
         ).unwrap();
 
         let acc_g2 = DLogItem::<G2> {
-            g_final: Commitment::<G2> {comm: vec![g_final_g2.into_affine()] },
+            g_final: DomainExtendedCommitment::<G2, Commitment<G2>>::new (
+                vec! [ Commitment::<G2> { comm: g_final_g2.into_affine() } ]
+            ),
             xi_s: random_xi_s_g2
         };
 
@@ -107,9 +109,9 @@ impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, 
         // called native in the sequel)
 
         // The G_final of the previous node consists of native field elements only
-        let g_final_g2 = self.previous_acc.g_final.comm.clone();
+        let g_final_g2 = self.previous_acc.g_final.items.clone();
         for c in g_final_g2.into_iter() {
-            fes.append(&mut c.to_field_elements()?);
+            fes.append(&mut c.comm.to_field_elements()?);
         }
 
         // Convert xi_s, which are 128 bit elements from G2::ScalarField, to the native field.
@@ -132,10 +134,10 @@ impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, 
         
         // The G_final of the pre-previous node is in G1, hence over G2::ScalarField.
         // We serialize them all to bits and pack them safely into native field elements
-        let g_final_g1 = self.pre_previous_acc.g_final.comm.clone();
+        let g_final_g1 = self.pre_previous_acc.g_final.items.clone();
         let mut g_final_g1_bits = Vec::new();
         for c in g_final_g1 {
-            let c_fes = c.to_field_elements()?;
+            let c_fes = c.comm.to_field_elements()?;
             for fe in c_fes {
                 g_final_g1_bits.append(&mut fe.write_bits());
             }
@@ -168,7 +170,7 @@ impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// A FinalDarlinProof has two dlog accumulators, one from the previous, and on from the
 /// pre-previous node of the conversion chain.
-pub struct FinalDarlinProof<G1: AffineCurve, G2: AffineCurve, D: Digest> {
+pub struct FinalDarlinProof<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
     /// Full Marlin proof without deferred arithmetics in G1.
     pub proof:       MarlinProof<G1, D>,
     /// Deferred accumulators

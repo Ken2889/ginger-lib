@@ -2,7 +2,7 @@
 use algebra::AffineCurve;
 use poly_commit::{
     PCParameters,
-    ipa_pc_de::{
+    ipa_pc::{
         Parameters,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     }
@@ -38,7 +38,7 @@ mod test {
     }, UniformRand, ToConstraintField, serialize::test_canonical_serialize_deserialize, SemanticallyValid, CanonicalSerialize, CanonicalDeserialize};
     use poly_commit::{
         PolynomialCommitment,
-        ipa_pc_de::InnerProductArgPC
+        ipa_pc::InnerProductArgPC
     };
     use marlin::VerifierKey as MarlinVerifierKey;
     use crate::darlin::{

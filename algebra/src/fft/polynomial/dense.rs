@@ -383,6 +383,16 @@ impl<F: PrimeField> Mul<F> for DensePolynomial<F> {
     }
 }
 
+
+impl<'a, F: PrimeField> Mul<F> for &'a DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn mul(self, other: F) -> DensePolynomial<F> {
+        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(&self, &DensePolynomial::from_coefficients_slice(&[other]))
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use crate::domain::get_best_evaluation_domain;

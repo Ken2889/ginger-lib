@@ -1,7 +1,7 @@
 use algebra::{AffineCurve, ToConstraintField};
 use poly_commit::{
     PolynomialCommitment,
-    ipa_pc_de::InnerProductArgPC
+    ipa_pc::InnerProductArgPC
 };
 use proof_systems::darlin::{
     tests::{

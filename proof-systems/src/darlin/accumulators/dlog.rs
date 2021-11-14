@@ -6,12 +6,12 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use algebra::{SemanticallyValid, Field, AffineCurve, ProjectiveCurve, ToBytes, to_bytes, UniformRand, serialize::*};
 use algebra::polynomial::DensePolynomial as Polynomial;
-use poly_commit::{ipa_pc_de::{
+use poly_commit::{ipa_pc::{
     InnerProductArgPC,
     Commitment,
     VerifierKey, CommitterKey,
     SuccinctCheckPolynomial,
-}, fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed}, LabeledCommitment, Error, PolynomialCommitment};
+}, fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed}, LabeledCommitment, Error, PolynomialCommitment, DomainExtendedCommitment, DomainExtendedPolynomialCommitment};
 use crate::darlin::accumulators::{
     ItemAccumulator, AccumulationProof,
 };
@@ -24,7 +24,7 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DLogItem<G: AffineCurve> {
     /// Final committer key after the DLOG reduction.
-    pub(crate) g_final:     Commitment<G>,
+    pub(crate) g_final:     DomainExtendedCommitment<G, Commitment<G>>,
 
     /// Challenges of the DLOG reduction.
     pub(crate) xi_s:        SuccinctCheckPolynomial<G::ScalarField>,
@@ -34,18 +34,18 @@ impl<G: AffineCurve> CanonicalSerialize for DLogItem<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
 
         // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize(&self.g_final.comm[0], &mut writer)?;
+        CanonicalSerialize::serialize(&self.g_final.items[0], &mut writer)?;
 
         CanonicalSerialize::serialize(&self.xi_s, &mut writer)
     }
 
     fn serialized_size(&self) -> usize {
 
-        self.g_final.comm[0].serialized_size() + self.xi_s.serialized_size()
+        self.g_final.items[0].serialized_size() + self.xi_s.serialized_size()
     }
 
     fn serialize_without_metadata<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        CanonicalSerialize::serialize_without_metadata(&self.g_final.comm[0], &mut writer)?;
+        CanonicalSerialize::serialize_without_metadata(&self.g_final.items[0], &mut writer)?;
 
         CanonicalSerialize::serialize_without_metadata(&self.xi_s, &mut writer)
     }
@@ -53,14 +53,14 @@ impl<G: AffineCurve> CanonicalSerialize for DLogItem<G> {
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
 
         // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize_uncompressed(&self.g_final.comm[0], &mut writer)?;
+        CanonicalSerialize::serialize_uncompressed(&self.g_final.items[0], &mut writer)?;
 
         CanonicalSerialize::serialize_uncompressed(&self.xi_s, &mut writer)
     }
 
     fn uncompressed_size(&self) -> usize {
 
-        self.g_final.comm[0].uncompressed_size() + self.xi_s.uncompressed_size()
+        self.g_final.items[0].uncompressed_size() + self.xi_s.uncompressed_size()
     }
 
 }
@@ -69,9 +69,9 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError>
     {
         // GFinal will always be 1 segment and without any shift
-        let g_final = Commitment {
-            comm: vec![CanonicalDeserialize::deserialize(&mut reader)?],
-        };
+        let g_final = DomainExtendedCommitment::new(
+            vec![CanonicalDeserialize::deserialize(&mut reader)?]
+        );
 
         let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -83,9 +83,9 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = Commitment {
-            comm: vec![CanonicalDeserialize::deserialize_unchecked(&mut reader)?],
-        };
+        let g_final = DomainExtendedCommitment::new(
+            vec![CanonicalDeserialize::deserialize_unchecked(&mut reader)?]
+        );
 
         let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
@@ -98,9 +98,9 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
     #[inline]
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = Commitment {
-            comm: vec![CanonicalDeserialize::deserialize_uncompressed(&mut reader)?],
-        };
+        let g_final = DomainExtendedCommitment::new(
+            vec![CanonicalDeserialize::deserialize_uncompressed(&mut reader)?]
+        );
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
@@ -113,9 +113,9 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
     #[inline]
     fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = Commitment {
-            comm: vec![CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?],
-        };
+        let g_final = DomainExtendedCommitment::new(
+            vec![CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?]
+        );
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
@@ -129,7 +129,7 @@ impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
 impl<G: AffineCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
         self.g_final.is_valid() &&
-            self.g_final.comm.len() == 1 &&
+            self.g_final.items.len() == 1 &&
             self.xi_s.0.is_valid()
     }
 }
@@ -137,7 +137,7 @@ impl<G: AffineCurve> SemanticallyValid for DLogItem<G> {
 impl<G: AffineCurve> Default for DLogItem<G> {
     fn default() -> Self {
         Self {
-            g_final: Commitment::<G>::default(),
+            g_final: DomainExtendedCommitment::<G, Commitment<G>>::default(),
             xi_s: SuccinctCheckPolynomial(vec![])
         }
     }
@@ -152,12 +152,12 @@ impl<G: AffineCurve> ToBytes for DLogItem<G> {
     }
 }
 
-pub struct DLogItemAccumulator<G: AffineCurve, D: Digest> {
+pub struct DLogItemAccumulator<G: AffineCurve, D: Digest + 'static> {
     _digest: PhantomData<D>,
     _group:  PhantomData<G>,
 }
 
-impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
+impl<G: AffineCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
@@ -204,14 +204,14 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
             .into_par_iter()
             .enumerate()
             .map(|(i, acc)| {
-                let final_comm_key = acc.g_final.comm.clone();
+                let final_comm_key = acc.g_final.items.clone();
                 let xi_s = acc.xi_s;
 
                 // Create a LabeledCommitment out of the g_final
                 let labeled_comm = {
-                    let comm = Commitment {
-                        comm: final_comm_key,
-                    };
+                    let comm = DomainExtendedCommitment::new(
+                        final_comm_key,
+                    );
 
                     LabeledCommitment::new(
                         format!("check_poly_{}", i),
@@ -239,7 +239,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
 
         // Succinctly verify the dlog opening proof, 
         // and get the new reduction polynomial (the new xi's).
-        let xi_s = InnerProductArgPC::<G, D>::succinct_single_point_multi_poly_verify(
+        let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::succinct_single_point_multi_poly_verify(
             vk, comms.iter(), z, values, &proof.pc_proof, &mut fs_rng
         ).map_err(|e| {
             end_timer!(check_time);
@@ -250,10 +250,13 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
         end_timer!(check_time);
         end_timer!(succinct_time);
 
-        if xi_s.is_some() {
+        if verifier_state.is_some() {
+            let verifier_state = verifier_state.unwrap();
             Ok(Some(DLogItem::<G>{
-                g_final: Commitment::<G>{ comm: vec![proof.pc_proof.final_comm_key.clone()] },
-                xi_s: xi_s.unwrap(),
+                g_final: DomainExtendedCommitment::<G, Commitment<G>>::new(
+                    vec![ Commitment::<G> { comm: verifier_state.final_comm_key.clone() } ]
+                ),
+                xi_s: verifier_state.check_poly.clone(),
             }))
         } else {
             Ok(None)
@@ -261,7 +264,7 @@ impl<G: AffineCurve, D: Digest> DLogItemAccumulator<G, D> {
     }
 }
 
-impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
+impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D> {
     type AccumulatorProverKey = CommitterKey<G>;
     type AccumulatorVerifierKey = VerifierKey<G>;
     type AccumulationProof = AccumulationProof<G>;
@@ -277,7 +280,7 @@ impl<G: AffineCurve, D: Digest> ItemAccumulator for DLogItemAccumulator<G, D> {
     {
         let check_time = start_timer!(|| "Check accumulators");
 
-        let final_comm_keys = accumulators.iter().flat_map(|acc| acc.g_final.comm.clone()).collect::<Vec<_>>();
+        let final_comm_keys = accumulators.iter().flat_map(|acc| acc.g_final.items.clone()).map(|commitment| commitment.comm).collect::<Vec<_>>();
         let xi_s_vec = accumulators.iter().map(|acc| acc.xi_s.clone()).collect::<Vec<_>>();
 
         let batching_time = start_timer!(|| "Combine check polynomials and final comm keys");
@@ -464,7 +467,7 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
     where
         G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>,
         G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>,
-        D: Digest,
+        D: Digest + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
     type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
@@ -532,9 +535,9 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
 #[cfg(test)]
 mod test {
     use super::*;
-    use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc_de::{
-        MultiPointProof, Parameters,
-    }, PCParameters, PolynomialCommitment};
+    use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc::{
+        Proof, Parameters,
+    }, PCParameters, PolynomialCommitment, DomainExtendedMultiPointProof};
 
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
@@ -543,10 +546,10 @@ mod test {
 
     fn get_test_fs_rng<G: AffineCurve, D: Digest>() -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle
     {
-        let mut seed_builder = <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
+        let mut seed_builder = <<DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize();
-        <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed)
+        <DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed)
     }
 
     #[derive(Copy, Clone, Default)]
@@ -563,10 +566,10 @@ mod test {
     #[derivative(Clone(bound = ""))]
     struct VerifierData<'a, G: AffineCurve> {
         vk:                      VerifierKey<G>,
-        comms:                   Vec<LabeledCommitment<G, Commitment<G>>>,
+        comms:                   Vec<LabeledCommitment<G, DomainExtendedCommitment<G, Commitment<G>>>>,
         query_set:               QuerySet<'a, G::ScalarField>,
         values:                  Evaluations<'a, G::ScalarField>,
-        proof:                   MultiPointProof<G>,
+        proof:                   DomainExtendedMultiPointProof<G, Commitment<G>, Proof<G>>,
         polynomials:             Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials:         usize,
         num_points_in_query_set: usize,
@@ -596,7 +599,7 @@ mod test {
         let rng = &mut thread_rng();
         let max_degree =
             max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng));
-        let pp = if pp.is_some() { pp.unwrap() } else { InnerProductArgPC::<G, D>::setup(max_degree)? };
+        let pp = if pp.is_some() { pp.unwrap() } else { DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)? };
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -654,7 +657,7 @@ mod test {
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
 
-        let (comms, rands) = InnerProductArgPC::<G, D>::commit_vec(&ck, &polynomials, Some(rng))?;
+        let (comms, rands) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::commit_vec(&ck, &polynomials, Some(rng))?;
 
         // Construct "symmetric" query set: every polynomial is evaluated at every
         // point.
@@ -672,7 +675,7 @@ mod test {
         println!("Generated query set");
 
         let mut fs_rng = get_test_fs_rng::<G, D>();
-        let proof = InnerProductArgPC::<G, D>::multi_point_multi_poly_open(
+        let proof = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::multi_point_multi_poly_open(
             &ck,
             &polynomials,
             &comms,
@@ -715,7 +718,7 @@ mod test {
             ..Default::default()
         };
 
-        let pp = InnerProductArgPC::<G, D>::setup(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -755,7 +758,7 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::batch_succinct_verify(
+            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),
@@ -817,7 +820,7 @@ mod test {
             ..Default::default()
         };
 
-        let pp = InnerProductArgPC::<G, D>::setup(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)?;
         let (_, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
@@ -854,7 +857,7 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = InnerProductArgPC::<G, D>::batch_succinct_verify(
+            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),

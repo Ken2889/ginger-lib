@@ -1,7 +1,7 @@
 use algebra::{AffineCurve, ToConstraintField};
 use poly_commit::{
     PolynomialCommitment,
-    ipa_pc_de::InnerProductArgPC
+    ipa_pc::InnerProductArgPC
 };
 use proof_systems::darlin::{
     tests::{
@@ -17,7 +17,7 @@ use blake2::Blake2s;
 use proof_systems::darlin::pcd::GeneralPCD;
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest>(
+fn bench_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,

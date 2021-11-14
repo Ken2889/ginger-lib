@@ -14,7 +14,8 @@ use crate::darlin::{
     FinalDarlinProverKey, FinalDarlinVerifierKey, FinalDarlin,
 };
 use poly_commit::{
-    ipa_pc_de::{InnerProductArgPC, CommitterKey, Parameters},
+    DomainExtendedPolynomialCommitment,
+    ipa_pc::{InnerProductArgPC, CommitterKey, Parameters},
     Error as PCError
 };
 //use rand::{ Rng, RngCore };
@@ -298,7 +299,7 @@ impl<G1, G2> PCDCircuit<G1> for TestCircuit<G1, G2>
 #[allow(dead_code)]
 pub fn generate_test_pcd<'a, G1: AffineCurve, G2:AffineCurve, D: Digest + 'a, R: RngCore>(
     pc_ck_g1: &CommitterKey<G1>,
-    final_darlin_pk: &FinalDarlinProverKey<G1, InnerProductArgPC<G1, D>>,
+    final_darlin_pk: &FinalDarlinProverKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>,
     info: CircuitInfo<G1, G2>,
     zk: bool,
     rng: &mut R,
@@ -343,7 +344,7 @@ pub fn generate_test_data<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'a, 
     rng: &mut R,
 ) -> (
     Vec<FinalDarlinPCD<'a, G1, G2, D>>,
-    Vec<FinalDarlinVerifierKey<G1, InnerProductArgPC<G1, D>>>
+    Vec<FinalDarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>>
 )
     where
         G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField> + ToConstraintField<<G2 as AffineCurve>::ScalarField>,

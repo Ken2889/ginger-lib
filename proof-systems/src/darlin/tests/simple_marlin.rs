@@ -2,7 +2,7 @@
 //! two public inputs satisfying a simple quadratic relation.
 use algebra::{Field, AffineCurve, UniformRand};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use poly_commit::ipa_pc_de::{InnerProductArgPC, CommitterKey, Parameters};
+use poly_commit::ipa_pc::{InnerProductArgPC, CommitterKey, Parameters};
 use marlin::{
     Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey,
 };
@@ -12,6 +12,7 @@ use crate::darlin::pcd::{
 use rand::{ Rng, RngCore };
 use digest::Digest;
 use std::ops::MulAssign;
+use poly_commit::DomainExtendedPolynomialCommitment;
 
 /// A simple test circuit with two field elements c,d as inputs, enforced to satisfy
 ///     (c,d) = a*(b,b^2),
@@ -87,7 +88,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 #[allow(dead_code)]
 pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
-    marlin_pk: &MarlinProverKey<G, InnerProductArgPC<G, D>>,
+    marlin_pk: &MarlinProverKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
     num_constraints: usize,
     zk: bool,
     rng: &mut R,
@@ -107,7 +108,7 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let proof = Marlin::<G, InnerProductArgPC<G, D>, D>::prove(
+    let proof = Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::prove(
         marlin_pk,
         pc_ck,
         circ,
@@ -129,7 +130,7 @@ pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     rng: &mut R,
 ) -> (
     Vec<SimpleMarlinPCD<'a, G, D>>,
-    Vec<MarlinVerifierKey<G, InnerProductArgPC<G, D>>>
+    Vec<MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>>
 )
 {
     // Trim committer key and verifier key
@@ -144,7 +145,7 @@ pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let (index_pk, index_vk) = Marlin::<G, InnerProductArgPC<G, D>, D>::index(
+    let (index_pk, index_vk) = Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::index(
         &committer_key, circ.clone()
     ).unwrap();
 

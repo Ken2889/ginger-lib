@@ -9,10 +9,10 @@
 use algebra::{AffineCurve, serialize::*};
 use rand::RngCore;
 use poly_commit::{
-    ipa_pc_de::Proof,
+    ipa_pc::Proof,
     Error
 };
-use poly_commit::ipa_pc_de::Commitment;
+use poly_commit::ipa_pc::Commitment;
 
 pub mod dlog;
 

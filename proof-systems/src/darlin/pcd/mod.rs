@@ -7,7 +7,7 @@ use algebra::{AffineCurve, ToConstraintField, UniformRand};
 use r1cs_core::ConstraintSynthesizer;
 use poly_commit::{
     PCParameters,
-    ipa_pc_de::{
+    ipa_pc::{
         Parameters,
         CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey,
     },
@@ -152,7 +152,7 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest> {
+pub enum GeneralPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
     SimpleMarlin(SimpleMarlinPCD<'a, G1, D>),
     FinalDarlin(FinalDarlinPCD<'a, G1, G2, D>)
 }
@@ -213,7 +213,7 @@ impl<'a, G1, G2, D> PCD for GeneralPCD<'a, G1, G2, D>
 where
     G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField> + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
     G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField> + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
-    D: Digest + 'a,
+    D: Digest + 'static,
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;
     type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, D>;

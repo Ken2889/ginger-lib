@@ -3,8 +3,10 @@ use algebra::{AffineCurve, SemanticallyValid, serialize::*};
 use digest::Digest;
 use marlin::{VerifierKey as MarlinVerifierKey, Proof, Marlin, AHPForR1CS};
 use poly_commit::{
-    ipa_pc_de::{
-        InnerProductArgPC, VerifierKey as DLogVerifierKey
+    PolynomialCommitment,
+    DomainExtendedPolynomialCommitment, DomainExtendedCommitment,
+    ipa_pc::{
+        InnerProductArgPC, VerifierKey as DLogVerifierKey,
     },
     fiat_shamir_rng::FiatShamirRng,
 };
@@ -14,17 +16,17 @@ use crate::darlin::{
         dlog::{DLogItem, DLogItemAccumulator}, ItemAccumulator
     },
 };
-use poly_commit::ipa_pc_de::Commitment;
+use poly_commit::ipa_pc::Commitment;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Debug(bound = ""), Eq(bound = ""), PartialEq(bound = ""))]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct MarlinProof<G: AffineCurve, D: Digest>(pub Proof<G, InnerProductArgPC<G, D>>);
+pub struct MarlinProof<G: AffineCurve, D: Digest + 'static>(pub Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>);
 
 impl<G: AffineCurve, D: Digest> Deref for MarlinProof<G, D> {
-    type Target = Proof<G, InnerProductArgPC<G, D>>;
+    type Target = Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -66,7 +68,7 @@ impl<G: AffineCurve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: AffineCurve, D: Digest> {
+pub struct SimpleMarlinPCD<'a, G: AffineCurve, D: Digest + 'static> {
     pub proof:                     MarlinProof<G, D>,
     pub usr_ins:                   Vec<G::ScalarField>,
     _lifetime:                     PhantomData<&'a ()>,
@@ -91,8 +93,8 @@ impl<'a, G, D> SimpleMarlinPCD<'a, G, D>
 
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the 
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
-pub struct SimpleMarlinPCDVerifierKey<'a, G: AffineCurve, D: Digest>(
-    pub &'a MarlinVerifierKey<G, InnerProductArgPC<G, D>>,
+pub struct SimpleMarlinPCDVerifierKey<'a, G: AffineCurve, D: Digest + 'static>(
+    pub &'a MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
     pub &'a DLogVerifierKey<G>
 );
 
@@ -105,7 +107,7 @@ impl<'a, G: AffineCurve, D: Digest> AsRef<DLogVerifierKey<G>> for SimpleMarlinPC
 impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
     where
         G: AffineCurve,
-        D: Digest + 'a,
+        D: Digest + 'static,
 {
     type PCDAccumulator = DLogItemAccumulator<G, D>;
     type PCDVerifierKey = SimpleMarlinPCDVerifierKey<'a, G, D>;
@@ -118,7 +120,7 @@ impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
         let succinct_time = start_timer!(|| "Marlin succinct verifier");
 
         // Verify the IOP/AHP 
-        let (query_set, evaluations, labeled_comms, mut fs_rng) = Marlin::<G, InnerProductArgPC<G, D>, D>::verify_ahp(
+        let (query_set, evaluations, labeled_comms, mut fs_rng) = Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::verify_ahp(
             &vk.1,
             &vk.0,
             self.usr_ins.as_slice(),
@@ -132,7 +134,7 @@ impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
         fs_rng.absorb(&self.proof.evaluations);
 
         // Succinct verify DLOG proof
-        let (xi_s, g_final) = InnerProductArgPC::<G, D>::succinct_multi_point_multi_poly_verify(
+        let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::succinct_multi_point_multi_poly_verify(
             &vk.1,
             &labeled_comms,
             &query_set,
@@ -144,10 +146,19 @@ impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
             PCDError::FailedSuccinctVerification(e.to_string())
         })?;
 
+        if verifier_state.is_none() {
+            end_timer!(succinct_time);
+            Err(PCDError::FailedSuccinctVerification("Succinct verify failed".to_owned()))?
+        }
+
+        let verifier_state = verifier_state.unwrap();
+
         // Successfull verification: return current accumulator
         let acc = DLogItem::<G> {
-            g_final: Commitment::<G> {  comm: vec![g_final]  },
-            xi_s,
+            g_final: DomainExtendedCommitment::<G, Commitment<G>>::new(
+                vec![ Commitment::<G> { comm: verifier_state.final_comm_key.clone() } ]
+            ),
+            xi_s: verifier_state.check_poly.clone(),
         };
 
         end_timer!(succinct_time);

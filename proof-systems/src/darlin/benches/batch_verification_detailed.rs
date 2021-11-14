@@ -1,7 +1,7 @@
 use algebra::{AffineCurve, ToConstraintField, serialize::*};
 use poly_commit::{
     PolynomialCommitment,
-    ipa_pc_de::InnerProductArgPC
+    ipa_pc::InnerProductArgPC
 };
 use proof_systems::darlin::{
     tests::{
@@ -23,7 +23,7 @@ use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 
-fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest>(
+fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -76,7 +76,7 @@ fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: D
     group.finish();
 }
 
-fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest>(
+fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -141,7 +141,7 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
     group.finish();
 }
 
-fn bench_batch_verification_complete<G1: AffineCurve, G2: AffineCurve, D: Digest>(
+fn bench_batch_verification_complete<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -213,9 +213,9 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
     };
 
     let num_proofs = 100;
-    let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
+    let num_constraints = (18..=18).map(|pow| 1 << pow).collect::<Vec<_>>();
 
-    for log_segment_size in 14..=18 {
+    for log_segment_size in 14..=14 {
         bench_batch_verification_complete::<TweedleDee, TweedleDum, Blake2s>(
             c,
             format!("tweedle-dee, segment_size = 1 << {}, num_constraints", log_segment_size).as_str(),
@@ -281,7 +281,7 @@ fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
 criterion_group!(
 name = batch_verification;
 config = Criterion::default().sample_size(10);
-targets = bench_batch_verification_complete_tweedle, bench_succinct_part_batch_verification_tweedle, bench_hard_part_batch_verification_tweedle
+targets = bench_batch_verification_complete_tweedle // , bench_succinct_part_batch_verification_tweedle, bench_hard_part_batch_verification_tweedle
 );
 
 criterion_main!(batch_verification);
