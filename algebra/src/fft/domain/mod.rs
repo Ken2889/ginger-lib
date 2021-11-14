@@ -287,7 +287,7 @@ pub fn sample_element_outside_domain<
 mod tests {
     use crate::get_best_evaluation_domain;
     use crate::Field;
-    use crate::fields::bls12_381::fr::Fr;
+    use crate::fields::tweedle::fr::Fr;
     use rand::{Rng, thread_rng};
 
     #[test]

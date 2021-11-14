@@ -397,7 +397,7 @@ impl<'a, F: PrimeField> Mul<F> for &'a DensePolynomial<F> {
 mod tests {
     use crate::domain::get_best_evaluation_domain;
     use crate::polynomial::*;
-    use crate::fields::bls12_381::fr::Fr;
+    use crate::fields::tweedle::fr::Fr;
     use crate::fields::Field;
     use crate::UniformRand;
     use rand::thread_rng;

@@ -1,5 +1,5 @@
 use algebra::{
-    fields::mnt6753::Fr,
+    fields::tweedle::Fr,
     fft::get_best_evaluation_domain,
     UniformRand,
 };

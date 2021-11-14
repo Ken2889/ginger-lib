@@ -229,11 +229,8 @@ impl VariableBaseMSM {
 mod test {
     use super::*;
 
-    use crate::curves::bn_382::G1Projective as Bn382G1Projective;
-    use crate::curves::bn_382::g::Projective as Bn382GProjective;
     use crate::curves::tweedle::dee::Projective as TweedleDee;
     use crate::curves::tweedle::dum::Projective as TweedleDum;
-    use crate::curves::bls12_381::G1Projective as BlsG1Projective;
 
     use rand::{SeedableRng, Rng};
     use rand_xorshift::XorShiftRng;
@@ -282,22 +279,5 @@ mod test {
 
         test_all_variants::<TweedleDee, _>(1 << 12, 16, rng);
         test_all_variants::<TweedleDum, _>(1 << 12, 16, rng);
-    }
-
-    #[cfg(feature = "bn_382")]
-    #[test]
-    fn test_all_variants_bn382() {
-        let rng = &mut XorShiftRng::seed_from_u64(234872845u64);
-
-        test_all_variants::<Bn382G1Projective, _>(1 << 12, 16, rng);
-        test_all_variants::<Bn382GProjective, _>(1 << 12, 16, rng);
-    }
-
-    #[cfg(feature = "bls12_381")]
-    #[test]
-    fn test_all_variants_bls() {
-        let rng = &mut XorShiftRng::seed_from_u64(234872845u64);
-
-        test_all_variants::<BlsG1Projective, _>(1 << 12, 16, rng);
     }
 }
