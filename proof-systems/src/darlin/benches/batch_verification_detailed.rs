@@ -1,27 +1,21 @@
-use algebra::{AffineCurve, ToConstraintField, serialize::*};
-use poly_commit::{
-    PolynomialCommitment,
-    ipa_pc::InnerProductArgPC
-};
-use proof_systems::darlin::{
-    tests::{
-        get_keys,
-        final_darlin::generate_test_data as generate_final_darlin_test_data
-    },
-    pcd::PCD,
-};
-use digest::Digest;
-use criterion::*;
-use rand::SeedableRng;
-use rand::thread_rng;
+use algebra::{serialize::*, AffineCurve, ToConstraintField};
 use blake2::Blake2s;
-use proof_systems::darlin::pcd::{GeneralPCD, DualPCDVerifierKey};
-use rand_xorshift::XorShiftRng;
-use rayon::prelude::*;
-use proof_systems::darlin::proof_aggregator::get_accumulators;
+use criterion::*;
+use digest::Digest;
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
+use proof_systems::darlin::pcd::{DualPCDVerifierKey, GeneralPCD};
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
+use proof_systems::darlin::proof_aggregator::get_accumulators;
+use proof_systems::darlin::{
+    pcd::PCD,
+    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
+};
+use rand::thread_rng;
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
+use rayon::prelude::*;
 
 fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
     c: &mut Criterion,
@@ -29,10 +23,11 @@ fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: D
     segment_size: usize,
     num_constraints: Vec<usize>,
     num_proofs: usize,
-)
-    where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField> + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField> + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+) where
+    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
+    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -43,35 +38,44 @@ fn bench_succinct_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: D
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
-    let (
-        _, verifier_key_g1,
-        _, verifier_key_g2
-    ) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
             &params_g2,
             1,
-            rng
+            rng,
         );
 
-        println!("Proof size: {}", final_darlin_pcd[0].final_darlin_proof.serialized_size());
+        println!(
+            "Proof size: {}",
+            final_darlin_pcd[0].final_darlin_proof.serialized_size()
+        );
         println!("Vk size: {}", index_vk[0].serialized_size());
 
         // Collect PCDs and vks
         let pcds = vec![GeneralPCD::FinalDarlin(final_darlin_pcd[0].clone()); num_proofs];
         let vks = vec![index_vk[0].clone(); num_proofs];
 
-        group.bench_with_input(BenchmarkId::from_parameter(num_constraints), &num_constraints, |bn, _num_constraints| {
-            bn.iter(|| {
-                let _ = get_accumulators::<G1, G2, D>(pcds.as_slice(), vks.as_slice(), &verifier_key_g1, &verifier_key_g2).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(num_constraints),
+            &num_constraints,
+            |bn, _num_constraints| {
+                bn.iter(|| {
+                    let _ = get_accumulators::<G1, G2, D>(
+                        pcds.as_slice(),
+                        vks.as_slice(),
+                        &verifier_key_g1,
+                        &verifier_key_g2,
+                    )
+                    .unwrap();
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -82,10 +86,11 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
     segment_size: usize,
     num_constraints: Vec<usize>,
     num_proofs: usize,
-)
-    where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField> + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField> + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+) where
+    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
+    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -96,24 +101,23 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
-    let (
-        _, verifier_key_g1,
-        _, verifier_key_g2
-    ) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
             &params_g2,
             1,
-            rng
+            rng,
         );
 
-        println!("Proof size: {}", final_darlin_pcd[0].final_darlin_proof.serialized_size());
+        println!(
+            "Proof size: {}",
+            final_darlin_pcd[0].final_darlin_proof.serialized_size()
+        );
         println!("Vk size: {}", index_vk[0].serialized_size());
 
         // Collect PCDs and vks
@@ -121,22 +125,28 @@ fn bench_hard_part_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Diges
         let vks = vec![index_vk[0].clone(); num_proofs];
 
         // Get accumulators from pcds
-        let (accs_g1, accs_g2) = get_accumulators::<G1, G2, D>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2).unwrap();
+        let (accs_g1, accs_g2) =
+            get_accumulators::<G1, G2, D>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2).unwrap();
 
-        group.bench_with_input(BenchmarkId::from_parameter(num_constraints), &num_constraints, |bn, _num_constraints| {
-            bn.iter(|| {
-                // Verify accumulators (hard part)
-                assert!(
-                    DLogItemAccumulator::<G1, D>::check_items(
-                        &verifier_key_g1, &accs_g1, rng
-                    ).unwrap()
-                        &&
-                    DLogItemAccumulator::<G2, D>::check_items(
-                        &verifier_key_g2, &accs_g2, rng
-                    ).unwrap()
-                );
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(num_constraints),
+            &num_constraints,
+            |bn, _num_constraints| {
+                bn.iter(|| {
+                    // Verify accumulators (hard part)
+                    assert!(
+                        DLogItemAccumulator::<G1, D>::check_items(&verifier_key_g1, &accs_g1, rng)
+                            .unwrap()
+                            && DLogItemAccumulator::<G2, D>::check_items(
+                                &verifier_key_g2,
+                                &accs_g2,
+                                rng
+                            )
+                            .unwrap()
+                    );
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -147,10 +157,11 @@ fn bench_batch_verification_complete<G1: AffineCurve, G2: AffineCurve, D: Digest
     segment_size: usize,
     num_constraints: Vec<usize>,
     num_proofs: usize,
-)
-    where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField> + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField> + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+) where
+    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
+    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
+        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -161,41 +172,45 @@ fn bench_batch_verification_complete<G1: AffineCurve, G2: AffineCurve, D: Digest
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
-    let (
-        _, verifier_key_g1,
-        _, verifier_key_g2
-    ) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
             &params_g2,
             1,
-            rng
+            rng,
         );
 
-        println!("Proof size: {}", final_darlin_pcd[0].final_darlin_proof.serialized_size());
+        println!(
+            "Proof size: {}",
+            final_darlin_pcd[0].final_darlin_proof.serialized_size()
+        );
         println!("Vk size: {}", index_vk[0].serialized_size());
 
         // Collect PCDs and vks
         let pcds = vec![GeneralPCD::FinalDarlin(final_darlin_pcd[0].clone()); num_proofs];
         let vks = vec![index_vk[0].clone(); num_proofs];
 
-        group.bench_with_input(BenchmarkId::from_parameter(num_constraints), &num_constraints, |bn, _num_constraints| {
-            bn.iter(|| {
-                assert!(batch_verify_proofs::<G1, G2, D, _>(
-                    pcds.as_slice(),
-                    vks.as_slice(),
-                    &verifier_key_g1,
-                    &verifier_key_g2,
-                    &mut thread_rng()
-                ).unwrap());
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(num_constraints),
+            &num_constraints,
+            |bn, _num_constraints| {
+                bn.iter(|| {
+                    assert!(batch_verify_proofs::<G1, G2, D, _>(
+                        pcds.as_slice(),
+                        vks.as_slice(),
+                        &verifier_key_g1,
+                        &verifier_key_g2,
+                        &mut thread_rng()
+                    )
+                    .unwrap());
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -206,11 +221,7 @@ fn bench_batch_verification_complete<G1: AffineCurve, G2: AffineCurve, D: Digest
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
-
-    use algebra::curves::tweedle::{
-        dee::Affine as TweedleDee,
-        dum::Affine as TweedleDum,
-    };
+    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
@@ -218,10 +229,14 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
     for log_segment_size in 14..=18 {
         bench_batch_verification_complete::<TweedleDee, TweedleDum, Blake2s>(
             c,
-            format!("tweedle-dee, segment_size = 1 << {}, num_constraints", log_segment_size).as_str(),
+            format!(
+                "tweedle-dee, segment_size = 1 << {}, num_constraints",
+                log_segment_size
+            )
+            .as_str(),
             1 << log_segment_size,
             num_constraints.clone(),
-            num_proofs
+            num_proofs,
         );
     }
 }
@@ -232,11 +247,7 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
-
-    use algebra::curves::tweedle::{
-        dee::Affine as TweedleDee,
-        dum::Affine as TweedleDum,
-    };
+    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
@@ -244,10 +255,14 @@ fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
     for log_segment_size in 14..=18 {
         bench_succinct_part_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
             c,
-            format!("succinct_part, tweedle-dee, segment_size = 1 << {}, num_constraints", log_segment_size).as_str(),
+            format!(
+                "succinct_part, tweedle-dee, segment_size = 1 << {}, num_constraints",
+                log_segment_size
+            )
+            .as_str(),
             1 << log_segment_size,
             num_constraints.clone(),
-            num_proofs
+            num_proofs,
         );
     }
 }
@@ -258,11 +273,7 @@ fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
-
-    use algebra::curves::tweedle::{
-        dee::Affine as TweedleDee,
-        dum::Affine as TweedleDum,
-    };
+    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
@@ -270,10 +281,14 @@ fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
     for log_segment_size in 14..=18 {
         bench_hard_part_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
             c,
-            format!("hard_part, tweedle-dee, segment_size = 1 << {}, num_constraints", log_segment_size).as_str(),
+            format!(
+                "hard_part, tweedle-dee, segment_size = 1 << {}, num_constraints",
+                log_segment_size
+            )
+            .as_str(),
             1 << log_segment_size,
             num_constraints.clone(),
-            num_proofs
+            num_proofs,
         );
     }
 }

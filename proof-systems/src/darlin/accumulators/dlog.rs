@@ -1,38 +1,38 @@
 //! Halo's amortization strategy for the hard parts of the dlog/IPA commitment scheme
 //! as separate public aggregation/accumulation scheme according to [BCMS20](https://eprint.iacr.org/2020/499).
-//! The hard part consists of checking that the final committer key G_f (after all the 
+//! The hard part consists of checking that the final committer key G_f (after all the
 //! reduction steps) is the polynomial commitment of the succinct 'reduction polynomial'
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
-use algebra::{SemanticallyValid, Field, AffineCurve, ProjectiveCurve, ToBytes, to_bytes, UniformRand, serialize::*};
+use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
-use poly_commit::{ipa_pc::{
-    InnerProductArgPC,
-    Commitment,
-    VerifierKey, CommitterKey,
-    SuccinctCheckPolynomial,
-}, fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed}, LabeledCommitment, Error, PolynomialCommitment, DomainExtendedCommitment, DomainExtendedPolynomialCommitment};
-use crate::darlin::accumulators::{
-    ItemAccumulator, AccumulationProof,
+use algebra::{
+    serialize::*, to_bytes, AffineCurve, Field, ProjectiveCurve, SemanticallyValid, ToBytes,
+    UniformRand,
 };
-use rayon::prelude::*;
-use rand::RngCore;
 use digest::Digest;
+use poly_commit::{
+    fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed},
+    ipa_pc::{Commitment, CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
+    DomainExtendedCommitment, DomainExtendedPolynomialCommitment, Error, LabeledCommitment,
+    PolynomialCommitment,
+};
+use rand::RngCore;
+use rayon::prelude::*;
 use std::marker::PhantomData;
 
 /// This implements the public aggregator for the IPA/DLOG commitment scheme.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DLogItem<G: AffineCurve> {
     /// Final committer key after the DLOG reduction.
-    pub(crate) g_final:     DomainExtendedCommitment<G, Commitment<G>>,
+    pub(crate) g_final: DomainExtendedCommitment<G, Commitment<G>>,
 
     /// Challenges of the DLOG reduction.
-    pub(crate) xi_s:        SuccinctCheckPolynomial<G::ScalarField>,
+    pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
 }
 
 impl<G: AffineCurve> CanonicalSerialize for DLogItem<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-
         // GFinal will always be 1 segment and without any shift
         CanonicalSerialize::serialize(&self.g_final.items[0], &mut writer)?;
 
@@ -40,18 +40,19 @@ impl<G: AffineCurve> CanonicalSerialize for DLogItem<G> {
     }
 
     fn serialized_size(&self) -> usize {
-
         self.g_final.items[0].serialized_size() + self.xi_s.serialized_size()
     }
 
-    fn serialize_without_metadata<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+    fn serialize_without_metadata<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), SerializationError> {
         CanonicalSerialize::serialize_without_metadata(&self.g_final.items[0], &mut writer)?;
 
         CanonicalSerialize::serialize_without_metadata(&self.xi_s, &mut writer)
     }
 
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-
         // GFinal will always be 1 segment and without any shift
         CanonicalSerialize::serialize_uncompressed(&self.g_final.items[0], &mut writer)?;
 
@@ -59,78 +60,64 @@ impl<G: AffineCurve> CanonicalSerialize for DLogItem<G> {
     }
 
     fn uncompressed_size(&self) -> usize {
-
         self.g_final.items[0].uncompressed_size() + self.xi_s.uncompressed_size()
     }
-
 }
 
 impl<G: AffineCurve> CanonicalDeserialize for DLogItem<G> {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError>
-    {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = DomainExtendedCommitment::new(
-            vec![CanonicalDeserialize::deserialize(&mut reader)?]
-        );
+        let g_final =
+            DomainExtendedCommitment::new(vec![CanonicalDeserialize::deserialize(&mut reader)?]);
 
         let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
 
-        Ok(Self {
-            g_final,
-            xi_s
-        })
+        Ok(Self { g_final, xi_s })
     }
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = DomainExtendedCommitment::new(
-            vec![CanonicalDeserialize::deserialize_unchecked(&mut reader)?]
-        );
+        let g_final =
+            DomainExtendedCommitment::new(vec![CanonicalDeserialize::deserialize_unchecked(
+                &mut reader,
+            )?]);
 
         let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
-        Ok(Self {
-            g_final,
-            xi_s
-        })
+        Ok(Self { g_final, xi_s })
     }
 
     #[inline]
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = DomainExtendedCommitment::new(
-            vec![CanonicalDeserialize::deserialize_uncompressed(&mut reader)?]
-        );
+        let g_final =
+            DomainExtendedCommitment::new(vec![CanonicalDeserialize::deserialize_uncompressed(
+                &mut reader,
+            )?]);
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
-        Ok(Self {
-            g_final,
-            xi_s
-        })
+        Ok(Self { g_final, xi_s })
     }
 
     #[inline]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = DomainExtendedCommitment::new(
-            vec![CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?]
-        );
+        let g_final = DomainExtendedCommitment::new(vec![
+            CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?,
+        ]);
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
-        Ok(Self {
-            g_final,
-            xi_s
-        })
+        Ok(Self { g_final, xi_s })
     }
 }
 
 impl<G: AffineCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
-        self.g_final.is_valid() &&
-            self.g_final.items.len() == 1 &&
-            self.xi_s.0.is_valid()
+        self.g_final.is_valid() && self.g_final.items.len() == 1 && self.xi_s.0.is_valid()
     }
 }
 
@@ -138,7 +125,7 @@ impl<G: AffineCurve> Default for DLogItem<G> {
     fn default() -> Self {
         Self {
             g_final: DomainExtendedCommitment::<G, Commitment<G>>::default(),
-            xi_s: SuccinctCheckPolynomial(vec![])
+            xi_s: SuccinctCheckPolynomial(vec![]),
         }
     }
 }
@@ -148,37 +135,37 @@ impl<G: AffineCurve> ToBytes for DLogItem<G> {
         use std::io::{Error, ErrorKind};
 
         self.serialize_without_metadata(writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format!{"{:?}", e}))
+            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
 pub struct DLogItemAccumulator<G: AffineCurve, D: Digest + 'static> {
     _digest: PhantomData<D>,
-    _group:  PhantomData<G>,
+    _group: PhantomData<G>,
 }
 
 impl<G: AffineCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
-
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
 
-    pub fn get_instance() -> Self
-    {
-        Self { _group: PhantomData, _digest: PhantomData }
+    pub fn get_instance() -> Self {
+        Self {
+            _group: PhantomData,
+            _digest: PhantomData,
+        }
     }
 
     /// This implementation handles the succinct verification of an aggregation proof
-    /// for dlog "items". 
-    /// Recall that in the special situation of dlog items, the accumulated item 
-    /// is part of the proof itself. However, as we use size-optimized proofs, the 
+    /// for dlog "items".
+    /// Recall that in the special situation of dlog items, the accumulated item
+    /// is part of the proof itself. However, as we use size-optimized proofs, the
     /// xi_s are recomputed from the proof and returned by the verifier (if successful).
     pub fn succinct_verify_accumulated_items(
-        vk:                    &VerifierKey<G>,
+        vk: &VerifierKey<G>,
         previous_accumulators: Vec<DLogItem<G>>,
-        proof:                 &AccumulationProof<G>,
-    ) -> Result<Option<DLogItem<G>>, Error>
-    {
+        proof: &AccumulationProof<G>,
+    ) -> Result<Option<DLogItem<G>>, Error> {
         let succinct_time = start_timer!(|| "Succinct verify accumulate");
 
         let poly_time = start_timer!(|| "Compute Bullet Polys evaluations");
@@ -195,7 +182,10 @@ impl<G: AffineCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
             seed_builder.add_bytes(&previous_accumulators)?;
             seed_builder.finalize()
         };
-        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng =
+            <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(
+                fs_rng_init_seed,
+            );
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
@@ -209,35 +199,42 @@ impl<G: AffineCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
                 // Create a LabeledCommitment out of the g_final
                 let labeled_comm = {
-                    let comm = DomainExtendedCommitment::new(
-                        final_comm_key,
-                    );
+                    let comm = DomainExtendedCommitment::new(final_comm_key);
 
-                    LabeledCommitment::new(
-                        format!("check_poly_{}", i),
-                        comm,
-                    )
+                    LabeledCommitment::new(format!("check_poly_{}", i), comm)
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
                 let eval = xi_s.evaluate(z);
 
                 (labeled_comm, eval)
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         // Save the evaluations into a separate vec
-        let values = comms_values.iter().map(|(_, val)| val.clone()).collect::<Vec<_>>();
+        let values = comms_values
+            .iter()
+            .map(|(_, val)| val.clone())
+            .collect::<Vec<_>>();
 
         // Save comms into a separate vector
-        let comms = comms_values.into_iter().map(|(comm, _)| comm).collect::<Vec<_>>();
+        let comms = comms_values
+            .into_iter()
+            .map(|(comm, _)| comm)
+            .collect::<Vec<_>>();
 
         end_timer!(poly_time);
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
 
-        fs_rng.absorb(&values.iter().flat_map(|val| to_bytes!(val).unwrap()).collect::<Vec<_>>());
+        fs_rng.absorb(
+            &values
+                .iter()
+                .flat_map(|val| to_bytes!(val).unwrap())
+                .collect::<Vec<_>>(),
+        );
 
-        // Succinctly verify the dlog opening proof, 
+        // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
         let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::succinct_single_point_multi_poly_verify(
             vk, comms.iter(), z, values, &proof.pc_proof, &mut fs_rng
@@ -252,10 +249,10 @@ impl<G: AffineCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
         if verifier_state.is_some() {
             let verifier_state = verifier_state.unwrap();
-            Ok(Some(DLogItem::<G>{
-                g_final: DomainExtendedCommitment::<G, Commitment<G>>::new(
-                    vec![ Commitment::<G> { comm: verifier_state.final_comm_key.clone() } ]
-                ),
+            Ok(Some(DLogItem::<G> {
+                g_final: DomainExtendedCommitment::<G, Commitment<G>>::new(vec![Commitment::<G> {
+                    comm: verifier_state.final_comm_key.clone(),
+                }]),
                 xi_s: verifier_state.check_poly.clone(),
             }))
         } else {
@@ -275,13 +272,19 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
     fn check_items<R: RngCore>(
         vk: &Self::AccumulatorVerifierKey,
         accumulators: &[Self::Item],
-        rng: &mut R
-    ) -> Result<bool, Error>
-    {
+        rng: &mut R,
+    ) -> Result<bool, Error> {
         let check_time = start_timer!(|| "Check accumulators");
 
-        let final_comm_keys = accumulators.iter().flat_map(|acc| acc.g_final.items.clone()).map(|commitment| commitment.comm).collect::<Vec<_>>();
-        let xi_s_vec = accumulators.iter().map(|acc| acc.xi_s.clone()).collect::<Vec<_>>();
+        let final_comm_keys = accumulators
+            .iter()
+            .flat_map(|acc| acc.g_final.items.clone())
+            .map(|commitment| commitment.comm)
+            .collect::<Vec<_>>();
+        let xi_s_vec = accumulators
+            .iter()
+            .map(|acc| acc.xi_s.clone())
+            .collect::<Vec<_>>();
 
         let batching_time = start_timer!(|| "Combine check polynomials and final comm keys");
 
@@ -303,7 +306,11 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
             .zip(xi_s_vec)
             .map(|(&chal, xi_s)| {
                 Polynomial::from_coefficients_vec(xi_s.compute_scaled_coeffs(-chal))
-            }).reduce(|| Polynomial::zero(), |acc, scaled_poly| &acc + &scaled_poly);
+            })
+            .reduce(
+                || Polynomial::zero(),
+                |acc, scaled_poly| &acc + &scaled_poly,
+            );
         end_timer!(batching_time);
 
         // The dlog "hard part", checking that G_bar = sum_k lambda^k * G_f[k] == Comm(h_bar(X))
@@ -317,10 +324,15 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
             &[final_comm_keys.as_slice(), vk.comm_key.as_slice()].concat(),
-            &[batching_chal_pows.as_slice(), combined_check_poly.coeffs.as_slice()].concat(),
+            &[
+                batching_chal_pows.as_slice(),
+                combined_check_poly.coeffs.as_slice(),
+            ]
+            .concat(),
             None,
             None,
-        ).map_err(|e| Error::IncorrectInputLength(e.to_string()))?;
+        )
+        .map_err(|e| Error::IncorrectInputLength(e.to_string()))?;
         end_timer!(hard_time);
 
         if !ProjectiveCurve::is_zero(&final_val) {
@@ -331,17 +343,16 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
         Ok(true)
     }
 
-    /// Accumulate dlog "items" via the dlog amortization strategy: 
-    /// The given dlog items are challenged at a random query point and compared against 
-    /// the expected value. The item returned is a just the default dlog item to be discarded, 
-    /// the new "aggregated" dlog item is part of the aggregation proof itself. 
-    /// However, we do not explicitly provide the reduction challenges (the xi's) as they can 
+    /// Accumulate dlog "items" via the dlog amortization strategy:
+    /// The given dlog items are challenged at a random query point and compared against
+    /// the expected value. The item returned is a just the default dlog item to be discarded,
+    /// the new "aggregated" dlog item is part of the aggregation proof itself.
+    /// However, we do not explicitly provide the reduction challenges (the xi's) as they can
     /// be reconstructed from the proof.
     fn accumulate_items(
         ck: &Self::AccumulatorProverKey,
         accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::AccumulationProof), Error>
-    {
+    ) -> Result<(Self::Item, Self::AccumulationProof), Error> {
         let accumulate_time = start_timer!(|| "Accumulate");
 
         // Initialize Fiat-Shamir rng
@@ -353,30 +364,31 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
             seed_builder.add_bytes(&accumulators)?;
             seed_builder.finalize()
         };
-        let mut fs_rng = <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng =
+            <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(
+                fs_rng_init_seed,
+            );
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
 
         // Collect xi_s from the accumulators
-        let xi_s = accumulators.into_iter().map(|acc| {
-            acc.xi_s
-        }).collect::<Vec<_>>();
+        let xi_s = accumulators
+            .into_iter()
+            .map(|acc| acc.xi_s)
+            .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
 
-        // Compute multi-poly single-point opening proof for the G_f's, i.e. 
+        // Compute multi-poly single-point opening proof for the G_f's, i.e.
         // the commitments of the item polys.
-        let opening_proof = InnerProductArgPC::<G, D>::open_reduction_polynomials(
-            &ck,
-            xi_s.iter(),
-            z,
-            &mut fs_rng
-        ).map_err(|e| {
-            end_timer!(poly_time);
-            end_timer!(accumulate_time);
-            e
-        })?;
+        let opening_proof =
+            InnerProductArgPC::<G, D>::open_reduction_polynomials(&ck, xi_s.iter(), z, &mut fs_rng)
+                .map_err(|e| {
+                    end_timer!(poly_time);
+                    end_timer!(accumulate_time);
+                    e
+                })?;
 
         end_timer!(poly_time);
 
@@ -387,7 +399,7 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
 
         let mut accumulation_proof = AccumulationProof::<G>::default();
         // We consider the items to be accumulated as common inputs (of
-        // the protocol), and the challenge z can be reconstructed from them, 
+        // the protocol), and the challenge z can be reconstructed from them,
         // hence the accumulation proof consists only of the dlog opening proof.
         accumulation_proof.pc_proof = opening_proof;
 
@@ -396,16 +408,15 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
         Ok((accumulator, accumulation_proof))
     }
 
-    /// Full verification of an aggregation proof for dlog "items". 
+    /// Full verification of an aggregation proof for dlog "items".
     /// Calls the succinct verifier and then does the remaining check of the aggregated item.
     fn verify_accumulated_items<R: RngCore>(
         _current_acc: &Self::Item,
         vk: &Self::AccumulatorVerifierKey,
         previous_accumulators: Vec<Self::Item>,
         proof: &Self::AccumulationProof,
-        rng: &mut R
-    ) -> Result<bool, Error>
-    {
+        rng: &mut R,
+    ) -> Result<bool, Error> {
         let check_acc_time = start_timer!(|| "Verify Accumulation");
 
         // Succinct part: verify the "easy" part of the aggregation proof
@@ -416,17 +427,16 @@ impl<G: AffineCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulato
             })?;
         if new_acc.is_none() {
             end_timer!(check_acc_time);
-            return Ok(false)
+            return Ok(false);
         }
 
         // Verify the aggregated accumulator
         let hard_time = start_timer!(|| "DLOG hard part");
-        let result = Self::check_items::<R>(vk, &vec![new_acc.unwrap()], rng)
-            .map_err(|e| {
-                end_timer!(hard_time);
-                end_timer!(check_acc_time);
-                e
-            })?;
+        let result = Self::check_items::<R>(vk, &vec![new_acc.unwrap()], rng).map_err(|e| {
+            end_timer!(hard_time);
+            end_timer!(check_acc_time);
+            e
+        })?;
         end_timer!(hard_time);
 
         end_timer!(check_acc_time);
@@ -447,27 +457,29 @@ impl<G1: AffineCurve, G2: AffineCurve> ToBytes for DualDLogItem<G1, G2> {
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         use std::io::{Error, ErrorKind};
 
-        self.0.serialize_without_metadata(&mut writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format!{"{:?}", e}))?;
+        self.0
+            .serialize_without_metadata(&mut writer)
+            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))?;
 
-        self.1.serialize_without_metadata(writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format!{"{:?}", e}))
+        self.1
+            .serialize_without_metadata(writer)
+            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
 pub struct DualDLogItemAccumulator<'a, G1: AffineCurve, G2: AffineCurve, D: Digest> {
     _lifetime: PhantomData<&'a ()>,
-    _group_1:  PhantomData<G1>,
-    _group_2:  PhantomData<G2>,
-    _digest:   PhantomData<D>,
+    _group_1: PhantomData<G1>,
+    _group_2: PhantomData<G2>,
+    _digest: PhantomData<D>,
 }
 
 // Straight-forward generalization of the dlog item aggregation to DualDLogItem.
 impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
-    where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>,
-        D: Digest + 'static,
+where
+    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>,
+    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>,
+    D: Digest + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
     type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
@@ -477,17 +489,24 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
     fn check_items<R: RngCore>(
         vk: &Self::AccumulatorVerifierKey,
         accumulators: &[Self::Item],
-        rng: &mut R
-    ) -> Result<bool, Error>
-    {
-        let g1_accumulators = accumulators.iter().flat_map(|acc| { acc.0.clone() }).collect::<Vec<_>>();
-        if !DLogItemAccumulator::<G1, D>::check_items::<R>(&vk.0, g1_accumulators.as_slice(), rng)? {
-            return Ok(false)
+        rng: &mut R,
+    ) -> Result<bool, Error> {
+        let g1_accumulators = accumulators
+            .iter()
+            .flat_map(|acc| acc.0.clone())
+            .collect::<Vec<_>>();
+        if !DLogItemAccumulator::<G1, D>::check_items::<R>(&vk.0, g1_accumulators.as_slice(), rng)?
+        {
+            return Ok(false);
         }
 
-        let g2_accumulators = accumulators.iter().flat_map(|acc| { acc.1.clone() }).collect::<Vec<_>>();
-        if !DLogItemAccumulator::<G2, D>::check_items::<R>(&vk.1, g2_accumulators.as_slice(), rng)? {
-            return Ok(false)
+        let g2_accumulators = accumulators
+            .iter()
+            .flat_map(|acc| acc.1.clone())
+            .collect::<Vec<_>>();
+        if !DLogItemAccumulator::<G2, D>::check_items::<R>(&vk.1, g2_accumulators.as_slice(), rng)?
+        {
+            return Ok(false);
         }
 
         Ok(true)
@@ -496,15 +515,25 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
     fn accumulate_items(
         ck: &Self::AccumulatorProverKey,
         accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::AccumulationProof), Error>
-    {
-        let g1_accumulators = accumulators.iter().flat_map(|acc| { acc.0.clone() }).collect::<Vec<_>>();
-        let (_, g1_acc_proof) = DLogItemAccumulator::<G1, D>::accumulate_items(&ck.0, g1_accumulators)?;
+    ) -> Result<(Self::Item, Self::AccumulationProof), Error> {
+        let g1_accumulators = accumulators
+            .iter()
+            .flat_map(|acc| acc.0.clone())
+            .collect::<Vec<_>>();
+        let (_, g1_acc_proof) =
+            DLogItemAccumulator::<G1, D>::accumulate_items(&ck.0, g1_accumulators)?;
 
-        let g2_accumulators = accumulators.into_iter().flat_map(|acc| { acc.1 }).collect::<Vec<_>>();
-        let (_, g2_acc_proof) = DLogItemAccumulator::<G2, D>::accumulate_items(&ck.1, g2_accumulators)?;
+        let g2_accumulators = accumulators
+            .into_iter()
+            .flat_map(|acc| acc.1)
+            .collect::<Vec<_>>();
+        let (_, g2_acc_proof) =
+            DLogItemAccumulator::<G2, D>::accumulate_items(&ck.1, g2_accumulators)?;
 
-        let accumulator = DualDLogItem::<G1, G2>(vec![DLogItem::<G1>::default()], vec![DLogItem::<G2>::default()]);
+        let accumulator = DualDLogItem::<G1, G2>(
+            vec![DLogItem::<G1>::default()],
+            vec![DLogItem::<G2>::default()],
+        );
         let accumulation_proof = (g1_acc_proof, g2_acc_proof);
 
         Ok((accumulator, accumulation_proof))
@@ -515,17 +544,34 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
         vk: &Self::AccumulatorVerifierKey,
         previous_accumulators: Vec<Self::Item>,
         proof: &Self::AccumulationProof,
-        rng: &mut R
-    ) -> Result<bool, Error>
-    {
-        let g1_accumulators = previous_accumulators.iter().flat_map(|acc| { acc.0.clone() }).collect();
-        if !DLogItemAccumulator::<G1, D>::verify_accumulated_items::<R>(&DLogItem::<G1>::default(), &vk.0, g1_accumulators, &proof.0, rng)? {
-            return Ok(false)
+        rng: &mut R,
+    ) -> Result<bool, Error> {
+        let g1_accumulators = previous_accumulators
+            .iter()
+            .flat_map(|acc| acc.0.clone())
+            .collect();
+        if !DLogItemAccumulator::<G1, D>::verify_accumulated_items::<R>(
+            &DLogItem::<G1>::default(),
+            &vk.0,
+            g1_accumulators,
+            &proof.0,
+            rng,
+        )? {
+            return Ok(false);
         }
 
-        let g2_accumulators = previous_accumulators.into_iter().flat_map(|acc| { acc.1 }).collect();
-        if !DLogItemAccumulator::<G2, D>::verify_accumulated_items::<R>(&DLogItem::<G2>::default(), &vk.1, g2_accumulators, &proof.1, rng)? {
-            return Ok(false)
+        let g2_accumulators = previous_accumulators
+            .into_iter()
+            .flat_map(|acc| acc.1)
+            .collect();
+        if !DLogItemAccumulator::<G2, D>::verify_accumulated_items::<R>(
+            &DLogItem::<G2>::default(),
+            &vk.1,
+            g2_accumulators,
+            &proof.1,
+            rng,
+        )? {
+            return Ok(false);
         }
 
         Ok(true)
@@ -535,21 +581,25 @@ impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
 #[cfg(test)]
 mod test {
     use super::*;
-    use poly_commit::{QuerySet, Evaluations, LabeledPolynomial, ipa_pc::{
-        Proof, Parameters,
-    }, PCParameters, PolynomialCommitment, DomainExtendedMultiPointProof};
+    use poly_commit::{
+        ipa_pc::{Parameters, Proof},
+        DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial, PCParameters,
+        PolynomialCommitment, QuerySet,
+    };
 
+    use blake2::Blake2s;
+    use digest::Digest;
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
-    use digest::Digest;
-    use blake2::Blake2s;
 
-    fn get_test_fs_rng<G: AffineCurve, D: Digest>() -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle
-    {
+    fn get_test_fs_rng<G: AffineCurve, D: Digest>(
+    ) -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle {
         let mut seed_builder = <<DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize();
-        <DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed)
+        <DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<
+            G,
+        >>::RandomOracle::from_seed(fs_rng_seed)
     }
 
     #[derive(Copy, Clone, Default)]
@@ -559,54 +609,58 @@ mod test {
         num_polynomials: usize,
         hiding: bool,
         max_num_queries: usize,
-        segmented: bool
+        segmented: bool,
     }
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
     struct VerifierData<'a, G: AffineCurve> {
-        vk:                      VerifierKey<G>,
-        comms:                   Vec<LabeledCommitment<G, DomainExtendedCommitment<G, Commitment<G>>>>,
-        query_set:               QuerySet<'a, G::ScalarField>,
-        values:                  Evaluations<'a, G::ScalarField>,
-        proof:                   DomainExtendedMultiPointProof<G, Commitment<G>, Proof<G>>,
-        polynomials:             Vec<LabeledPolynomial<G::ScalarField>>,
-        num_polynomials:         usize,
+        vk: VerifierKey<G>,
+        comms: Vec<LabeledCommitment<G, DomainExtendedCommitment<G, Commitment<G>>>>,
+        query_set: QuerySet<'a, G::ScalarField>,
+        values: Evaluations<'a, G::ScalarField>,
+        proof: DomainExtendedMultiPointProof<G, Commitment<G>, Proof<G>>,
+        polynomials: Vec<LabeledPolynomial<G::ScalarField>>,
+        num_polynomials: usize,
         num_points_in_query_set: usize,
-        _m:                      PhantomData<&'a G::ScalarField>, // To avoid compilation issue 'a
+        _m: PhantomData<&'a G::ScalarField>, // To avoid compilation issue 'a
     }
 
-    // Samples a random instance of a dlog multi-point multi-poly opening proof according to the 
-    // specifications in the TestInfo. 
+    // Samples a random instance of a dlog multi-point multi-poly opening proof according to the
+    // specifications in the TestInfo.
     fn get_data_for_verifier<'a, G, D>(
         info: TestInfo,
-        pp: Option<Parameters<G>>
+        pp: Option<Parameters<G>>,
     ) -> Result<VerifierData<'a, G>, Error>
-        where
-            G: AffineCurve,
-            D: Digest
+    where
+        G: AffineCurve,
+        D: Digest,
     {
         let TestInfo {
-            max_degree, // maximum degree supported by the dlog commitment scheme
+            max_degree,       // maximum degree supported by the dlog commitment scheme
             supported_degree, // the supported maximum degree after trimming
-            num_polynomials, // number of random polynomials involved in the opening proof
-            max_num_queries, // size of the random query set for the opening proof
-            segmented, // use segmentation or not
-            hiding, // hiding or not
+            num_polynomials,  // number of random polynomials involved in the opening proof
+            max_num_queries,  // size of the random query set for the opening proof
+            segmented,        // use segmentation or not
+            hiding,           // hiding or not
             ..
         } = info;
 
         let rng = &mut thread_rng();
         let max_degree =
             max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng));
-        let pp = if pp.is_some() { pp.unwrap() } else { DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)? };
+        let pp = if pp.is_some() {
+            pp.unwrap()
+        } else {
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?
+        };
 
         test_canonical_serialize_deserialize(true, &pp);
 
         let supported_degree = match supported_degree {
             Some(0) => 0,
             Some(d) => d,
-            None => rand::distributions::Uniform::from(1..=max_degree).sample(rng)
+            None => rand::distributions::Uniform::from(1..=max_degree).sample(rng),
         };
         assert!(
             max_degree >= supported_degree,
@@ -641,23 +695,22 @@ mod test {
             }
             let poly = Polynomial::rand(degree, rng);
 
-            polynomials.push(LabeledPolynomial::new(
-                label,
-                poly,
-                hiding,
-            ))
+            polynomials.push(LabeledPolynomial::new(label, poly, hiding))
         }
         println!("supported degree: {:?}", supported_degree);
         println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-        let (ck, vk) = pp.trim(
-            supported_degree,
-        )?;
+        let (ck, vk) = pp.trim(supported_degree)?;
         println!("Trimmed");
 
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
 
-        let (comms, rands) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::commit_vec(&ck, &polynomials, Some(rng))?;
+        let (comms, rands) =
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::commit_vec(
+                &ck,
+                &polynomials,
+                Some(rng),
+            )?;
 
         // Construct "symmetric" query set: every polynomial is evaluated at every
         // point.
@@ -703,9 +756,9 @@ mod test {
     // We sample random instances of multi-point multi-poly dlog opening proofs,
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
     fn accumulation_test<G, D>() -> Result<(), Error>
-        where
-            G: AffineCurve,
-            D: Digest,
+    where
+        G: AffineCurve,
+        D: Digest,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -718,7 +771,8 @@ mod test {
             ..Default::default()
         };
 
-        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)?;
+        let pp =
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -728,7 +782,6 @@ mod test {
         test_canonical_serialize_deserialize(true, &vk);
 
         for num_proofs in 1..20 {
-
             let mut verifier_data_vec = Vec::with_capacity(num_proofs);
 
             // Generate all proofs and the data needed by the verifier to verify them
@@ -736,7 +789,8 @@ mod test {
                 // Modify requirements at random
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
-                verifier_data_vec.push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
+                verifier_data_vec
+                    .push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
             }
 
             let mut comms = Vec::new();
@@ -758,7 +812,10 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::batch_succinct_verify(
+            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<
+                G,
+                InnerProductArgPC<G, D>,
+            >::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),
@@ -771,33 +828,35 @@ mod test {
                 .into_iter()
                 .zip(g_fins)
                 .map(|(xi_s, g_final)| {
-                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final]},  xi_s };
+                    let acc = DLogItem::<G> {
+                        g_final: Commitment::<G> {
+                            comm: vec![g_final],
+                        },
+                        xi_s,
+                    };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
 
             assert!(accumulators.is_valid());
 
             // provide aggregation proof of the extracted dlog items
-            let (_, proof) = DLogItemAccumulator::<G, D>::accumulate_items(
-                &ck,
-                accumulators.clone(),
-            )?;
+            let (_, proof) =
+                DLogItemAccumulator::<G, D>::accumulate_items(&ck, accumulators.clone())?;
 
             test_canonical_serialize_deserialize(true, &proof);
 
             // Verifier side
             let dummy = DLogItem::<G>::default();
-            assert!(
-                DLogItemAccumulator::<G, D>::verify_accumulated_items(
-                    &dummy,
-                    &vk,
-                    // Actually the verifier should recompute the accumulators with the succinct verification
-                    accumulators,
-                    &proof,
-                    rng
-                )?
-            );
+            assert!(DLogItemAccumulator::<G, D>::verify_accumulated_items(
+                &dummy,
+                &vk,
+                // Actually the verifier should recompute the accumulators with the succinct verification
+                accumulators,
+                &proof,
+                rng
+            )?);
         }
         Ok(())
     }
@@ -805,9 +864,9 @@ mod test {
     // We sample random instances of multi-point multi-poly dlog opening proofs,
     // and batch verify their dlog items.
     fn batch_verification_test<G, D>() -> Result<(), Error>
-        where
-            G: AffineCurve,
-            D: Digest,
+    where
+        G: AffineCurve,
+        D: Digest,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -820,14 +879,14 @@ mod test {
             ..Default::default()
         };
 
-        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::setup(max_degree)?;
+        let pp =
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?;
         let (_, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
         test_canonical_serialize_deserialize(true, &vk);
 
         for num_proofs in 1..20 {
-
             let mut verifier_data_vec = Vec::with_capacity(num_proofs);
 
             // Generate all proofs and the data needed by the verifier to verify them
@@ -835,7 +894,8 @@ mod test {
                 // Modify requirements at random
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
-                verifier_data_vec.push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
+                verifier_data_vec
+                    .push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
             }
 
             let mut comms = Vec::new();
@@ -857,7 +917,10 @@ mod test {
             });
 
             // extract the xi's and G_fin's from the proof
-            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::batch_succinct_verify(
+            let (xi_s_vec, g_fins) = DomainExtendedPolynomialCommitment::<
+                G,
+                InnerProductArgPC<G, D>,
+            >::batch_succinct_verify(
                 &vk,
                 comms.clone(),
                 query_sets.clone(),
@@ -870,29 +933,30 @@ mod test {
                 .into_iter()
                 .zip(g_fins)
                 .map(|(xi_s, g_final)| {
-                    let acc = DLogItem::<G> { g_final: Commitment::<G> {comm: vec![g_final]},  xi_s };
+                    let acc = DLogItem::<G> {
+                        g_final: Commitment::<G> {
+                            comm: vec![g_final],
+                        },
+                        xi_s,
+                    };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
 
             assert!(accumulators.is_valid());
 
             // batch verify the extracted dlog items
-            assert!(
-                DLogItemAccumulator::<G, D>::check_items(
-                    &vk,
-                    &accumulators,
-                    rng
-                )?
-            );
+            assert!(DLogItemAccumulator::<G, D>::check_items(
+                &vk,
+                &accumulators,
+                rng
+            )?);
         }
         Ok(())
     }
 
-    use algebra::curves::tweedle::{
-        dee::Affine as TweedleDee,
-        dum::Affine as TweedleDum,
-    };
+    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
 
     #[test]
     fn test_tweedle_accumulate_verify() {

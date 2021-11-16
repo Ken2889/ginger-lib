@@ -1,18 +1,17 @@
-//! A R1CS density one test circuit of specified number of constraints, which processes 
+//! A R1CS density one test circuit of specified number of constraints, which processes
 //! two public inputs satisfying a simple quadratic relation.
-use algebra::{Field, AffineCurve, UniformRand};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use poly_commit::ipa_pc::{InnerProductArgPC, CommitterKey, Parameters};
-use marlin::{
-    Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey,
-};
 use crate::darlin::pcd::{
-    PCDParameters, simple_marlin::{SimpleMarlinPCD, MarlinProof}
+    simple_marlin::{MarlinProof, SimpleMarlinPCD},
+    PCDParameters,
 };
-use rand::{ Rng, RngCore };
+use algebra::{AffineCurve, Field, UniformRand};
 use digest::Digest;
-use std::ops::MulAssign;
+use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
+use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
 use poly_commit::DomainExtendedPolynomialCommitment;
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use rand::{Rng, RngCore};
+use std::ops::MulAssign;
 
 /// A simple test circuit with two field elements c,d as inputs, enforced to satisfy
 ///     (c,d) = a*(b,b^2),
@@ -65,7 +64,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
             )?;
         }
 
-        for i in 0..(self.num_constraints - 1){
+        for i in 0..(self.num_constraints - 1) {
             cs.enforce(
                 || format!("constraint {}", i),
                 |lc| lc + a,
@@ -92,8 +91,7 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     zk: bool,
     rng: &mut R,
-) -> SimpleMarlinPCD<'a, G, D>
-{
+) -> SimpleMarlinPCD<'a, G, D> {
     let a = G::ScalarField::rand(rng);
     let b = G::ScalarField::rand(rng);
     let mut c = a;
@@ -108,19 +106,21 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let proof = Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::prove(
-        marlin_pk,
-        pc_ck,
-        circ,
-        zk,
-        if zk { Some(rng) } else { None }
-    ).unwrap();
+    let proof =
+        Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::prove(
+            marlin_pk,
+            pc_ck,
+            circ,
+            zk,
+            if zk { Some(rng) } else { None },
+        )
+        .unwrap();
 
     SimpleMarlinPCD::<'a, G, D>::new(MarlinProof::<G, D>(proof), vec![c, d])
 }
 
 /// Generates `num_proofs` random instances of SimpleMarlinPCDs for `Circuit` with
-/// `num_constraints`, using the given `segment_size` for the dlog commitment scheme. 
+/// `num_constraints`, using the given `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
 pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
@@ -130,9 +130,8 @@ pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
     rng: &mut R,
 ) -> (
     Vec<SimpleMarlinPCD<'a, G, D>>,
-    Vec<MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>>
-)
-{
+    Vec<MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>>,
+) {
     // Trim committer key and verifier key
     let config = PCDParameters { segment_size };
     let (committer_key, _) = config.universal_setup::<_, D>(params).unwrap();
@@ -145,18 +144,19 @@ pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
         num_variables: num_constraints,
     };
 
-    let (index_pk, index_vk) = Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::index(
-        &committer_key, circ.clone()
-    ).unwrap();
+    let (index_pk, index_vk) = Marlin::<
+        G,
+        DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>,
+        D,
+    >::index(&committer_key, circ.clone())
+    .unwrap();
 
     // Generate Marlin PCDs
-    let simple_marlin_pcd = generate_test_pcd::<G, D, R>(
-        &committer_key,
-        &index_pk,
-        num_constraints,
-        rng.gen(),
-        rng,
-    );
+    let simple_marlin_pcd =
+        generate_test_pcd::<G, D, R>(&committer_key, &index_pk, num_constraints, rng.gen(), rng);
 
-    (vec![simple_marlin_pcd; num_proofs], vec![index_vk; num_proofs])
+    (
+        vec![simple_marlin_pcd; num_proofs],
+        vec![index_vk; num_proofs],
+    )
 }

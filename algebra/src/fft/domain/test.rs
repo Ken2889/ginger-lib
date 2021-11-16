@@ -1,9 +1,9 @@
-use crate::{PrimeField, FpParameters};
-use crate::{domain::*, multicore::*};
 use crate::fields::tweedle::Fr;
+use crate::{domain::*, multicore::*};
+use crate::{FpParameters, PrimeField};
 use rand;
-use std::cmp::min;
 use rand::Rng;
+use std::cmp::min;
 
 // Test multiplying various (low degree) polynomials together and
 // comparing with naive evaluations.
@@ -60,11 +60,23 @@ fn fft_consistency() {
                 let domain = get_best_evaluation_domain::<Fr>(v1.len()).unwrap();
 
                 for log_cpus in log_d..min(log_d + 1, 3) {
-                    if log_d <Fr::Params::TWO_ADICITY{
-                        BasicRadix2Domain::parallel_fft(&mut v1, &worker, domain.group_gen(), log_d, log_cpus);
+                    if log_d < Fr::Params::TWO_ADICITY {
+                        BasicRadix2Domain::parallel_fft(
+                            &mut v1,
+                            &worker,
+                            domain.group_gen(),
+                            log_d,
+                            log_cpus,
+                        );
                         BasicRadix2Domain::serial_fft(&mut v2, domain.group_gen(), log_d);
                     } else {
-                        MixedRadix2Domain::mixed_parallel_fft(&mut v1, &worker, domain.group_gen(), log_d, log_cpus);
+                        MixedRadix2Domain::mixed_parallel_fft(
+                            &mut v1,
+                            &worker,
+                            domain.group_gen(),
+                            log_d,
+                            log_cpus,
+                        );
                         MixedRadix2Domain::mixed_serial_fft(&mut v2, domain.group_gen(), log_d);
                     }
                     assert_eq!(v1, v2);

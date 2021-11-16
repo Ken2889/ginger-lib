@@ -1,4 +1,7 @@
-use crate::{biginteger::BigInteger, fields::{Field, PrimeField, SquareRootField}};
+use crate::{
+    biginteger::BigInteger,
+    fields::{Field, PrimeField, SquareRootField},
+};
 
 pub mod short_weierstrass_jacobian;
 pub mod short_weierstrass_projective;
