@@ -399,10 +399,12 @@ where
                     c_bits.as_slice().iter().rev(),
                 )?
                 .negate(cs.ns(|| "- (c * pk + shift)"))?;
-            GG::mul_bits_fixed_base(&g.get_constant(),
-                                    cs.ns(|| "(s * G + shift)"),
-                                    &shift,
-                                    s_bits.as_slice())?
+            GG::mul_bits_fixed_base(
+                &g.get_constant(),
+                cs.ns(|| "(s * G + shift)"),
+                &shift,
+                s_bits.as_slice(),
+            )?
             // If add is incomplete, and s * G - c * pk = 0, the circuit of the add won't be satisfiable
             .add(cs.ns(|| "(s * G) - (c * pk)"), &neg_c_times_pk)?
         };
@@ -418,7 +420,11 @@ where
                 )?
                 .negate(cs.ns(|| "- (c * gamma + shift)"))?;
             message_on_curve
-                .mul_bits(cs.ns(|| "(s * mh + shift)"), &shift, s_bits.as_slice().iter())?
+                .mul_bits(
+                    cs.ns(|| "(s * mh + shift)"),
+                    &shift,
+                    s_bits.as_slice().iter(),
+                )?
                 // If add is incomplete, and s * mh - c * gamma = 0, the circuit of the add won't be satisfiable
                 .add(cs.ns(|| "(s * mh) - (c * gamma"), &neg_c_times_gamma)?
         };

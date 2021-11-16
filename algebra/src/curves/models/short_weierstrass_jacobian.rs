@@ -572,7 +572,8 @@ impl<P: Parameters> ProjectiveCurve for GroupProjective<P> {
         // First pass: compute [a, ab, abc, ...]
         let mut prod = Vec::with_capacity(v.len());
         let mut tmp = P::BaseField::one();
-        for g in v.iter_mut()
+        for g in v
+            .iter_mut()
             // Ignore normalized elements
             .filter(|g| !g.is_normalized())
         {
@@ -584,13 +585,19 @@ impl<P: Parameters> ProjectiveCurve for GroupProjective<P> {
         tmp = tmp.inverse().unwrap(); // Guaranteed to be nonzero.
 
         // Second pass: iterate backwards to compute inverses
-        for (g, s) in v.iter_mut()
+        for (g, s) in v
+            .iter_mut()
             // Backwards
             .rev()
             // Ignore normalized elements
             .filter(|g| !g.is_normalized())
             // Backwards, skip last element, fill in one for last term.
-            .zip(prod.into_iter().rev().skip(1).chain(Some(P::BaseField::one())))
+            .zip(
+                prod.into_iter()
+                    .rev()
+                    .skip(1)
+                    .chain(Some(P::BaseField::one())),
+            )
         {
             // tmp := tmp * g.z; g.z := tmp * s = 1/z
             let newtmp = tmp * &g.z;

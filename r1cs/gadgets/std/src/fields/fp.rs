@@ -534,7 +534,8 @@ impl<F: PrimeField> ToBytesGadget<F> for FpGadget<F> {
         let bytes = self.to_bytes(&mut cs)?;
         Boolean::enforce_in_field::<_, _, F>(
             &mut cs,
-            &bytes.iter()
+            &bytes
+                .iter()
                 .flat_map(|byte_gadget| byte_gadget.into_bits_le())
                 // This reverse maps the bits into big-endian form, as required by `enforce_in_field`.
                 .rev()

@@ -473,10 +473,10 @@ where
             &g.get_constant(),
             cs.ns(|| "(s * G + shift)"),
             &shift,
-            s_bits.as_slice()
-            )?
-            // If add is incomplete, and s * G - e * pk = 0, the circuit of the add won't be satisfiable
-            .add(cs.ns(|| "s * G - e * pk "), &neg_e_times_pk)?;
+            s_bits.as_slice(),
+        )?
+        // If add is incomplete, and s * G - e * pk = 0, the circuit of the add won't be satisfiable
+        .add(cs.ns(|| "s * G - e * pk "), &neg_e_times_pk)?;
 
         let r_prime_coords = r_prime.to_field_gadget_elements(cs.ns(|| "r_prime to fes"))?;
 
