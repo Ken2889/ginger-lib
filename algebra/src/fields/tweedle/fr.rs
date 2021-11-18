@@ -11,7 +11,11 @@ impl Fp256Parameters for FrParameters {}
 impl FpParameters for FrParameters {
     type BigInt = BigInteger;
 
-    // 28948022309329048855892746252171976963322203655955319056773317069363642105857
+    const C: &'static[u64] = [0xa14064e200000001, 0x38aa1276c3f59b9];
+
+    const C_sign = false;
+
+    // MODULUS = 2^254 + C
     const MODULUS: BigInteger = BigInteger([
         0xa14064e200000001,
         0x38aa1276c3f59b9,

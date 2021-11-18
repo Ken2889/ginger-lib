@@ -20,6 +20,57 @@ macro_rules! impl_montgomery_reduction {
     };
 }
 
+macro_rules! impl_mersenne_reduction {
+    ($limbs:expr) => {
+        #[inline]
+        #[unroll_for_loops]
+        fn mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
+            while x >= P::MODULUS{
+                x_bits = x.to_bits();
+                x_l = x_bits[0..P::MODULUS_BITS].into_u64_seq(); 
+                x_h = x_bits[P::MODULUS_BITS..].into_u64_seq();
+                x_h_times_c = x_h * P::C; // It should be a product of u64 seq
+                x = x_h_times_c + x_l;
+            }
+            x
+        }
+    };
+}
+
+macro_rules! impl_anti_mersenne_reduction {
+    ($limbs:expr) => {
+        #[inline]
+        #[unroll_for_loops]
+        fn anti_mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
+            sign = false;
+            while x >= P::MODULUS{
+                x_bits = x.to_bits();
+                x_l = x_bits[0..P::MODULUS_BITS].into_u64_seq(); 
+                x_h = x_bits[P::MODULUS_BITS..].into_u64_seq();
+                x_h_times_c = x_h * P::C; // It should be a product of u64 seq
+                if x_l >= x_h_times_c{
+                    if sign {
+                        P::MODULUS - x_l + x_h_times_c
+                    }
+                    else {
+                        x_l - x_h_times_c
+                    }
+                }
+                else {
+                    sign = sign ^^ true;
+                    x = x_h_times_c - x_l;
+                }
+            }
+            if sign {
+                x
+            }
+            else {
+                P::MODULUS - x
+            }
+        }
+    };
+}
+
 /// This modular multiplication algorithm uses Montgomery
 /// reduction for efficient implementation. It also additionally
 /// uses the "no-carry optimization" outlined
@@ -67,7 +118,7 @@ macro_rules! impl_field_mul_assign {
                 }
                 (self.0).0 = r;
                 self.reduce();
-            // Alternative implementation
+            // Alternative implementation 
             } else {
                 let mut r = [0u64; $limbs * 2];
 
@@ -79,7 +130,15 @@ macro_rules! impl_field_mul_assign {
                     }
                     r[$limbs + i] = carry;
                 }
-                self.montgomery_reduction(&mut r)
+                if P::C.is_some() {
+                    if P::C_SIGN {
+                        self.mersenne_reduction(&mut r)
+                    } else {
+                        self.anti_mersenne_reduction(&mut r)
+                    }
+                } else{
+                    self.montgomery_reduction(&mut r)
+                }
             }
         }
     };
