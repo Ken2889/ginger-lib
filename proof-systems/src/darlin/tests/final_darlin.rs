@@ -197,6 +197,10 @@ where
         let c = cs.alloc_input(|| "c", || self.c.ok_or(SynthesisError::AssignmentMissing))?;
         let d = cs.alloc_input(|| "d", || self.d.ok_or(SynthesisError::AssignmentMissing))?;
 
+        // TODO: This calculation is wrong, as enforce_equal allocates new variables.
+        //       However, fixing this may cause unit tests to crash since num_constraints
+        //       and num_variables are generated at random and an underflow may happen.
+        //       Fix both.
         for i in 0..(self.num_variables - 7 - (4 * deferred_len)) {
             let _ = cs.alloc(
                 || format!("var {}", i),
@@ -382,7 +386,7 @@ where
 
     // Generate Final Darlin PCDs
     let final_darlin_pcd =
-        generate_test_pcd::<G1, G2, D, R>(&committer_key_g1, &index_pk, info, true, rng);
+        generate_test_pcd::<G1, G2, D, R>(&committer_key_g1, &index_pk, info, rng.gen(), rng);
 
     (
         vec![final_darlin_pcd; num_proofs],

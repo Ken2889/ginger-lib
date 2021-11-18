@@ -1,9 +1,18 @@
+//! A module for representing 32 bit unsigned integers over a prime constraint field.
+//! Besides elementary gadgets (such as toBits, toBytes, etc.) implements the bitwise
+//! operations
+//!     - rotl, rotr, shr, xor,
+//! as well as
+//!     - add_many, which performs the addition modulo 2^32 of a slice of operands,
+//!     the result of which does exceed in length the capacity bound of the constraint
+//!     field.
 use algebra::{Field, FpParameters, PrimeField};
 
 use r1cs_core::{ConstraintSystem, LinearCombination, SynthesisError};
 
 use crate::{
     boolean::{AllocatedBit, Boolean},
+    eq::MultiEq,
     prelude::*,
     Assignment,
 };
@@ -13,8 +22,8 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct UInt32 {
     // Least significant bit_gadget first
-    bits: Vec<Boolean>,
-    value: Option<u32>,
+    pub bits: Vec<Boolean>,
+    pub value: Option<u32>,
 }
 
 impl UInt32 {
@@ -112,7 +121,55 @@ impl UInt32 {
             }
         }
 
-        Self { value, bits }
+        Self { bits, value }
+    }
+
+    pub fn into_bits_be(self) -> Vec<Boolean> {
+        let mut ret = self.bits;
+        ret.reverse();
+        ret
+    }
+
+    pub fn from_bits_be(bits: &[Boolean]) -> Self {
+        assert_eq!(bits.len(), 32);
+
+        let mut value = Some(0u32);
+        for b in bits {
+            value.as_mut().map(|v| *v <<= 1);
+
+            match b.get_value() {
+                Some(true) => {
+                    value.as_mut().map(|v| *v |= 1);
+                }
+                Some(false) => {}
+                None => {
+                    value = None;
+                }
+            }
+        }
+
+        UInt32 {
+            value,
+            bits: bits.iter().rev().cloned().collect(),
+        }
+    }
+
+    pub fn rotl(&self, by: usize) -> Self {
+        let by = by % 32;
+
+        let new_bits = self
+            .bits
+            .iter()
+            .skip(32 - by)
+            .chain(self.bits.iter())
+            .take(32)
+            .cloned()
+            .collect();
+
+        UInt32 {
+            bits: new_bits,
+            value: self.value.map(|v| v.rotate_left(by as u32)),
+        }
     }
 
     pub fn rotr(&self, by: usize) -> Self {
@@ -130,6 +187,26 @@ impl UInt32 {
         UInt32 {
             bits: new_bits,
             value: self.value.map(|v| v.rotate_right(by as u32)),
+        }
+    }
+
+    pub fn shr(&self, by: usize) -> Self {
+        let by = by % 32;
+
+        let fill = Boolean::constant(false);
+
+        let new_bits = self
+            .bits
+            .iter() // The bits are least significant first
+            .skip(by) // Skip the bits that will be lost during the shift
+            .chain(Some(&fill).into_iter().cycle()) // Rest will be zeros
+            .take(32) // Only 32 bits needed!
+            .cloned()
+            .collect();
+
+        UInt32 {
+            bits: new_bits,
+            value: self.value.map(|v| v >> by as u32),
         }
     }
 
@@ -158,31 +235,30 @@ impl UInt32 {
         })
     }
 
-    /// Perform modular addition of several `UInt32` objects.
-    pub fn addmany<ConstraintF, CS>(mut cs: CS, operands: &[Self]) -> Result<Self, SynthesisError>
+    /// Perform addition modulo 2^32 of several `UInt32` objects.
+    pub fn addmany<ConstraintF, CS, M>(mut cs: M, operands: &[Self]) -> Result<Self, SynthesisError>
     where
         ConstraintF: PrimeField,
         CS: ConstraintSystem<ConstraintF>,
+        M: ConstraintSystem<ConstraintF, Root = MultiEq<ConstraintF, CS>>,
     {
         // Make some arbitrary bounds for ourselves to avoid overflows
         // in the scalar field
+
         assert!(ConstraintF::Params::MODULUS_BITS >= 64);
-
-        assert!(operands.len() >= 1);
+        assert!(operands.len() >= 2); // Weird trivial cases that should never happen
+                                      // TODO: Check this bound. Is it really needed ?
         assert!(operands.len() <= 10);
-
-        if operands.len() == 1 {
-            return Ok(operands[0].clone());
-        }
 
         // Compute the maximum value of the sum so we allocate enough bits for
         // the result
-        let mut max_value = (operands.len() as u64) * u64::from(u32::max_value());
+        let mut max_value = (operands.len() as u64) * (u64::from(u32::max_value()));
 
         // Keep track of the resulting value
         let mut result_value = Some(0u64);
 
-        // This is a linear combination that we will enforce to be "zero"
+        // This is a linear combination that we will enforce to equal the
+        // output
         let mut lc = LinearCombination::zero();
 
         let mut all_constants = true;
@@ -201,37 +277,24 @@ impl UInt32 {
                 }
             }
 
-            // Iterate over each bit_gadget of the operand and add the operand to
-            // the linear combination
+            // Cumulate the terms that correspond to the bits in op to the
+            // overall LC
             let mut coeff = ConstraintF::one();
             for bit in &op.bits {
-                match *bit {
-                    Boolean::Is(ref bit) => {
-                        all_constants = false;
+                // adds 2^i * bit[i] to the lc
+                lc = lc + &bit.lc(CS::one(), coeff);
 
-                        // Add coeff * bit_gadget
-                        lc = lc + (coeff, bit.get_variable());
-                    }
-                    Boolean::Not(ref bit) => {
-                        all_constants = false;
+                // all_constants = all_constants & bit.is_constant()
+                all_constants &= bit.is_constant();
 
-                        // Add coeff * (1 - bit_gadget) = coeff * ONE - coeff * bit_gadget
-                        lc = lc + (coeff, CS::one()) - (coeff, bit.get_variable());
-                    }
-                    Boolean::Constant(bit) => {
-                        if bit {
-                            lc = lc + (coeff, CS::one());
-                        }
-                    }
-                }
-
-                coeff.double_in_place();
+                coeff = coeff.double();
             }
         }
 
         // The value of the actual result is modulo 2^32
         let modular_value = result_value.map(|v| v as u32);
 
+        // In case that all operants are constant UInt32 it is enough to return a constant.
         if all_constants && modular_value.is_some() {
             // We can just return a constant, rather than
             // unpacking the result into allocated bits.
@@ -242,28 +305,32 @@ impl UInt32 {
         // Storage area for the resulting bits
         let mut result_bits = vec![];
 
-        // Allocate each bit_gadget of the result
+        // Linear combination representing the output,
+        // for comparison with the sum of the operands
+        let mut result_lc = LinearCombination::zero();
+
+        // Allocate each bit of the result from result_val
         let mut coeff = ConstraintF::one();
         let mut i = 0;
         while max_value != 0 {
-            // Allocate the bit_gadget
-            let b = AllocatedBit::alloc(cs.ns(|| format!("result bit_gadget {}", i)), || {
+            // Allocate the bit using result_value
+            let b = AllocatedBit::alloc(cs.ns(|| format!("result bit {}", i)), || {
                 result_value.map(|v| (v >> i) & 1 == 1).get()
             })?;
 
-            // Subtract this bit_gadget from the linear combination to ensure the sums
-            // balance out
-            lc = lc - (coeff, b.get_variable());
+            // Add this bit to the result combination
+            result_lc += (coeff, b.get_variable());
 
             result_bits.push(b.into());
 
             max_value >>= 1;
             i += 1;
-            coeff.double_in_place();
+            coeff = coeff.double();
         }
 
-        // Enforce that the linear combination equals zero
-        cs.enforce(|| "modular addition", |lc| lc, |lc| lc, |_| lc);
+        // Enforce equality between the sum and result by aggregating it
+        // in the MultiEq
+        cs.get_root().enforce_equal(i, &lc, &result_lc);
 
         // Discard carry bits that we don't care about
         result_bits.truncate(32);
@@ -317,7 +384,7 @@ impl<ConstraintF: Field> ToBytesGadget<ConstraintF> for UInt32 {
 
 impl PartialEq for UInt32 {
     fn eq(&self, other: &Self) -> bool {
-        !self.value.is_none() && !other.value.is_none() && self.value == other.value
+        self.value.is_some() && other.value.is_some() && self.value == other.value
     }
 }
 
@@ -356,7 +423,9 @@ impl<ConstraintF: Field> EqGadget<ConstraintF> for UInt32 {
 #[cfg(test)]
 mod test {
     use super::UInt32;
-    use crate::{bits::boolean::Boolean, test_constraint_system::TestConstraintSystem};
+    use crate::{
+        bits::boolean::Boolean, eq::MultiEq, test_constraint_system::TestConstraintSystem,
+    };
     use algebra::fields::{bls12_381::Fr, Field};
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, SeedableRng};
@@ -424,7 +493,7 @@ mod test {
                         assert!(b.get_value().unwrap() == (expected & 1 == 1));
                     }
                     &Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
+                        assert!(b.get_value().unwrap() != (expected & 1 == 1));
                     }
                     &Boolean::Constant(b) => {
                         assert!(b == (expected & 1 == 1));
@@ -443,18 +512,21 @@ mod test {
         for _ in 0..1000 {
             let mut cs = TestConstraintSystem::<Fr>::new();
 
-            let a: u32 = rng.gen();
-            let b: u32 = rng.gen();
-            let c: u32 = rng.gen();
+            let num_operands = 10;
 
-            let a_bit = UInt32::constant(a);
-            let b_bit = UInt32::constant(b);
-            let c_bit = UInt32::constant(c);
+            let operands_val = (0..num_operands).map(|_| rng.gen()).collect::<Vec<u32>>();
+            let mut expected = operands_val.iter().fold(0u32, |acc, x| x.wrapping_add(acc));
 
-            let mut expected = a.wrapping_add(b).wrapping_add(c);
+            let operands_gadget = operands_val
+                .into_iter()
+                .map(UInt32::constant)
+                .collect::<Vec<UInt32>>();
 
-            let r = UInt32::addmany(cs.ns(|| "addition"), &[a_bit, b_bit, c_bit]).unwrap();
-
+            let r = {
+                let mut cs = MultiEq::new(&mut cs);
+                let r = UInt32::addmany(cs.ns(|| "addition"), operands_gadget.as_slice()).unwrap();
+                r
+            };
             assert!(r.value == Some(expected));
 
             for b in r.bits.iter() {
@@ -468,6 +540,8 @@ mod test {
 
                 expected >>= 1;
             }
+
+            assert!(cs.is_satisfied());
         }
     }
 
@@ -478,20 +552,24 @@ mod test {
         for _ in 0..1000 {
             let mut cs = TestConstraintSystem::<Fr>::new();
 
-            let a: u32 = rng.gen();
-            let b: u32 = rng.gen();
-            let c: u32 = rng.gen();
-            let d: u32 = rng.gen();
+            let num_operands = 10;
 
-            let mut expected = (a ^ b).wrapping_add(c).wrapping_add(d);
+            let operands_val = (0..num_operands).map(|_| rng.gen()).collect::<Vec<u32>>();
+            let mut expected = operands_val.iter().fold(0u32, |acc, x| x.wrapping_add(acc));
 
-            let a_bit = UInt32::alloc(cs.ns(|| "a_bit"), Some(a)).unwrap();
-            let b_bit = UInt32::constant(b);
-            let c_bit = UInt32::constant(c);
-            let d_bit = UInt32::alloc(cs.ns(|| "d_bit"), Some(d)).unwrap();
+            let operands_gadget = operands_val
+                .into_iter()
+                .enumerate()
+                .map(|(i, val)| {
+                    UInt32::alloc(cs.ns(|| format!("alloc u32 {}", i)), Some(val)).unwrap()
+                })
+                .collect::<Vec<UInt32>>();
 
-            let r = a_bit.xor(cs.ns(|| "xor"), &b_bit).unwrap();
-            let r = UInt32::addmany(cs.ns(|| "addition"), &[r, c_bit, d_bit]).unwrap();
+            let r = {
+                let mut cs = MultiEq::new(&mut cs);
+                let r = UInt32::addmany(cs.ns(|| "addition"), operands_gadget.as_slice()).unwrap();
+                r
+            };
 
             assert!(cs.is_satisfied());
 
@@ -503,7 +581,7 @@ mod test {
                         assert!(b.get_value().unwrap() == (expected & 1 == 1));
                     }
                     &Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
+                        assert!(b.get_value().unwrap() != (expected & 1 == 1));
                     }
                     &Boolean::Constant(_) => unreachable!(),
                 }
@@ -512,10 +590,10 @@ mod test {
             }
 
             // Flip a bit_gadget and see if the addition constraint still works
-            if cs.get("addition/result bit_gadget 0/boolean").is_zero() {
-                cs.set("addition/result bit_gadget 0/boolean", Field::one());
+            if cs.get("addition/result bit 0/boolean").is_zero() {
+                cs.set("addition/result bit 0/boolean", Field::one());
             } else {
-                cs.set("addition/result bit_gadget 0/boolean", Field::zero());
+                cs.set("addition/result bit 0/boolean", Field::zero());
             }
 
             assert!(!cs.is_satisfied());
@@ -548,6 +626,35 @@ mod test {
             }
 
             num = num.rotate_right(1);
+        }
+    }
+
+    #[test]
+    fn test_uint32_rotl() {
+        let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+
+        let mut num = rng.gen();
+
+        let a = UInt32::constant(num);
+
+        for i in 0..32 {
+            let b = a.rotl(i);
+
+            assert!(b.value.unwrap() == num);
+
+            let mut tmp = num;
+            for b in &b.bits {
+                match b {
+                    &Boolean::Constant(b) => {
+                        assert_eq!(b, tmp & 1 == 1);
+                    }
+                    _ => unreachable!(),
+                }
+
+                tmp >>= 1;
+            }
+
+            num = num.rotate_left(1);
         }
     }
 }

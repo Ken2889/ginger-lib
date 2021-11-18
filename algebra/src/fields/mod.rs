@@ -22,6 +22,9 @@ mod macros;
 #[cfg(feature = "tweedle")]
 pub mod tweedle;
 
+#[cfg(feature = "secp256k1")]
+pub mod secp256k1;
+
 #[cfg(test)]
 pub mod tests;
 
@@ -354,6 +357,8 @@ impl<F: PrimeField> ToBits for F {
     }
 }
 
+// Defines a prime field element from a big endian vector of booleans, which
+// does not exceed the length of the modulus.
 impl<F: PrimeField> FromBits for F {
     #[inline]
     fn read_bits(bits: Vec<bool>) -> Result<Self, Error> {

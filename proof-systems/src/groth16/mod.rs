@@ -2,6 +2,7 @@
 //! [Groth16]: https://eprint.iacr.org/2016/260.pdf
 use algebra::{
     bytes::{FromBytes, ToBytes},
+    serialize::*,
     Field, FromBytesChecked, PairingEngine, SemanticallyValid,
 };
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -27,7 +28,7 @@ mod test;
 pub use self::{generator::*, prover::*, verifier::*};
 
 /// A proof in the Groth16 SNARK.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Proof<E: PairingEngine> {
     pub a: E::G1Affine,
     pub b: E::G2Affine,
@@ -183,7 +184,7 @@ fn read_affine_vec<G: AffineCurve, R: Read>(len: usize, mut reader: R) -> IoResu
 }
 
 /// A verification key in the Groth16 SNARK.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize)]
 pub struct VerifyingKey<E: PairingEngine> {
     pub alpha_g1_beta_g2: E::Fqk,
     pub gamma_g2: E::G2Affine,
@@ -246,12 +247,10 @@ impl<E: PairingEngine> SemanticallyValid for VerifyingKey<E> {
             && !self.gamma_g2.is_zero()
             && self.delta_g2.is_valid()
             && !self.delta_g2.is_zero()
-            && self
+            && !self
                 .gamma_abc_g1
                 .iter()
-                .filter(|&p| !p.is_valid() || p.is_zero())
-                .collect::<Vec<_>>()
-                .is_empty()
+                .any(|p| !p.is_valid() || p.is_zero())
             && Self::check_gamma_abc_g1_points(self.gamma_abc_g1.as_slice()).is_ok()
     }
 }
@@ -391,7 +390,7 @@ pub(crate) fn push_constraints<F: Field>(
 }
 
 /// Full public (prover and verifier) parameters for the Groth16 zkSNARK.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters<E: PairingEngine> {
     pub vk: VerifyingKey<E>,
     pub alpha_g1: E::G1Affine,
@@ -469,36 +468,11 @@ impl<E: PairingEngine> SemanticallyValid for Parameters<E> {
             && !self.delta_g1.is_zero()
             && self.delta_g2.is_valid()
             && !self.delta_g2.is_zero()
-            && self
-                .a_query
-                .iter()
-                .filter(|&p| !p.is_valid())
-                .collect::<Vec<_>>()
-                .is_empty()
-            && self
-                .b_g1_query
-                .iter()
-                .filter(|&p| !p.is_valid())
-                .collect::<Vec<_>>()
-                .is_empty()
-            && self
-                .b_g2_query
-                .iter()
-                .filter(|&p| !p.is_valid())
-                .collect::<Vec<_>>()
-                .is_empty()
-            && self
-                .h_query
-                .iter()
-                .filter(|&p| !p.is_valid() || p.is_zero())
-                .collect::<Vec<_>>()
-                .is_empty()
-            && self
-                .l_query
-                .iter()
-                .filter(|&p| !p.is_valid() || p.is_zero())
-                .collect::<Vec<_>>()
-                .is_empty()
+            && !self.a_query.iter().any(|p| !p.is_valid())
+            && !self.b_g1_query.iter().any(|p| !p.is_valid())
+            && !self.b_g2_query.iter().any(|p| !p.is_valid())
+            && !self.h_query.iter().any(|p| !p.is_valid() || p.is_zero())
+            && !self.l_query.iter().any(|p| !p.is_valid() || p.is_zero())
     }
 }
 

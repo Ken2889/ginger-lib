@@ -239,6 +239,15 @@ fn field_canonical_serialization_test<F: Field>(buf_size: usize) {
             assert_eq!(a, b);
         }
 
+        {
+            let mut serialized = vec![0; buf_size - 1];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            <F as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
+        }
+
         #[derive(Default, Clone, Copy, Debug)]
         struct DummyFlags;
         impl Flags for DummyFlags {
@@ -271,15 +280,6 @@ fn field_canonical_serialization_test<F: Field>(buf_size: usize) {
             } else {
                 false
             });
-        }
-
-        {
-            let mut serialized = vec![0; buf_size - 1];
-            let mut cursor = Cursor::new(&mut serialized[..]);
-            CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
-
-            let mut cursor = Cursor::new(&serialized[..]);
-            <F as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
         }
     }
 }
@@ -395,23 +395,18 @@ pub fn from_str_test<F: PrimeField>() {
 
 pub fn field_test<F: Field>(a: F, b: F) {
     let zero = F::zero();
-    assert_eq!(zero, zero);
     assert_eq!(zero.is_zero(), true);
     assert_eq!(zero.is_one(), false);
 
     let one = F::one();
-    assert_eq!(one, one);
     assert_eq!(one.is_zero(), false);
     assert_eq!(one.is_one(), true);
     assert_eq!(zero + &one, one);
 
     let two = one + &one;
-    assert_eq!(two, two);
     assert_ne!(zero, two);
     assert_ne!(one, two);
 
-    // a == a
-    assert_eq!(a, a);
     // a + 0 = a
     assert_eq!(a + &zero, a);
     // a - 0 = a

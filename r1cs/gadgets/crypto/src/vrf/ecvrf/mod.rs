@@ -17,7 +17,6 @@ use crate::{
 use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
 use r1cs_core::{ConstraintSystem, SynthesisError, ToConstraintField};
 use r1cs_std::bits::boolean::Boolean;
-use rand::rngs::OsRng;
 use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
@@ -375,58 +374,25 @@ where
             &G::prime_subgroup_generator(),
         );
 
-        // Random shift to avoid exceptional cases if add is incomplete.
-        // With overwhelming probability the circuit will be satisfiable,
-        // otherwise the prover can sample another shift by re-running
-        // the proof creation.
-        let shift = GG::alloc(cs.ns(|| "alloc random shift"), || {
-            let mut rng = OsRng::default();
-            Ok(loop {
-                let r = G::rand(&mut rng);
-                if !r.is_zero() {
-                    break (r);
-                }
-            })
-        })?;
-
         //Check u = g^s - pk^c
         let u = {
-            let neg_c_times_pk = public_key
+            let c_times_pk = public_key
                 .pk
-                .mul_bits(
-                    cs.ns(|| "pk * c + shift"),
-                    &shift,
-                    c_bits.as_slice().iter().rev(),
-                )?
-                .negate(cs.ns(|| "- (c * pk + shift)"))?;
-            GG::mul_bits_fixed_base(
-                &g.get_constant(),
-                cs.ns(|| "(s * G + shift)"),
-                &shift,
-                s_bits.as_slice(),
-            )?
-            // If add is incomplete, and s * G - c * pk = 0, the circuit of the add won't be satisfiable
-            .add(cs.ns(|| "(s * G) - (c * pk)"), &neg_c_times_pk)?
+                .mul_bits(cs.ns(|| "pk * c"), c_bits.as_slice().iter().rev())?;
+            GG::mul_bits_fixed_base(&g.get_constant(), cs.ns(|| "s * G"), s_bits.as_slice())?
+                // If add is incomplete, and s * G - c * pk = 0, the circuit of the add won't be satisfiable
+                .sub(cs.ns(|| "(s * G) - (c * pk)"), &c_times_pk)?
         };
 
         //Check v = mh^s - gamma^c
         let v = {
-            let neg_c_times_gamma = proof
+            let c_times_gamma = proof
                 .gamma
-                .mul_bits(
-                    cs.ns(|| "c * gamma + shift"),
-                    &shift,
-                    c_bits.as_slice().iter().rev(),
-                )?
-                .negate(cs.ns(|| "- (c * gamma + shift)"))?;
+                .mul_bits(cs.ns(|| "c * gamma"), c_bits.as_slice().iter().rev())?;
             message_on_curve
-                .mul_bits(
-                    cs.ns(|| "(s * mh + shift)"),
-                    &shift,
-                    s_bits.as_slice().iter(),
-                )?
+                .mul_bits(cs.ns(|| "s * mh"), s_bits.as_slice().iter())?
                 // If add is incomplete, and s * mh - c * gamma = 0, the circuit of the add won't be satisfiable
-                .add(cs.ns(|| "(s * mh) - (c * gamma"), &neg_c_times_gamma)?
+                .sub(cs.ns(|| "(s * mh) - (c * gamma"), &c_times_gamma)?
         };
 
         // Check c' = H(m||pk.x||u.x||v.x)

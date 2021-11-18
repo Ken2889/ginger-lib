@@ -2,8 +2,16 @@
 use algebra::AffineCurve;
 use digest::Digest;
 use poly_commit::{
+<<<<<<< HEAD
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
     PCParameters,
+=======
+    ipa_pc::{
+        CommitterKey as DLogCommitterKey, InnerProductArgPC, UniversalParams,
+        VerifierKey as DLogVerifierKey,
+    },
+    PCUniversalParams, PolynomialCommitment,
+>>>>>>> development
 };
 
 pub mod final_darlin;
@@ -61,7 +69,7 @@ mod test {
             .collect::<HashSet<usize>>()
             .into_iter()
             .collect::<Vec<usize>>();
-        indices.sort();
+        indices.sort_unstable();
         indices
     }
 
@@ -346,7 +354,11 @@ mod test {
         //Generate fake params
         let mut params_g1_fake =
             TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+<<<<<<< HEAD
         params_g1_fake.ut_copy_params(&params_g1);
+=======
+        params_g1_fake.copy_params(&params_g1);
+>>>>>>> development
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -407,7 +419,7 @@ mod test {
 
         let simple_marlin_pcds_fake = pcds_fake
             .into_iter()
-            .map(|simple_marlin_pcd| GeneralPCD::SimpleMarlin(simple_marlin_pcd))
+            .map(GeneralPCD::SimpleMarlin)
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
@@ -512,12 +524,12 @@ mod test {
         // Collect PCDs
         let mut final_darlin_pcds = pcds
             .into_iter()
-            .map(|final_darlin_pcd| GeneralPCD::FinalDarlin(final_darlin_pcd))
+            .map(GeneralPCD::FinalDarlin)
             .collect::<Vec<_>>();
 
         let final_darlin_pcds_fake = pcds_fake
             .into_iter()
-            .map(|final_darlin_pcd| GeneralPCD::FinalDarlin(final_darlin_pcd))
+            .map(GeneralPCD::FinalDarlin)
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
@@ -646,7 +658,11 @@ mod test {
 
                 let mut iteration_pcds = iteration_pcds
                     .into_iter()
+<<<<<<< HEAD
                     .map(|pcd| GeneralPCD::FinalDarlin(pcd))
+=======
+                    .map(GeneralPCD::FinalDarlin)
+>>>>>>> development
                     .collect::<Vec<_>>();
 
                 pcds.append(&mut iteration_pcds);

@@ -14,7 +14,6 @@ use r1cs_std::{
     alloc::AllocGadget, bits::boolean::Boolean, eq::EqGadget, fields::fp::FpGadget,
     groups::GroupGadget, to_field_gadget_vec::ToConstraintFieldGadget,
 };
-use rand::rngs::OsRng;
 use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
@@ -417,27 +416,8 @@ where
             e_bits
         };
 
-        // Random shift to avoid exceptional cases if add is incomplete.
-        // With overwhelming probability the circuit will be satisfiable,
-        // otherwise the prover can sample another shift by re-running
-        // the proof creation.
-        let shift = GG::alloc(cs.ns(|| "alloc random shift"), || {
-            let mut rng = OsRng::default();
-            Ok(loop {
-                let r = G::rand(&mut rng);
-                if !r.is_zero() {
-                    break (r);
-                }
-            })
-        })?;
-
-        let neg_e_times_pk = public_key
-            .mul_bits(
-                cs.ns(|| "pk * e + shift"),
-                &shift,
-                e_bits.as_slice().iter().rev(),
-            )?
-            .negate(cs.ns(|| "- (pk * e + shift)"))?;
+        let neg_e_times_pk =
+            public_key.mul_bits(cs.ns(|| "pk * e"), e_bits.as_slice().iter().rev())?;
 
         //Enforce s * G and R' = s*G - e*pk
         let mut s_bits = {
@@ -469,14 +449,10 @@ where
             cs.ns(|| "hardcode generator"),
             &G::prime_subgroup_generator(),
         );
-        let r_prime = GG::mul_bits_fixed_base(
-            &g.get_constant(),
-            cs.ns(|| "(s * G + shift)"),
-            &shift,
-            s_bits.as_slice(),
-        )?
-        // If add is incomplete, and s * G - e * pk = 0, the circuit of the add won't be satisfiable
-        .add(cs.ns(|| "s * G - e * pk "), &neg_e_times_pk)?;
+        let r_prime =
+            GG::mul_bits_fixed_base(&g.get_constant(), cs.ns(|| "(s * G)"), s_bits.as_slice())?
+                // If add is incomplete, and s * G - e * pk = 0, the circuit of the add won't be satisfiable
+                .sub(cs.ns(|| "s * G - e * pk "), &neg_e_times_pk)?;
 
         let r_prime_coords = r_prime.to_field_gadget_elements(cs.ns(|| "r_prime to fes"))?;
 

@@ -94,6 +94,8 @@ pub trait BigInteger:
 
     /// Returns the bit representation in a big endian boolean array, without
     /// leading zeros.
+    // TODO: the current implementation does not seem to skip leading zeroes.
+    // Let us check its usage and determine if a change is reasonable.
     fn to_bits(&self) -> Vec<bool>;
 
     /// Returns a vector for wnaf.

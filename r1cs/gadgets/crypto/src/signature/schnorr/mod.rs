@@ -11,6 +11,8 @@ use primitives::signature::schnorr::{SchnorrPublicKey, SchnorrSigParameters, Sch
 
 pub mod field_based_schnorr;
 
+// TODO: Can we declare generator as a constant instead of a gadget ? Are there any applications
+//       in which having it as gadget is useful ?
 pub struct SchnorrSigGadgetParameters<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
 {
     generator: GG,
@@ -76,11 +78,13 @@ where
             .iter()
             .flat_map(|b| b.into_bits_le())
             .collect::<Vec<_>>();
-        let rand_pk = base.mul_bits(
-            &mut cs.ns(|| "Compute Randomizer"),
-            &public_key.pub_key,
-            randomness.iter(),
-        )?;
+        let rand_pk = {
+            let base_pow_rand =
+                base.mul_bits(&mut cs.ns(|| "Compute randomizer"), randomness.iter())?;
+            public_key
+                .pub_key
+                .add(cs.ns(|| "Randomize pk"), &base_pow_rand)
+        }?;
         Ok(SchnorrSigGadgetPk {
             pub_key: rand_pk,
             _group: PhantomData,

@@ -1,3 +1,14 @@
+#![allow(
+    clippy::upper_case_acronyms,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::try_err,
+    clippy::map_collect_result_unit,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::suspicious_op_assign_impl,
+    clippy::suspicious_arithmetic_impl,
+    clippy::assertions_on_constants
+)]
 #![allow(unused_imports)]
 pub use self::inner::*;
 
@@ -7,7 +18,7 @@ pub mod inner {
     pub use colored::Colorize;
     use std::sync::atomic::AtomicUsize;
     pub static NUM_INDENT: AtomicUsize = AtomicUsize::new(0);
-    pub const PAD_CHAR: &'static str = "·";
+    pub const PAD_CHAR: &str = "·";
     use std::time::Instant;
 
     pub struct TimerInfo {
@@ -117,7 +128,7 @@ pub mod inner {
     pub fn compute_indent_whitespace(indent_amount: usize) -> String {
         let mut indent = String::new();
         for _ in 0..indent_amount {
-            indent.push_str(" ");
+            indent.push(' ');
         }
         indent
     }

@@ -3,7 +3,7 @@ use crate::{
     FieldBasedHash, FieldBasedHashParameters, FieldBasedMHTPath, FieldBasedMerkleTree,
     FieldBasedMerkleTreePath, MerkleTreeError,
 };
-use algebra::Field;
+use algebra::{serialize::*, Field};
 use std::marker::PhantomData;
 
 /// An implementation of FieldBasedMerkleTree, optimized in time and memory,
@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 ///    while this is ok for use cases where the Merkle Trees have always the
 ///    same height, it's not for all the others.
 /// TODO: Test with arity > 2
-#[derive(Clone)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct FieldBasedOptimizedMHT<T: BatchFieldBasedMerkleTreeParameters> {
     root: T::Data,
     // Stores all MT nodes

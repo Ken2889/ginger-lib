@@ -89,6 +89,10 @@ macro_rules! impl_field_mul_short_assign {
     ($limbs: expr) => {
         #[inline]
         #[unroll_for_loops]
+        // Partial, or short, Montgomery multiplication. Computes the product
+        //      R*xy mod p = (R*x mod p)*(R_s * y mod p)
+        // for y having a 1-limb sized representation (R_s*y mod p) w.r.t. the
+        // "short" Montgomery constant R_s = 2^64.
         //TODO: Can we write the assembly equivalent of this ? Is it worth ?
         //TODO: Probably there's a more compact way to write this
         fn mul_short_assign(&mut self, other: &Self) {
@@ -229,11 +233,14 @@ macro_rules! impl_prime_field_standard_sample {
             fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $field<P> {
                 loop {
                     let mut tmp = $field(rng.sample(rand::distributions::Standard), PhantomData);
-                    // Mask away the unused bits at the beginning.
-                    tmp.0
-                        .as_mut()
-                        .last_mut()
-                        .map(|val| *val &= std::u64::MAX >> P::REPR_SHAVE_BITS);
+
+                    assert!(P::REPR_SHAVE_BITS <= 64);
+                    let mask = if P::REPR_SHAVE_BITS == 64 {
+                        0
+                    } else {
+                        std::u64::MAX >> P::REPR_SHAVE_BITS
+                    };
+                    tmp.0.as_mut().last_mut().map(|val| *val &= mask);
 
                     if tmp.is_valid() {
                         return tmp;

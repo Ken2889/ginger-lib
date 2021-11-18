@@ -51,12 +51,15 @@ impl Flags for EmptyFlags {
     }
 
     #[inline]
-    fn from_u8(value: u8) -> Option<Self> {
-        if (value >> 7) == 0 {
+    fn from_u8(_: u8) -> Option<Self> {
+        /*if (value >> 7) == 0 {
             Some(EmptyFlags)
         } else {
             None
-        }
+        }*/
+        // NOTE: Commented implementation assumes that the last bit of the given byte is always 1.
+        // This might not be true everywhere, so let's directly return EmptyFlags.
+        Some(EmptyFlags)
     }
 }
 

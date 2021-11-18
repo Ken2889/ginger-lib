@@ -157,20 +157,19 @@ where
                 .enumerate()
             {
                 let input_bits = input.to_bits(cs.ns(|| format!("Input {}", i)))?;
-                g_psi = b.mul_bits(cs.ns(|| format!("Mul {}", i)), &g_psi, input_bits.iter())?;
+                g_psi = b
+                    .mul_bits(cs.ns(|| format!("Mul {}", i)), input_bits.iter())?
+                    .add(cs.ns(|| format!("Add {}", i)), &g_psi)?;
                 input_len += 1;
             }
             // Check that the input and the query in the verification are of the
             // same length.
             if input_len != pvk.query.len() || public_inputs.next().is_some() {
-                Err(SynthesisError::Other(
-                    format!(
-                        "Input and query must have the same length. Input len: {}, Query len: {}",
-                        input_len,
-                        pvk.query.len()
-                    )
-                    .to_owned(),
-                ))?
+                return Err(SynthesisError::Other(format!(
+                    "Input and query must have the same length. Input len: {}, Query len: {}",
+                    input_len,
+                    pvk.query.len()
+                )));
             }
             g_psi
         };
@@ -216,7 +215,7 @@ where
             P::miller_loop(
                 cs.ns(|| "Miller loop 4"),
                 &[a_prep, pvk.g_gamma_pc.clone()],
-                &[pvk.h_gamma_pc.clone(), b_prep],
+                &[pvk.h_gamma_pc, b_prep],
             )?
         };
         let test2 = P::final_exponentiation(cs.ns(|| "Final Exp 2"), &test2_exp)?;
@@ -468,7 +467,7 @@ mod test {
     use algebra::{
         curves::bls12_377::Bls12_377,
         fields::bls12_377::{Fq, Fr},
-        BitIterator, PrimeField,
+        ToBits,
     };
     use r1cs_std::{
         boolean::Boolean, instantiated::bls12_377::PairingGadget as Bls12_377PairingGadget,
@@ -566,7 +565,7 @@ mod test {
             {
                 let mut cs = cs.ns(|| "Allocate Input");
                 for (i, input) in inputs.iter().enumerate() {
-                    let mut input_bits = BitIterator::new(input.into_repr()).collect::<Vec<_>>();
+                    let mut input_bits = input.write_bits();
                     // Input must be in little-endian, but BitIterator outputs in big-endian.
                     input_bits.reverse();
 

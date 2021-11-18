@@ -29,7 +29,7 @@ fn evaluate_constraint<'a, E: PairingEngine>(
                 val.mul(coeff)
             }
         })
-        .reduce(|| E::Fr::zero(), |sum, val| sum + &val)
+        .reduce(E::Fr::zero, |sum, val| sum + &val)
 }
 /*A R1CS consisting of n constraints in m variables
 
@@ -202,11 +202,18 @@ impl R1CStoQAP {
 
         // compute quotient polynomial (a(Z)*b(Z)-c(Z))/v_H(Z)
         // from the coset evaluations
+        // Note: if a(Z)*b(Z)-c(Z) is not zero on H, then this way
+        // of computing the quotient might result in a polynomial
+        // of degree larger than n-2.
         domain.divide_by_vanishing_poly_on_coset_in_place(&mut ab);
         domain.coset_ifft_in_place(&mut ab);
 
         // we drop the leading coefficient, as deg(h(Z)) = n-2.
-        assert!(ab.pop().unwrap() == zero);
+        // However, if a*b-c != 0 over H then the prover supplied
+        // a variable assignment not satisfying circuit constraints.
+        if ab.pop().unwrap() != zero {
+            return Err(SynthesisError::Unsatisfiable);
+        }
         Ok(ab)
     }
 }

@@ -60,7 +60,7 @@ impl UInt8 {
         T: Into<Option<u8>> + Copy,
     {
         let mut output_vec = Vec::with_capacity(values.len());
-        for (i, value) in values.into_iter().enumerate() {
+        for (i, value) in values.iter().enumerate() {
             let byte: Option<u8> = Into::into(*value);
             let alloc_byte = Self::alloc(&mut cs.ns(|| format!("byte_{}", i)), || byte.get())?;
             output_vec.push(alloc_byte);
@@ -124,11 +124,16 @@ impl UInt8 {
             .collect())
     }
 
+    /// Turns this `UInt8` into its big-endian byte order representation.
+    pub fn into_bits_be(&self) -> Vec<Boolean> {
+        self.bits.iter().rev().cloned().collect()
+    }
+
     /// Turns this `UInt8` into its little-endian byte order representation.
     /// LSB-first means that we can easily get the corresponding field element
     /// via double and add.
     pub fn into_bits_le(&self) -> Vec<Boolean> {
-        self.bits.iter().cloned().collect()
+        self.bits.to_vec()
     }
 
     /// Converts a little-endian byte order representation of bits into a
@@ -165,7 +170,7 @@ impl UInt8 {
             }
         }
 
-        Self { value, bits }
+        Self { bits, value }
     }
 
     /// XOR this `UInt8` with another `UInt8`
@@ -221,7 +226,7 @@ impl UInt8 {
 
 impl PartialEq for UInt8 {
     fn eq(&self, other: &Self) -> bool {
-        !self.value.is_none() && !other.value.is_none() && self.value == other.value
+        self.value.is_some() && other.value.is_some() && self.value == other.value
     }
 }
 
@@ -338,10 +343,48 @@ impl<ConstraintF: Field> AllocGadget<u8, ConstraintF> for UInt8 {
     }
 }
 
+impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt8 {
+    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+        mut cs: CS,
+        cond: &Boolean,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let selected_bits = true_value
+            .bits
+            .iter()
+            .zip(&false_value.bits)
+            .enumerate()
+            .map(|(i, (t, f))| {
+                Boolean::conditionally_select(&mut cs.ns(|| format!("bit {}", i)), cond, t, f)
+            });
+        let mut bits = [Boolean::Constant(false); 8];
+        for (result, new) in bits.iter_mut().zip(selected_bits) {
+            *result = new?;
+        }
+
+        let value = cond.get_value().and_then(|cond| {
+            if cond {
+                true_value.get_value()
+            } else {
+                false_value.get_value()
+            }
+        });
+        Ok(Self {
+            bits: bits.to_vec(),
+            value,
+        })
+    }
+
+    fn cost() -> usize {
+        8 * <Boolean as CondSelectGadget<ConstraintF>>::cost()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::UInt8;
-    use crate::{prelude::*, test_constraint_system::TestConstraintSystem};
+    use crate::{boolean::AllocatedBit, prelude::*, test_constraint_system::TestConstraintSystem};
     use algebra::fields::bls12_381::Fr;
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, RngCore, SeedableRng};
@@ -481,7 +524,7 @@ mod test {
                         assert!(b.get_value().unwrap() == (expected & 1 == 1));
                     }
                     &Boolean::Not(ref b) => {
-                        assert!(!b.get_value().unwrap() == (expected & 1 == 1));
+                        assert!(b.get_value().unwrap() != (expected & 1 == 1));
                     }
                     &Boolean::Constant(b) => {
                         assert!(b == (expected & 1 == 1));
@@ -489,6 +532,89 @@ mod test {
                 }
 
                 expected >>= 1;
+            }
+        }
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    enum OperandType {
+        True,
+        False,
+        AllocatedTrue,
+        AllocatedFalse,
+        NegatedAllocatedTrue,
+        NegatedAllocatedFalse,
+    }
+
+    #[test]
+    fn test_uint8_cond_select() {
+        let variants = [
+            OperandType::True,
+            OperandType::False,
+            OperandType::AllocatedTrue,
+            OperandType::AllocatedFalse,
+            OperandType::NegatedAllocatedTrue,
+            OperandType::NegatedAllocatedFalse,
+        ];
+
+        use rand::thread_rng;
+        let rng = &mut thread_rng();
+
+        //random generates a and b numbers and check all the conditions for each couple
+        for _ in 0..1000 {
+            for condition in variants.iter().cloned() {
+                let mut cs = TestConstraintSystem::<Fr>::new();
+                let cond;
+                let a;
+                let b;
+
+                {
+                    let mut dyn_construct = |operand, name| {
+                        let cs = cs.ns(|| name);
+
+                        match operand {
+                            OperandType::True => Boolean::constant(true),
+                            OperandType::False => Boolean::constant(false),
+                            OperandType::AllocatedTrue => {
+                                Boolean::from(AllocatedBit::alloc(cs, || Ok(true)).unwrap())
+                            }
+                            OperandType::AllocatedFalse => {
+                                Boolean::from(AllocatedBit::alloc(cs, || Ok(false)).unwrap())
+                            }
+                            OperandType::NegatedAllocatedTrue => {
+                                Boolean::from(AllocatedBit::alloc(cs, || Ok(true)).unwrap()).not()
+                            }
+                            OperandType::NegatedAllocatedFalse => {
+                                Boolean::from(AllocatedBit::alloc(cs, || Ok(false)).unwrap()).not()
+                            }
+                        }
+                    };
+
+                    cond = dyn_construct(condition, "cond");
+                    a = UInt8::constant(rng.gen());
+                    b = UInt8::constant(rng.gen());
+                }
+
+                let before = cs.num_constraints();
+                let c = UInt8::conditionally_select(&mut cs, &cond, &a, &b).unwrap();
+                let after = cs.num_constraints();
+
+                assert!(
+                    cs.is_satisfied(),
+                    "failed with operands: cond: {:?}, a: {:?}, b: {:?}",
+                    condition,
+                    a,
+                    b,
+                );
+                assert_eq!(
+                    c.get_value(),
+                    if cond.get_value().unwrap() {
+                        a.get_value()
+                    } else {
+                        b.get_value()
+                    }
+                );
+                assert!(<UInt8 as CondSelectGadget<Fr>>::cost() >= after - before);
             }
         }
     }

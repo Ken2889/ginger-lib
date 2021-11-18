@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use algebra::Field;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use algebra::{Field, FpParameters, PrimeField};
+use r1cs_core::{ConstraintSystem, LinearCombination, SynthesisError, Variable};
 
 /// Specifies how to generate constraints that check for equality for two variables of type `Self`.
 pub trait EqGadget<ConstraintF: Field>: Eq {
@@ -148,5 +148,143 @@ impl<T: EqGadget<ConstraintF>, ConstraintF: Field> EqGadget<ConstraintF> for [T]
             )?;
             Ok(())
         }
+    }
+}
+
+/// A struct for collecting identities of linear combinations of Booleans to serve
+/// a more efficient equality enforcement (by packing them in parallel into constraint
+/// field elements).
+/// Used for simulating arithmetic operations modulo a power of 2.
+pub struct MultiEq<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> {
+    cs: CS,
+    // a counter for the number of used equality constraints
+    ops: usize,
+    // the "size" of the identity, i.e. the bit length of the maximum value
+    // that can be obtained by the linear combination.
+    bits_used: usize,
+    // the left hand side of the identity
+    lhs: LinearCombination<ConstraintF>,
+    // the right hand side of the identity
+    rhs: LinearCombination<ConstraintF>,
+}
+
+impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> MultiEq<ConstraintF, CS> {
+    pub fn new(cs: CS) -> Self {
+        MultiEq {
+            cs,
+            ops: 0,
+            bits_used: 0,
+            lhs: LinearCombination::zero(),
+            rhs: LinearCombination::zero(),
+        }
+    }
+
+    fn accumulate(&mut self) {
+        let ops = self.ops;
+        let lhs = self.lhs.clone();
+        let rhs = self.rhs.clone();
+        self.cs.enforce(
+            || format!("multieq {}", ops),
+            |_| lhs,
+            |lc| lc + CS::one(),
+            |_| rhs,
+        );
+        self.lhs = LinearCombination::zero();
+        self.rhs = LinearCombination::zero();
+        self.bits_used = 0;
+        self.ops += 1;
+    }
+
+    /// Enforces simulatenously the MultiEq `self` and `lhs == rhs` of the at most `num_bits` large
+    /// linear combinations `lhs` and `rhs`.
+    pub fn enforce_equal(
+        // the MultiEq
+        &mut self,
+        // the number of bits used for lhs and rhs, must be < capacity of `ConstraintF`
+        num_bits: usize,
+        // the linear combinations to be aggregated in `self`
+        lhs: &LinearCombination<ConstraintF>,
+        rhs: &LinearCombination<ConstraintF>,
+    ) {
+        // Check if we will exceed the capacity. If yes, then use accumulate on `self` first.
+        if (ConstraintF::Params::CAPACITY as usize) <= (self.bits_used + num_bits) {
+            self.accumulate();
+        }
+
+        assert!((ConstraintF::Params::CAPACITY as usize) > (self.bits_used + num_bits));
+        // Since we do not exceed the capacity, cumulate (lhs,rhs) in `self` by appending
+        let frmstr = ConstraintF::from_str("2").unwrap_or_default();
+
+        let coeff = frmstr.pow(&[self.bits_used as u64]);
+        self.lhs = self.lhs.clone() + (coeff, lhs);
+        self.rhs = self.rhs.clone() + (coeff, rhs);
+        self.bits_used += num_bits;
+    }
+}
+
+impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> Drop for MultiEq<ConstraintF, CS> {
+    fn drop(&mut self) {
+        if self.bits_used > 0 {
+            self.accumulate();
+        }
+    }
+}
+
+impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> ConstraintSystem<ConstraintF>
+    for MultiEq<ConstraintF, CS>
+{
+    type Root = Self;
+
+    fn one() -> Variable {
+        CS::one()
+    }
+
+    fn alloc<F, A, AR>(&mut self, annotation: A, f: F) -> Result<Variable, SynthesisError>
+    where
+        F: FnOnce() -> Result<ConstraintF, SynthesisError>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        self.cs.alloc(annotation, f)
+    }
+
+    fn alloc_input<F, A, AR>(&mut self, annotation: A, f: F) -> Result<Variable, SynthesisError>
+    where
+        F: FnOnce() -> Result<ConstraintF, SynthesisError>,
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        self.cs.alloc_input(annotation, f)
+    }
+
+    fn enforce<A, AR, LA, LB, LC>(&mut self, annotation: A, a: LA, b: LB, c: LC)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+        LA: FnOnce(LinearCombination<ConstraintF>) -> LinearCombination<ConstraintF>,
+        LB: FnOnce(LinearCombination<ConstraintF>) -> LinearCombination<ConstraintF>,
+        LC: FnOnce(LinearCombination<ConstraintF>) -> LinearCombination<ConstraintF>,
+    {
+        self.cs.enforce(annotation, a, b, c)
+    }
+
+    fn push_namespace<NR, N>(&mut self, name_fn: N)
+    where
+        NR: Into<String>,
+        N: FnOnce() -> NR,
+    {
+        self.cs.get_root().push_namespace(name_fn)
+    }
+
+    fn pop_namespace(&mut self) {
+        self.cs.get_root().pop_namespace()
+    }
+
+    fn get_root(&mut self) -> &mut Self::Root {
+        self
+    }
+
+    fn num_constraints(&self) -> usize {
+        self.cs.num_constraints()
     }
 }

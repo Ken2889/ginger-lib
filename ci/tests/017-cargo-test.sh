@@ -3,4 +3,4 @@
 
 set -xeo pipefail
 
-cargo $CARGOARGS test --all-features
+cargo $CARGOARGS test --workspace --all-features --exclude "r1cs-std"

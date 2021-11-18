@@ -12,6 +12,7 @@ fn bn382_g_field_gadgets_test() {
     field_test::<_, Fr, FqGadget>();
     frobenius_tests::<Fr, Fr, FqGadget>(13);
     equ_verdict_fp_gadget_test::<Fr>();
+    even_odd_fp_gadget_test::<Fr>();
     from_bits_fp_gadget_test::<Fr>();
     bit_fp_gadgets_test::<Fr>();
 }

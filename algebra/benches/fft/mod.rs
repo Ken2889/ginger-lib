@@ -1,4 +1,4 @@
-use algebra::{fft::get_best_evaluation_domain, fields::tweedle::Fr, UniformRand};
+use algebra::{fft::get_best_evaluation_domain, fields::mnt6753::Fr, UniformRand};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 

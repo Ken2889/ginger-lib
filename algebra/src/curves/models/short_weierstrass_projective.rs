@@ -1,6 +1,9 @@
 use crate::{
     bytes::{FromBytes, ToBytes},
-    curves::{models::SWModelParameters as Parameters, AffineCurve, ProjectiveCurve},
+    curves::{
+        models::{EndoMulParameters as EndoParameters, SWModelParameters as Parameters},
+        AffineCurve, EndoMulCurve, ProjectiveCurve,
+    },
     fields::{BitIterator, Field, PrimeField, SquareRootField},
     BitSerializationError, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Error, FromBytesChecked, FromCompressedBits, SWFlags,
@@ -114,7 +117,7 @@ impl<P: Parameters> GroupAffine<P> {
     ///
     /// If and only if `parity` is set will the odd y-coordinate be selected.
     #[allow(dead_code)]
-    pub(crate) fn get_point_from_x_and_parity(x: P::BaseField, parity: bool) -> Option<Self> {
+    pub fn get_point_from_x_and_parity(x: P::BaseField, parity: bool) -> Option<Self> {
         // Compute x^3 + ax + b
         let x3b = P::add_b(&((x.square() * &x) + &P::mul_by_a(&x)));
 
@@ -300,6 +303,88 @@ impl<P: Parameters> AffineCurve for GroupAffine<P> {
     }
 }
 
+impl<P: EndoParameters> EndoMulCurve for GroupAffine<P> {
+    fn apply_endomorphism(&self) -> Self {
+        let mut self_e = self.clone();
+        self_e.x.mul_assign(P::ENDO_COEFF);
+        self_e
+    }
+
+    fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error> {
+        let mut a: P::ScalarField = 2u64.into();
+        let mut b: P::ScalarField = 2u64.into();
+
+        let one = P::ScalarField::one();
+        let one_neg = one.neg();
+
+        let mut bits = bits;
+        if bits.len() % 2 == 1 {
+            bits.push(false);
+        }
+
+        if bits.len() > P::LAMBDA {
+            Err("Endo mul bits length exceeds LAMBDA")?
+        }
+
+        for i in (0..(bits.len() / 2)).rev() {
+            a.double_in_place();
+            b.double_in_place();
+
+            let s = if bits[i * 2] { &one } else { &one_neg };
+
+            if bits[i * 2 + 1] {
+                a.add_assign(s);
+            } else {
+                b.add_assign(s);
+            }
+        }
+
+        Ok(a.mul(P::ENDO_SCALAR) + &b)
+    }
+
+    /// Performs scalar multiplication of this element with mixed addition.
+    fn endo_mul(&self, bits: Vec<bool>) -> Result<Self::Projective, Error> {
+        let self_neg = self.neg();
+
+        let self_e = self.apply_endomorphism();
+        let self_e_neg = self_e.neg();
+
+        let mut acc = self_e.into_projective();
+        acc.add_assign_mixed(&self);
+        acc.double_in_place();
+
+        let mut bits = bits;
+        if bits.len() % 2 == 1 {
+            bits.push(false);
+        }
+
+        if bits.len() > P::LAMBDA {
+            Err("Endo mul bits length exceeds LAMBDA")?
+        }
+
+        for i in (0..(bits.len() / 2)).rev() {
+            let s = if bits[i * 2 + 1] {
+                if bits[i * 2] {
+                    &self_e
+                } else {
+                    &self_e_neg
+                }
+            } else {
+                if bits[i * 2] {
+                    &self
+                } else {
+                    &self_neg
+                }
+            };
+
+            acc.double_in_place();
+            acc.add_assign_mixed(s);
+        }
+
+        Ok(acc)
+    }
+}
+
 impl<P: Parameters> SemanticallyValid for GroupAffine<P> {
     fn is_valid(&self) -> bool {
         self.x.is_valid() && self.y.is_valid() && self.group_membership_test()
@@ -456,12 +541,8 @@ impl<P: Parameters> PartialEq for GroupProjective<P> {
             return false;
         }
 
-        // x1/z1 == x2/z2  <==> x1 * z2 == x2 * z1
-        if (self.x * &other.z) != (other.x * &self.z) {
-            false
-        }
-        // y1/z1 == y2/z2  <==> y1 * z2 == y2 * z1
-        else if (self.y * &other.z) != (other.y * &self.z) {
+        if (self.x * &other.z) != (other.x * &self.z) || (self.y * &other.z) != (other.y * &self.z)
+        {
             false
         } else {
             true

@@ -9,8 +9,8 @@ use std::borrow::Borrow;
 /// to be either zero or one.
 #[derive(Copy, Clone, Debug)]
 pub struct AllocatedBit {
-    variable: Variable,
-    value: Option<bool>,
+    pub variable: Variable,
+    pub value: Option<bool>,
 }
 
 impl AllocatedBit {
@@ -381,6 +381,12 @@ pub enum Boolean {
 }
 
 impl Boolean {
+    pub fn is_constant(&self) -> bool {
+        match *self {
+            Boolean::Constant(_) => true,
+            _ => false,
+        }
+    }
     pub fn get_value(&self) -> Option<bool> {
         match *self {
             Boolean::Constant(c) => Some(c),
@@ -389,6 +395,9 @@ impl Boolean {
         }
     }
 
+    /// Return a LinearCombination built starting from `self` and `coeff`,
+    /// taking explicitly into account that `self` is a constant/variable
+    /// Boolean.
     pub fn lc<ConstraintF: Field>(
         &self,
         one: Variable,
@@ -674,7 +683,7 @@ impl Boolean {
 
             if b {
                 // This is part of a run of ones.
-                current_run.push(a.clone());
+                current_run.push(*a);
             } else {
                 if !current_run.is_empty() {
                     // This is the start of a run of zeros, but we need
@@ -905,13 +914,13 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for Boolean {
         CS: ConstraintSystem<ConstraintF>,
     {
         match cond {
-            Boolean::Constant(true) => Ok(first.clone()),
-            Boolean::Constant(false) => Ok(second.clone()),
+            Boolean::Constant(true) => Ok(*first),
+            Boolean::Constant(false) => Ok(*second),
             cond @ Boolean::Not(_) => Self::conditionally_select(cs, &cond.not(), second, first),
             cond @ Boolean::Is(_) => match (first, second) {
-                (x, &Boolean::Constant(false)) => Boolean::and(cs.ns(|| "and"), cond, x).into(),
+                (x, &Boolean::Constant(false)) => Boolean::and(cs.ns(|| "and"), cond, x),
                 (&Boolean::Constant(false), x) => Boolean::and(cs.ns(|| "and"), &cond.not(), x),
-                (&Boolean::Constant(true), x) => Boolean::or(cs.ns(|| "or"), cond, x).into(),
+                (&Boolean::Constant(true), x) => Boolean::or(cs.ns(|| "or"), cond, x),
                 (x, &Boolean::Constant(true)) => Boolean::or(cs.ns(|| "or"), &cond.not(), x),
                 (a @ Boolean::Is(_), b @ Boolean::Is(_))
                 | (a @ Boolean::Not(_), b @ Boolean::Not(_))

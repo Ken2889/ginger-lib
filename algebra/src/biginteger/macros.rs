@@ -147,14 +147,18 @@ macro_rules! bigint_impl {
                 }
             }
 
+            // Defines a BigInt from a slice of big endian booleans.
             #[inline]
             fn from_bits(bits: &[bool]) -> Self {
                 let mut res = Self::default();
                 let mut acc: u64 = 0;
 
+                // convert to little endian as the limbs are in
+                // little endian order
                 let mut bits = bits.to_vec();
                 bits.reverse();
                 for (i, bits64) in bits.chunks(64).enumerate() {
+                    // each chunk is again arranged big endian
                     for bit in bits64.iter().rev() {
                         acc <<= 1;
                         acc += *bit as u64;
@@ -165,6 +169,7 @@ macro_rules! bigint_impl {
                 res
             }
 
+            // Note: Does not skip leading zeroes
             #[inline]
             fn to_bits(&self) -> Vec<bool> {
                 let mut res = Vec::with_capacity(256);

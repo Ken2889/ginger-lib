@@ -7,6 +7,17 @@
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::upper_case_acronyms,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::try_err,
+    clippy::map_collect_result_unit,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::suspicious_op_assign_impl,
+    clippy::suspicious_arithmetic_impl,
+    clippy::assertions_on_constants
+)]
 
 mod constraint_system;
 mod error;
@@ -24,7 +35,7 @@ use std::cmp::Ordering;
 type SmallVec<F> = StackVec<[(Variable, F); 16]>;
 
 /// Represents a variable in a constraint system.
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub struct Variable(Index);
 
 impl Variable {
@@ -42,7 +53,7 @@ impl Variable {
 }
 
 /// Represents the index of either an input variable or auxiliary variable.
-#[derive(Copy, Clone, PartialEq, Debug, Eq)]
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 pub enum Index {
     /// Index of an input variable.
     Input(usize),
@@ -71,11 +82,11 @@ impl Ord for Index {
 /// in the field `F`.
 /// The `(coeff, var)` pairs in a `LinearCombination` are kept sorted according
 /// to the index of the variable in its constraint system.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct LinearCombination<F: Field>(pub SmallVec<F>);
 
 /// Either a `Variable` or a `LinearCombination`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum ConstraintVar<F: Field> {
     /// A wrapper around a `LinearCombination`.
     LC(LinearCombination<F>),

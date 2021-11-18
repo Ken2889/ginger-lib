@@ -9,6 +9,8 @@ pub type G2PreparedGadget = mnt4::G2PreparedGadget<Parameters>;
 
 #[test]
 fn test() {
-    crate::groups::test::group_test_with_unsafe_add::<_, _, G1Gadget>();
-    crate::groups::test::group_test_with_unsafe_add::<_, _, G2Gadget>();
+    crate::groups::test::group_test_with_incomplete_add::<_, _, G1Gadget>();
+    crate::groups::test::group_test_with_incomplete_add::<_, _, G2Gadget>();
+    crate::groups::test::mul_bits_test::<_, _, G1Gadget>();
+    crate::groups::test::mul_bits_test::<_, _, G2Gadget>();
 }

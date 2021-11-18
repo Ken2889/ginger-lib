@@ -2,19 +2,25 @@ use algebra::{
     curves::short_weierstrass_projective::{
         GroupAffine as SWAffine, GroupProjective as SWProjective,
     },
-    AffineCurve, BitIterator, Field, PrimeField, ProjectiveCurve, SWModelParameters,
+    AffineCurve, BitIterator, EndoMulParameters, Field, PrimeField, ProjectiveCurve,
+    SWModelParameters,
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
+use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};
 
-use crate::{prelude::*, Assignment};
+use crate::{
+    groups::{check_mul_bits_fixed_base_inputs, check_mul_bits_inputs, EndoMulCurveGadget},
+    prelude::*,
+    Assignment,
+};
 
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]
 #[must_use]
 pub struct AffineGadget<
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 > {
     pub x: F,
@@ -27,7 +33,7 @@ pub struct AffineGadget<
 impl<P, ConstraintF, F> AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     pub fn new(x: F, y: F, infinity: Boolean) -> Self {
@@ -42,7 +48,7 @@ where
 
     #[inline]
     /// Incomplete addition: neither `self` nor `other` can be the neutral
-    /// element.
+    /// element, and other != ±self.
     /// If `safe` is set, enforce in the circuit exceptional cases not occurring.
     fn add_internal<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -107,7 +113,6 @@ where
         // Check y3
         let y3_plus_y1 = y_3.add(cs.ns(|| "y3 + y1"), &self.y)?;
         let x1_minus_x3 = self.x.sub(cs.ns(|| "x1 - x3"), &x_3)?;
-
         lambda.mul_equals(cs.ns(|| ""), &x1_minus_x3, &y3_plus_y1)?;
 
         Ok(Self::new(x_3, y_3, Boolean::Constant(false)))
@@ -115,7 +120,7 @@ where
 
     #[inline]
     /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
-    /// element.
+    /// element, and other != ±self.
     pub fn add_unsafe<CS: ConstraintSystem<ConstraintF>>(
         &self,
         cs: CS,
@@ -123,12 +128,161 @@ where
     ) -> Result<Self, SynthesisError> {
         self.add_internal(cs, other, false)
     }
+
+    #[inline]
+    /// Compute 2 * self + other as (self + other) + self: this requires less constraints
+    /// than computing self.double().add(other).
+    /// Incomplete add: neither `self` nor `other` can be the neutral element, and other != ±self;
+    /// If `safe` is set, enforce in the circuit that exceptional cases not occurring.
+    fn double_and_add_internal<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        other: &Self,
+        safe: bool,
+    ) -> Result<Self, SynthesisError> {
+        // The double-and-add sum P_4 = P_3 + P_1, where P_3 = P_1 + P_2,
+        // under the above presumptions on P_1 and P_2 is enforced by just 5
+        // constraints
+        //      1. (x2 - x1) * lambda_1 = y2 - y1;
+        //      2. lambda_1^2 = x1 +  x2 + x3;
+        //      3. (x1 - x3) * (lambda1 + lambda_2) = 2·y1
+        //      4. lambda_2^2 =   x1 + x3 + x4;
+        //      5. lambda_2 * (x1 - x4) = y_1 + y_4;
+        // Note that 3. is the result of adding the two equations
+        //      3a. (x_1 - x_3) * lambda_1 = y_1 + y_3
+        //      3b. (x_1 - x_3) * lambda_2 = y_1 - y_3.
+        // This reduction is valid as x_2 - x_1 is non-zero and hence 1. uniquely
+        // determines lambda_1, and thus x3 is determined by 2.
+        // Again, since x_1-x_3 is non-zero equation 3. uniquely determines lambda_2
+        // and hence being of the same unique value as enforced by 3a. and 3b.
+        let x2_minus_x1 = other.x.sub(cs.ns(|| "x2 - x1"), &self.x)?;
+        let y2_minus_y1 = other.y.sub(cs.ns(|| "y2 - y1"), &self.y)?;
+
+        // Allocate lambda_1
+        let lambda_1 = if safe {
+            // Enforce the extra constraint for x_2 - x_1 != 0 by using the inverse gadget
+            let inv_1 = x2_minus_x1.inverse(cs.ns(|| "enforce inv 1"))?;
+            F::alloc(cs.ns(|| "lambda_1"), || {
+                Ok(y2_minus_y1.get_value().get()? * &inv_1.get_value().get()?)
+            })
+        } else {
+            // By our presumptions, x_2 - x_1 != 0
+            F::alloc(cs.ns(|| "lambda_1"), || {
+                Ok(y2_minus_y1.get_value().get()?
+                    * &x2_minus_x1.get_value().get()?.inverse().get()?)
+            })
+        }?;
+
+        // Constraint 1.
+        lambda_1.mul_equals(cs.ns(|| "check lambda_1"), &x2_minus_x1, &y2_minus_y1)?;
+
+        let x_3 = F::alloc(&mut cs.ns(|| "x_3"), || {
+            let lambda_1_val = lambda_1.get_value().get()?;
+            let x1 = self.x.get_value().get()?;
+            let x2 = other.x.get_value().get()?;
+            Ok((lambda_1_val.square() - &x1) - &x2)
+        })?;
+
+        // Constraint 2.
+        let x3_plus_x1_plus_x2 = x_3
+            .add(cs.ns(|| "x3 + x1"), &self.x)?
+            .add(cs.ns(|| "x3 + x1 + x2"), &other.x)?;
+        lambda_1.mul_equals(cs.ns(|| "check x3"), &lambda_1, &x3_plus_x1_plus_x2)?;
+
+        // Allocate lambda_2.
+        let x1_minus_x3 = &self.x.sub(cs.ns(|| "x1 - x3"), &x_3)?;
+        let two_y1 = self.y.double(cs.ns(|| "2y1"))?;
+
+        let lambda_2 = if safe {
+            // Set the extra constraint for x_1 - x_3 != 0
+            let inv_2 = x1_minus_x3.inverse(cs.ns(|| "enforce inv 2"))?;
+            F::alloc(cs.ns(|| "lambda_2"), || {
+                let lambda_val = lambda_1.get_value().get()?;
+                let two_y1_val = two_y1.get_value().get()?;
+
+                let two_y1_div_x1_minus_x3 = two_y1_val * &inv_2.get_value().get()?;
+                Ok(two_y1_div_x1_minus_x3 - &lambda_val)
+            })
+        } else {
+            F::alloc(cs.ns(|| "lambda_2"), || {
+                let lambda_val = lambda_1.get_value().get()?;
+                let two_y1_val = two_y1.get_value().get()?;
+
+                let x1_minus_x3_inv = (x1_minus_x3.get_value().get()?).inverse().get()?;
+                let two_y1_div_x1_minus_x3 = two_y1_val * &x1_minus_x3_inv;
+                Ok(two_y1_div_x1_minus_x3 - &lambda_val)
+            })
+        }?;
+
+        // Constraint 3.
+        let lambda_2_plus_lambda_1 = lambda_2.add(cs.ns(|| "lambda_2 + lambda_1"), &lambda_1)?;
+
+        lambda_2_plus_lambda_1.mul_equals(
+            cs.ns(|| "(lambda_2 + lambda) * (x1 - x3) = 2y1"),
+            &x1_minus_x3,
+            &two_y1,
+        )?;
+
+        // Allocate the final x
+        let x_4 = F::alloc(&mut cs.ns(|| "x_4"), || {
+            let lambda_2_val = lambda_2.get_value().get()?;
+            let x1_val = self.x.get_value().get()?;
+            let x3_val = x_3.get_value().get()?;
+            Ok((lambda_2_val.square() - &x1_val) - &x3_val)
+        })?;
+
+        // Constraint 4.
+        let x4_plus_x1_plus_x3 = x_4
+            .add(cs.ns(|| "x4 + x1"), &self.x)?
+            .add(cs.ns(|| "x3 + x1 + x3"), &x_3)?;
+        lambda_2.mul_equals(cs.ns(|| "check x4"), &lambda_2, &x4_plus_x1_plus_x3)?;
+
+        // alloc the final y
+        let y_4 = F::alloc(&mut cs.ns(|| "y_4"), || {
+            let lambda_2_val = lambda_2.get_value().get()?;
+            let x_1_val = self.x.get_value().get()?;
+            let y_1_val = self.y.get_value().get()?;
+            let x_4_val = x_4.get_value().get()?;
+            Ok(lambda_2_val * &(x_1_val - &x_4_val) - &y_1_val)
+        })?;
+
+        // Constraint 5.
+        let y4_plus_y1 = y_4.add(cs.ns(|| "y4 + y1"), &self.y)?;
+        let x1_minus_x4 = self.x.sub(cs.ns(|| "x1 - x4"), &x_4)?;
+        lambda_2.mul_equals(cs.ns(|| ""), &x1_minus_x4, &y4_plus_y1)?;
+
+        Ok(Self::new(x_4, y_4, Boolean::Constant(false)))
+    }
+
+    #[inline]
+    /// Compute 2 * self + other.
+    /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
+    /// element, and other != ±self.
+    pub fn double_and_add<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        cs: CS,
+        other: &Self,
+    ) -> Result<Self, SynthesisError> {
+        self.double_and_add_internal(cs, other, true)
+    }
+
+    #[inline]
+    /// Compute 2 * self + other.
+    /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
+    /// element, and other != ±self.
+    pub fn double_and_add_unsafe<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        cs: CS,
+        other: &Self,
+    ) -> Result<Self, SynthesisError> {
+        self.double_and_add_internal(cs, other, false)
+    }
 }
 
 impl<P, ConstraintF, F> PartialEq for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -139,7 +293,7 @@ where
 impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
 }
@@ -148,7 +302,7 @@ impl<P, ConstraintF, F> GroupGadget<SWProjective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     type Value = SWProjective<P>;
@@ -189,7 +343,7 @@ where
     }
 
     #[inline]
-    /// Incomplete addition: neither `self` nor `other` can be the neutral
+    /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
     /// element.
     fn add<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -347,34 +501,267 @@ where
         ))
     }
 
-    ///This will take [(4 + 1) * ceil(len(bits)/2)] constraints to put the x lookup constraint
-    ///into the addition formula. See coda/src/lib/snarky_curves/snarky_curves.ml "scale_known"
-    ///Note: `self` must be different from `result` due to SW incomplete addition.
+    /// [Hopwood]'s optimized scalar multiplication, adapted to the general case of no
+    /// leading-one assumption. This is achieved by transforming the scalar to (almost)
+    /// constant length by adding the scalar field modulus, and applying the Hopwood algorithm
+    /// to a bit sequence of length `n+1`, where `n` is the length of the scalar field modulus.
+    /// Takes `7*n + O(1)` number of constraints instead of `6*n+O(1)`.
+    ///
+    /// Given a little-endian sequence `bits` of at most `n` Boolean gadgets, computes
+    /// the scalar multiple of `&self`, assuming the latter is assured to be in the prime order
+    /// subgroup. Due to incomplete arithmetics, is not satifiable for the scalars from the set
+    /// {0, p-2, p-1, p, p+1}.
+    ///
+    /// [Hopwood] https://github.com/zcash/zcash/issues/3924
+    /// Implementation adapted from https://github.com/ebfull/halo/blob/master/src/gadgets/ecc.rs#L1762.
+    fn mul_bits<'a, CS: ConstraintSystem<ConstraintF>>(
+        // variable base point, must be non-trivial and in the prime order subgroup
+        &self,
+        mut cs: CS,
+        // little endian, of length <= than the scalar field modulus.
+        // Should not be equal to {0, p-2, p-1, p, p+1}.
+        bits: impl Iterator<Item = &'a Boolean>,
+    ) -> Result<Self, SynthesisError> {
+        assert!(P::ScalarField::size_in_bits() >= 3);
+
+        let double_and_add_step = |mut cs: r1cs_core::Namespace<_, _>,
+                                   bit: &Boolean,
+                                   acc: &mut Self,
+                                   t: &Self,
+                                   safe_arithmetics: bool|
+         -> Result<(), SynthesisError> {
+            // Q := k[i+1] ? T : −T
+            let neg_y = t.y.negate(cs.ns(|| "neg y"))?;
+            let selected_y =
+                F::conditionally_select(cs.ns(|| "select y or -y"), bit, &t.y, &neg_y)?;
+            let q = Self::new(t.x.clone(), selected_y, t.infinity);
+
+            // Acc := (Acc + Q) + Acc using double_and_add_internal
+            *acc = acc.double_and_add_internal(cs.ns(|| "double and add"), &q, safe_arithmetics)?;
+
+            Ok(())
+        };
+
+        let mut bits = bits.cloned().collect::<Vec<Boolean>>();
+        if self.get_value().is_some() && bits.iter().all(|b| b.get_value().is_some()) {
+            check_mul_bits_inputs(
+                &self.get_value().unwrap(),
+                bits.iter().map(|b| b.get_value().unwrap()).collect(),
+            )?;
+        }
+
+        // Length normalization by adding the scalar field modulus.
+        // The result is alway n + 1 bits long, although the leading bit might be zero.
+        // Costs ~ 1*n + O(1) many constraints.
+        bits = crate::groups::scalar_bits_to_constant_length::<_, P::ScalarField, _>(
+            cs.ns(|| "scalar bits to constant length"),
+            bits,
+        )?;
+
+        let t = self.clone();
+
+        // Acc := [3] T = [2]*T + T
+        let init = {
+            let mut t_copy = t.clone();
+            t_copy.double_in_place(cs.ns(|| "[2] * T"))?;
+            t_copy.add_unsafe(cs.ns(|| "[3] * T"), &t)
+        }?;
+
+        /* Separate treatment of the two leading bits.
+        Assuming that T is in the correct subgroup, no exceptions for affine arithmetic
+        are met.
+        */
+
+        // This processes the most significant bit for the case
+        // bits[n]=1.
+        let mut acc = init.clone();
+        let leading_bit = bits.pop().unwrap();
+
+        // Processing bits[n-1] for the case bits[n] = 1
+        double_and_add_step(
+            cs.ns(|| "Processing bits[n-1] for the case bits[n] == 1"),
+            &bits.pop().unwrap(),
+            &mut acc,
+            &t,
+            false,
+        )?;
+
+        // If leading_bit is one we reset acc to the case bits[n-1]==1
+        acc = Self::conditionally_select(
+            cs.ns(|| "reset acc if leading_bit == 1"),
+            &leading_bit,
+            &acc,
+            &init,
+        )?;
+
+        /* The next bits bits[n-2],...,bits[3] (i.e. except the three least significant)
+        are treated as in Hopwoods' algorithm.
+        */
+
+        // No exceptions can be hit here either, so we are allowed to use unsafe add.
+        // (For T = 0 we don't care.)
+        for (i, bit) in bits
+            .iter()
+            .enumerate()
+            // Skip the two least significant bits (we handle them after the loop)
+            .skip(3)
+            // Scan over the scalar bits in big-endian order
+            .rev()
+        {
+            double_and_add_step(cs.ns(|| format!("bit {}", i + 2)), bit, &mut acc, &t, false)?;
+        }
+
+        /* The last three bits are treated by a careful decision between add()
+        and add_unsafe().
+        */
+
+        // Why the step processing bit[2] needs to be treated with a
+        // secure add: The scalar after adding p consists of n+1 bits
+        //             n-1 bits
+        //     /-----------------------------\
+        //     (bits[n], ... ,bits[3], bits[2], bits[1], bits[0])
+        //
+        // and the result of `acc` after processing bit[2] is
+        //
+        //                 n bits
+        //     /---------------------------------\
+        //     [bits[n], bits[n-1],..., bits[2], 1] * T.
+        //
+        // This output is equal to 0 (and hence causes an exception in the
+        // last add when processing bits[2]) iff
+        //
+        //     [bits[n], bits[n-1],....,bits[2], 1] = p,
+        //
+        // or equivalently [bit[n],...,bits[2],bits[1]] = {p or p-1}.
+        // This corresponds to
+        //     scalar + p  = 2 * {p or p-1} + bits[0]
+        // or  scalar being from {p-2, p-1, p, p + 1}.
+        // A more detailed exploration shows that this set is the complete set
+        // of exceptions.
+        double_and_add_step(cs.ns(|| "bit 2"), &bits[2], &mut acc, &t, true)?;
+
+        // Why the step processing bit[1] needs to be treated with a
+        // secure add:
+        // After processing bit[1] `acc` is equal to
+        //
+        //                 n+1 bits
+        //     /---------------------------------------\
+        //     [bits[n], bits[n-1],..., bits[2], bits[1], 1] * T
+        //
+        // which is 0 iff
+        //
+        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] = p,
+        //
+        // or equivalently [bit[n],...,bits[2],bits[1],bits[0]] = {p or p-1}.
+        // These cases corresponds to
+        //     scalar + p  = {p or p-1}
+        // or a scalar from  {0 , -1}. The latter cannot be achieved by an
+        // unsigned integer representation. The case scalar = 0 is not
+        // covered by the secure add from the step of bits[2].
+        double_and_add_step(cs.ns(|| "bit 1"), &bits[1], &mut acc, &t, true)?;
+
+        // The final bit is taken into account by correcting the `1` in
+        //
+        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] * T,
+        //
+        // via substracting T and a subsequent conditional choice
+        //
+        //      return (k[0] = 0) ? (Acc - T) : Acc.
+        //
+        // We hit exceptions in this sub if and only if
+        //
+        //   [bits[n], bits[n-1],....,bits[2],bits[1], 1]*T = +/- T,
+        // or
+        //  [bits[n], bits[n-1],....,bits[2],bits[1], 1] = +/- 1  mod p.
+        // Hence
+        //
+        //  [bits[n], bits[n-1],....,bits[2],bits[1], 0] = {-2,0} mod p,
+        //
+        // and [bits[n],...,bits[1],bits[0]] is contained in {-2,-1,0,1} mod p.
+        // As this case is already covered by the secure add of step bit[2],
+        // we may use add_unsafe() here.
+        let neg_t = t.negate(cs.ns(|| "neg T"))?;
+        let acc_minus_t = acc.add_unsafe(cs.ns(|| "Acc - T"), &neg_t)?;
+
+        let result = Self::conditionally_select(
+            cs.ns(|| "select acc or acc - T"),
+            &bits[0],
+            &acc,
+            &acc_minus_t,
+        )?;
+
+        Ok(result)
+    }
+
+    /// Fixed base scalar multiplication as mentioned by [Hopwood] using a signed
+    /// digit representation. Takes roughly 2 constraints per scalar bit.
+    /// Bits must be in little endian form, and as most as long as the scalar field
+    /// modulus.
+    /// CAUTION: Due to the use of incomplete arithemtics, there are few exceptions
+    /// described in `fn check_mul_bits_fixed_base_inputs()`.
+    ///
+    /// [Hopwood]: https://github.com/zcash/zcash/issues/3924
     #[inline]
     fn mul_bits_fixed_base<'a, CS: ConstraintSystem<ConstraintF>>(
         base: &'a SWProjective<P>,
         mut cs: CS,
-        result: &Self,
         bits: &[Boolean],
     ) -> Result<Self, SynthesisError> {
-        let mut to_sub = SWProjective::<P>::zero();
-
-        let mut t = base.clone();
-        let sigma = base.clone();
-        let mut result = result.clone();
-
-        let mut bit_vec = Vec::new();
-        bit_vec.extend_from_slice(bits);
-        //Simply add padding. This should be safe, since the padding bit will be part of the
-        //circuit. (It is also done elsewhere).
-        if bits.len() % 2 != 0 {
-            bit_vec.push(Boolean::constant(false))
+        // bits must not exceed the length the scalar field modulus
+        if bits.len() > P::ScalarField::size_in_bits() {
+            return Err(SynthesisError::Other(format!(
+                "Input bits size: {}, max allowed size: {}",
+                bits.len(),
+                P::ScalarField::size_in_bits()
+            )));
         }
 
-        for (i, bits) in bit_vec.chunks(2).enumerate() {
-            let ti = t.clone();
-            let two_ti = ti.double();
-            let mut table = [sigma, sigma + &ti, sigma + &two_ti, sigma + &ti + &two_ti];
+        // After padding to the next multiple of two we compute
+        //
+        //  acc = sum_{i=0}^{m-1} ((2*b_{2i+1} + b_i) - 3/2) * 4^i * T
+        //      = sum_{i=0}^{m-1} (2*(2*b_{2i+1} + b_i) - 3) * 4^i * T',
+        //
+        // with T' = 1/2 T, and then correct the result by substracting
+        //  - 3* sum_{i=0}^{m-1} * 4^i * T' = -3* (4^m -1) * T'.
+        // This signed representation with digits from the symmetric
+        // set {-3,-1,+1,+3} allows to use add_unsafe in a controlled
+        // way.
+
+        // Init
+        let mut to_sub = SWProjective::<P>::zero();
+
+        // T = 2^{-1} * base
+        let mut t = {
+            let two_inv = P::ScalarField::one().double().inverse().unwrap();
+            (*base).mul(&two_inv)
+        };
+
+        // Init to 0 to avoid compilation errors ("usage of possibily uninitialized variable").
+        // The 0 val will never be used and acc will be initialized to proper value in the first
+        // iteration of the loop below.
+        let mut acc = Self::zero(cs.ns(|| "initialize acc"))?;
+
+        // Pad bits with 0s if not even
+        let mut bits = bits.to_vec();
+        if bits.len() % 2 != 0 {
+            bits.push(Boolean::constant(false));
+        }
+
+        // Pre-checks
+        if bits.iter().all(|b| b.get_value().is_some()) {
+            check_mul_bits_fixed_base_inputs(
+                base,
+                bits.iter().rev().map(|b| b.get_value().unwrap()).collect(),
+            )?;
+        };
+
+        let num_chunks = bits.len() / 2;
+
+        for (i, bits) in bits.chunks(2).enumerate() {
+            // Compute table for this chunk
+            let ti = t;
+            let three_ti = ti.double().add(&ti);
+            let mut table = [three_ti.neg(), ti.neg(), ti, three_ti];
 
             //Compute constants
             SWProjective::batch_normalization(&mut table);
@@ -396,14 +783,32 @@ where
                 &y_coords,
             )?;
 
-            //Perform addition
-            let adder: Self = Self::new(x, y, Boolean::constant(false));
-            result = result.add(cs.ns(|| format!("Add_{}", i)), &adder)?;
+            // Add the value computed in this chunk to the accumulator
+            match i {
+                // First chunk -> initialize acc
+                chunk if chunk == 0 => {
+                    acc = Self::new(x, y, Boolean::constant(false));
+                }
+
+                // We can use unsafe add, no exception occur
+                chunk if chunk < num_chunks => {
+                    let adder: Self = Self::new(x, y, Boolean::constant(false));
+                    acc = acc.add_unsafe(cs.ns(|| format!("Add_{}", i)), &adder)?;
+                }
+
+                // Last chunk we must use safe add
+                _ => {
+                    let adder: Self = Self::new(x, y, Boolean::constant(false));
+                    acc = acc.add(cs.ns(|| format!("Add_{}", i)), &adder)?;
+                }
+            }
+
+            // Update values for next chunk
             t = t.double().double();
-            to_sub += &sigma;
+            to_sub += &table[0];
         }
-        result = result.sub_constant(cs.ns(|| "result - sigma*n_div_2"), &to_sub)?;
-        Ok(result)
+        acc = acc.sub_constant(cs.ns(|| "acc - to_sub"), &to_sub)?;
+        Ok(acc)
     }
 
     /// Useful in context when you have some signed representation of the scalar's digits, like
@@ -425,7 +830,6 @@ where
         const CHUNK_SIZE: usize = 3;
         let mut sw_result: Option<AffineGadget<P, ConstraintF, F>> = None;
         let mut result: Option<AffineGadget<P, ConstraintF, F>> = None;
-
         let mut process_segment_result = |mut cs: r1cs_core::Namespace<_, _>,
                                           result: &AffineGadget<P, ConstraintF, F>|
          -> Result<(), SynthesisError> {
@@ -439,17 +843,15 @@ where
                         segment_result.add_unsafe(cs.ns(|| "sw outer addition"), sw_result)?;
                 }
             }
-
             Ok(())
         };
-
         // Compute ∏(h_i^{m_i}) for all i.
         for (segment_i, (segment_bits_chunks, segment_powers)) in
-            scalars.into_iter().zip(bases.iter()).enumerate()
+            scalars.iter().zip(bases.iter()).enumerate()
         {
             for (i, (bits, base_power)) in segment_bits_chunks
                 .borrow()
-                .into_iter()
+                .iter()
                 .zip(segment_powers.borrow().iter())
                 .enumerate()
             {
@@ -458,43 +860,35 @@ where
                 let mut coords = vec![];
                 for _ in 0..4 {
                     coords.push(acc_power);
-                    acc_power = acc_power + base_power;
+                    acc_power += base_power;
                 }
-
                 let bits = bits.borrow().to_bits(
                     &mut cs.ns(|| format!("Convert Scalar {}, {} to bits", segment_i, i)),
                 )?;
                 if bits.len() != CHUNK_SIZE {
                     return Err(SynthesisError::Unsatisfiable);
                 }
-
                 let coords = coords.iter().map(|p| p.into_affine()).collect::<Vec<_>>();
-
                 let x_coeffs = coords.iter().map(|p| p.x).collect::<Vec<_>>();
                 let y_coeffs = coords.iter().map(|p| p.y).collect::<Vec<_>>();
-
                 let precomp = Boolean::and(
                     cs.ns(|| format!("precomp in window {}, {}", segment_i, i)),
                     &bits[0],
                     &bits[1],
                 )?;
-
                 let x = F::two_bit_lookup_lc(
                     cs.ns(|| format!("x in window {}, {}", segment_i, i)),
                     &precomp,
                     &[bits[0], bits[1]],
                     &x_coeffs,
                 )?;
-
                 let y = F::three_bit_cond_neg_lookup(
                     cs.ns(|| format!("y lookup in window {}, {}", segment_i, i)),
                     &bits,
                     &precomp,
                     &y_coeffs,
                 )?;
-
                 let tmp = Self::new(x, y, Boolean::constant(false));
-
                 match result {
                     None => {
                         result = Some(tmp);
@@ -507,7 +901,6 @@ where
                     }
                 }
             }
-
             process_segment_result(cs.ns(|| format!("window {}", segment_i)), &result.unwrap())?;
             result = None;
         }
@@ -526,10 +919,90 @@ where
     }
 }
 
+impl<P, ConstraintF, F> EndoMulCurveGadget<SWProjective<P>, ConstraintF>
+    for AffineGadget<P, ConstraintF, F>
+where
+    P: EndoMulParameters,
+    ConstraintF: PrimeField,
+    F: FieldGadget<P::BaseField, ConstraintF>,
+{
+    /// Given an arbitrary curve element `&self`, applies the endomorphism
+    /// defined by `ENDO_COEFF`.
+    fn apply_endomorphism<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self::new(
+            self.x.mul_by_constant(cs.ns(|| "endo x"), &P::ENDO_COEFF)?,
+            self.y.clone(),
+            self.infinity,
+        ))
+    }
+
+    /// The endomorphism-based scalar multiplication circuit from [Halo],taking only
+    /// 3.5 constraints per "scalar" bit. Assumes that `ENDO_SCALAR` satisfies the minimal
+    /// distance property as mentioned in `SWModelParameters`.
+    /// Given any non-trivial point `P= &self` of the prime order r subgroup, and a slice
+    /// of an even number of at most `lambda` Booleans `bits`, enforces that the result equals
+    ///     phi(bits) * P,
+    /// where `phi(bits)` is the equivalent scalar representation of `bits`.
+    ///
+    /// [Halo]: https://eprint.iacr.org/2019/1021
+    fn endo_mul<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        bits: &[Boolean],
+    ) -> Result<Self, SynthesisError> {
+        let mut bits = bits.to_vec();
+        if bits.len() % 2 == 1 {
+            bits.push(Boolean::constant(false));
+        }
+
+        if bits.len() > P::LAMBDA {
+            Err(SynthesisError::Other(
+                "Endo mul bits length exceeds LAMBDA".to_owned(),
+            ))?
+        }
+
+        let endo_self = self.apply_endomorphism(cs.ns(|| "endo self"))?;
+        let self_y_neg = self.y.negate(cs.ns(|| "self y negate"))?;
+
+        let mut acc = endo_self.clone();
+        acc = acc.add(cs.ns(|| "add"), &self)?;
+        acc.double_in_place(cs.ns(|| "double"))?;
+
+        for i in (0..(bits.len() / 2)).rev() {
+            // Conditional select between (-1)^b_0 * Phi^{b_1}(&self), according
+            // to [b_1,b_0] = bits[2i+1, 2i].
+            // Takes 2 constraints.
+            let add = Self::new(
+                F::conditionally_select(
+                    cs.ns(|| format!("conditional bit1 select endo {}", i)),
+                    &bits[i * 2 + 1],
+                    &endo_self.x,
+                    &self.x,
+                )?,
+                F::conditionally_select(
+                    cs.ns(|| format!("conditional bit0 select negate {}", i)),
+                    &bits[i * 2],
+                    &self.y,
+                    &self_y_neg,
+                )?,
+                self.infinity,
+            );
+
+            // The unsafe double and add, takes 5 constraints.
+            acc = acc.double_and_add_unsafe(cs.ns(|| format!("double_and_add {}", i)), &add)?;
+        }
+
+        Ok(acc)
+    }
+}
+
 impl<P, ConstraintF, F> CondSelectGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     #[inline]
@@ -560,7 +1033,7 @@ where
 impl<P, ConstraintF, F> EqGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(
@@ -623,12 +1096,9 @@ impl<P, ConstraintF, F> AllocGadget<SWProjective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    /// On curve test is performed on x and y coordinates regardless of the infinity flag.
-    /// NOTE: Depending on the curve, this might be inconsistent with our default values
-    /// for x and y if infinity is true.
     #[inline]
     fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -666,7 +1136,13 @@ where
         let x2_plus_a = x2.add_constant(cs.ns(|| "x^2 + a"), &a)?;
         let y2_minus_b = y2.add_constant(cs.ns(|| "y^2 - b"), &b.neg())?;
 
-        x2_plus_a.mul_equals(cs.ns(|| "on curve check"), &x, &y2_minus_b)?;
+        let x2_plus_a_times_x = x2_plus_a.mul(cs.ns(|| "(x^2 + a)*x"), &x)?;
+
+        x2_plus_a_times_x.conditional_enforce_equal(
+            cs.ns(|| "on curve check"),
+            &y2_minus_b,
+            &infinity.not(),
+        )?;
 
         Ok(Self::new(x, y, infinity))
     }
@@ -699,10 +1175,6 @@ where
         Ok(Self::new(x, y, infinity))
     }
 
-    /// On curve and group membership test is performed on x and y coordinates regardless
-    /// of the infinity flag.
-    /// NOTE: Depending on the curve, this might be inconsistent with our default values
-    /// for x and y if infinity is true.
     #[inline]
     fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -718,7 +1190,6 @@ where
                 // If we multiply by r, we actually multiply by r - 2.
                 let r_minus_1 = (-P::ScalarField::one()).into_repr();
                 let r_weight = BitIterator::new(&r_minus_1).filter(|b| *b).count();
-
                 // We pick the most efficient method of performing the prime order check:
                 // If the cofactor has lower hamming weight than the scalar field's modulus,
                 // we first multiply by the inverse of the cofactor, and then, after allocating,
@@ -739,14 +1210,12 @@ where
                     let mut result = Self::zero(cs.ns(|| "result"))?;
                     for (i, b) in BitIterator::new(P::COFACTOR).enumerate() {
                         let mut cs = cs.ns(|| format!("Iteration {}", i));
-
                         let old_seen_one = seen_one;
                         if seen_one {
                             result.double_in_place(cs.ns(|| "Double"))?;
                         } else {
                             seen_one = b;
                         }
-
                         if b {
                             result = if old_seen_one {
                                 result.add(cs.ns(|| "Add"), &ge)?
@@ -763,14 +1232,12 @@ where
                     // Returns bits in big-endian order
                     for (i, b) in BitIterator::new(r_minus_1).enumerate() {
                         let mut cs = cs.ns(|| format!("Iteration {}", i));
-
                         let old_seen_one = seen_one;
                         if seen_one {
                             result.double_in_place(cs.ns(|| "Double"))?;
                         } else {
                             seen_one = b;
                         }
-
                         if b {
                             result = if old_seen_one {
                                 result.add(cs.ns(|| "Add"), &ge)?
@@ -784,7 +1251,6 @@ where
                     Ok(ge)
                 }
             };
-
         let ge = alloc_and_prime_order_check(cs.ns(|| "alloc and prime order check"), value_gen)?;
 
         Ok(ge)
@@ -826,7 +1292,13 @@ where
         let x2_plus_a = x2.add_constant(cs.ns(|| "x^2 + a"), &a)?;
         let y2_minus_b = y2.add_constant(cs.ns(|| "y^2 - b"), &b.neg())?;
 
-        x2_plus_a.mul_equals(cs.ns(|| "on curve check"), &x, &y2_minus_b)?;
+        let x2_plus_a_times_x = x2_plus_a.mul(cs.ns(|| "(x^2 + a)*x"), &x)?;
+
+        x2_plus_a_times_x.conditional_enforce_equal(
+            cs.ns(|| "on curve check"),
+            &y2_minus_b,
+            &infinity.not(),
+        )?;
 
         Ok(Self::new(x, y, infinity))
     }
@@ -836,7 +1308,7 @@ impl<P, ConstraintF, F> ConstantGadget<SWProjective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &SWProjective<P>) -> Self {
@@ -865,7 +1337,7 @@ where
 impl<P, ConstraintF, F> ToBitsGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn to_bits<CS: ConstraintSystem<ConstraintF>>(
@@ -899,7 +1371,7 @@ where
 impl<P, ConstraintF, F> ToBytesGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
@@ -958,7 +1430,6 @@ where
 
 use crate::fields::fp::FpGadget;
 use crate::ToCompressedBitsGadget;
-
 impl<ConstraintF> ToCompressedBitsGadget<ConstraintF> for CompressAffinePointGadget<ConstraintF>
 where
     ConstraintF: PrimeField,
@@ -972,10 +1443,8 @@ where
         //Enforce x_coordinate to bytes
         let mut compressed_bits = self.x.to_bits_strict(cs.ns(|| "x_to_bits_strict"))?;
         compressed_bits.push(self.infinity);
-
         let is_odd = self.y.is_odd(cs.ns(|| "y parity"))?;
         compressed_bits.push(is_odd);
-
         Ok(compressed_bits)
     }
 }

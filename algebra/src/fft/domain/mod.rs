@@ -19,7 +19,7 @@ pub use self::basic_radix_2_domain::*;
 pub mod mixed_radix_2_domain;
 pub use self::mixed_radix_2_domain::*;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod test;
 
 use crate::PrimeField;
@@ -286,7 +286,7 @@ pub fn sample_element_outside_domain<F: PrimeField, R: Rng>(
     t
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod tests {
     use crate::fields::tweedle::fr::Fr;
     use crate::get_best_evaluation_domain;

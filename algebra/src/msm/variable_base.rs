@@ -237,29 +237,54 @@ impl VariableBaseMSM {
     where
         G::Projective: ProjectiveCurve<Affine = G>,
     {
-        let scal_len = scalars.len();
-
-        let c: usize = if scal_len < 32 {
-            3
-        } else {
-            (2.0 / 3.0 * (f64::from(scalars.len() as u32)).log2() - 2.0).ceil() as usize
-        };
+        let c = Self::get_optimal_window_size_for_msm_affine::<G>(scalars.len());
 
         Self::multi_scalar_mul_affine_c(bases, scalars, c)
+    }
+
+    /// Hardcoded window sizes below were chosen using results from benches in algebra/benches/criterion_msm/...
+    fn get_optimal_window_size_for_msm_affine<G: AffineCurve>(scalars_len: usize) -> usize {
+        let c: usize = if scalars_len < 32 {
+            3
+        } else {
+            (2.0 / 3.0 * (f64::from(scalars_len as u32)).log2() - 2.0).ceil() as usize
+        };
+
+        #[cfg(feature = "bn_382")]
+        if std::any::TypeId::of::<G>() == std::any::TypeId::of::<crate::curves::bn_382::G1Affine>()
+            || std::any::TypeId::of::<G>()
+                == std::any::TypeId::of::<crate::curves::bn_382::G2Affine>()
+            || std::any::TypeId::of::<G>()
+                == std::any::TypeId::of::<crate::curves::bn_382::g::Affine>()
+        {
+            return match scalars_len {
+                scalars_len if scalars_len <= 1 << 16 => c,
+                scalars_len if scalars_len <= 1 << 21 => 12,
+                scalars_len if scalars_len <= 1 << 23 => 16,
+                _ => c,
+            };
+        }
+
+        #[cfg(feature = "tweedle")]
+        if std::any::TypeId::of::<G>()
+            == std::any::TypeId::of::<crate::curves::tweedle::dee::Affine>()
+            || std::any::TypeId::of::<G>()
+                == std::any::TypeId::of::<crate::curves::tweedle::dum::Affine>()
+        {
+            return 11;
+        }
+
+        return c;
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-
-    use crate::curves::tweedle::dee::Projective as TweedleDee;
-    use crate::curves::tweedle::dum::Projective as TweedleDum;
-
     use crate::UniformRand;
-    use rand::{Rng, SeedableRng};
-    use rand_xorshift::XorShiftRng;
+    use rand::Rng;
 
+    #[allow(dead_code)]
     fn naive_var_base_msm<G: AffineCurve>(
         bases: &[G],
         scalars: &[<G::ScalarField as PrimeField>::BigInt],
@@ -272,7 +297,8 @@ mod test {
         acc
     }
 
-    fn test_all_variants<G: ProjectiveCurve, R: Rng>(samples: usize, c: usize, rng: &mut R) {
+    #[allow(dead_code)]
+    fn test_all_variants<G: ProjectiveCurve, R: Rng>(samples: usize, rng: &mut R) {
         let v = (0..samples)
             .map(|_| G::ScalarField::rand(rng).into_repr())
             .collect::<Vec<_>>();
@@ -283,9 +309,8 @@ mod test {
         let naive = naive_var_base_msm(g.as_slice(), v.as_slice());
         let fast = VariableBaseMSM::msm_inner(g.as_slice(), v.as_slice()).unwrap();
 
-        let affine =
-            VariableBaseMSM::multi_scalar_mul_affine_c(g.as_slice(), v.as_slice(), c).unwrap();
-        let inner = VariableBaseMSM::msm_inner_c(g.as_slice(), v.as_slice(), c).unwrap();
+        let affine = VariableBaseMSM::multi_scalar_mul(g.as_slice(), v.as_slice()).unwrap();
+        let inner = VariableBaseMSM::msm_inner(g.as_slice(), v.as_slice()).unwrap();
 
         assert_eq!(naive, fast);
 
@@ -296,9 +321,13 @@ mod test {
     #[cfg(feature = "tweedle")]
     #[test]
     fn test_all_variants_tweedle() {
-        let rng = &mut XorShiftRng::seed_from_u64(234872845u64);
+        use crate::curves::tweedle::dee::Projective as TweedleDee;
+        use crate::curves::tweedle::dum::Projective as TweedleDum;
+        use rand::SeedableRng;
 
-        test_all_variants::<TweedleDee, _>(1 << 12, 16, rng);
-        test_all_variants::<TweedleDum, _>(1 << 12, 16, rng);
+        let rng = &mut rand_xorshift::XorShiftRng::seed_from_u64(234872845u64);
+
+        test_all_variants::<TweedleDee, _>(1 << 12, rng);
+        test_all_variants::<TweedleDum, _>(1 << 12, rng);
     }
 }

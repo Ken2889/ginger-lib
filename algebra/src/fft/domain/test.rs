@@ -60,7 +60,7 @@ fn fft_consistency() {
                 let domain = get_best_evaluation_domain::<Fr>(v1.len()).unwrap();
 
                 for log_cpus in log_d..min(log_d + 1, 3) {
-                    if log_d < Fr::Params::TWO_ADICITY {
+                 if log_d < Fr::Params::TWO_ADICITY {
                         BasicRadix2Domain::parallel_fft(
                             &mut v1,
                             &worker,
