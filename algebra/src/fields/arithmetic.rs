@@ -57,7 +57,7 @@ macro_rules! impl_anti_mersenne_reduction {
                     }
                 }
                 else {
-                    sign = sign ^^ true;
+                    sign = sign ^ true;
                     x = x_h_times_c - x_l;
                 }
             }
@@ -91,7 +91,7 @@ macro_rules! impl_field_mul_assign {
             let _no_carry: bool = !(first_bit_set || all_bits_set);
 
             // No-carry optimisation applied to CIOS
-            if _no_carry {
+            if _no_carry && P::C.is_none() {
                 #[cfg(use_asm)]
                 #[allow(unsafe_code, unused_mut)]
                 {
@@ -130,8 +130,10 @@ macro_rules! impl_field_mul_assign {
                     }
                     r[$limbs + i] = carry;
                 }
+
+                // Use Mersenne reduction if C is some, otherwise use Montgomery
                 if P::C.is_some() {
-                    if P::C_SIGN {
+                    if P::C_SIGN.unwrap() {
                         self.mersenne_reduction(&mut r)
                     } else {
                         self.anti_mersenne_reduction(&mut r)
@@ -155,26 +157,30 @@ macro_rules! impl_field_mul_short_assign {
         //TODO: Can we write the assembly equivalent of this ? Is it worth ?
         //TODO: Probably there's a more compact way to write this
         fn mul_short_assign(&mut self, other: &Self) {
-            let mut r = [0u64; $limbs + 1];
-            let mut carry1 = 0u64;
-            let mut carry2 = 0u64;
-
-            for i in 0..$limbs {
-                r[i] = fa::mac_with_carry(0, (self.0).0[0], (other.0).0[i], &mut carry1);
+            if P::C.is_none() {
+                let mut r = [0u64; $limbs + 1];
+                let mut carry1 = 0u64;
+                let mut carry2 = 0u64;
+    
+                for i in 0..$limbs {
+                    r[i] = fa::mac_with_carry(0, (self.0).0[0], (other.0).0[i], &mut carry1);
+                }
+                r[$limbs] = carry1;
+    
+                let k = r[0].wrapping_mul(P::INV);
+                fa::mac_with_carry(r[0], k, P::MODULUS.0[0], &mut carry2);
+                for i in 1..$limbs {
+                    r[i] = fa::mac_with_carry(r[i], k, P::MODULUS.0[i], &mut carry2);
+                }
+                r[$limbs] = fa::adc(r[$limbs], 0, &mut carry2);
+    
+                for i in 0..$limbs {
+                    (self.0).0[i] = r[i + 1];
+                }
+                self.reduce();
+            } else {
+                unimplemented!();
             }
-            r[$limbs] = carry1;
-
-            let k = r[0].wrapping_mul(P::INV);
-            fa::mac_with_carry(r[0], k, P::MODULUS.0[0], &mut carry2);
-            for i in 1..$limbs {
-                r[i] = fa::mac_with_carry(r[i], k, P::MODULUS.0[i], &mut carry2);
-            }
-            r[$limbs] = fa::adc(r[$limbs], 0, &mut carry2);
-
-            for i in 0..$limbs {
-                (self.0).0[i] = r[i + 1];
-            }
-            self.reduce();
         }
     };
 }
@@ -185,20 +191,24 @@ macro_rules! impl_field_into_repr {
         #[unroll_for_loops]
         fn into_repr(&self) -> $BigIntegerType {
             let mut tmp = self.0;
-            let mut r = tmp.0;
-            // Montgomery Reduction
-            for i in 0..$limbs {
-                let k = r[i].wrapping_mul(P::INV);
-                let mut carry = 0;
 
-                fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
-                for j in 1..$limbs {
-                    r[(j + i) % $limbs] =
-                        fa::mac_with_carry(r[(j + i) % $limbs], k, P::MODULUS.0[j], &mut carry);
+            // If C is none we are going to use Montgomery reduction
+            if P::C.is_none() {
+                let mut r = tmp.0;
+                // Montgomery Reduction
+                for i in 0..$limbs {
+                    let k = r[i].wrapping_mul(P::INV);
+                    let mut carry = 0;
+    
+                    fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
+                    for j in 1..$limbs {
+                        r[(j + i) % $limbs] =
+                            fa::mac_with_carry(r[(j + i) % $limbs], k, P::MODULUS.0[j], &mut carry);
+                    }
+                    r[i % $limbs] = carry;
                 }
-                r[i % $limbs] = carry;
+                tmp.0 = r;
             }
-            tmp.0 = r;
             tmp
         }
     };
@@ -221,7 +231,7 @@ macro_rules! impl_field_square_in_place {
             #[cfg(use_asm)]
             #[allow(unsafe_code, unused_mut)]
             {
-                if $limbs <= 6 && _no_carry {
+                if $limbs <= 6 && _no_carry && P::C.is_none() {
                     #[allow(unsafe_code)]
                     llvm_asm_square!($limbs, (self.0).0, P::MODULUS.0, P::INV);
                     self.reduce();
@@ -261,7 +271,16 @@ macro_rules! impl_field_square_in_place {
                 r[2 * i] = fa::mac_with_carry(r[2 * i], (self.0).0[i], (self.0).0[i], &mut carry);
                 r[2 * i + 1] = fa::adc(r[2 * i + 1], 0, &mut carry);
             }
-            self.montgomery_reduction(&mut r);
+            // Use Mersenne reduction if C is some, otherwise use Montgomery
+            if P::C.is_some() {
+                if P::C_SIGN {
+                    self.mersenne_reduction(&mut r)
+                } else {
+                    self.anti_mersenne_reduction(&mut r)
+                }
+            } else{
+                self.montgomery_reduction(&mut r)
+            }
             self
         }
     };

@@ -137,6 +137,8 @@ macro_rules! impl_Fp {
             }
 
             impl_montgomery_reduction!($limbs);
+            impl_mersenne_reduction!($limbs);
+            impl_anti_mersenne_reduction!($limbs);
         }
 
         impl<P: $FpParameters> Field for $Fp<P> {
@@ -336,12 +338,17 @@ macro_rules! impl_Fp {
 
             #[inline]
             fn from_repr(r: $BigIntegerType) -> Self {
-                let mut r = $Fp(r, PhantomData);
-                if r.is_valid() {
-                    r.mul_assign(&$Fp(P::R2, PhantomData));
-                    r
+                // If C is defined we are going to use Mersenne reduction so we must not adopt Montgomery representation
+                if P::C.is_some() {
+                    Self::from_repr_raw(r)
                 } else {
-                    Self::zero()
+                    let mut r = $Fp(r, PhantomData);
+                    if r.is_valid() {
+                        r.mul_assign(&$Fp(P::R2, PhantomData));
+                        r
+                    } else {
+                        Self::zero()
+                    }
                 }
             }
 

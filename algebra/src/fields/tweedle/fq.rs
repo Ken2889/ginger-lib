@@ -12,9 +12,9 @@ impl Fp256Parameters for FqParameters {}
 impl FpParameters for FqParameters {
     type BigInt = BigInteger;
 
-    const C: &'static[u64] = [0x842cafd400000001, 0x038aa127696286c9]
+    const C: Option<&'static[u64]> = Some(&[0x842cafd400000001, 0x038aa127696286c9]);
 
-    const C_sign = false;
+    const C_SIGN: Option<bool> = Some(false);
 
     // MODULUS = 2^254 + C
     const MODULUS: BigInteger = BigInteger([
