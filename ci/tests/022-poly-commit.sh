@@ -2,7 +2,7 @@
 
 set -xeo pipefail
 
-cd proof-systems/src/darlin/marlin
+cd proof-systems/src/darlin/poly-commit
 
 # shellcheck disable=SC2086
 
