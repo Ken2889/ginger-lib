@@ -263,10 +263,13 @@ pub trait FpParameters: 'static + Send + Sync + Sized {
     const MODULUS_BITS: u32;
 
     /// A relatively small constant C such that MODULUS == 2^(MODULUS_BITS - 1) plus or minus C
-    const C: Option<&'static[u64]> = None;
+    const C: &'static[u64];
 
     // C_SIGN = true if the sign is negative, false otherwise
     const C_SIGN: Option<bool> = None;
+
+    // C_LEN = number of limbs which represent C
+    const C_LEN: usize;
 
     /// The number of bits that must be shaved from the beginning of
     /// the representation when randomly sampling.

@@ -20,56 +20,105 @@ macro_rules! impl_montgomery_reduction {
     };
 }
 
+
 macro_rules! impl_mersenne_reduction {
-    ($limbs:expr) => {
+    ($limbs:expr, $c_len: expr) => {
+
+        // const fn get_bitmask() -> u64 {
+        //     (1 << (64 - P::REPR_SHAVE_BITS)) - 1
+        // }
+
+        #[inline]
+        #[unroll_for_loops]
+        fn mul2pow(base: &mut [u64], n: u32) {
+            let mut last = 0;
+            let m = 64 - n;
+            for i in base {
+                let tmp = *i >> m;
+                *i <<= n;
+                *i |= last;
+                last = tmp;
+            }
+        }
+        
+
         #[inline]
         #[unroll_for_loops]
         fn mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
-            while x >= P::MODULUS{
-                x_bits = x.to_bits();
-                x_l = x_bits[0..P::MODULUS_BITS].into_u64_seq(); 
-                x_h = x_bits[P::MODULUS_BITS..].into_u64_seq();
-                x_h_times_c = x_h * P::C; // It should be a product of u64 seq
-                x = x_h_times_c + x_l;
+            // At each round of the iteration, the length of x is reduced by at least 
+            // $limbs - $c_len. For technical reasons, we can't modifify the size of the
+            // array x, so we modify its first components.
+            let mut carry: u64 = 0;
+            for i in 0..2 {
+                let tmp = x[$limbs - 1] >> (64 - P::REPR_SHAVE_BITS);
+                x[$limbs - 1] &= (1 << (64 - P::REPR_SHAVE_BITS)) - 1;  // x[..$limbs] = x_lo = x mod 2^(MODULUS_BITS)                 
+                Self::mul2pow(&mut x[$limbs..(2*$limbs - i * $c_len)], P::REPR_SHAVE_BITS);
+                x[$limbs] |= tmp; // Now x[$limbs..] = x_hi = (x - x_lo) / 2^MODULUS_BITS
+                let mut x_hi_times_c = [0u64; $limbs + (1 - i) * $c_len];
+                for l in 0..($limbs - i*$c_len) {
+                    carry = 0;
+                    for j in 0..$c_len {
+                        x_hi_times_c[j + l] =
+                            fa::mac_with_carry(x_hi_times_c[j + l], x[$limbs..][l], P::C[j], &mut carry);
+                    }
+                    x_hi_times_c[$c_len + l] = carry;
+                }
+                // x = x_hi_times_c + x_lo
+                for (a, b) in x_hi_times_c.iter_mut().zip(x[..$limbs].iter()) {
+                    *a = fa::adc(*a, *b, &mut carry);
+                }
+                for j in $limbs..($limbs + (1 - i) * $c_len) {
+                    if carry != 0{
+                        x[j] = fa::adc(x[j], 0, &mut carry);
+                    }              
+                }
+                for j in 0..($limbs + (1 - i) * $c_len) {
+                    x[j] = x_hi_times_c[j];
+                }
             }
-            x
+            (self.0).0.copy_from_slice(&x[..$limbs]);
         }
+
+        // fn anti_mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
+        //     // At each round of the iteration, the length of x is reduced by at least diff
+        //     for i in 0..2 {
+        //         // equivalent to x mod 2^(64 * $limbs)
+        //       let mut sign = false;
+        //       let mut x_lo = &x[..$limbs];
+        //       let mut tmp = x[$limbs - 1] >> (64 - P::REPR_SHAVE_BITS - 1);
+        //       let mut x_hi = &x[$limbs..];    // equivalent to x - ( x mod 2^(64 * $limbs) )
+        //       x_lo[$limbs - 1] = x[$limbs - 1] & Self::get_bitmask();  // equivalent to x mod 2^(MODULUS_BITS)
+        //       Self::mul2pow(&mut x_hi, P::REPR_SHAVE_BITS + 1);
+        //       x_hi[0] |= tmp;
+        //       let mut x_hi_times_c = [0u64; $limbs + (1 - i) * $c_len];
+        //       // x_hi_times_c = x_hi * c
+        //       for i in 0..$limbs {
+        //           let mut carry = 0;
+        //           for j in 0..$c_len {
+        //               x_hi_times_c[j + i] =
+        //                   fa::mac_with_carry(x_hi_times_c[j + i], x_hi[i], P::C[j], &mut carry);
+        //           }
+        //           x_hi_times_c[P::$c_len + i] = carry;
+        //       }
+        //       // x = x_hi_times_c + x_lo
+        //       x = x_hi_times_c;
+        //       // is_leq to be defined
+        //       if x.is_leq(x_lo) {
+        //           x = sub(x_lo,x);
+        //           if sign {
+        //               x = sub(P::MODULUS.0, x);
+        //           }
+        //       }
+        //       else {
+        //         x = sub(x,x_lo);
+        //         sign ^= true
+        //       }
+        //   }
+        //   self = x;
+        // }
     };
 }
 
-macro_rules! impl_anti_mersenne_reduction {
-    ($limbs:expr) => {
-        #[inline]
-        #[unroll_for_loops]
-        fn anti_mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
-            sign = false;
-            while x >= P::MODULUS{
-                x_bits = x.to_bits();
-                x_l = x_bits[0..P::MODULUS_BITS].into_u64_seq(); 
-                x_h = x_bits[P::MODULUS_BITS..].into_u64_seq();
-                x_h_times_c = x_h * P::C; // It should be a product of u64 seq
-                if x_l >= x_h_times_c{
-                    if sign {
-                        P::MODULUS - x_l + x_h_times_c
-                    }
-                    else {
-                        x_l - x_h_times_c
-                    }
-                }
-                else {
-                    sign = sign ^ true;
-                    x = x_h_times_c - x_l;
-                }
-            }
-            if sign {
-                x
-            }
-            else {
-                P::MODULUS - x
-            }
-        }
-    };
-}
 
 /// This modular multiplication algorithm uses Montgomery
 /// reduction for efficient implementation. It also additionally
@@ -91,7 +140,7 @@ macro_rules! impl_field_mul_assign {
             let _no_carry: bool = !(first_bit_set || all_bits_set);
 
             // No-carry optimisation applied to CIOS
-            if _no_carry && P::C.is_none() {
+            if _no_carry && P::C.len() == 0 {
                 #[cfg(use_asm)]
                 #[allow(unsafe_code, unused_mut)]
                 {
@@ -132,12 +181,12 @@ macro_rules! impl_field_mul_assign {
                 }
 
                 // Use Mersenne reduction if C is some, otherwise use Montgomery
-                if P::C.is_some() {
-                    if P::C_SIGN.unwrap() {
+                if P::C.len() > 0 {
+                    // if P::C_SIGN.unwrap() {
                         self.mersenne_reduction(&mut r)
-                    } else {
-                        self.anti_mersenne_reduction(&mut r)
-                    }
+                    // } else {
+                    //     self.anti_mersenne_reduction(&mut r)
+                    // }
                 } else{
                     self.montgomery_reduction(&mut r)
                 }
@@ -157,7 +206,7 @@ macro_rules! impl_field_mul_short_assign {
         //TODO: Can we write the assembly equivalent of this ? Is it worth ?
         //TODO: Probably there's a more compact way to write this
         fn mul_short_assign(&mut self, other: &Self) {
-            if P::C.is_none() {
+            if P::C.len() == 0 {
                 let mut r = [0u64; $limbs + 1];
                 let mut carry1 = 0u64;
                 let mut carry2 = 0u64;
@@ -193,7 +242,7 @@ macro_rules! impl_field_into_repr {
             let mut tmp = self.0;
 
             // If C is none we are going to use Montgomery reduction
-            if P::C.is_none() {
+            if P::C.len() == 0 {
                 let mut r = tmp.0;
                 // Montgomery Reduction
                 for i in 0..$limbs {
@@ -231,7 +280,7 @@ macro_rules! impl_field_square_in_place {
             #[cfg(use_asm)]
             #[allow(unsafe_code, unused_mut)]
             {
-                if $limbs <= 6 && _no_carry && P::C.is_none() {
+                if $limbs <= 6 && _no_carry && P::C.len() == 0 {
                     #[allow(unsafe_code)]
                     llvm_asm_square!($limbs, (self.0).0, P::MODULUS.0, P::INV);
                     self.reduce();
@@ -272,12 +321,12 @@ macro_rules! impl_field_square_in_place {
                 r[2 * i + 1] = fa::adc(r[2 * i + 1], 0, &mut carry);
             }
             // Use Mersenne reduction if C is some, otherwise use Montgomery
-            if P::C.is_some() {
-                if P::C_SIGN {
+            if P::C.len() > 0 {
+                // if P::C_SIGN {
                     self.mersenne_reduction(&mut r)
-                } else {
-                    self.anti_mersenne_reduction(&mut r)
-                }
+                // } else {
+                //     self.anti_mersenne_reduction(&mut r)
+                // }
             } else{
                 self.montgomery_reduction(&mut r)
             }

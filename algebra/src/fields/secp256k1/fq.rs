@@ -14,9 +14,11 @@ impl Fp320Parameters for FqParameters {}
 impl FpParameters for FqParameters {
     type BigInt = BigInteger;
 
-    const C: Option<&'static[u64]> = Some(&[0x1000003d1]);
+    const C: &'static[u64] = &[0x1000003d1,0x0];
 
     const C_SIGN: Option<bool> = Some(true);
+
+    const C_LEN: usize = 2;
     
     /// p = 2^256 - C =
     ///  = 115792089237316195423570985008687907853269984665640564039457584007908834671663
@@ -89,8 +91,8 @@ impl FpParameters for FqParameters {
 
     /// GENERATOR = 5 (Montgomery rep.)
     const GENERATOR: BigInteger = BigInteger([
+        0x0000000000000005,
         0x0000000000000000,
-        0x0000000500001315,
         0x0000000000000000,
         0x0000000000000000,
         0x0,
@@ -99,8 +101,8 @@ impl FpParameters for FqParameters {
     /// ROOT_OF_UNITY = GENERATOR^T (Montgomery rep.)
     /// = -1 mod p
     const ROOT_OF_UNITY: BigInteger = BigInteger([
-        0xfffffffefffffc2f,
         0xfffffffefffffc2e,
+        0xffffffffffffffff,
         0xffffffffffffffff,
         0xffffffffffffffff,
         0x0,

@@ -12,6 +12,8 @@ impl Fp320Parameters for FqParameters {}
 impl FpParameters for FqParameters {
     type BigInt = BigInteger;
 
+    const C: &'static[u64] = &[];
+
     // MODULUS = 475922286169261325753349249653048451545124878552823515553267735739164647307408490559963137
     const MODULUS: BigInteger = BigInteger([
         0xbb4334a400000001,

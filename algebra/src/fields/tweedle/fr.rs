@@ -13,7 +13,9 @@ impl FpParameters for FrParameters {
 
     const C: &'static[u64] = [0xa14064e200000001, 0x38aa1276c3f59b9];
 
-    const C_sign = false;
+    const C_SIGN = Some(false);
+
+    const C_LEN: usize = 2;
 
     // MODULUS = 2^254 + C
     const MODULUS: BigInteger = BigInteger([

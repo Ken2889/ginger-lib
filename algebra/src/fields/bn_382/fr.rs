@@ -11,6 +11,8 @@ impl Fp384Parameters for FrParameters {}
 impl FpParameters for FrParameters {
     type BigInt = BigInteger;
 
+    const C: &'static[u64] = &[];
+
     const MODULUS: BigInteger = BigInteger([
         0x1,
         0x1800c1818,
