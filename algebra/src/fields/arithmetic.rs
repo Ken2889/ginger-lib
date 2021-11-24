@@ -140,7 +140,7 @@ macro_rules! impl_field_mul_assign {
             let _no_carry: bool = !(first_bit_set || all_bits_set);
 
             // No-carry optimisation applied to CIOS
-            if _no_carry && P::C.len() == 0 {
+            if _no_carry  {
                 #[cfg(use_asm)]
                 #[allow(unsafe_code, unused_mut)]
                 {
