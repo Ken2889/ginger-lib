@@ -1,4 +1,4 @@
-use crate::{BigInteger, Error, FpParameters, PrimeField, ProjectiveCurve};
+use crate::{BigInteger, Error, FpParameters, PrimeField, Curve};
 use rayon::prelude::*;
 
 pub struct FixedBaseMSM;
@@ -12,7 +12,7 @@ impl FixedBaseMSM {
         }
     }
 
-    pub fn get_window_table<T: ProjectiveCurve>(
+    pub fn get_window_table<T: Curve>(
         scalar_size: usize,
         window: usize,
         g: T,
@@ -42,7 +42,7 @@ impl FixedBaseMSM {
         multiples_of_g
     }
 
-    pub fn windowed_mul<T: ProjectiveCurve>(
+    pub fn windowed_mul<T: Curve>(
         outerc: usize,
         window: usize,
         multiples_of_g: &[Vec<T>],
@@ -67,7 +67,7 @@ impl FixedBaseMSM {
         res
     }
 
-    pub fn multi_scalar_mul<T: ProjectiveCurve>(
+    pub fn multi_scalar_mul<T: Curve>(
         scalar_size: usize,
         window: usize,
         table: &[Vec<T>],

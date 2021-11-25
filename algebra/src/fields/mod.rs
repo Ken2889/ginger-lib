@@ -72,7 +72,8 @@ pub trait MulShortAssign<Rhs = Self> {
 
 /// The interface for a generic field.
 pub trait Field:
-    ToBytes
+    'static
+    + ToBytes
     + FromBytes
     + FromBytesChecked
     + ToBits
@@ -91,7 +92,6 @@ pub trait Field:
     + Default
     + Send
     + Sync
-    + 'static
     + Eq
     + Ord
     + Neg<Output = Self>

@@ -1,7 +1,7 @@
 use crate::{
     biginteger::BigInteger256,
     curves::{
-        models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
+        models::short_weierstrass_jacobian::Jacobian,
         EndoMulParameters, ModelParameters, SWModelParameters,
     },
     field_new,
@@ -17,8 +17,7 @@ impl ModelParameters for TweedledumParameters {
     type ScalarField = Fq;
 }
 
-pub type Affine = GroupAffine<TweedledumParameters>;
-pub type Projective = GroupProjective<TweedledumParameters>;
+pub type DumJacobian = Jacobian<TweedledumParameters>;
 
 impl SWModelParameters for TweedledumParameters {
     /// COEFF_A = 0

@@ -1,13 +1,21 @@
 use crate::{
     biginteger::BigInteger,
     curves::{
-        models::SWModelParameters, tests::curve_tests, tweedle::*, AffineCurve, EndoMulCurve,
-        ProjectiveCurve,
+        Curve, EndoMulCurve,
+        models::SWModelParameters,
+        tweedle::*,
+        tests::curve_tests,
     },
-    fields::{tweedle::*, Field, PrimeField, SquareRootField},
-    groups::tests::group_test,
+    fields::{
+        Field, PrimeField, SquareRootField,
+        tweedle::*,
+    },
+    groups::{
+        Group,
+        tests::group_test,
+    }
 };
-use std::ops::{AddAssign, MulAssign};
+use std::ops::{AddAssign, MulAssign, Mul};
 use std::str::FromStr;
 
 use crate::curves::tests::sw_jacobian_tests;
@@ -18,43 +26,43 @@ use rand::{thread_rng, Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
 #[test]
-fn test_dee_projective_curve() {
-    curve_tests::<dee::Projective>();
+fn test_dee_curve() {
+    curve_tests::<dee::DeeJacobian>();
     sw_jacobian_tests::<TweedledeeParameters>()
 }
 
 #[test]
-fn test_dee_projective_group() {
+fn test_dee_group() {
     let mut rng = XorShiftRng::seed_from_u64(1234567890u64);
-    let a: dee::Projective = rng.gen();
-    let b: dee::Projective = rng.gen();
+    let a: dee::DeeJacobian = rng.gen();
+    let b: dee::DeeJacobian = rng.gen();
     group_test(a, b);
 }
 
 #[test]
 fn test_dee_generator() {
-    let generator = dee::Affine::prime_subgroup_generator();
+    let generator = dee::DeeJacobian::prime_subgroup_generator();
     assert!(generator.is_on_curve());
     assert!(generator.is_in_correct_subgroup_assuming_on_curve());
 }
 
 #[test]
-fn test_dum_projective_curve() {
-    curve_tests::<dum::Projective>();
+fn test_dum_curve() {
+    curve_tests::<dum::DumJacobian>();
     sw_jacobian_tests::<TweedledumParameters>()
 }
 
 #[test]
-fn test_dum_projective_group() {
+fn test_dum_group() {
     let mut rng = XorShiftRng::seed_from_u64(1234567890u64);
-    let a: dum::Projective = rng.gen();
-    let b: dum::Projective = rng.gen();
+    let a: dum::DumJacobian = rng.gen();
+    let b: dum::DumJacobian = rng.gen();
     group_test(a, b);
 }
 
 #[test]
 fn test_dum_generator() {
-    let generator = dum::Affine::prime_subgroup_generator();
+    let generator = dum::DumJacobian::prime_subgroup_generator();
     assert!(generator.is_on_curve());
     assert!(generator.is_in_correct_subgroup_assuming_on_curve());
 }
@@ -71,19 +79,18 @@ fn test_dee_generator_raw() {
         rhs.add_assign(&dee::TweedledeeParameters::COEFF_B);
 
         if let Some(y) = rhs.sqrt() {
-            let p = dee::Affine::new(x, if y < -y { y } else { -y }, false);
+            let p = dee::DeeJacobian::new(x, if y < -y { y } else { -y }, Fq::one());
             assert!(p.is_in_correct_subgroup_assuming_on_curve());
 
             let dee = p.scale_by_cofactor();
-            assert_eq!(dee.into_affine(), p);
+            assert_eq!(dee, p);
 
             if !dee.is_zero() {
                 assert_eq!(i, 1);
-                let dee = dee::Affine::from(dee);
 
                 assert!(dee.is_in_correct_subgroup_assuming_on_curve());
 
-                assert_eq!(dee, dee::Affine::prime_subgroup_generator());
+                assert_eq!(dee, dee::DeeJacobian::prime_subgroup_generator());
                 break;
             }
         }
@@ -105,19 +112,18 @@ fn test_dum_generator_raw() {
         rhs.add_assign(&dum::TweedledumParameters::COEFF_B);
 
         if let Some(y) = rhs.sqrt() {
-            let p = dum::Affine::new(x, if y < -y { y } else { -y }, false);
+            let p = dum::DumJacobian::new(x, if y < -y { y } else { -y }, Fr::one());
             assert!(p.is_in_correct_subgroup_assuming_on_curve());
 
             let dum = p.scale_by_cofactor();
-            assert_eq!(dum.into_affine(), p);
+            assert_eq!(dum, p);
 
             if !dum.is_zero() {
                 assert_eq!(i, 1);
-                let dum = dum::Affine::from(dum);
 
                 assert!(dum.is_in_correct_subgroup_assuming_on_curve());
 
-                assert_eq!(dum, dum::Affine::prime_subgroup_generator());
+                assert_eq!(dum, dum::DumJacobian::prime_subgroup_generator());
                 break;
             }
         }
@@ -129,7 +135,7 @@ fn test_dum_generator_raw() {
 
 #[test]
 fn test_dee_addition_correctness() {
-    let mut p = dee::Projective::new(
+    let mut p = dee::DeeJacobian::new(
         Fq::from_str(
             "17071515411234329267051251142008744532074161438140426170549136904789606209155",
         )
@@ -141,7 +147,7 @@ fn test_dee_addition_correctness() {
         Fq::one(),
     );
 
-    p.add_assign(&dee::Projective::new(
+    p.add_assign(&dee::DeeJacobian::new(
         Fq::from_str(
             "5902988235118225415057554152593109689819081116067139376852243422243422684655",
         )
@@ -153,11 +159,9 @@ fn test_dee_addition_correctness() {
         Fq::one(),
     ));
 
-    let p = dee::Affine::from(p);
-
     assert_eq!(
         p,
-        dee::Affine::new(
+        dee::DeeJacobian::new(
             Fq::from_str(
                 "17272972729543522859996365140537720509583378385403153153034405894416507370075"
             )
@@ -166,14 +170,14 @@ fn test_dee_addition_correctness() {
                 "10919319153241406943315020022865635527830995765162202572118118072098170575117"
             )
             .unwrap(),
-            false,
+            Fq::one(),
         )
     );
 }
 
 #[test]
 fn test_dum_addition_correctness() {
-    let mut p = dum::Projective::new(
+    let mut p = dum::DumJacobian::new(
         Fr::from_str(
             "21118483776076764996122757821606091900059043860162004907989579660882026321197",
         )
@@ -185,7 +189,7 @@ fn test_dum_addition_correctness() {
         Fr::one(),
     );
 
-    p.add_assign(&dum::Projective::new(
+    p.add_assign(&dum::DumJacobian::new(
         Fr::from_str(
             "20385173229981432379197513268506886433340219379830521001646291041798263137109",
         )
@@ -197,11 +201,9 @@ fn test_dum_addition_correctness() {
         Fr::one(),
     ));
 
-    let p = dum::Affine::from(p);
-
     assert_eq!(
         p,
-        dum::Affine::new(
+        dum::DumJacobian::new(
             Fr::from_str(
                 "3707088439511374954709258634608802460084680838305626554041952787711711292620"
             )
@@ -210,7 +212,7 @@ fn test_dum_addition_correctness() {
                 "21427612888550306000000889405343941940930914059283626531936541886782117113518"
             )
             .unwrap(),
-            false,
+            Fr::one(),
         )
     );
 }
@@ -218,12 +220,12 @@ fn test_dum_addition_correctness() {
 #[test]
 fn test_dee_endo_mul() {
     for _ in 0..100 {
-        let p = dee::Projective::rand(&mut thread_rng()).into_affine();
+        let p = dee::DeeJacobian::rand(&mut thread_rng());
 
         let scalar: Fq = u128::rand(&mut thread_rng()).into();
         let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
 
-        let p_mul = p.mul(dee::Affine::endo_rep_to_scalar(bits.clone()).unwrap());
+        let p_mul = p.mul(&dee::DeeJacobian::endo_rep_to_scalar(bits.clone()).unwrap());
         let pe_mul = p.endo_mul(bits.clone()).unwrap();
 
         assert_eq!(p_mul, pe_mul);
@@ -233,14 +235,14 @@ fn test_dee_endo_mul() {
 #[test]
 fn test_dum_endo_mul() {
     for _ in 0..100 {
-        let p = dum::Projective::rand(&mut thread_rng()).into_affine();
+        let p = dum::DumJacobian::rand(&mut thread_rng());
 
         let scalar: Fq = u128::rand(&mut thread_rng()).into();
         let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
 
         println!("{}", bits.len());
 
-        let p_mul = p.mul(dum::Affine::endo_rep_to_scalar(bits.clone()).unwrap());
+        let p_mul = p.mul(&dum::DumJacobian::endo_rep_to_scalar(bits.clone()).unwrap());
         let pe_mul = p.endo_mul(bits.clone()).unwrap();
 
         assert_eq!(p_mul, pe_mul);

@@ -8,8 +8,9 @@ use criterion::{BatchSize, BenchmarkId, Criterion};
 
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    curves::tweedle::dee::{Affine as G1Affine, Projective as G1Projective},
-    BigInteger256, FromBytes, ProjectiveCurve, ToBytes, UniformRand,
+    Curve,
+    curves::tweedle::dee::DeeJacobian,
+    BigInteger256, FromBytes, ToBytes, UniformRand,
 };
 
 use std::fs::File;
@@ -25,7 +26,7 @@ fn save_data(samples: usize) {
 
     for _ in 0..samples {
         let elem1: BigInteger256 = BigInteger256::rand(rng);
-        let elem2: G1Affine = G1Projective::rand(rng).into_affine();
+        let elem2: DeeJacobian = DeeJacobian::rand(rng);
         match elem1.write(&mut fs) {
             Ok(_) => {}
             Err(msg) => {
@@ -41,7 +42,7 @@ fn save_data(samples: usize) {
     }
 }
 
-fn load_data(samples: usize) -> (Vec<BigInteger256>, Vec<G1Affine>) {
+fn load_data(samples: usize) -> (Vec<BigInteger256>, Vec<DeeJacobian>) {
     if !Path::new(DATA_PATH).exists() {
         save_data(1 << 23);
     }
@@ -52,10 +53,12 @@ fn load_data(samples: usize) -> (Vec<BigInteger256>, Vec<G1Affine>) {
 
     for _i in 0..samples {
         let elem1 = BigInteger256::read(&mut fs).unwrap();
-        let elem2 = G1Affine::read(&mut fs).unwrap();
+        let elem2 = DeeJacobian::read(&mut fs).unwrap();
         v.push(elem1);
         g.push(elem2);
     }
+
+    DeeJacobian::batch_normalization(g.as_mut_slice());
 
     (v, g)
 }
@@ -74,7 +77,7 @@ fn variable_msm(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         let (v, g) = load_data(samples);
-                        (v, g)
+                        (v, DeeJacobian::batch_into_affine(g.as_slice()))
                     },
                     |(v, g)| {
                         add_to_trace!(
@@ -87,7 +90,7 @@ fn variable_msm(c: &mut Criterion) {
                                     .as_secs()
                             )
                         );
-                        VariableBaseMSM::multi_scalar_mul(g.as_slice(), v.as_slice()).unwrap();
+                        VariableBaseMSM::multi_scalar_mul::<DeeJacobian>(g.as_slice(), v.as_slice()).unwrap();
                         add_to_trace!(
                             || format!("****************{}*******************", samples),
                             || format!(

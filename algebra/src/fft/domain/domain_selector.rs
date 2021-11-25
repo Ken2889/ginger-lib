@@ -64,7 +64,7 @@ mod test {
         domain_size = 5000;
         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
         //Expected Mixed to be chosen
-        assert_eq!(domain.size(), 5120, "Unexpected domain size");
+        assert_eq!(domain.size(), 8192, "Unexpected domain size");
 
         //Limit for the basic radix2 domain support
         domain_size = 32768;
@@ -74,18 +74,11 @@ mod test {
         domain_size = 32769;
         //Expected Mixed to be chosen
         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        assert_eq!(domain.size(), 40960, "Unexpected domain size");
+        assert_eq!(domain.size(), 65536, "Unexpected domain size");
 
         //Limit for the mixed radix2 domain support
         domain_size = 819200;
         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        assert_eq!(domain.size(), 819200, "Unexpected domain size");
-
-        //No supported domain for this size should exist
-        domain_size = 819201;
-        match get_best_evaluation_domain::<Fr>(domain_size) {
-            None => {}
-            _ => panic!("No domain should exists for this size"),
-        }
+        assert_eq!(domain.size(), 1048576, "Unexpected domain size");
     }
 }

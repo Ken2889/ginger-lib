@@ -57,8 +57,8 @@ pub use self::validity::*;
 mod rand;
 pub use self::rand::*;
 
-mod to_field_vec;
-pub use to_field_vec::ToConstraintField;
+// mod to_field_vec;
+// pub use to_field_vec::ToConstraintField;
 
 #[cfg(feature = "parallel")]
 pub mod msm;

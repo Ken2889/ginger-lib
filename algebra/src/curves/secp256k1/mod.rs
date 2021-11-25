@@ -3,7 +3,7 @@
 use crate::biginteger::BigInteger320;
 use crate::curves::{
     models::{ModelParameters, SWModelParameters},
-    short_weierstrass_jacobian::{GroupAffine, GroupProjective},
+    short_weierstrass_jacobian::Jacobian,
 };
 use crate::fields::secp256k1::{fq::Fq, fr::Fr};
 use crate::{field_new, Field};
@@ -19,8 +19,7 @@ impl ModelParameters for Secp256k1Parameters {
     type ScalarField = Fr;
 }
 
-pub type Affine = GroupAffine<Secp256k1Parameters>;
-pub type Projective = GroupProjective<Secp256k1Parameters>;
+pub type Secp256k1Jacobian = Jacobian<Secp256k1Parameters>;
 
 impl SWModelParameters for Secp256k1Parameters {
     /// COEFF_A = 0

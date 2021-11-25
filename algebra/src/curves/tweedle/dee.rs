@@ -2,7 +2,7 @@ use crate::field_new;
 use crate::{
     biginteger::BigInteger256,
     curves::{
-        models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
+        models::short_weierstrass_jacobian::Jacobian,
         EndoMulParameters, ModelParameters, SWModelParameters,
     },
     fields::tweedle::*,
@@ -17,8 +17,7 @@ impl ModelParameters for TweedledeeParameters {
     type ScalarField = Fr;
 }
 
-pub type Affine = GroupAffine<TweedledeeParameters>;
-pub type Projective = GroupProjective<TweedledeeParameters>;
+pub type DeeJacobian = Jacobian<TweedledeeParameters>;
 
 impl SWModelParameters for TweedledeeParameters {
     /// COEFF_A = 0

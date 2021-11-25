@@ -1,11 +1,11 @@
 use crate::UniformRand;
 use crate::{
-    BitIterator, CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid,
+    CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid,
 };
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
-    ops::{Add, AddAssign, Neg, Sub, SubAssign},
+    ops::{Neg, Add, AddAssign, Sub, SubAssign, Mul, MulAssign},
 };
 
 use crate::{
@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 pub mod tests;
 
 pub trait Group:
-    ToBytes
+    'static
+    + ToBytes
     + FromBytes
     + FromBytesChecked
     + SemanticallyValid
@@ -33,15 +34,22 @@ pub trait Group:
     + Default
     + Send
     + Sync
-    + 'static
     + Eq
     + Hash
-    + Neg<Output = Self>
     + UniformRand
+    + Neg<Output = Self>
+    // + Add<Self, Output = Self>
+    // + Sub<Self, Output = Self>
+    // + Mul<<Self as Group>::ScalarField, Output = Self>
+    // + AddAssign<Self>
+    // + SubAssign<Self>
+    // + MulAssign<<Self as Group>::ScalarField>
     + for<'a> Add<&'a Self, Output = Self>
     + for<'a> Sub<&'a Self, Output = Self>
+    + for<'a> Mul<&'a <Self as Group>::ScalarField, Output = Self>
     + for<'a> AddAssign<&'a Self>
     + for<'a> SubAssign<&'a Self>
+    + for<'a> MulAssign<&'a <Self as Group>::ScalarField>
 {
     type ScalarField: PrimeField + Into<<Self::ScalarField as PrimeField>::BigInt>;
 
@@ -53,31 +61,43 @@ pub trait Group:
 
     /// Returns `self + self`.
     #[must_use]
-    fn double(&self) -> Self;
-
-    /// Sets `self := self + self`.
-    fn double_in_place(&mut self) -> &mut Self;
-
-    #[must_use]
-    fn mul<'a>(&self, other: &'a Self::ScalarField) -> Self {
+    fn double(&self) -> Self {
         let mut copy = *self;
-        copy.mul_assign(other);
+        copy.double_in_place();
         copy
     }
 
-    /// WARNING: This implementation doesn't take costant time with respect
-    /// to the exponent, and therefore is susceptible to side-channel attacks.
-    /// Be sure to use it in applications where timing (or similar) attacks
-    /// are not possible.
-    /// TODO: Add a side-channel secure variant.
-    fn mul_assign<'a>(&mut self, other: &'a Self::ScalarField) {
-        let mut res = Self::zero();
-        for i in BitIterator::new(other.into_repr()) {
-            res.double_in_place();
-            if i {
-                res += self
-            }
+    /// Sets `self := self + self`.
+    fn double_in_place(&mut self) -> &mut Self;
+}
+
+
+/// Generic struct of a formal linear combination
+pub struct LinearCombination<G: Group>
+{
+    items: Vec<(G::ScalarField, G)>
+}
+
+impl<G: Group> LinearCombination<G>
+{
+    /// Consturcts general LC
+    pub fn new(items: Vec<(G::ScalarField, G)>) -> Self {
+        LinearCombination {
+            items
         }
-        *self = res
+    }
+
+    /// Add term to LC
+    pub fn push(&mut self, coeff: G::ScalarField, item: G) {
+        self.items.push((coeff, item))
+    }
+
+    /// Combine LC
+    pub fn combine(&self) -> G {
+        let mut combined = G::zero();
+        for (coeff, item) in self.items.iter() {
+            combined += &(*item * coeff);
+        }
+        combined
     }
 }
