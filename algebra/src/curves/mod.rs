@@ -24,6 +24,7 @@ pub use self::models::*;
 
 pub trait Curve:
     Group
+    + Copy
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
@@ -45,14 +46,22 @@ pub trait Curve:
         vec_affine.iter().map(|&affine| affine.into()).collect::<Vec<_>>()
     }
 
-    fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Vec<Self::AffineRep>
+    fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error>
     {
-        vec_self.iter().map(|&projective| projective.into_affine().unwrap()).collect::<Vec<_>>()
+        vec_self.iter().map(|&projective| projective.into_affine()).collect::<Result<Vec<_>, _>>()
     }
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self;
 
     fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep);
+
+    /// Returns `self + self`.
+    #[must_use]
+    fn double(&self) -> Self {
+        let mut copy = *self;
+        copy.double_in_place();
+        copy
+    }
 
     // TODO: move to group trait?
     fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
@@ -70,6 +79,10 @@ pub trait Curve:
 
     fn batch_normalization(v: &mut [Self]);
 
+    fn batch_normalization_into_affine(mut v: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
+        Self::batch_normalization(v.as_mut_slice());
+        Self::batch_into_affine(v.as_slice())
+    }
     /// Returns a fixed generator of unknown exponent.
     #[must_use]
     fn prime_subgroup_generator() -> Self;

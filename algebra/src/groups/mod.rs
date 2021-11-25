@@ -12,7 +12,7 @@ use crate::{
     bytes::{FromBytes, ToBytes},
     fields::PrimeField,
 };
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 pub mod tests;
@@ -23,11 +23,11 @@ pub trait Group:
     + FromBytes
     + FromBytesChecked
     + SemanticallyValid
-    + Serialize
-    + for<'a> Deserialize<'a>
+    // + Serialize
+    // + for<'a> Deserialize<'a>
     + CanonicalSerialize
     + CanonicalDeserialize
-    + Copy
+    // + Copy
     + Clone
     + Debug
     + Display
@@ -38,12 +38,6 @@ pub trait Group:
     + Hash
     + UniformRand
     + Neg<Output = Self>
-    // + Add<Self, Output = Self>
-    // + Sub<Self, Output = Self>
-    // + Mul<<Self as Group>::ScalarField, Output = Self>
-    // + AddAssign<Self>
-    // + SubAssign<Self>
-    // + MulAssign<<Self as Group>::ScalarField>
     + for<'a> Add<&'a Self, Output = Self>
     + for<'a> Sub<&'a Self, Output = Self>
     + for<'a> Mul<&'a <Self as Group>::ScalarField, Output = Self>
@@ -51,7 +45,7 @@ pub trait Group:
     + for<'a> SubAssign<&'a Self>
     + for<'a> MulAssign<&'a <Self as Group>::ScalarField>
 {
-    type ScalarField: PrimeField + Into<<Self::ScalarField as PrimeField>::BigInt>;
+    type ScalarField: PrimeField;
 
     /// Returns the additive identity.
     fn zero() -> Self;
@@ -62,7 +56,7 @@ pub trait Group:
     /// Returns `self + self`.
     #[must_use]
     fn double(&self) -> Self {
-        let mut copy = *self;
+        let mut copy = self.clone();
         copy.double_in_place();
         copy
     }
@@ -96,7 +90,7 @@ impl<G: Group> LinearCombination<G>
     pub fn combine(&self) -> G {
         let mut combined = G::zero();
         for (coeff, item) in self.items.iter() {
-            combined += &(*item * coeff);
+            combined += &(item.clone() * coeff);
         }
         combined
     }

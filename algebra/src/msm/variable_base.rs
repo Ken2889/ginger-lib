@@ -296,7 +296,7 @@ mod test {
             .map(|_| G::rand(rng))
             .collect::<Vec<_>>();
 
-        let g_affine = G::batch_into_affine(g.as_slice());
+        let g_affine = G::batch_into_affine(g.as_slice()).unwrap();
 
         let naive = naive_var_base_msm(g.as_slice(), v.as_slice());
 

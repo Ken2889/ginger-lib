@@ -1,11 +1,15 @@
 //! A polynomial represented in coefficient form.
 
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
-use crate::{serialize::*, Field, FromBytes, PrimeField, ToBytes};
-use rand::Rng;
+use crate::{serialize::*, Field, Group, FromBytes, FromBytesChecked, SemanticallyValid, PrimeField, ToBytes};
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng
+};
 use rayon::prelude::*;
 use std::fmt;
-use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::io::{Read, Result as IoResult, Write};
 
 /// Stores a polynomial in coefficient form.
 #[derive(Clone, PartialEq, Eq, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
@@ -39,6 +43,21 @@ impl<F: Field> FromBytes for DensePolynomial<F> {
 }
 
 impl<F: Field> fmt::Debug for DensePolynomial<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        for (i, coeff) in self.coeffs.iter().enumerate().filter(|(_, c)| !c.is_zero()) {
+            if i == 0 {
+                write!(f, "\n{:?}", coeff)?;
+            } else if i == 1 {
+                write!(f, " + \n{:?} * x", coeff)?;
+            } else {
+                write!(f, " + \n{:?} * x^{}", coeff, i)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<F: Field> fmt::Display for DensePolynomial<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for (i, coeff) in self.coeffs.iter().enumerate().filter(|(_, c)| !c.is_zero()) {
             if i == 0 {
@@ -382,25 +401,85 @@ impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<
     }
 }
 
-impl<F: PrimeField> Mul<F> for DensePolynomial<F> {
+impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
-    fn mul(self, other: F) -> DensePolynomial<F> {
+    fn mul(self, other: &'a F) -> DensePolynomial<F> {
         <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
             &self,
-            &DensePolynomial::from_coefficients_slice(&[other]),
+            &DensePolynomial::from_coefficients_slice(&[*other]),
         )
     }
 }
 
-impl<'a, F: PrimeField> Mul<F> for &'a DensePolynomial<F> {
+impl<'a, F: PrimeField> MulAssign<&'a F> for DensePolynomial<F> {
+
+    fn mul_assign(&mut self, other: &'a F) {
+        *self = self.clone() * other
+    }
+}
+
+impl<'a, F: PrimeField> Add<&'a DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
-    fn mul(self, other: F) -> DensePolynomial<F> {
-        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
-            &self,
-            &DensePolynomial::from_coefficients_slice(&[other]),
-        )
+    fn add(self, other: &'a DensePolynomial<F>) -> DensePolynomial<F> {
+        &self + other
+    }
+}
+
+impl<'a, F: PrimeField> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn sub(self, other: &'a DensePolynomial<F>) -> DensePolynomial<F> {
+        &self - other
+    }
+}
+
+// impl<'a, F: PrimeField> Mul<F> for &'a DensePolynomial<F> {
+//     type Output = DensePolynomial<F>;
+//
+//     fn mul(self, other: F) -> DensePolynomial<F> {
+//         <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
+//             &self,
+//             &DensePolynomial::from_coefficients_slice(&[other]),
+//         )
+//     }
+// }
+
+impl<F: PrimeField> Distribution<DensePolynomial<F>> for Standard {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> DensePolynomial<F> {
+        unimplemented!()
+    }
+}
+
+impl<F: PrimeField> FromBytesChecked for DensePolynomial<F> {
+    fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
+        Self::read(&mut reader)
+    }
+}
+
+
+impl<F: PrimeField> SemanticallyValid for DensePolynomial<F> {
+    fn is_valid(&self) -> bool {
+        return true;
+    }
+}
+
+impl<F: PrimeField> Group for DensePolynomial<F> {
+    type ScalarField = F;
+
+    fn zero() -> Self {
+        DensePolynomial::zero()
+    }
+
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn double_in_place(&mut self) -> &mut Self {
+        *self = self.clone() + self;
+        self
     }
 }
 
