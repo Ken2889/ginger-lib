@@ -613,7 +613,7 @@ macro_rules! impl_Fp {
         }
 
         impl<P: $FpParameters> Group for $Fp<P> {
-            type ScalarField = Self;
+            type ScalarField = $Fp<P>;
 
             #[inline]
             fn zero() -> Self {
