@@ -2,6 +2,7 @@ use crate::{
     biginteger::BigInteger,
     bits::{FromBits, ToBits},
     bytes::{FromBytes, ToBytes},
+    Group,
     serialize::{
         CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
         CanonicalSerializeWithFlags, EmptyFlags, Flags,
@@ -73,6 +74,7 @@ pub trait MulShortAssign<Rhs = Self> {
 /// The interface for a generic field.
 pub trait Field:
     'static
+    + Group
     + ToBytes
     + FromBytes
     + FromBytesChecked
@@ -126,12 +128,6 @@ pub trait Field:
 {
     type BasePrimeField: PrimeField;
 
-    /// Returns the zero element of the field, the additive identity.
-    fn zero() -> Self;
-
-    /// Returns true if and only if `self == Self::zero()`.
-    fn is_zero(&self) -> bool;
-
     /// Returns the one element of the field, a field generator.
     fn one() -> Self;
 
@@ -145,13 +141,6 @@ pub trait Field:
     fn characteristic<'a>() -> &'a [u64] {
         Self::BasePrimeField::characteristic()
     }
-
-    /// Returns `self + self`.
-    #[must_use]
-    fn double(&self) -> Self;
-
-    /// Doubles `self` in place.
-    fn double_in_place(&mut self) -> &mut Self;
 
     /// Returns `self * self`.
     #[must_use]

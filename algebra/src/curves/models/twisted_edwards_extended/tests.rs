@@ -1,4 +1,8 @@
-use crate::{fields::Field, MontgomeryModelParameters, TEModelParameters};
+use crate::{
+    groups::Group,
+    fields::Field,
+    MontgomeryModelParameters, TEModelParameters
+};
 
 #[allow(dead_code)]
 pub(crate) fn montgomery_conversion_test<P>()

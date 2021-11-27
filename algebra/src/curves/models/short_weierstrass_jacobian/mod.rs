@@ -653,8 +653,9 @@ impl<P: Parameters> Curve for Jacobian<P> {
             true
         } else {
             // Check that the point is on the curve
-            let y2 = self.y.square();
-            let x3b = P::add_b(&((self.x.square() * &self.x) + &P::mul_by_a(&self.x)));
+            let normalized = self.normalize();
+            let y2 = normalized.y.square();
+            let x3b = P::add_b(&((normalized.x.square() * &normalized.x) + &P::mul_by_a(&normalized.x)));
             y2 == x3b
         }
     }

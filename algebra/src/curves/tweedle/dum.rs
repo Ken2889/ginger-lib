@@ -6,7 +6,7 @@ use crate::{
     },
     field_new,
     fields::tweedle::*,
-    Field,
+    Group,
 };
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]

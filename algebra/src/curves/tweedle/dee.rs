@@ -6,7 +6,7 @@ use crate::{
         EndoMulParameters, ModelParameters, SWModelParameters,
     },
     fields::tweedle::*,
-    Field,
+    Group,
 };
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]

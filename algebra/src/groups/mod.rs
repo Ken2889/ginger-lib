@@ -69,7 +69,7 @@ pub trait Group:
 /// Generic struct of a formal linear combination
 pub struct LinearCombination<G: Group>
 {
-    items: Vec<(G::ScalarField, G)>
+    pub items: Vec<(G::ScalarField, G)>
 }
 
 impl<G: Group> LinearCombination<G>
@@ -90,7 +90,7 @@ impl<G: Group> LinearCombination<G>
     pub fn combine(&self) -> G {
         let mut combined = G::zero();
         for (coeff, item) in self.items.iter() {
-            combined += &(item.clone() * coeff);
+            combined += &(item.clone() * coeff)
         }
         combined
     }

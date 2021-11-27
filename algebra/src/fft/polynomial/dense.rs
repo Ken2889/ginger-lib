@@ -488,6 +488,7 @@ mod tests {
     use crate::domain::get_best_evaluation_domain;
     use crate::fields::tweedle::fr::Fr;
     use crate::fields::Field;
+    use crate::groups::Group;
     use crate::polynomial::*;
     use crate::UniformRand;
     use rand::thread_rng;

@@ -2,7 +2,7 @@ use crate::{Field, FromCompressedBits, Group, ToCompressedBits, UniformRand};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-pub fn group_test<G: Group>(a: G, mut b: G) {
+pub fn group_test<G: Group + Copy>(a: G, mut b: G) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
     let zero = G::zero();
     let fr_zero = G::ScalarField::zero();
@@ -69,7 +69,7 @@ pub fn group_test<G: Group>(a: G, mut b: G) {
     );
 }
 
-pub fn compression_test<T: Group + ToCompressedBits + FromCompressedBits>(even: T, odd: T) {
+pub fn compression_test<T: Group + Copy + ToCompressedBits + FromCompressedBits>(even: T, odd: T) {
     //Test correct compression/de-compression of a non-zero point with even y
     let even_compressed = even.compress();
     let even_len = even_compressed.len();

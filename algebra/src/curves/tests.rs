@@ -2,7 +2,7 @@ use crate::UniformRand;
 use crate::{
     groups::Group,
     curves::Curve,
-    fields::{Field, PrimeField, BitIterator},
+    fields::{PrimeField, BitIterator},
     serialize::{CanonicalDeserialize, CanonicalSerialize},
     SWModelParameters/*, TEModelParameters,*/
 };

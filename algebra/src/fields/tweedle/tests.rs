@@ -1,6 +1,7 @@
 use crate::{
     biginteger::BigInteger256 as BigInteger,
     bytes::{FromBytes, ToBytes},
+    groups::Group,
     fields::{
         tests::{field_test, primefield_test},
         tweedle::{fq::Fq, fr::Fr},

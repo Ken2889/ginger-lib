@@ -13,6 +13,7 @@ use crate::{
         BigInteger768, BigInteger832,
     },
     bytes::{FromBytes, ToBytes},
+    groups::Group,
     fields::{
         Field, FpParameters, LegendreSymbol, MulShort, MulShortAssign, PrimeField, SquareRootField,
     },
@@ -37,25 +38,3 @@ impl_Fp!(Fp320, Fp320Parameters, BigInteger320, BigInteger320, 5);
 impl_Fp!(Fp384, Fp384Parameters, BigInteger384, BigInteger384, 6);
 impl_Fp!(Fp768, Fp768Parameters, BigInteger768, BigInteger768, 12);
 impl_Fp!(Fp832, Fp832Parameters, BigInteger832, BigInteger832, 13);
-
-pub mod fp2;
-pub use self::fp2::*;
-
-pub mod fp3;
-pub use self::fp3::*;
-
-pub mod fp4;
-pub use self::fp4::*;
-
-pub mod fp6_2over3;
-pub use self::fp6_2over3::*;
-
-pub mod fp6_3over2;
-
-pub mod fp12_2over3over2;
-
-pub mod quadratic_extension;
-pub use quadratic_extension::*;
-
-pub mod cubic_extension;
-pub use cubic_extension::*;

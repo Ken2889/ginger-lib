@@ -143,32 +143,6 @@ macro_rules! impl_Fp {
             type BasePrimeField = Self;
 
             #[inline]
-            fn zero() -> Self {
-                $Fp::<P>($BigInteger::from(0), PhantomData)
-            }
-
-            #[inline]
-            fn is_zero(&self) -> bool {
-                self.0.is_zero()
-            }
-
-            #[inline]
-            fn double(&self) -> Self {
-                let mut temp = *self;
-                temp.double_in_place();
-                temp
-            }
-
-            #[inline]
-            fn double_in_place(&mut self) -> &mut Self {
-                // This cannot exceed the backing capacity.
-                self.0.mul2();
-                // However, it may need to be reduced.
-                self.reduce();
-                self
-            }
-
-            #[inline]
             fn one() -> Self {
                 $Fp::<P>(P::R, PhantomData)
             }
@@ -635,6 +609,36 @@ macro_rules! impl_Fp {
             #[inline]
             fn div_assign(&mut self, other: &Self) {
                 self.mul_assign(&other.inverse().unwrap());
+            }
+        }
+
+        impl<P: $FpParameters> Group for $Fp<P> {
+            type ScalarField = Self;
+
+            #[inline]
+            fn zero() -> Self {
+                $Fp::<P>($BigInteger::from(0), PhantomData)
+            }
+
+            #[inline]
+            fn is_zero(&self) -> bool {
+                self.0.is_zero()
+            }
+
+            #[inline]
+            fn double(&self) -> Self {
+                let mut temp = *self;
+                temp.double_in_place();
+                temp
+            }
+
+            #[inline]
+            fn double_in_place(&mut self) -> &mut Self {
+                // This cannot exceed the backing capacity.
+                self.0.mul2();
+                // However, it may need to be reduced.
+                self.reduce();
+                self
             }
         }
     }
