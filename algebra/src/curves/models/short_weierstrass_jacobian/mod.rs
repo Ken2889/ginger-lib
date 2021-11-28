@@ -1,5 +1,4 @@
 use crate::{
-    /*FromBits, ToBits,*/
     bytes::{FromBytes, ToBytes},
     groups::Group,
     curves::{
@@ -7,9 +6,9 @@ use crate::{
         models::{EndoMulParameters as EndoParameters, SWModelParameters as Parameters},
     },
     fields::{BitIterator, Field, PrimeField, SquareRootField},
-    /* BitSerializationError,*/ CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Error, FromBytesChecked,/* FromCompressedBits,*/ SWFlags,
-    SemanticallyValid, SerializationError,/* ToCompressedBits,*/ UniformRand,
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
+    CanonicalSerializeWithFlags, Error, FromBytesChecked, SWFlags,
+    SemanticallyValid, SerializationError, UniformRand,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -281,17 +280,6 @@ impl<P: Parameters> Neg for Jacobian<P> {
     }
 }
 
-impl<'a, P: Parameters> Add<&'a Self> for Jacobian<P> {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, other: &'a Self) -> Self {
-        let mut copy = self;
-        copy += other;
-        copy
-    }
-}
-
 impl<'a, P: Parameters> AddAssign<&'a Self> for Jacobian<P> {
     fn add_assign(&mut self, other: &'a Self) {
         if self.is_zero() {
@@ -357,6 +345,40 @@ impl<'a, P: Parameters> AddAssign<&'a Self> for Jacobian<P> {
     }
 }
 
+impl<'a, P: Parameters> Add<&'a Self> for Jacobian<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: &'a Self) -> Self {
+        let mut copy = self;
+        copy += other;
+        copy
+    }
+}
+
+impl<P: Parameters> AddAssign<Self> for Jacobian<P> {
+    #[inline]
+    fn add_assign(&mut self, other: Self) {
+        *self += &other;
+    }
+}
+
+impl<P: Parameters> Add<Self> for Jacobian<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        self + &other
+    }
+}
+
+impl<'a, P: Parameters> SubAssign<&'a Self> for Jacobian<P> {
+    #[inline]
+    fn sub_assign(&mut self, other: &'a Self) {
+        *self += &(-(*other));
+    }
+}
+
 impl<'a, P: Parameters> Sub<&'a Self> for Jacobian<P> {
     type Output = Self;
 
@@ -368,9 +390,19 @@ impl<'a, P: Parameters> Sub<&'a Self> for Jacobian<P> {
     }
 }
 
-impl<'a, P: Parameters> SubAssign<&'a Self> for Jacobian<P> {
-    fn sub_assign(&mut self, other: &'a Self) {
-        *self += &(-(*other));
+impl<P: Parameters> SubAssign<Self> for Jacobian<P> {
+    #[inline]
+    fn sub_assign(&mut self, other: Self) {
+        *self -= &other;
+    }
+}
+
+impl<P: Parameters> Sub<Self> for Jacobian<P> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self {
+        self - &other
     }
 }
 

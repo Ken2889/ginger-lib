@@ -1,5 +1,4 @@
 use crate::{
-    /*FromBits, ToBits,*/
     bytes::{FromBytes, ToBytes},
     groups::Group,
     curves::{
@@ -7,9 +6,9 @@ use crate::{
         models::{EndoMulParameters as EndoParameters, SWModelParameters as Parameters},
     },
     fields::{BitIterator, Field, PrimeField, SquareRootField},
-    /* BitSerializationError,*/ CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Error, FromBytesChecked,/* FromCompressedBits,*/ SWFlags,
-    SemanticallyValid, SerializationError,/* ToCompressedBits,*/ UniformRand,
+    CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
+    CanonicalSerializeWithFlags, Error, FromBytesChecked, SWFlags,
+    SemanticallyValid, SerializationError, UniformRand,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -274,17 +273,6 @@ impl<P: Parameters> Neg for Projective<P> {
     }
 }
 
-impl<'a, P: Parameters> Add<&'a Self> for Projective<P> {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, other: &'a Self) -> Self {
-        let mut copy = self;
-        copy += other;
-        copy
-    }
-}
-
 impl<'a, P: Parameters> AddAssign<&'a Self> for Projective<P> {
     fn add_assign(&mut self, other: &'a Self) {
         if self.is_zero() {
@@ -330,6 +318,39 @@ impl<'a, P: Parameters> AddAssign<&'a Self> for Projective<P> {
     }
 }
 
+impl<'a, P: Parameters> Add<&'a Self> for Projective<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: &'a Self) -> Self {
+        let mut copy = self;
+        copy += other;
+        copy
+    }
+}
+
+impl<P: Parameters> AddAssign<Self> for Projective<P> {
+    #[inline]
+    fn add_assign(&mut self, other: Self) {
+        *self += &other;
+    }
+}
+
+impl<P: Parameters> Add<Self> for Projective<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        self + &other
+    }
+}
+
+impl<'a, P: Parameters> SubAssign<&'a Self> for Projective<P> {
+    fn sub_assign(&mut self, other: &'a Self) {
+        *self += &(-(*other));
+    }
+}
+
 impl<'a, P: Parameters> Sub<&'a Self> for Projective<P> {
     type Output = Self;
 
@@ -341,9 +362,19 @@ impl<'a, P: Parameters> Sub<&'a Self> for Projective<P> {
     }
 }
 
-impl<'a, P: Parameters> SubAssign<&'a Self> for Projective<P> {
-    fn sub_assign(&mut self, other: &'a Self) {
-        *self += &(-(*other));
+impl<P: Parameters> SubAssign<Self> for Projective<P> {
+    #[inline]
+    fn sub_assign(&mut self, other: Self) {
+        *self -= &other;
+    }
+}
+
+impl<P: Parameters> Sub<Self> for Projective<P> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self {
+        self - &other
     }
 }
 

@@ -2,6 +2,7 @@ use crate::{
     Error,
     groups::Group,
     fields::{Field, SquareRootField, PrimeField, BitIterator},
+    UniformRand,
 };
 use std::{
     fmt::Debug,
@@ -25,6 +26,7 @@ pub use self::models::*;
 pub trait Curve:
     Group
     + Copy
+    + UniformRand
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {

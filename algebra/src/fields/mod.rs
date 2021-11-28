@@ -1,19 +1,17 @@
 use crate::{
     biginteger::BigInteger,
     bits::{FromBits, ToBits},
-    bytes::{FromBytes, ToBytes},
     Group,
     serialize::{
-        CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
+        CanonicalDeserializeWithFlags,
         CanonicalSerializeWithFlags, EmptyFlags, Flags,
     },
-    BitSerializationError, Error, FromBytesChecked, SemanticallyValid, UniformRand,
+    BitSerializationError, Error, FromBytesChecked,
+    UniformRand,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::{Debug, Display},
-    hash::Hash,
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Div, DivAssign, Mul, MulAssign},
     str::FromStr,
 };
 
@@ -74,52 +72,27 @@ pub trait MulShortAssign<Rhs = Self> {
 /// The interface for a generic field.
 pub trait Field:
     'static
-    + Group
-    + ToBytes
-    + FromBytes
-    + FromBytesChecked
+    + Group<ScalarField = Self>
     + ToBits
     + FromBits
     + Serialize
     + for<'a> Deserialize<'a>
-    + CanonicalSerialize
     + CanonicalSerializeWithFlags
-    + CanonicalDeserialize
     + CanonicalDeserializeWithFlags
-    + SemanticallyValid
     + Copy
-    + Clone
-    + Debug
-    + Display
-    + Default
-    + Send
-    + Sync
-    + Eq
     + Ord
-    + Neg<Output = Self>
-    + UniformRand
     + Sized
-    + Hash
+    + UniformRand
     + From<u128>
     + From<u64>
     + From<u32>
     + From<u16>
     + From<u8>
-    + Add<Self, Output = Self>
-    + Sub<Self, Output = Self>
     + Mul<Self, Output = Self>
     + Div<Self, Output = Self>
-    + AddAssign<Self>
-    + SubAssign<Self>
     + MulAssign<Self>
     + DivAssign<Self>
-    + for<'a> Add<&'a Self, Output = Self>
-    + for<'a> Sub<&'a Self, Output = Self>
-    + for<'a> Mul<&'a Self, Output = Self>
     + for<'a> Div<&'a Self, Output = Self>
-    + for<'a> AddAssign<&'a Self>
-    + for<'a> SubAssign<&'a Self>
-    + for<'a> MulAssign<&'a Self>
     + for<'a> DivAssign<&'a Self>
     + std::iter::Sum<Self>
     + for<'a> std::iter::Sum<&'a Self>
@@ -271,7 +244,10 @@ pub trait FpParameters: 'static + Send + Sync + Sized {
 }
 
 /// The interface for a prime field.
-pub trait PrimeField: Field<BasePrimeField = Self> + FromStr {
+pub trait PrimeField:
+    Field<BasePrimeField = Self>
+    + FromStr
+{
     type Params: FpParameters<BigInt = Self::BigInt>;
     type BigInt: BigInteger;
 

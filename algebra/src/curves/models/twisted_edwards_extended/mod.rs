@@ -279,17 +279,6 @@ impl<P: Parameters> Neg for TEExtended<P> {
     }
 }
 
-impl<'a, P: Parameters> Add<&'a Self> for TEExtended<P> {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, other: &'a Self) -> Self {
-        let mut copy = self;
-        copy += other;
-        copy
-    }
-}
-
 impl<'a, P: Parameters> AddAssign<&'a Self> for TEExtended<P> {
     fn add_assign(&mut self, other: &'a Self) {
         // See "Twisted Edwards Curves Revisited"
@@ -334,6 +323,39 @@ impl<'a, P: Parameters> AddAssign<&'a Self> for TEExtended<P> {
     }
 }
 
+impl<'a, P: Parameters> Add<&'a Self> for TEExtended<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: &'a Self) -> Self {
+        let mut copy = self;
+        copy += other;
+        copy
+    }
+}
+
+impl<P: Parameters> AddAssign<Self> for TEExtended<P> {
+    #[inline]
+    fn add_assign(&mut self, other: Self) {
+        *self += &other;
+    }
+}
+
+impl<P: Parameters> Add<Self> for TEExtended<P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        self + &other
+    }
+}
+
+impl<'a, P: Parameters> SubAssign<&'a Self> for TEExtended<P> {
+    fn sub_assign(&mut self, other: &'a Self) {
+        *self += &(-(*other));
+    }
+}
+
 impl<'a, P: Parameters> Sub<&'a Self> for TEExtended<P> {
     type Output = Self;
 
@@ -345,9 +367,19 @@ impl<'a, P: Parameters> Sub<&'a Self> for TEExtended<P> {
     }
 }
 
-impl<'a, P: Parameters> SubAssign<&'a Self> for TEExtended<P> {
-    fn sub_assign(&mut self, other: &'a Self) {
-        *self += &(-(*other));
+impl<P: Parameters> SubAssign<Self> for TEExtended<P> {
+    #[inline]
+    fn sub_assign(&mut self, other: Self) {
+        *self -= &other;
+    }
+}
+
+impl<P: Parameters> Sub<Self> for TEExtended<P> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, other: Self) -> Self {
+        self - &other
     }
 }
 

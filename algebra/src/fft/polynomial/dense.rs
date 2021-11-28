@@ -2,10 +2,7 @@
 
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
 use crate::{serialize::*, Field, Group, FromBytes, FromBytesChecked, SemanticallyValid, PrimeField, ToBytes};
-use rand::{
-    distributions::{Distribution, Standard},
-    Rng
-};
+use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -343,9 +340,7 @@ impl<'a, 'b, F: Field> Sub<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
         result
     }
 }
-
 impl<'a, 'b, F: Field> SubAssign<&'a DensePolynomial<F>> for DensePolynomial<F> {
-    #[inline]
     fn sub_assign(&mut self, other: &'a DensePolynomial<F>) {
         if self.is_zero() {
             self.coeffs.resize(other.coeffs.len(), F::zero());
@@ -368,6 +363,12 @@ impl<'a, 'b, F: Field> SubAssign<&'a DensePolynomial<F>> for DensePolynomial<F> 
             }
         }
         self.truncate_leading_zeros();
+    }
+}
+
+impl<F: Field> SubAssign<DensePolynomial<F>> for DensePolynomial<F> {
+    fn sub_assign(&mut self, other: DensePolynomial<F>) {
+        self.sub_assign(&other);
     }
 }
 
@@ -427,6 +428,14 @@ impl<'a, F: PrimeField> Add<&'a DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
+impl<F: PrimeField> Add<DensePolynomial<F>> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn add(self, other: DensePolynomial<F>) -> DensePolynomial<F> {
+        &self + &other
+    }
+}
+
 impl<'a, F: PrimeField> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
@@ -435,21 +444,11 @@ impl<'a, F: PrimeField> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-// impl<'a, F: PrimeField> Mul<F> for &'a DensePolynomial<F> {
-//     type Output = DensePolynomial<F>;
-//
-//     fn mul(self, other: F) -> DensePolynomial<F> {
-//         <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
-//             &self,
-//             &DensePolynomial::from_coefficients_slice(&[other]),
-//         )
-//     }
-// }
+impl<F: PrimeField> Sub<DensePolynomial<F>> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
 
-impl<F: PrimeField> Distribution<DensePolynomial<F>> for Standard {
-    #[inline]
-    fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> DensePolynomial<F> {
-        unimplemented!()
+    fn sub(self, other: DensePolynomial<F>) -> DensePolynomial<F> {
+        &self - &other
     }
 }
 
@@ -478,7 +477,7 @@ impl<F: PrimeField> Group for DensePolynomial<F> {
     }
 
     fn double_in_place(&mut self) -> &mut Self {
-        *self = self.clone() + self;
+        self.add_assign(&self.clone());
         self
     }
 }
