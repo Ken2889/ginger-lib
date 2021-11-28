@@ -5,13 +5,41 @@ use crate::{
     SemanticallyValid,
 };
 use std::{
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
     io::{Read, Write, Result as IoResult},
     fmt::{Display, Formatter, Result as FmtResult},
 };
+use core::slice::Iter;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GroupVec<G: Group> (Vec<G>);
+
+impl<G: Group> GroupVec<G> {
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        GroupVec(Vec::with_capacity(capacity))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn push(&mut self, item: G) {
+        self.0.push(item)
+    }
+
+    pub fn iter(&self) -> Iter<'_, G> {
+        self.0.iter()
+    }
+}
+
+impl<G: Group> Index<usize> for GroupVec<G> {
+    type Output = G;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
 
 impl<G: Group> Default for GroupVec<G> {
     #[inline]
