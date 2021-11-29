@@ -1,15 +1,14 @@
 use crate::{
-    curves::{
-        models::{SWModelParameters, TEModelParameters},
-        short_weierstrass_jacobian::{GroupAffine as SWJAffine, GroupProjective as SWJProjective},
-        short_weierstrass_projective::{
-            GroupAffine as SWPAffine, GroupProjective as SWPProjective,
-        },
-        twisted_edwards_extended::{GroupAffine as TEAffine, GroupProjective as TEProjective},
-        ProjectiveCurve,
+    fields::{
+        Field, FpParameters, PrimeField,
     },
-    CubicExtField, CubicExtParameters, Field, FpParameters, PrimeField, QuadExtField,
-    QuadExtParameters,
+    curves::{
+        Curve,
+        models::{SWModelParameters, TEModelParameters},
+        short_weierstrass_jacobian::Jacobian,
+        short_weierstrass_projective::Projective,
+        twisted_edwards_extended::TEExtended,
+    },
 };
 
 type Error = Box<dyn std::error::Error>;
@@ -42,60 +41,13 @@ impl<ConstraintF: Field> ToConstraintField<ConstraintF> for () {
     }
 }
 
-impl<P: QuadExtParameters> ToConstraintField<P::BasePrimeField> for QuadExtField<P>
-where
-    P::BaseField: ToConstraintField<P::BasePrimeField>,
-{
-    fn to_field_elements(&self) -> Result<Vec<P::BasePrimeField>, Error> {
-        let mut res = Vec::new();
-        let mut c0_elems = self.c0.to_field_elements()?;
-        let mut c1_elems = self.c1.to_field_elements()?;
-
-        res.append(&mut c0_elems);
-        res.append(&mut c1_elems);
-
-        Ok(res)
-    }
-}
-
-impl<P: CubicExtParameters> ToConstraintField<P::BasePrimeField> for CubicExtField<P>
-where
-    P::BaseField: ToConstraintField<P::BasePrimeField>,
-{
-    fn to_field_elements(&self) -> Result<Vec<P::BasePrimeField>, Error> {
-        let mut res = Vec::new();
-        let mut c0_elems = self.c0.to_field_elements()?;
-        let mut c1_elems = self.c1.to_field_elements()?;
-        let mut c2_elems = self.c2.to_field_elements()?;
-
-        res.append(&mut c0_elems);
-        res.append(&mut c1_elems);
-        res.append(&mut c2_elems);
-
-        Ok(res)
-    }
-}
-
-impl<M: TEModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for TEAffine<M>
-where
-    M::BaseField: ToConstraintField<ConstraintF>,
+impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for Jacobian<M>
+    where
+        M::BaseField: ToConstraintField<ConstraintF>,
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let mut x_fe = self.x.to_field_elements()?;
-        let y_fe = self.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
-    }
-}
-
-impl<M: TEModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for TEProjective<M>
-where
-    M::BaseField: ToConstraintField<ConstraintF>,
-{
-    #[inline]
-    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine();
+        let affine = self.into_affine()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);
@@ -103,26 +55,13 @@ where
     }
 }
 
-impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for SWJAffine<M>
-where
-    M::BaseField: ToConstraintField<ConstraintF>,
+impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for Projective<M>
+    where
+        M::BaseField: ToConstraintField<ConstraintF>,
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let mut x_fe = self.x.to_field_elements()?;
-        let y_fe = self.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
-    }
-}
-
-impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for SWJProjective<M>
-where
-    M::BaseField: ToConstraintField<ConstraintF>,
-{
-    #[inline]
-    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine();
+        let affine = self.into_affine()?; // Affine coordinates are defined even if `self` is the neutral elements
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);
@@ -130,28 +69,13 @@ where
     }
 }
 
-impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for SWPAffine<M>
+impl<M: TEModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for TEExtended<M>
 where
     M::BaseField: ToConstraintField<ConstraintF>,
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        // Affine coordinates are defined even if `self` is the neutral elements. For more
-        // information, see the definition of zero() in SWPAffine.
-        let mut x_fe = self.x.to_field_elements()?;
-        let y_fe = self.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
-    }
-}
-
-impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for SWPProjective<M>
-where
-    M::BaseField: ToConstraintField<ConstraintF>,
-{
-    #[inline]
-    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine(); // Affine coordinates are defined even if `self` is the neutral elements
+        let affine = self.into_affine()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);

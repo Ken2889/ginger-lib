@@ -444,7 +444,7 @@ impl<P: Parameters> From<AffineRep<P>> for Jacobian<P> {
 // coordinates as X/Z^2, Y/Z^3.
 impl<P: Parameters> TryFrom<Jacobian<P>> for AffineRep<P> {
     type Error = Error;
-    
+
     #[inline]
     fn try_from(p: Jacobian<P>) -> Result<AffineRep<P>, Error> {
         if p.is_zero() {
