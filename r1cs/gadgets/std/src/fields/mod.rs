@@ -5,15 +5,7 @@ use std::fmt::Debug;
 
 use crate::{prelude::*, Assignment};
 
-pub mod cubic_extension;
 pub mod fp;
-pub mod fp12;
-pub mod fp2;
-pub mod fp3;
-pub mod fp4;
-pub mod fp6_2over3;
-pub mod fp6_3over2;
-pub mod quadratic_extension;
 
 #[cfg(feature = "nonnative")]
 pub mod nonnative;

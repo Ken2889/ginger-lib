@@ -568,6 +568,11 @@ impl<P: Parameters> Curve for Projective<P> {
         self.mul_bits(cofactor)
     }
 
+    fn scale_by_cofactor_inv(&self) -> Self {
+        let cofactor_inv = BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(P::COFACTOR_INV));
+        self.mul_bits(cofactor_inv)
+    }
+
     #[inline]
     fn prime_subgroup_generator() -> Self {
         Self::new(

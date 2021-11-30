@@ -6,8 +6,6 @@ use std::{borrow::Borrow, fmt::Debug};
 
 pub mod curves;
 
-pub use self::curves::short_weierstrass::{bls12, bn, mnt};
-
 #[cfg(feature = "nonnative")]
 pub mod nonnative;
 
@@ -60,7 +58,7 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         mut cs: CS,
         other: &G,
     ) -> Result<Self, SynthesisError> {
-        let neg_other = -(*other);
+        let neg_other = -other.clone();
         self.add_constant(cs.ns(|| "Self - other"), &neg_other)
     }
 

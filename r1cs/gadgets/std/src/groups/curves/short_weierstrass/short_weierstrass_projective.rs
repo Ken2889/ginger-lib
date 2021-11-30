@@ -1,10 +1,17 @@
 use algebra::{
-    curves::short_weierstrass_projective::{
-        GroupAffine as SWAffine, GroupProjective as SWProjective,
+    groups::Group,
+    fields::{Field, PrimeField, BitIterator},
+    curves::{
+        Curve,
+        models::{
+            SWModelParameters, EndoMulParameters,
+            short_weierstrass_projective::{
+                AffineRep as SWAffine, Projective as SWProjective,
+            }
+        }
     },
-    AffineCurve, BitIterator, EndoMulParameters, Field, PrimeField, ProjectiveCurve,
-    SWModelParameters,
 };
+
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};

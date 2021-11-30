@@ -58,8 +58,6 @@ pub mod fields;
 
 pub mod groups;
 
-pub mod pairing;
-
 pub mod instantiated;
 pub use instantiated::*;
 
@@ -76,9 +74,8 @@ pub mod prelude {
             ToBytesGadget,
         },
         eq::*,
-        fields::{cubic_extension::*, quadratic_extension::*, FieldGadget},
+        fields::FieldGadget,
         groups::GroupGadget,
-        pairing::PairingGadget,
         select::*,
     };
 }

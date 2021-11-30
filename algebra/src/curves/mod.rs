@@ -57,14 +57,6 @@ pub trait Curve:
 
     fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep);
 
-    /// Returns `self + self`.
-    #[must_use]
-    fn double(&self) -> Self {
-        let mut copy = *self;
-        copy.double_in_place();
-        copy
-    }
-
     // TODO: move to group trait?
     fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
 
@@ -72,6 +64,8 @@ pub trait Curve:
     // fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self;
 
     fn scale_by_cofactor(&self) -> Self;
+
+    fn scale_by_cofactor_inv(&self) -> Self;
 
     fn is_normalized(&self) -> bool;
 
