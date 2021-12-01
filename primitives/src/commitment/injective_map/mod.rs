@@ -8,15 +8,17 @@ use super::{
 };
 
 pub use crate::crh::injective_map::InjectiveMap;
-use algebra::groups::Group;
+use algebra::{
+    curves::Curve,
+};
 
-pub struct PedersenCommCompressor<G: Group, I: InjectiveMap<G>, W: PedersenWindow> {
+pub struct PedersenCommCompressor<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> {
     _group: PhantomData<G>,
     _compressor: PhantomData<I>,
     _comm: PedersenCommitment<G, W>,
 }
 
-impl<G: Group, I: InjectiveMap<G>, W: PedersenWindow> CommitmentScheme
+impl<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> CommitmentScheme
     for PedersenCommCompressor<G, I, W>
 {
     type Output = I::Output;

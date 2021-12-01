@@ -15,7 +15,7 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{AffineCurve, ToConstraintField, UniformRand};
+use algebra::{Group, Curve, ToConstraintField, UniformRand};
 use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
@@ -39,7 +39,7 @@ impl PCDParameters {
     /// We assume the DLOG keys to be generated outside the PCD scheme,
     /// so this function actually just trim them to the segment size
     /// specified in the config.
-    pub fn universal_setup<G: AffineCurve, D: Digest>(
+    pub fn universal_setup<G: Curve, D: Digest>(
         &self,
         params: &Parameters<G>,
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
@@ -55,7 +55,7 @@ impl PCDParameters {
 ///     aka deferred checks.
 /// The additional data is used only by dedicated circuits such as a base proofs or
 /// a finalizing block proofs. For the ordinary merger nodes, it is simply `None`.
-pub trait PCDCircuit<G: AffineCurve>: ConstraintSynthesizer<G::ScalarField> {
+pub trait PCDCircuit<G: Curve>: ConstraintSynthesizer<G::ScalarField> {
     /// Any data that may be needed to bootstrap the circuit that is not covered by the other
     /// fields.
     type SetupData: Clone;
@@ -139,7 +139,7 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
+pub enum GeneralPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
     SimpleMarlin(SimpleMarlinPCD<'a, G1, D>),
     FinalDarlin(FinalDarlinPCD<'a, G1, G2, D>),
 }
@@ -147,10 +147,10 @@ pub enum GeneralPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
 // Testing functions
 impl<'a, G1, G2, D> GeneralPCD<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest,
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
@@ -194,10 +194,10 @@ pub type DualPCDVerifierKey<'a, G1, G2, D> = FinalDarlinPCDVerifierKey<'a, G1, G
 
 impl<'a, G1, G2, D> PCD for GeneralPCD<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;

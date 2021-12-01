@@ -8,6 +8,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
     io::{Read, Write, Error as IoError, ErrorKind, Result as IoResult},
     fmt::{Display, Formatter, Result as FmtResult},
+    vec::IntoIter,
 };
 use core::slice::Iter;
 
@@ -16,9 +17,13 @@ pub struct GroupVec<G: Group> (Vec<G>);
 
 impl<G: Group> GroupVec<G> {
 
+    pub fn new(items: Vec<G>) -> Self { GroupVec(items) }
+
     pub fn with_capacity(capacity: usize) -> Self {
         GroupVec(Vec::with_capacity(capacity))
     }
+
+    pub fn get_vec(&self) -> Vec<G> { self.0.clone() }
 
     pub fn len(&self) -> usize {
         self.0.len()
@@ -30,6 +35,10 @@ impl<G: Group> GroupVec<G> {
 
     pub fn iter(&self) -> Iter<'_, G> {
         self.0.iter()
+    }
+
+    pub fn into_iter(&self) -> IntoIter<G> {
+        self.0.clone().into_iter()
     }
 }
 

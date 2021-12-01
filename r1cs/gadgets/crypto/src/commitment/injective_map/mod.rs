@@ -1,4 +1,4 @@
-use algebra::{Field, PrimeField};
+use algebra::{Field, PrimeField, Curve};
 use primitives::{
     commitment::injective_map::{InjectiveMap, PedersenCommCompressor},
     commitment::pedersen::PedersenWindow,
@@ -12,7 +12,6 @@ use crate::commitment::{
 };
 
 pub use crate::crh::injective_map::InjectiveMapGadget;
-use algebra::groups::Group;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::{groups::GroupGadget, uint8::UInt8};
 
@@ -20,7 +19,7 @@ use std::marker::PhantomData;
 
 pub struct PedersenCommitmentCompressorGadget<G, I, ConstraintF, GG, IG>
 where
-    G: Group,
+    G: Curve,
     I: InjectiveMap<G>,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
@@ -34,7 +33,7 @@ where
 impl<G, I, ConstraintF, GG, IG, W> CommitmentGadget<PedersenCommCompressor<G, I, W>, ConstraintF>
     for PedersenCommitmentCompressorGadget<G, I, ConstraintF, GG, IG>
 where
-    G: Group,
+    G: Curve,
     I: InjectiveMap<G>,
     ConstraintF: PrimeField,
     GG: GroupGadget<G, ConstraintF>,

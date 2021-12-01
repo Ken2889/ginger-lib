@@ -1,4 +1,4 @@
-use algebra::{Group, PrimeField, ProjectiveCurve};
+use algebra::{PrimeField, Curve};
 use r1cs_std::{
     alloc::AllocGadget, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpGadget,
     groups::GroupGadget, to_field_gadget_vec::ToConstraintFieldGadget,
@@ -21,15 +21,15 @@ use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "ConstraintF: PrimeField, G: Group, GG: GroupGadget<G, ConstraintF>"),
-    Clone(bound = "ConstraintF: PrimeField, G: Group, GG: GroupGadget<G, ConstraintF>"),
-    PartialEq(bound = "ConstraintF: PrimeField, G: Group, GG: GroupGadget<G, ConstraintF>"),
-    Eq(bound = "ConstraintF: PrimeField, G: Group, GG: GroupGadget<G, ConstraintF>")
+    Debug(bound = "ConstraintF: PrimeField, G: Curve, GG: GroupGadget<G, ConstraintF>"),
+    Clone(bound = "ConstraintF: PrimeField, G: Curve, GG: GroupGadget<G, ConstraintF>"),
+    PartialEq(bound = "ConstraintF: PrimeField, G: Curve, GG: GroupGadget<G, ConstraintF>"),
+    Eq(bound = "ConstraintF: PrimeField, G: Curve, GG: GroupGadget<G, ConstraintF>")
 )]
 pub struct FieldBasedEcVrfProofGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
     pub gamma: GG,
@@ -42,7 +42,7 @@ where
 impl<ConstraintF, G, GG> FieldBasedEcVrfProofGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: ProjectiveCurve,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
     fn alloc_internal<FN, T, CS: ConstraintSystem<ConstraintF>>(
@@ -103,7 +103,7 @@ impl<ConstraintF, G, GG> AllocGadget<FieldBasedEcVrfProof<ConstraintF, G>, Const
     for FieldBasedEcVrfProofGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: ProjectiveCurve,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
     fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
@@ -174,7 +174,7 @@ where
 
 pub struct FieldBasedEcVrfPkGadget<
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 > {
     pub pk: GG,
@@ -186,7 +186,7 @@ impl<ConstraintF, G, GG> AllocGadget<FieldBasedEcVrfPk<G>, ConstraintF>
     for FieldBasedEcVrfPkGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
     fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
@@ -266,7 +266,7 @@ where
 
 pub struct FieldBasedEcVrfProofVerificationGadget<
     ConstraintF: PrimeField,
-    G: ProjectiveCurve,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
     FH: FieldBasedHash<Data = ConstraintF>,
     FHG: FieldBasedHashGadget<FH, ConstraintF>,
@@ -297,7 +297,7 @@ impl<ConstraintF, G, GG, FH, FHG, GH, GHG>
     for FieldBasedEcVrfProofVerificationGadget<ConstraintF, G, GG, FH, FHG, GH, GHG>
 where
     ConstraintF: PrimeField,
-    G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+    G: Curve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FHG::DataGadget>,
     FH: FieldBasedHash<Data = ConstraintF>,
@@ -438,20 +438,20 @@ where
 mod test {
     use crate::{
         crh::{
-            bowe_hopwood::BoweHopwoodPedersenCRHGadget, MNT4PoseidonHashGadget,
-            MNT6PoseidonHashGadget,
+            bowe_hopwood::BoweHopwoodPedersenCRHGadget, TweedleFrPoseidonHashGadget,
+            TweedleFqPoseidonHashGadget,
         },
         vrf::{ecvrf::FieldBasedEcVrfProofVerificationGadget, FieldBasedVrfGadget},
     };
     use algebra::curves::{
-        mnt4753::G1Projective as MNT4G1Projective, mnt6753::G1Projective as MNT6G1Projective,
+        tweedle::dee::DeeJacobian as DeeJacobian, tweedle::dum::DumJacobian as DumJacobian,
     };
-    use algebra::fields::{mnt4753::Fr as MNT4Fr, mnt6753::Fr as MNT6Fr};
+    use algebra::fields::tweedle::{Fr, Fq};
     use primitives::{
         crh::{
             bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters},
             pedersen::PedersenWindow,
-            FixedLengthCRH, MNT4PoseidonHash, MNT6PoseidonHash,
+            FixedLengthCRH, TweedleFrPoseidonHash, TweedleFqPoseidonHash,
         },
         vrf::{
             ecvrf::{FieldBasedEcVrf, FieldBasedEcVrfProof},
@@ -461,9 +461,7 @@ mod test {
 
     use r1cs_core::ConstraintSystem;
     use r1cs_std::alloc::AllocGadget;
-    use r1cs_std::instantiated::{
-        mnt4_753::G1Gadget as MNT4G1Gadget, mnt6_753::G1Gadget as MNT6G1Gadget,
-    };
+    use r1cs_std::instantiated::tweedle::{TweedleDeeGadget, TweedleDumGadget};
     use r1cs_std::test_constraint_system::TestConstraintSystem;
 
     use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
@@ -472,46 +470,46 @@ mod test {
     #[derive(Clone)]
     struct TestWindow {}
     impl PedersenWindow for TestWindow {
-        const WINDOW_SIZE: usize = 128;
+        const WINDOW_SIZE: usize = 64;
         const NUM_WINDOWS: usize = 2;
     }
 
-    type BHMNT4 = BoweHopwoodPedersenCRH<MNT4G1Projective, TestWindow>;
-    type BHMNT6 = BoweHopwoodPedersenCRH<MNT6G1Projective, TestWindow>;
+    type BHTweedleDee = BoweHopwoodPedersenCRH<DeeJacobian, TestWindow>;
+    type BHTweedleDum = BoweHopwoodPedersenCRH<DumJacobian, TestWindow>;
 
-    type BHMNT4Gadget = BoweHopwoodPedersenCRHGadget<MNT6G1Projective, MNT4Fr, MNT6G1Gadget>;
-    type BHMNT6Gadget = BoweHopwoodPedersenCRHGadget<MNT4G1Projective, MNT6Fr, MNT4G1Gadget>;
+    type BHTweedleDeeGadget = BoweHopwoodPedersenCRHGadget<DumJacobian, Fr, TweedleDumGadget>;
+    type BHTweedleDumGadget = BoweHopwoodPedersenCRHGadget<DeeJacobian, Fq, TweedleDeeGadget>;
 
-    type BHMNT4Parameters = BoweHopwoodPedersenParameters<MNT6G1Projective>;
-    type BHMNT6Parameters = BoweHopwoodPedersenParameters<MNT4G1Projective>;
+    type BHTweedleDeeParameters = BoweHopwoodPedersenParameters<DumJacobian>;
+    type BHTweedleDumParameters = BoweHopwoodPedersenParameters<DeeJacobian>;
 
-    type EcVrfMNT4 = FieldBasedEcVrf<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash, BHMNT6>;
-    type EcVrfMNT6 = FieldBasedEcVrf<MNT6Fr, MNT4G1Projective, MNT6PoseidonHash, BHMNT4>;
+    type EcVrfTweedleDee = FieldBasedEcVrf<Fr, DumJacobian, TweedleFrPoseidonHash, BHTweedleDum>;
+    type EcVrfTweedleDum = FieldBasedEcVrf<Fq, DeeJacobian, TweedleFqPoseidonHash, BHTweedleDee>;
 
-    type EcVrfMNT4Pk = FieldBasedEcVrfPk<MNT6G1Projective>;
-    type EcVrfMNT6Pk = FieldBasedEcVrfPk<MNT4G1Projective>;
+    type EcVrfTweedleDeePk = FieldBasedEcVrfPk<DumJacobian>;
+    type EcVrfTweedleDumPk = FieldBasedEcVrfPk<DeeJacobian>;
 
-    type EcVrfMNT4Proof = FieldBasedEcVrfProof<MNT4Fr, MNT6G1Projective>;
-    type EcVrfMNT6Proof = FieldBasedEcVrfProof<MNT6Fr, MNT4G1Projective>;
+    type EcVrfTweedleDeeProof = FieldBasedEcVrfProof<Fr, DumJacobian>;
+    type EcVrfTweedleDumProof = FieldBasedEcVrfProof<Fq, DeeJacobian>;
 
-    type EcVrfMNT4Gadget = FieldBasedEcVrfProofVerificationGadget<
-        MNT4Fr,
-        MNT6G1Projective,
-        MNT6G1Gadget,
-        MNT4PoseidonHash,
-        MNT4PoseidonHashGadget,
-        BHMNT6,
-        BHMNT4Gadget,
+    type EcVrfTweedleDeeGadget = FieldBasedEcVrfProofVerificationGadget<
+        Fr,
+        DumJacobian,
+        TweedleDumGadget,
+        TweedleFrPoseidonHash,
+        TweedleFrPoseidonHashGadget,
+        BHTweedleDum,
+        BHTweedleDeeGadget,
     >;
 
-    type EcVrfMNT6Gadget = FieldBasedEcVrfProofVerificationGadget<
-        MNT6Fr,
-        MNT4G1Projective,
-        MNT4G1Gadget,
-        MNT6PoseidonHash,
-        MNT6PoseidonHashGadget,
-        BHMNT4,
-        BHMNT6Gadget,
+    type EcVrfTweedleDumGadget = FieldBasedEcVrfProofVerificationGadget<
+        Fq,
+        DeeJacobian,
+        TweedleDeeGadget,
+        TweedleFqPoseidonHash,
+        TweedleFqPoseidonHashGadget,
+        BHTweedleDee,
+        BHTweedleDumGadget,
     >;
 
     fn prove<S: FieldBasedVrf, R: Rng>(
@@ -525,45 +523,45 @@ mod test {
         (proof, pk)
     }
 
-    fn mnt4_ecvrf_gadget_generate_constraints(
-        message: MNT4Fr,
-        pk: &EcVrfMNT4Pk,
-        proof: EcVrfMNT4Proof,
-        pp: &BHMNT4Parameters,
+    fn tweedle_dee_ecvrf_gadget_generate_constraints(
+        message: Fr,
+        pk: &EcVrfTweedleDeePk,
+        proof: EcVrfTweedleDeeProof,
+        pp: &BHTweedleDeeParameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+        let mut cs = TestConstraintSystem::<Fr>::new();
 
         //Alloc proof, pk and message
         let proof_g =
-            <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::ProofGadget::alloc(
+            <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::ProofGadget::alloc(
                 cs.ns(|| "alloc proof"),
                 || Ok(proof),
             )
             .unwrap();
 
         let pk_g =
-            <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::PublicKeyGadget::alloc(
+            <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::PublicKeyGadget::alloc(
                 cs.ns(|| "alloc pk"),
                 || Ok(pk),
             )
             .unwrap();
 
         let pp_g =
-            <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::GHParametersGadget::alloc(
+            <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::GHParametersGadget::alloc(
                 cs.ns(|| "alloc gh params"),
                 || Ok(pp),
             )
             .unwrap();
 
         let message_g =
-            <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::DataGadget::alloc(
+            <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::DataGadget::alloc(
                 cs.ns(|| "alloc message"),
                 || Ok(message),
             )
             .unwrap();
 
         //Verify proof
-        EcVrfMNT4Gadget::enforce_proof_to_hash_verification(
+        EcVrfTweedleDeeGadget::enforce_proof_to_hash_verification(
             cs.ns(|| "verify proof1"),
             &pp_g,
             &pk_g,
@@ -581,20 +579,20 @@ mod test {
     }
 
     #[test]
-    fn mnt4_ecvrf_gadget_test() {
+    fn tweedle_dee_ecvrf_gadget_test() {
         let rng = &mut thread_rng();
-        let message: MNT4Fr = rng.gen();
-        let pp = <BHMNT6 as FixedLengthCRH>::setup(rng).unwrap();
-        let (proof, pk) = prove::<EcVrfMNT4, _>(rng, &pp, message);
+        let message: Fr = rng.gen();
+        let pp = <BHTweedleDum as FixedLengthCRH>::setup(rng).unwrap();
+        let (proof, pk) = prove::<EcVrfTweedleDee, _>(rng, &pp, message);
 
         //Positive case
-        assert!(mnt4_ecvrf_gadget_generate_constraints(
+        assert!(tweedle_dee_ecvrf_gadget_generate_constraints(
             message, &pk, proof, &pp
         ));
 
         //Change message
-        let wrong_message: MNT4Fr = rng.gen();
-        assert!(!mnt4_ecvrf_gadget_generate_constraints(
+        let wrong_message: Fr = rng.gen();
+        assert!(!tweedle_dee_ecvrf_gadget_generate_constraints(
             wrong_message,
             &pk,
             proof,
@@ -602,14 +600,14 @@ mod test {
         ));
 
         //Change pk
-        let wrong_pk: EcVrfMNT4Pk = rng.gen();
-        assert!(!mnt4_ecvrf_gadget_generate_constraints(
+        let wrong_pk: EcVrfTweedleDeePk = rng.gen();
+        assert!(!tweedle_dee_ecvrf_gadget_generate_constraints(
             message, &wrong_pk, proof, &pp
         ));
 
         //Change proof
-        let (wrong_proof, _) = prove::<EcVrfMNT4, _>(rng, &pp, wrong_message);
-        assert!(!mnt4_ecvrf_gadget_generate_constraints(
+        let (wrong_proof, _) = prove::<EcVrfTweedleDee, _>(rng, &pp, wrong_message);
+        assert!(!tweedle_dee_ecvrf_gadget_generate_constraints(
             message,
             &pk,
             wrong_proof,
@@ -617,42 +615,42 @@ mod test {
         ));
     }
 
-    fn mnt6_ecvrf_gadget_generate_constraints(
-        message: MNT6Fr,
-        pk: &EcVrfMNT6Pk,
-        proof: EcVrfMNT6Proof,
-        pp: &BHMNT6Parameters,
+    fn tweedle_dum_ecvrf_gadget_generate_constraints(
+        message: Fq,
+        pk: &EcVrfTweedleDumPk,
+        proof: EcVrfTweedleDumProof,
+        pp: &BHTweedleDumParameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT6Fr>::new();
+        let mut cs = TestConstraintSystem::<Fq>::new();
 
         //Alloc proof, pk and message
         let proof_g =
-            <EcVrfMNT6Gadget as FieldBasedVrfGadget<EcVrfMNT6, MNT6Fr>>::ProofGadget::alloc(
+            <EcVrfTweedleDumGadget as FieldBasedVrfGadget<EcVrfTweedleDum, Fq>>::ProofGadget::alloc(
                 cs.ns(|| "alloc proof"),
                 || Ok(proof),
             )
             .unwrap();
         let pk_g =
-            <EcVrfMNT6Gadget as FieldBasedVrfGadget<EcVrfMNT6, MNT6Fr>>::PublicKeyGadget::alloc(
+            <EcVrfTweedleDumGadget as FieldBasedVrfGadget<EcVrfTweedleDum, Fq>>::PublicKeyGadget::alloc(
                 cs.ns(|| "alloc pk"),
                 || Ok(pk),
             )
             .unwrap();
         let pp_g =
-            <EcVrfMNT6Gadget as FieldBasedVrfGadget<EcVrfMNT6, MNT6Fr>>::GHParametersGadget::alloc(
+            <EcVrfTweedleDumGadget as FieldBasedVrfGadget<EcVrfTweedleDum, Fq>>::GHParametersGadget::alloc(
                 cs.ns(|| "alloc gh params"),
                 || Ok(pp),
             )
             .unwrap();
         let message_g =
-            <EcVrfMNT6Gadget as FieldBasedVrfGadget<EcVrfMNT6, MNT6Fr>>::DataGadget::alloc(
+            <EcVrfTweedleDumGadget as FieldBasedVrfGadget<EcVrfTweedleDum, Fq>>::DataGadget::alloc(
                 cs.ns(|| "alloc message"),
                 || Ok(message),
             )
             .unwrap();
 
         //Verify proof
-        EcVrfMNT6Gadget::enforce_proof_to_hash_verification(
+        EcVrfTweedleDumGadget::enforce_proof_to_hash_verification(
             cs.ns(|| "verify proof1"),
             &pp_g,
             &pk_g,
@@ -669,22 +667,21 @@ mod test {
         cs.is_satisfied()
     }
 
-    #[ignore]
     #[test]
-    fn mnt6_ecvrf_gadget_test() {
+    fn tweedle_dum_ecvrf_gadget_test() {
         let rng = &mut thread_rng();
-        let message: MNT6Fr = rng.gen();
-        let pp = <BHMNT4 as FixedLengthCRH>::setup(rng).unwrap();
-        let (proof, pk) = prove::<EcVrfMNT6, _>(rng, &pp, message);
+        let message: Fq = rng.gen();
+        let pp = <BHTweedleDee as FixedLengthCRH>::setup(rng).unwrap();
+        let (proof, pk) = prove::<EcVrfTweedleDum, _>(rng, &pp, message);
 
         //Positive case
-        assert!(mnt6_ecvrf_gadget_generate_constraints(
+        assert!(tweedle_dum_ecvrf_gadget_generate_constraints(
             message, &pk, proof, &pp
         ));
 
         //Change message
-        let wrong_message: MNT6Fr = rng.gen();
-        assert!(!mnt6_ecvrf_gadget_generate_constraints(
+        let wrong_message: Fq = rng.gen();
+        assert!(!tweedle_dum_ecvrf_gadget_generate_constraints(
             wrong_message,
             &pk,
             proof,
@@ -692,14 +689,14 @@ mod test {
         ));
 
         //Change pk
-        let wrong_pk: EcVrfMNT6Pk = rng.gen();
-        assert!(!mnt6_ecvrf_gadget_generate_constraints(
+        let wrong_pk: EcVrfTweedleDumPk = rng.gen();
+        assert!(!tweedle_dum_ecvrf_gadget_generate_constraints(
             message, &wrong_pk, proof, &pp
         ));
 
         //Change proof
-        let (wrong_proof, _) = prove::<EcVrfMNT6, _>(rng, &pp, wrong_message);
-        assert!(!mnt6_ecvrf_gadget_generate_constraints(
+        let (wrong_proof, _) = prove::<EcVrfTweedleDum, _>(rng, &pp, wrong_message);
+        assert!(!tweedle_dum_ecvrf_gadget_generate_constraints(
             message,
             &pk,
             wrong_proof,
@@ -707,46 +704,45 @@ mod test {
         ));
     }
 
-    #[ignore]
     #[test]
     fn random_ecvrf_gadget_test() {
         //Generate VRF proof for a random field element f and get the proof and the public key
         let rng = &mut thread_rng();
-        let pp = <BHMNT6 as FixedLengthCRH>::setup(rng).unwrap();
+        let pp = <BHTweedleDum as FixedLengthCRH>::setup(rng).unwrap();
 
         let samples = 10;
         for _ in 0..samples {
-            let message: MNT4Fr = rng.gen();
-            let (sig, pk) = prove::<EcVrfMNT4, _>(rng, &pp, message);
-            let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+            let message: Fr = rng.gen();
+            let (sig, pk) = prove::<EcVrfTweedleDee, _>(rng, &pp, message);
+            let mut cs = TestConstraintSystem::<Fr>::new();
 
             //Alloc proof, pk, hash params and message
             let proof_g =
-                <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::ProofGadget::alloc(
+                <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::ProofGadget::alloc(
                     cs.ns(|| "alloc proof"),
                     || Ok(sig),
                 )
                 .unwrap();
 
-            let pk_g = <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::PublicKeyGadget::alloc(
+            let pk_g = <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::PublicKeyGadget::alloc(
                 cs.ns(|| "alloc pk"),
                 || Ok(pk)
             ).unwrap();
 
-            let pp_g = <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::GHParametersGadget::alloc(
+            let pp_g = <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::GHParametersGadget::alloc(
                 cs.ns(|| "alloc gh params"),
                 || Ok(&pp)
             ).unwrap();
 
             let message_g =
-                <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::DataGadget::alloc(
+                <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::DataGadget::alloc(
                     cs.ns(|| "alloc message"),
                     || Ok(message),
                 )
                 .unwrap();
 
             //Verify proof
-            EcVrfMNT4Gadget::enforce_proof_to_hash_verification(
+            EcVrfTweedleDeeGadget::enforce_proof_to_hash_verification(
                 cs.ns(|| "verify proof"),
                 &pp_g,
                 &pk_g,
@@ -763,16 +759,16 @@ mod test {
             assert!(cs.is_satisfied());
 
             //Negative case: wrong message (or wrong proof for another message)
-            let new_message: MNT4Fr = rng.gen();
+            let new_message: Fr = rng.gen();
 
             let new_message_g =
-                <EcVrfMNT4Gadget as FieldBasedVrfGadget<EcVrfMNT4, MNT4Fr>>::DataGadget::alloc(
+                <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::DataGadget::alloc(
                     cs.ns(|| "alloc new_message"),
                     || Ok(new_message),
                 )
                 .unwrap();
 
-            EcVrfMNT4Gadget::enforce_proof_to_hash_verification(
+            EcVrfTweedleDeeGadget::enforce_proof_to_hash_verification(
                 cs.ns(|| "verify new proof"),
                 &pp_g,
                 &pk_g,

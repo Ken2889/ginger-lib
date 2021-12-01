@@ -1,5 +1,5 @@
 use crate::{crh::FieldBasedHashGadget, signature::FieldBasedSigGadget};
-use algebra::{Group, PrimeField, ProjectiveCurve, ToConstraintField};
+use algebra::{PrimeField, Curve, ToConstraintField};
 use primitives::signature::schnorr::field_based_schnorr::FieldBasedSchnorrPk;
 use primitives::{
     compute_truncation_size,
@@ -18,12 +18,12 @@ use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "ConstraintF: PrimeField, G: Group"),
-    Clone(bound = "ConstraintF: PrimeField, G: Group"),
-    PartialEq(bound = "ConstraintF: PrimeField, G: Group"),
-    Eq(bound = "ConstraintF: PrimeField, G: Group")
+    Debug(bound = "ConstraintF: PrimeField, G: Curve"),
+    Clone(bound = "ConstraintF: PrimeField, G: Curve"),
+    PartialEq(bound = "ConstraintF: PrimeField, G: Curve"),
+    Eq(bound = "ConstraintF: PrimeField, G: Curve")
 )]
-pub struct FieldBasedSchnorrSigGadget<ConstraintF: PrimeField, G: Group> {
+pub struct FieldBasedSchnorrSigGadget<ConstraintF: PrimeField, G: Curve> {
     pub e: FpGadget<ConstraintF>,
     pub s: FpGadget<ConstraintF>,
     _field: PhantomData<ConstraintF>,
@@ -34,7 +34,7 @@ impl<ConstraintF, G> AllocGadget<FieldBasedSchnorrSignature<ConstraintF, G>, Con
     for FieldBasedSchnorrSigGadget<ConstraintF, G>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
 {
     fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -99,7 +99,7 @@ impl<ConstraintF, G> ConstantGadget<FieldBasedSchnorrSignature<ConstraintF, G>, 
     for FieldBasedSchnorrSigGadget<ConstraintF, G>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
 {
     fn from_value<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -125,7 +125,7 @@ where
 impl<ConstraintF, G> EqGadget<ConstraintF> for FieldBasedSchnorrSigGadget<ConstraintF, G>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -180,7 +180,7 @@ impl<ConstraintF, G> ToConstraintFieldGadget<ConstraintF>
     for FieldBasedSchnorrSigGadget<ConstraintF, G>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
 {
     type FieldGadget = FpGadget<ConstraintF>;
 
@@ -195,7 +195,7 @@ where
 #[derive(Clone, Eq, PartialEq)]
 pub struct FieldBasedSchnorrPkGadget<
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 > {
     pub pk: GG,
@@ -207,7 +207,7 @@ impl<ConstraintF, G, GG> AllocGadget<FieldBasedSchnorrPk<G>, ConstraintF>
     for FieldBasedSchnorrPkGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
     fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
@@ -289,7 +289,7 @@ impl<ConstraintF, G, GG> ConstantGadget<FieldBasedSchnorrPk<G>, ConstraintF>
     for FieldBasedSchnorrPkGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF, Value = G>,
 {
     fn from_value<CS: ConstraintSystem<ConstraintF>>(
@@ -312,7 +312,7 @@ where
 impl<ConstraintF, G, GG> EqGadget<ConstraintF> for FieldBasedSchnorrPkGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF, Value = G>,
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(
@@ -348,7 +348,7 @@ impl<ConstraintF, G, GG> ToConstraintFieldGadget<ConstraintF>
     for FieldBasedSchnorrPkGadget<ConstraintF, G, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF, Value = G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
 {
@@ -364,7 +364,7 @@ where
 
 pub struct FieldBasedSchnorrSigVerificationGadget<
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF>,
@@ -388,7 +388,7 @@ pub struct FieldBasedSchnorrSigVerificationGadget<
 impl<ConstraintF, G, GG, H, HG> FieldBasedSchnorrSigVerificationGadget<ConstraintF, G, GG, H, HG>
 where
     ConstraintF: PrimeField,
-    G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+    G: Curve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = HG::DataGadget>,
     H: FieldBasedHash<Data = ConstraintF>,
@@ -478,7 +478,7 @@ impl<ConstraintF, G, GG, H, HG>
     for FieldBasedSchnorrSigVerificationGadget<ConstraintF, G, GG, H, HG>
 where
     ConstraintF: PrimeField,
-    G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+    G: Curve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = HG::DataGadget>,
     H: FieldBasedHash<Data = ConstraintF>,
@@ -532,52 +532,50 @@ where
 #[cfg(test)]
 mod test {
     use algebra::curves::{
-        mnt4753::G1Projective as MNT4G1Projective, mnt6753::G1Projective as MNT6G1Projective,
+        tweedle::dee::DeeJacobian as DeeJacobian, tweedle::dum::DumJacobian as DumJacobian,
     };
-    use algebra::fields::{mnt4753::Fr as MNT4Fr, mnt6753::Fr as MNT6Fr};
+    use algebra::fields::tweedle::{Fr, Fq};
 
     use primitives::{
-        crh::{MNT4PoseidonHash, MNT6PoseidonHash},
+        crh::{TweedleFrPoseidonHash, TweedleFqPoseidonHash},
         signature::{schnorr::field_based_schnorr::*, FieldBasedSignatureScheme},
     };
 
     use crate::{
-        crh::{MNT4PoseidonHashGadget, MNT6PoseidonHashGadget},
+        crh::{TweedleFrPoseidonHashGadget, TweedleFqPoseidonHashGadget},
         signature::{schnorr::field_based_schnorr::*, FieldBasedSigGadget},
     };
 
     use r1cs_core::ConstraintSystem;
     use r1cs_std::alloc::AllocGadget;
 
-    use r1cs_std::instantiated::{
-        mnt4_753::G1Gadget as MNT4G1Gadget, mnt6_753::G1Gadget as MNT6G1Gadget,
-    };
+    use r1cs_std::instantiated::tweedle::{TweedleDeeGadget, TweedleDumGadget};
 
     use r1cs_std::test_constraint_system::TestConstraintSystem;
     use rand::{thread_rng, Rng};
 
-    type SchnorrMNT4 = FieldBasedSchnorrSignatureScheme<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash>;
-    type SchnorrMNT6 = FieldBasedSchnorrSignatureScheme<MNT6Fr, MNT4G1Projective, MNT6PoseidonHash>;
+    type SchnorrTweedleDee = FieldBasedSchnorrSignatureScheme<Fr, DumJacobian, TweedleFrPoseidonHash>;
+    type SchnorrTweedleDum = FieldBasedSchnorrSignatureScheme<Fq, DeeJacobian, TweedleFqPoseidonHash>;
 
-    type SchnorrMNT4Sig = FieldBasedSchnorrSignature<MNT4Fr, MNT6G1Projective>;
-    type SchnorrMNT6Sig = FieldBasedSchnorrSignature<MNT6Fr, MNT4G1Projective>;
+    type SchnorrTweedleDeeSig = FieldBasedSchnorrSignature<Fr, DumJacobian>;
+    type SchnorrTweedleDumSig = FieldBasedSchnorrSignature<Fq, DeeJacobian>;
 
-    type SchnorrMNT4Pk = FieldBasedSchnorrPk<MNT6G1Projective>;
-    type SchnorrMNT6Pk = FieldBasedSchnorrPk<MNT4G1Projective>;
+    type SchnorrTweedleDeePk = FieldBasedSchnorrPk<DumJacobian>;
+    type SchnorrTweedleDumPk = FieldBasedSchnorrPk<DeeJacobian>;
 
-    type SchnorrMNT4Gadget = FieldBasedSchnorrSigVerificationGadget<
-        MNT4Fr,
-        MNT6G1Projective,
-        MNT6G1Gadget,
-        MNT4PoseidonHash,
-        MNT4PoseidonHashGadget,
+    type SchnorrTweedleDeeGadget = FieldBasedSchnorrSigVerificationGadget<
+        Fr,
+        DumJacobian,
+        TweedleDumGadget,
+        TweedleFrPoseidonHash,
+        TweedleFrPoseidonHashGadget,
     >;
-    type SchnorrMNT6Gadget = FieldBasedSchnorrSigVerificationGadget<
-        MNT6Fr,
-        MNT4G1Projective,
-        MNT4G1Gadget,
-        MNT6PoseidonHash,
-        MNT6PoseidonHashGadget,
+    type SchnorrTweedleDumGadget = FieldBasedSchnorrSigVerificationGadget<
+        Fq,
+        DeeJacobian,
+        TweedleDeeGadget,
+        TweedleFqPoseidonHash,
+        TweedleFqPoseidonHashGadget,
     >;
 
     fn sign<S: FieldBasedSignatureScheme, R: Rng>(
@@ -590,28 +588,28 @@ mod test {
         (sig, pk)
     }
 
-    fn mnt4_schnorr_gadget_generate_constraints(
-        message: MNT4Fr,
-        pk: &SchnorrMNT4Pk,
-        sig: SchnorrMNT4Sig,
+    fn tweedle_dee_schnorr_gadget_generate_constraints(
+        message: Fr,
+        pk: &SchnorrTweedleDeePk,
+        sig: SchnorrTweedleDeeSig,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+        let mut cs = TestConstraintSystem::<Fr>::new();
 
         //Alloc signature, pk and message
-        let sig_g = <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::SignatureGadget::alloc(
+        let sig_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::SignatureGadget::alloc(
             cs.ns(|| "alloc sig"),
             || Ok(sig)
         ).unwrap();
-        let pk_g = <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::PublicKeyGadget::alloc(cs.ns(|| "alloc pk"), || Ok(pk)).unwrap();
+        let pk_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::PublicKeyGadget::alloc(cs.ns(|| "alloc pk"), || Ok(pk)).unwrap();
         let message_g =
-            <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::DataGadget::alloc(
+            <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::DataGadget::alloc(
                 cs.ns(|| "alloc message"),
                 || Ok(message),
             )
             .unwrap();
 
         //Verify sig
-        SchnorrMNT4Gadget::enforce_signature_verification(
+        SchnorrTweedleDeeGadget::enforce_signature_verification(
             cs.ns(|| "verify sig1"),
             &pk_g,
             &sig_g,
@@ -622,7 +620,7 @@ mod test {
         let is_cs_satisfied = cs.is_satisfied();
 
         //Verify sig
-        let is_verified = SchnorrMNT4Gadget::enforce_signature_verdict(
+        let is_verified = SchnorrTweedleDeeGadget::enforce_signature_verdict(
             cs.ns(|| "sig1 result"),
             &pk_g,
             &sig_g,
@@ -641,58 +639,58 @@ mod test {
     }
 
     #[test]
-    fn mnt4_schnorr_gadget_test() {
+    fn tweedle_dee_schnorr_gadget_test() {
         //Sign a random field element f and get the signature and the public key
         let rng = &mut thread_rng();
-        let message: MNT4Fr = rng.gen();
-        let (sig, pk) = sign::<SchnorrMNT4, _>(rng, message);
+        let message: Fr = rng.gen();
+        let (sig, pk) = sign::<SchnorrTweedleDee, _>(rng, message);
 
         //Positive case
-        assert!(mnt4_schnorr_gadget_generate_constraints(message, &pk, sig));
+        assert!(tweedle_dee_schnorr_gadget_generate_constraints(message, &pk, sig));
 
         //Change message
-        let wrong_message: MNT4Fr = rng.gen();
-        assert!(!mnt4_schnorr_gadget_generate_constraints(
+        let wrong_message: Fr = rng.gen();
+        assert!(!tweedle_dee_schnorr_gadget_generate_constraints(
             wrong_message,
             &pk,
             sig
         ));
 
         //Change pk
-        let wrong_pk: SchnorrMNT4Pk = rng.gen();
-        assert!(!mnt4_schnorr_gadget_generate_constraints(
+        let wrong_pk: SchnorrTweedleDeePk = rng.gen();
+        assert!(!tweedle_dee_schnorr_gadget_generate_constraints(
             message, &wrong_pk, sig
         ));
 
         //Change sig
-        let (wrong_sig, _) = sign::<SchnorrMNT4, _>(rng, wrong_message);
-        assert!(!mnt4_schnorr_gadget_generate_constraints(
+        let (wrong_sig, _) = sign::<SchnorrTweedleDee, _>(rng, wrong_message);
+        assert!(!tweedle_dee_schnorr_gadget_generate_constraints(
             message, &pk, wrong_sig
         ));
     }
 
-    fn mnt6_schnorr_gadget_generate_constraints(
-        message: MNT6Fr,
-        pk: &SchnorrMNT6Pk,
-        sig: SchnorrMNT6Sig,
+    fn tweedle_dum_schnorr_gadget_generate_constraints(
+        message: Fq,
+        pk: &SchnorrTweedleDumPk,
+        sig: SchnorrTweedleDumSig,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT6Fr>::new();
+        let mut cs = TestConstraintSystem::<Fq>::new();
 
         //Alloc signature, pk and message
-        let sig_g = <SchnorrMNT6Gadget as FieldBasedSigGadget<SchnorrMNT6, MNT6Fr>>::SignatureGadget::alloc(
+        let sig_g = <SchnorrTweedleDumGadget as FieldBasedSigGadget<SchnorrTweedleDum, Fq>>::SignatureGadget::alloc(
             cs.ns(|| "alloc sig"),
             || Ok(sig)
         ).unwrap();
-        let pk_g = <SchnorrMNT6Gadget as FieldBasedSigGadget<SchnorrMNT6, MNT6Fr>>::PublicKeyGadget::alloc(cs.ns(|| "alloc pk"), || Ok(pk)).unwrap();
+        let pk_g = <SchnorrTweedleDumGadget as FieldBasedSigGadget<SchnorrTweedleDum, Fq>>::PublicKeyGadget::alloc(cs.ns(|| "alloc pk"), || Ok(pk)).unwrap();
         let message_g =
-            <SchnorrMNT6Gadget as FieldBasedSigGadget<SchnorrMNT6, MNT6Fr>>::DataGadget::alloc(
+            <SchnorrTweedleDumGadget as FieldBasedSigGadget<SchnorrTweedleDum, Fq>>::DataGadget::alloc(
                 cs.ns(|| "alloc message"),
                 || Ok(message),
             )
             .unwrap();
 
         //Verify sig
-        SchnorrMNT6Gadget::enforce_signature_verification(
+        SchnorrTweedleDumGadget::enforce_signature_verification(
             cs.ns(|| "verify sig1"),
             &pk_g,
             &sig_g,
@@ -702,7 +700,7 @@ mod test {
 
         let is_cs_satisfied = cs.is_satisfied();
 
-        let is_verified = SchnorrMNT6Gadget::enforce_signature_verdict(
+        let is_verified = SchnorrTweedleDumGadget::enforce_signature_verdict(
             cs.ns(|| "sig1 result"),
             &pk_g,
             &sig_g,
@@ -722,32 +720,32 @@ mod test {
 
     #[ignore]
     #[test]
-    fn mnt6_schnorr_gadget_test() {
+    fn tweedle_dum_schnorr_gadget_test() {
         //Sign a random field element f and get the signature and the public key
         let rng = &mut thread_rng();
-        let message: MNT6Fr = rng.gen();
-        let (sig, pk) = sign::<SchnorrMNT6, _>(rng, message);
+        let message: Fq = rng.gen();
+        let (sig, pk) = sign::<SchnorrTweedleDum, _>(rng, message);
 
         //Positive case
-        assert!(mnt6_schnorr_gadget_generate_constraints(message, &pk, sig));
+        assert!(tweedle_dum_schnorr_gadget_generate_constraints(message, &pk, sig));
 
         //Change message
-        let wrong_message: MNT6Fr = rng.gen();
-        assert!(!mnt6_schnorr_gadget_generate_constraints(
+        let wrong_message: Fq = rng.gen();
+        assert!(!tweedle_dum_schnorr_gadget_generate_constraints(
             wrong_message,
             &pk,
             sig
         ));
 
         //Change pk
-        let wrong_pk: SchnorrMNT6Pk = rng.gen();
-        assert!(!mnt6_schnorr_gadget_generate_constraints(
+        let wrong_pk: SchnorrTweedleDumPk = rng.gen();
+        assert!(!tweedle_dum_schnorr_gadget_generate_constraints(
             message, &wrong_pk, sig
         ));
 
         //Change sig
-        let (wrong_sig, _) = sign::<SchnorrMNT6, _>(rng, wrong_message);
-        assert!(!mnt6_schnorr_gadget_generate_constraints(
+        let (wrong_sig, _) = sign::<SchnorrTweedleDum, _>(rng, wrong_message);
+        assert!(!tweedle_dum_schnorr_gadget_generate_constraints(
             message, &pk, wrong_sig
         ));
     }
@@ -759,30 +757,30 @@ mod test {
 
         let samples = 10;
         for _ in 0..samples {
-            let message: MNT4Fr = rng.gen();
-            let (sig, pk) = sign::<SchnorrMNT4, _>(rng, message);
-            let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+            let message: Fr = rng.gen();
+            let (sig, pk) = sign::<SchnorrTweedleDee, _>(rng, message);
+            let mut cs = TestConstraintSystem::<Fr>::new();
 
             //Alloc signature, pk and message
-            let sig_g = <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::SignatureGadget::alloc(
+            let sig_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::SignatureGadget::alloc(
                 cs.ns(|| "alloc sig"),
                 || Ok(sig)
             ).unwrap();
 
-            let pk_g = <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::PublicKeyGadget::alloc(
+            let pk_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::PublicKeyGadget::alloc(
                 cs.ns(|| "alloc pk"),
                 || Ok(pk)
             ).unwrap();
 
             let message_g =
-                <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::DataGadget::alloc(
+                <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::DataGadget::alloc(
                     cs.ns(|| "alloc message"),
                     || Ok(message),
                 )
                 .unwrap();
 
             //Verify sig
-            let is_verified = SchnorrMNT4Gadget::enforce_signature_verdict(
+            let is_verified = SchnorrTweedleDeeGadget::enforce_signature_verdict(
                 cs.ns(|| "sig result"),
                 &pk_g,
                 &sig_g,
@@ -792,7 +790,7 @@ mod test {
 
             assert!(is_verified.get_value().unwrap());
 
-            SchnorrMNT4Gadget::enforce_signature_verification(
+            SchnorrTweedleDeeGadget::enforce_signature_verification(
                 cs.ns(|| "verify sig"),
                 &pk_g,
                 &sig_g,
@@ -803,15 +801,15 @@ mod test {
             assert!(cs.is_satisfied());
 
             //Negative case: wrong message (or wrong sig for another message)
-            let new_message: MNT4Fr = rng.gen();
+            let new_message: Fr = rng.gen();
             let new_message_g =
-                <SchnorrMNT4Gadget as FieldBasedSigGadget<SchnorrMNT4, MNT4Fr>>::DataGadget::alloc(
+                <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::DataGadget::alloc(
                     cs.ns(|| "alloc new_message"),
                     || Ok(new_message),
                 )
                 .unwrap();
 
-            let is_verified = SchnorrMNT4Gadget::enforce_signature_verdict(
+            let is_verified = SchnorrTweedleDeeGadget::enforce_signature_verdict(
                 cs.ns(|| "new sig result"),
                 &pk_g,
                 &sig_g,
@@ -827,7 +825,7 @@ mod test {
             assert!(!is_verified.get_value().unwrap());
             assert!(cs.is_satisfied());
 
-            SchnorrMNT4Gadget::enforce_signature_verification(
+            SchnorrTweedleDeeGadget::enforce_signature_verification(
                 cs.ns(|| "verify new sig"),
                 &pk_g,
                 &sig_g,

@@ -2,8 +2,8 @@ use crate::{
     compute_truncation_size, crh::FieldBasedHash, signature::FieldBasedSignatureScheme, Error,
 };
 use algebra::{
-    convert, leading_zeros, serialize::*, Field, FromBytes, FromBytesChecked, Group, PrimeField,
-    ProjectiveCurve, SemanticallyValid, ToBits, ToBytes, ToConstraintField, UniformRand,
+    convert, leading_zeros, serialize::*, FromBytes, FromBytesChecked, Group, PrimeField,
+    Curve, SemanticallyValid, ToBits, ToBytes, ToConstraintField, UniformRand,
 };
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
@@ -12,7 +12,7 @@ use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::marker::PhantomData;
 
 #[allow(dead_code)]
-pub struct FieldBasedSchnorrSignatureScheme<F: PrimeField, G: Group, H: FieldBasedHash> {
+pub struct FieldBasedSchnorrSignatureScheme<F: PrimeField, G: Curve, H: FieldBasedHash> {
     _field: PhantomData<F>,
     _group: PhantomData<G>,
     _hash: PhantomData<H>,
@@ -20,25 +20,25 @@ pub struct FieldBasedSchnorrSignatureScheme<F: PrimeField, G: Group, H: FieldBas
 
 #[derive(Derivative)]
 #[derivative(
-    Copy(bound = "F: PrimeField, G: Group"),
-    Clone(bound = "F: PrimeField, G: Group"),
-    Default(bound = "F: PrimeField, G: Group"),
-    Eq(bound = "F: PrimeField, G: Group"),
-    PartialEq(bound = "F: PrimeField, G: Group"),
-    Debug(bound = "F: PrimeField, G: Group")
+    Copy(bound = "F: PrimeField, G: Curve"),
+    Clone(bound = "F: PrimeField, G: Curve"),
+    Default(bound = "F: PrimeField, G: Curve"),
+    Eq(bound = "F: PrimeField, G: Curve"),
+    PartialEq(bound = "F: PrimeField, G: Curve"),
+    Debug(bound = "F: PrimeField, G: Curve")
 )]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "F: PrimeField, G: Group"))]
-#[serde(bound(deserialize = "F: PrimeField, G: Group"))]
+#[serde(bound(serialize = "F: PrimeField, G: Curve"))]
+#[serde(bound(deserialize = "F: PrimeField, G: Curve"))]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct FieldBasedSchnorrSignature<F: PrimeField, G: Group> {
+pub struct FieldBasedSchnorrSignature<F: PrimeField, G: Curve> {
     pub e: F,
     pub s: F,
     #[serde(skip)]
     _group: PhantomData<G>,
 }
 
-impl<F: PrimeField, G: Group> FieldBasedSchnorrSignature<F, G> {
+impl<F: PrimeField, G: Curve> FieldBasedSchnorrSignature<F, G> {
     #[allow(dead_code)]
     pub fn new(e: F, s: F) -> Self {
         Self {
@@ -49,14 +49,14 @@ impl<F: PrimeField, G: Group> FieldBasedSchnorrSignature<F, G> {
     }
 }
 
-impl<F: PrimeField, G: Group> ToBytes for FieldBasedSchnorrSignature<F, G> {
+impl<F: PrimeField, G: Curve> ToBytes for FieldBasedSchnorrSignature<F, G> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.e.write(&mut writer)?;
         self.s.write(&mut writer)
     }
 }
 
-impl<F: PrimeField, G: Group> FromBytes for FieldBasedSchnorrSignature<F, G> {
+impl<F: PrimeField, G: Curve> FromBytes for FieldBasedSchnorrSignature<F, G> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         let e = F::read(&mut reader)?;
         let s = F::read(&mut reader)?;
@@ -68,7 +68,7 @@ impl<F: PrimeField, G: Group> FromBytes for FieldBasedSchnorrSignature<F, G> {
     }
 }
 
-impl<F: PrimeField, G: Group> FromBytesChecked for FieldBasedSchnorrSignature<F, G> {
+impl<F: PrimeField, G: Curve> FromBytesChecked for FieldBasedSchnorrSignature<F, G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         let e = F::read_checked(&mut reader)
             .map_err(|err| IoError::new(ErrorKind::InvalidData, format!("invalid sig.e: {}", err)))
@@ -110,7 +110,7 @@ impl<F: PrimeField, G: Group> FromBytesChecked for FieldBasedSchnorrSignature<F,
     }
 }
 
-impl<F: PrimeField, G: Group> SemanticallyValid for FieldBasedSchnorrSignature<F, G> {
+impl<F: PrimeField, G: Curve> SemanticallyValid for FieldBasedSchnorrSignature<F, G> {
     fn is_valid(&self) -> bool {
         self.e.is_valid()
             && {
@@ -131,21 +131,21 @@ impl<F: PrimeField, G: Group> SemanticallyValid for FieldBasedSchnorrSignature<F
 
 #[derive(Derivative)]
 #[derivative(
-    Copy(bound = "G: Group"),
-    Clone(bound = "G: Group"),
-    Default(bound = "G: Group"),
-    Hash(bound = "G: Group"),
-    Eq(bound = "G: Group"),
-    PartialEq(bound = "G: Group"),
-    Debug(bound = "G: Group")
+    Copy(bound = "G: Curve"),
+    Clone(bound = "G: Curve"),
+    Default(bound = "G: Curve"),
+    Hash(bound = "G: Curve"),
+    Eq(bound = "G: Curve"),
+    PartialEq(bound = "G: Curve"),
+    Debug(bound = "G: Curve")
 )]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "G: Group"))]
-#[serde(bound(deserialize = "G: Group"))]
+#[serde(bound(serialize = "G: Curve"))]
+#[serde(bound(deserialize = "G: Curve"))]
 #[serde(transparent)]
-pub struct FieldBasedSchnorrPk<G: Group>(pub G);
+pub struct FieldBasedSchnorrPk<G: Curve>(pub G);
 
-impl<G: Group> Distribution<FieldBasedSchnorrPk<G>> for Standard {
+impl<G: Curve> Distribution<FieldBasedSchnorrPk<G>> for Standard {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FieldBasedSchnorrPk<G> {
         let pk = G::rand(rng);
@@ -153,20 +153,20 @@ impl<G: Group> Distribution<FieldBasedSchnorrPk<G>> for Standard {
     }
 }
 
-impl<G: Group> ToBytes for FieldBasedSchnorrPk<G> {
+impl<G: Curve> ToBytes for FieldBasedSchnorrPk<G> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.0.write(&mut writer)
     }
 }
 
-impl<G: Group> FromBytes for FieldBasedSchnorrPk<G> {
+impl<G: Curve> FromBytes for FieldBasedSchnorrPk<G> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         let pk = G::read(&mut reader)?;
         Ok(Self(pk))
     }
 }
 
-impl<G: Group> FromBytesChecked for FieldBasedSchnorrPk<G> {
+impl<G: Curve> FromBytesChecked for FieldBasedSchnorrPk<G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         let pk = G::read_checked(&mut reader)
             .map_err(|e| IoError::new(ErrorKind::InvalidData, format!("invalid schnorr pk: {}", e)))
@@ -183,7 +183,7 @@ impl<G: Group> FromBytesChecked for FieldBasedSchnorrPk<G> {
     }
 }
 
-impl<G: Group> SemanticallyValid for FieldBasedSchnorrPk<G> {
+impl<G: Curve> SemanticallyValid for FieldBasedSchnorrPk<G> {
     #[inline]
     fn is_valid(&self) -> bool {
         self.0.is_valid() &&
@@ -197,7 +197,7 @@ impl<G: Group> SemanticallyValid for FieldBasedSchnorrPk<G> {
 // Low-level crypto for the length-restricted Schnorr Signature, does not perform any
 // input validity check. It's responsibility of the caller to do so, through keyverify()
 // function for the PublicKey, read() or is_valid() functions for FieldBasedSchnorrSignature.
-impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>, H: FieldBasedHash<Data = F>>
+impl<F: PrimeField, G: Curve + ToConstraintField<F>, H: FieldBasedHash<Data = F>>
     FieldBasedSignatureScheme for FieldBasedSchnorrSignatureScheme<F, G, H>
 {
     type Data = H::Data;
@@ -338,18 +338,18 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>, H: FieldBasedHash
 
 #[cfg(test)]
 mod test {
-    use crate::crh::{MNT4PoseidonHash, MNT6PoseidonHash};
+    use crate::crh::{TweedleFrPoseidonHash, TweedleFqPoseidonHash};
     use crate::signature::schnorr::field_based_schnorr::FieldBasedSchnorrSignatureScheme;
     use crate::signature::FieldBasedSignatureScheme;
     use algebra::curves::{
-        mnt4753::G1Projective as MNT4G1Projective, mnt6753::G1Projective as MNT6G1Projective,
+        tweedle::dee::DeeJacobian, tweedle::dum::DumJacobian,
     };
-    use algebra::fields::{mnt4753::Fr as MNT4Fr, mnt6753::Fr as MNT6Fr};
+    use algebra::fields::{tweedle::Fr, tweedle::Fq};
     use algebra::{to_bytes, FromBytes, FromBytesChecked, SemanticallyValid, ToBytes};
     use rand::{thread_rng, Rng};
 
-    type SchnorrMNT4 = FieldBasedSchnorrSignatureScheme<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash>;
-    type SchnorrMNT6 = FieldBasedSchnorrSignatureScheme<MNT6Fr, MNT4G1Projective, MNT6PoseidonHash>;
+    type SchnorrTweedleDee = FieldBasedSchnorrSignatureScheme<Fr, DumJacobian, TweedleFrPoseidonHash>;
+    type SchnorrTweedleDum = FieldBasedSchnorrSignatureScheme<Fq, DeeJacobian, TweedleFqPoseidonHash>;
 
     fn sign_and_verify<S: FieldBasedSignatureScheme, R: Rng>(rng: &mut R, message: S::Data) {
         let (pk, sk) = S::keygen(rng);
@@ -394,26 +394,26 @@ mod test {
     }
 
     #[test]
-    fn mnt4_schnorr_test() {
+    fn tweedle_dee_schnorr_test() {
         let rng = &mut thread_rng();
         let samples = 100;
         for _ in 0..samples {
-            let f: MNT4Fr = rng.gen();
-            let g: MNT4Fr = rng.gen();
-            sign_and_verify::<SchnorrMNT4, _>(rng, f);
-            failed_verification::<SchnorrMNT4, _>(rng, f, g);
+            let f: Fr = rng.gen();
+            let g: Fr = rng.gen();
+            sign_and_verify::<SchnorrTweedleDee, _>(rng, f);
+            failed_verification::<SchnorrTweedleDee, _>(rng, f, g);
         }
     }
 
     #[test]
-    fn mnt6_schnorr_test() {
+    fn tweedle_dum_schnorr_test() {
         let rng = &mut thread_rng();
         let samples = 100;
         for _ in 0..samples {
-            let f: MNT6Fr = rng.gen();
-            let g: MNT6Fr = rng.gen();
-            sign_and_verify::<SchnorrMNT6, _>(rng, f);
-            failed_verification::<SchnorrMNT6, _>(rng, f, g);
+            let f: Fq = rng.gen();
+            let g: Fq = rng.gen();
+            sign_and_verify::<SchnorrTweedleDum, _>(rng, f);
+            failed_verification::<SchnorrTweedleDum, _>(rng, f, g);
         }
     }
 }

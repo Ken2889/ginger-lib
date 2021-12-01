@@ -8,28 +8,29 @@ use std::{
 
 use super::pedersen::{PedersenCRH, PedersenWindow};
 use crate::crh::FixedLengthCRH;
-use algebra::{biginteger::BigInteger, fields::PrimeField, groups::Group};
+use algebra::{biginteger::BigInteger, fields::PrimeField, curves::Curve};
 use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: usize = 3;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(bound(deserialize = "G: Group"))]
-pub struct BoweHopwoodPedersenParameters<G: Group> {
+#[serde(bound(deserialize = "G: Curve"))]
+pub struct BoweHopwoodPedersenParameters<G: Curve> {
     pub generators: Vec<Vec<G>>,
 }
 
-pub struct BoweHopwoodPedersenCRH<G: Group, W: PedersenWindow> {
+pub struct BoweHopwoodPedersenCRH<G: Curve, W: PedersenWindow> {
     group: PhantomData<G>,
     window: PhantomData<W>,
 }
 
-impl<G: Group, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
+impl<G: Curve, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
     pub fn create_generators<R: Rng>(rng: &mut R) -> Vec<Vec<G>> {
         let mut generators = Vec::new();
         for _ in 0..W::NUM_WINDOWS {
             let mut generators_for_segment = Vec::new();
             let mut base = G::rand(rng);
+            println!("{:?}", base);
             for _ in 0..W::WINDOW_SIZE {
                 generators_for_segment.push(base);
                 for _ in 0..4 {
@@ -42,7 +43,7 @@ impl<G: Group, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
     }
 }
 
-impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W> {
+impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W> {
     const INPUT_SIZE_BITS: usize = PedersenCRH::<G, W>::INPUT_SIZE_BITS;
     type Output = G;
     type Parameters = BoweHopwoodPedersenParameters<G>;
@@ -51,9 +52,9 @@ impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
         fn calculate_num_chunks_in_segment<F: PrimeField>() -> usize {
             let upper_limit = F::modulus_minus_one_div_two();
             let mut c = 0;
-            let mut range = F::BigInt::from(2_u64);
+            let mut range = F::BigInt::from(2u64);
             while range < upper_limit {
-                range.muln(4);
+                range.muln(2);
                 c += 1;
             }
 
@@ -155,7 +156,7 @@ impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
                     .map(|(chunk_bits, generator)| {
                         let mut encoded = generator.clone();
                         if chunk_bits[0] {
-                            encoded = encoded + &generator;
+                            encoded = encoded + generator;
                         }
                         if chunk_bits[1] {
                             encoded = encoded + &generator.double();
@@ -174,7 +175,7 @@ impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
     }
 }
 
-impl<G: Group> Debug for BoweHopwoodPedersenParameters<G> {
+impl<G: Curve> Debug for BoweHopwoodPedersenParameters<G> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "Bowe-Hopwood Pedersen Hash Parameters {{\n")?;
         for (i, g) in self.generators.iter().enumerate() {
@@ -184,7 +185,7 @@ impl<G: Group> Debug for BoweHopwoodPedersenParameters<G> {
     }
 }
 
-impl<G: Group> BoweHopwoodPedersenParameters<G> {
+impl<G: Curve> BoweHopwoodPedersenParameters<G> {
     pub fn check_consistency(&self) -> bool {
         for (i, p1) in self.generators.iter().enumerate() {
             if p1[0] == G::zero() {
@@ -209,7 +210,7 @@ mod test {
         crh::{bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow},
         FixedLengthCRH,
     };
-    use algebra::curves::edwards_sw6::EdwardsProjective;
+    use algebra::curves::tweedle::dee::DeeJacobian;
     use rand::thread_rng;
 
     #[test]
@@ -223,9 +224,9 @@ mod test {
 
         let rng = &mut thread_rng();
         let params =
-            <BoweHopwoodPedersenCRH<EdwardsProjective, TestWindow> as FixedLengthCRH>::setup(rng)
+            <BoweHopwoodPedersenCRH<DeeJacobian, TestWindow> as FixedLengthCRH>::setup(rng)
                 .unwrap();
-        <BoweHopwoodPedersenCRH<EdwardsProjective, TestWindow> as FixedLengthCRH>::evaluate(
+        <BoweHopwoodPedersenCRH<DeeJacobian, TestWindow> as FixedLengthCRH>::evaluate(
             &params,
             &[1, 2, 3],
         )

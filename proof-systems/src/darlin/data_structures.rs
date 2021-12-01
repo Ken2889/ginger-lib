@@ -2,15 +2,12 @@
 //! our conversion/exiting chain.
 use crate::darlin::{accumulators::dlog::DLogItem, pcd::simple_marlin::MarlinProof};
 use algebra::{
-    serialize::*, AffineCurve, PrimeField, ProjectiveCurve, SemanticallyValid, ToBits,
+    serialize::*, Group, GroupVec, Curve, PrimeField, SemanticallyValid, ToBits,
     ToConstraintField, UniformRand,
 };
 use digest::Digest;
 use poly_commit::{
-    ipa_pc::{
-        Commitment, CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
-    },
-    DomainExtendedCommitment,
+    ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial},
 };
 use rand::RngCore;
 
@@ -20,14 +17,14 @@ use rand::RngCore;
 /// Note: Later the struct could include more elements as we might want to defer
 /// addional algebraic checks over G1::BaseField.
 #[derive(Default, Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct FinalDarlinDeferredData<G1: AffineCurve, G2: AffineCurve> {
+pub struct FinalDarlinDeferredData<G1: Curve, G2: Curve> {
     // the dlog accumulator from the previous node, a Rainbow-Marlin node in G2
     pub(crate) previous_acc: DLogItem<G2>,
     // the dlog accumulator from the pre-previous node, a Rainbow-Marlin node in G1
     pub(crate) pre_previous_acc: DLogItem<G1>,
 }
 
-impl<G1: AffineCurve, G2: AffineCurve> SemanticallyValid for FinalDarlinDeferredData<G1, G2> {
+impl<G1: Curve, G2: Curve> SemanticallyValid for FinalDarlinDeferredData<G1, G2> {
     fn is_valid(&self) -> bool {
         self.previous_acc.is_valid() && self.pre_previous_acc.is_valid()
     }
@@ -35,10 +32,10 @@ impl<G1: AffineCurve, G2: AffineCurve> SemanticallyValid for FinalDarlinDeferred
 
 impl<G1, G2> FinalDarlinDeferredData<G1, G2>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
     pub fn generate_random<R: RngCore, D: Digest>(
@@ -62,9 +59,7 @@ where
         .unwrap();
 
         let acc_g1 = DLogItem::<G1> {
-            g_final: DomainExtendedCommitment::<G1, Commitment<G1>>::new(vec![Commitment::<G1> {
-                comm: g_final_g1.into_affine(),
-            }]),
+            g_final: GroupVec::new(vec![g_final_g1]),
             xi_s: random_xi_s_g1,
         };
 
@@ -85,9 +80,7 @@ where
         .unwrap();
 
         let acc_g2 = DLogItem::<G2> {
-            g_final: DomainExtendedCommitment::<G2, Commitment<G2>>::new(vec![Commitment::<G2> {
-                comm: g_final_g2.into_affine(),
-            }]),
+            g_final: GroupVec::new(vec![g_final_g2]),
             xi_s: random_xi_s_g2,
         };
 
@@ -101,10 +94,10 @@ where
 
 impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, G2>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     /// Conversion of the MarlinDeferredData to circuit inputs, which are elements
     /// over G1::ScalarField.
@@ -116,9 +109,9 @@ where
         // called native in the sequel)
 
         // The G_final of the previous node consists of native field elements only
-        let g_final_g2 = self.previous_acc.g_final.items.clone();
+        let g_final_g2 = self.previous_acc.g_final.clone();
         for c in g_final_g2.into_iter() {
-            fes.append(&mut c.comm.to_field_elements()?);
+            fes.append(&mut c.to_field_elements()?);
         }
 
         // Convert xi_s, which are 128 bit elements from G2::ScalarField, to the native field.
@@ -143,10 +136,10 @@ where
 
         // The G_final of the pre-previous node is in G1, hence over G2::ScalarField.
         // We serialize them all to bits and pack them safely into native field elements
-        let g_final_g1 = self.pre_previous_acc.g_final.items.clone();
+        let g_final_g1 = self.pre_previous_acc.g_final.clone();
         let mut g_final_g1_bits = Vec::new();
-        for c in g_final_g1 {
-            let c_fes = c.comm.to_field_elements()?;
+        for c in g_final_g1.iter() {
+            let c_fes = c.to_field_elements()?;
             for fe in c_fes {
                 g_final_g1_bits.append(&mut fe.write_bits());
             }
@@ -186,14 +179,14 @@ where
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// A FinalDarlinProof has two dlog accumulators, one from the previous, and on from the
 /// pre-previous node of the conversion chain.
-pub struct FinalDarlinProof<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
+pub struct FinalDarlinProof<G1: Curve, G2: Curve, D: Digest + 'static> {
     /// Full Marlin proof without deferred arithmetics in G1.
     pub proof: MarlinProof<G1, D>,
     /// Deferred accumulators
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: AffineCurve, G2: AffineCurve, D: Digest> SemanticallyValid
+impl<G1: Curve, G2: Curve, D: Digest> SemanticallyValid
     for FinalDarlinProof<G1, G2, D>
 {
     fn is_valid(&self) -> bool {

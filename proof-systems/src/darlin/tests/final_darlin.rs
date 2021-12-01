@@ -7,13 +7,13 @@ use crate::darlin::{
     pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
-use algebra::{AffineCurve, ToConstraintField, UniformRand};
+use algebra::{Group, Curve, ToConstraintField, UniformRand};
 use poly_commit::{
     ipa_pc::{CommitterKey, InnerProductArgPC, Parameters},
     DomainExtendedPolynomialCommitment, Error as PCError,
 };
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-//use rand::{ Rng, RngCore };
+use rand::Rng;
 use digest::Digest;
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::RngCore;
@@ -64,17 +64,17 @@ impl AsRef<()> for TestPCDVk {
 
 /// For testing purposes, TestPrevPCD already serves correct sys_ins and usr_ins
 /// to the our test PCDCircuit.
-pub struct TestPrevPCD<G1: AffineCurve, G2: AffineCurve> {
+pub struct TestPrevPCD<G1: Curve, G2: Curve> {
     sys_ins: FinalDarlinDeferredData<G1, G2>,
     usr_ins: (G1::ScalarField, G1::ScalarField),
 }
 
 impl<G1, G2> PCD for TestPrevPCD<G1, G2>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     type PCDAccumulator = TestAcc;
     type PCDVerifierKey = TestPCDVk;
@@ -90,7 +90,7 @@ where
 
 /// The parameters for our test circuit
 #[derive(Clone)]
-pub struct CircuitInfo<G1: AffineCurve, G2: AffineCurve> {
+pub struct CircuitInfo<G1: Curve, G2: Curve> {
     pub num_constraints: usize,
     pub num_variables: usize,
     /// just used to deduce the number of field elements to allocate on the
@@ -110,7 +110,7 @@ pub struct CircuitInfo<G1: AffineCurve, G2: AffineCurve> {
 /// are repeated accordingly. To acchieve the give `num_variables`, a corresponding number of
 /// dummy witness variables are allocated.
 #[derive(Clone, Default)]
-pub struct TestCircuit<G1: AffineCurve, G2: AffineCurve> {
+pub struct TestCircuit<G1: Curve, G2: Curve> {
     /// Incremental data (to be allocated as witnesses)
     pub a: Option<G1::ScalarField>,
     pub b: Option<G1::ScalarField>,
@@ -133,10 +133,10 @@ pub struct TestCircuit<G1: AffineCurve, G2: AffineCurve> {
 
 impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     fn generate_constraints<CS: ConstraintSystem<G1::ScalarField>>(
         self,
@@ -229,10 +229,10 @@ where
 
 impl<G1, G2> PCDCircuit<G1> for TestCircuit<G1, G2>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     type SetupData = CircuitInfo<G1, G2>;
     type AdditionalData = (G1::ScalarField, G1::ScalarField);
@@ -297,7 +297,7 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
     pc_ck_g1: &CommitterKey<G1>,
     final_darlin_pk: &FinalDarlinProverKey<
         G1,
@@ -308,10 +308,10 @@ pub fn generate_test_pcd<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'a, R
     rng: &mut R,
 ) -> FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let prev_pcd = TestPrevPCD::<G1, G2> {
         // as we have already generated a dummy deferred for CircuitInfo, let's
@@ -340,7 +340,7 @@ where
 /// Generates `num_proofs` random instances of FinalDarlinPCDs for TestCircuit1 at given
 /// `num_constraints`, using `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_data<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
     params_g1: &Parameters<G1>,
@@ -357,10 +357,10 @@ pub fn generate_test_data<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'a, 
     >,
 )
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // Trim committer key and verifier key
     let config = PCDParameters { segment_size };

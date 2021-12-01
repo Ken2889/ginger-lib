@@ -429,22 +429,22 @@ mod test {
         crh::{pedersen::*, *},
         merkle_tree::*,
     };
-    use algebra::curves::jubjub::JubJubAffine as JubJub;
+    use algebra::curves::tweedle::dee::DeeJacobian;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
     #[derive(Clone)]
-    pub(super) struct Window4x256;
-    impl PedersenWindow for Window4x256 {
-        const WINDOW_SIZE: usize = 4;
+    pub(super) struct Window8x256;
+    impl PedersenWindow for Window8x256 {
+        const WINDOW_SIZE: usize = 8;
         const NUM_WINDOWS: usize = 256;
     }
 
-    type H = PedersenCRH<JubJub, Window4x256>;
+    type H = PedersenCRH<DeeJacobian, Window8x256>;
 
-    struct JubJubMerkleTreeParams;
+    struct DeeJacobianMerkleTreeParams;
 
-    impl MerkleTreeConfig for JubJubMerkleTreeParams {
+    impl MerkleTreeConfig for DeeJacobianMerkleTreeParams {
         const HEIGHT: usize = 5;
         type H = H;
     }
@@ -498,21 +498,21 @@ mod test {
         for i in 0..4u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        generate_merkle_tree::<_, _, JubJubMerkleTreeParams>(&leaves);
+        generate_merkle_tree::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
         //Test #leaves = 2^HEIGHT - 1
         let mut leaves = Vec::new();
         for i in 0..16u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        generate_merkle_tree::<_, _, JubJubMerkleTreeParams>(&leaves);
+        generate_merkle_tree::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
         //Test #leaves = 2^HEIGHT
         let mut leaves = Vec::new();
         for i in 0..32u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        generate_merkle_tree::<_, _, JubJubMerkleTreeParams>(&leaves);
+        generate_merkle_tree::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
     }
 
     fn bad_merkle_tree_verify<
@@ -540,35 +540,35 @@ mod test {
         for i in 0..4u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        bad_merkle_tree_verify::<_, _, JubJubMerkleTreeParams>(&leaves);
+        bad_merkle_tree_verify::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
         //Test #leaves = 2^HEIGHT - 1
         let mut leaves = Vec::new();
         for i in 0..16u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        bad_merkle_tree_verify::<_, _, JubJubMerkleTreeParams>(&leaves);
+        bad_merkle_tree_verify::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
         //Test #leaves = 2^HEIGHT
         let mut leaves = Vec::new();
         for i in 0..32u8 {
             leaves.push([i, i, i, i, i, i, i, i]);
         }
-        bad_merkle_tree_verify::<_, _, JubJubMerkleTreeParams>(&leaves);
+        bad_merkle_tree_verify::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
     }
 
     // Params for Merkle Tree of height 0
-    struct JubJubOnlyRootMerkleTreeParams;
+    struct DeeJacobianOnlyRootMerkleTreeParams;
 
-    impl MerkleTreeConfig for JubJubOnlyRootMerkleTreeParams {
+    impl MerkleTreeConfig for DeeJacobianOnlyRootMerkleTreeParams {
         const HEIGHT: usize = 0;
         type H = H;
     }
 
     // Params for Merkle Tree of height 1
-    struct JubJubHeightOneMerkleTreeParams;
+    struct DeeJacobianHeightOneMerkleTreeParams;
 
-    impl MerkleTreeConfig for JubJubHeightOneMerkleTreeParams {
+    impl MerkleTreeConfig for DeeJacobianHeightOneMerkleTreeParams {
         const HEIGHT: usize = 1;
         type H = H;
     }
@@ -579,11 +579,11 @@ mod test {
         {
             // Generate empty Merkle Tree
             let mut leaves: Vec<Vec<u8>> = vec![];
-            generate_merkle_tree::<_, _, JubJubMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with only 1 leaf
             leaves.push(vec![1u8; 8]);
-            generate_merkle_tree::<_, _, JubJubMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with more leaves with respect to the specified height
             for i in 0..32u8 {
@@ -592,7 +592,7 @@ mod test {
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
                 _,
                 _,
-                JubJubMerkleTreeParams,
+                DeeJacobianMerkleTreeParams,
             >(&leaves))
             .is_err());
         }
@@ -601,11 +601,11 @@ mod test {
         {
             // Generate empty Merkle Tree
             let mut leaves: Vec<Vec<u8>> = vec![];
-            generate_merkle_tree::<_, _, JubJubHeightOneMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianHeightOneMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with only 1 leaf
             leaves.push(vec![1u8; 8]);
-            generate_merkle_tree::<_, _, JubJubHeightOneMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianHeightOneMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with more leaves with respect to the specified height
             for i in 0..2u8 {
@@ -614,7 +614,7 @@ mod test {
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
                 _,
                 _,
-                JubJubHeightOneMerkleTreeParams,
+                DeeJacobianHeightOneMerkleTreeParams,
             >(&leaves))
             .is_err());
         }
@@ -624,18 +624,18 @@ mod test {
             let mut leaves: Vec<Vec<u8>> = vec![];
 
             // Generate Merkle Tree with only the root, but without passing any leaf
-            generate_merkle_tree::<_, _, JubJubOnlyRootMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianOnlyRootMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with only the root, and passing one leaf
             leaves.push(vec![1u8; 8]);
-            generate_merkle_tree::<_, _, JubJubOnlyRootMerkleTreeParams>(&leaves);
+            generate_merkle_tree::<_, _, DeeJacobianOnlyRootMerkleTreeParams>(&leaves);
 
             // Generate Merkle Tree with only the root, passing more than one leaf. Assert error
             leaves.push(vec![2u8; 8]);
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
                 _,
                 _,
-                JubJubOnlyRootMerkleTreeParams,
+                DeeJacobianOnlyRootMerkleTreeParams,
             >(&leaves))
             .is_err());
         }

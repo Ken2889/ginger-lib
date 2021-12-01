@@ -29,15 +29,15 @@ use crate::darlin::{
         PCDCircuit, PCD,
     },
 };
-use algebra::{AffineCurve, ToConstraintField};
+use algebra::{Group, GroupVec, Curve, ToConstraintField};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
-        Commitment, CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
+        CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
         VerifierKey as DLogVerifierKey,
     },
-    DomainExtendedCommitment, DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
+    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
     PolynomialCommitment, QuerySet,
 };
 use rand::RngCore;
@@ -49,7 +49,7 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
+pub struct FinalDarlin<'a, G1: Curve, G2: Curve, D: Digest + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<D>,
@@ -58,10 +58,10 @@ pub struct FinalDarlin<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static
 
 impl<'a, G1, G2, D> FinalDarlin<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {
     /// Generate the universal prover and verifier keys for Marlin.
@@ -191,7 +191,7 @@ where
     )  -> Result<(
         QuerySet<'a, G1::ScalarField>,
         Evaluations<'a, G1::ScalarField>,
-        Vec<LabeledCommitment<G1, DomainExtendedCommitment<G1, Commitment<G1>>>>,
+        Vec<LabeledCommitment<GroupVec<G1>>>,
         <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
     ), FinalDarlinError>
     {
@@ -218,7 +218,7 @@ where
     pub fn verify_opening(
         pc_vk: &DLogVerifierKey<G1>,
         proof: &FinalDarlinProof<G1, G2, D>,
-        labeled_comms: Vec<LabeledCommitment<G1, DomainExtendedCommitment<G1, Commitment<G1>>>>,
+        labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
         query_set: QuerySet<'a, G1::ScalarField>,
         evaluations: Evaluations<'a, G1::ScalarField>,
         fs_rng:         &mut <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,

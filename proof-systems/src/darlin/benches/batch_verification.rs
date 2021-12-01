@@ -1,4 +1,4 @@
-use algebra::{AffineCurve, ToConstraintField};
+use algebra::{Group, Curve, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -11,16 +11,16 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'static>(
+fn bench_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -71,7 +71,7 @@ fn bench_batch_verification<G1: AffineCurve, G2: AffineCurve, D: Digest + 'stati
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
+    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
     bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
         c,

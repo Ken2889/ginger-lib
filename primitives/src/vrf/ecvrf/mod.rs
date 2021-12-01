@@ -5,8 +5,8 @@ use crate::{
     CryptoError, Error,
 };
 use algebra::{
-    convert, leading_zeros, serialize::*, to_bytes, AffineCurve, Field, FromBytes,
-    FromBytesChecked, Group, PrimeField, ProjectiveCurve, SemanticallyValid, ToBits, ToBytes,
+    convert, leading_zeros, serialize::*, to_bytes, Curve, FromBytes,
+    FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBits, ToBytes,
     ToConstraintField, UniformRand,
 };
 use rand::distributions::{Distribution, Standard};
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::marker::PhantomData;
 
-pub struct FieldBasedEcVrf<F: PrimeField, G: Group, FH: FieldBasedHash, GH: FixedLengthCRH> {
+pub struct FieldBasedEcVrf<F: PrimeField, G: Curve, FH: FieldBasedHash, GH: FixedLengthCRH> {
     _field: PhantomData<F>,
     _group: PhantomData<G>,
     _field_hash: PhantomData<FH>,
@@ -24,47 +24,47 @@ pub struct FieldBasedEcVrf<F: PrimeField, G: Group, FH: FieldBasedHash, GH: Fixe
 
 #[derive(Derivative)]
 #[derivative(
-    Copy(bound = "F: PrimeField, G: ProjectiveCurve"),
-    Clone(bound = "F: PrimeField, G: ProjectiveCurve"),
-    Default(bound = "F: PrimeField, G: ProjectiveCurve"),
-    Eq(bound = "F: PrimeField, G: ProjectiveCurve"),
-    PartialEq(bound = "F: PrimeField, G: ProjectiveCurve"),
-    Debug(bound = "F: PrimeField, G: ProjectiveCurve")
+    Copy(bound = "F: PrimeField, G: Curve"),
+    Clone(bound = "F: PrimeField, G: Curve"),
+    Default(bound = "F: PrimeField, G: Curve"),
+    Eq(bound = "F: PrimeField, G: Curve"),
+    PartialEq(bound = "F: PrimeField, G: Curve"),
+    Debug(bound = "F: PrimeField, G: Curve")
 )]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "F: PrimeField, G: ProjectiveCurve"))]
-#[serde(bound(deserialize = "F: PrimeField, G: ProjectiveCurve"))]
+#[serde(bound(serialize = "F: PrimeField, G: Curve"))]
+#[serde(bound(deserialize = "F: PrimeField, G: Curve"))]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct FieldBasedEcVrfProof<F: PrimeField, G: ProjectiveCurve> {
+pub struct FieldBasedEcVrfProof<F: PrimeField, G: Curve> {
     pub gamma: G,
     pub c: F,
     pub s: F,
 }
 
-impl<F: PrimeField, G: ProjectiveCurve> ToBytes for FieldBasedEcVrfProof<F, G> {
+impl<F: PrimeField, G: Curve> ToBytes for FieldBasedEcVrfProof<F, G> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.gamma.into_affine().write(&mut writer)?;
+        self.gamma.write(&mut writer)?;
         self.c.write(&mut writer)?;
         self.s.write(&mut writer)
     }
 }
 
-impl<F: PrimeField, G: ProjectiveCurve> FromBytes for FieldBasedEcVrfProof<F, G> {
+impl<F: PrimeField, G: Curve> FromBytes for FieldBasedEcVrfProof<F, G> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
-        let gamma = G::Affine::read(&mut reader)?;
+        let gamma = G::read(&mut reader)?;
         let c = F::read(&mut reader)?;
         let s = F::read(&mut reader)?;
         Ok(Self {
-            gamma: gamma.into_projective(),
+            gamma,
             c,
             s,
         })
     }
 }
 
-impl<F: PrimeField, G: ProjectiveCurve> FromBytesChecked for FieldBasedEcVrfProof<F, G> {
+impl<F: PrimeField, G: Curve> FromBytesChecked for FieldBasedEcVrfProof<F, G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
-        let gamma = G::Affine::read_checked(&mut reader)
+        let gamma = G::read_checked(&mut reader)
             .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -123,14 +123,14 @@ impl<F: PrimeField, G: ProjectiveCurve> FromBytesChecked for FieldBasedEcVrfProo
                 Ok(s)
             })?;
         Ok(Self {
-            gamma: gamma.into_projective(),
+            gamma,
             c,
             s,
         })
     }
 }
 
-impl<F: PrimeField, G: ProjectiveCurve> SemanticallyValid for FieldBasedEcVrfProof<F, G> {
+impl<F: PrimeField, G: Curve> SemanticallyValid for FieldBasedEcVrfProof<F, G> {
     fn is_valid(&self) -> bool {
         (self.gamma.is_valid() && !self.gamma.is_zero())
             && self.c.is_valid()
@@ -152,21 +152,21 @@ impl<F: PrimeField, G: ProjectiveCurve> SemanticallyValid for FieldBasedEcVrfPro
 
 #[derive(Derivative)]
 #[derivative(
-    Copy(bound = "G: Group"),
-    Clone(bound = "G: Group"),
-    Default(bound = "G: Group"),
-    Hash(bound = "G: Group"),
-    Eq(bound = "G: Group"),
-    PartialEq(bound = "G: Group"),
-    Debug(bound = "G: Group")
+    Copy(bound = "G: Curve"),
+    Clone(bound = "G: Curve"),
+    Default(bound = "G: Curve"),
+    Hash(bound = "G: Curve"),
+    Eq(bound = "G: Curve"),
+    PartialEq(bound = "G: Curve"),
+    Debug(bound = "G: Curve")
 )]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "G: Group"))]
-#[serde(bound(deserialize = "G: Group"))]
+#[serde(bound(serialize = "G: Curve"))]
+#[serde(bound(deserialize = "G: Curve"))]
 #[serde(transparent)]
-pub struct FieldBasedEcVrfPk<G: Group>(pub G);
+pub struct FieldBasedEcVrfPk<G: Curve>(pub G);
 
-impl<G: Group> Distribution<FieldBasedEcVrfPk<G>> for Standard {
+impl<G: Curve> Distribution<FieldBasedEcVrfPk<G>> for Standard {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FieldBasedEcVrfPk<G> {
         let pk = G::rand(rng);
@@ -174,20 +174,20 @@ impl<G: Group> Distribution<FieldBasedEcVrfPk<G>> for Standard {
     }
 }
 
-impl<G: Group> ToBytes for FieldBasedEcVrfPk<G> {
+impl<G: Curve> ToBytes for FieldBasedEcVrfPk<G> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.0.write(&mut writer)
     }
 }
 
-impl<G: Group> FromBytes for FieldBasedEcVrfPk<G> {
+impl<G: Curve> FromBytes for FieldBasedEcVrfPk<G> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         let pk = G::read(&mut reader)?;
         Ok(Self(pk))
     }
 }
 
-impl<G: Group> FromBytesChecked for FieldBasedEcVrfPk<G> {
+impl<G: Curve> FromBytesChecked for FieldBasedEcVrfPk<G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         let pk = G::read_checked(&mut reader)
             .map_err(|e| IoError::new(ErrorKind::InvalidData, format!("invalid ecvrf pk: {}", e)))
@@ -204,7 +204,7 @@ impl<G: Group> FromBytesChecked for FieldBasedEcVrfPk<G> {
     }
 }
 
-impl<G: Group> SemanticallyValid for FieldBasedEcVrfPk<G> {
+impl<G: Curve> SemanticallyValid for FieldBasedEcVrfPk<G> {
     #[inline]
     fn is_valid(&self) -> bool {
         self.0.is_valid() &&
@@ -221,7 +221,7 @@ impl<G: Group> SemanticallyValid for FieldBasedEcVrfPk<G> {
 impl<F, G, FH, GH> FieldBasedVrf for FieldBasedEcVrf<F, G, FH, GH>
 where
     F: PrimeField,
-    G: ProjectiveCurve + ToConstraintField<F>,
+    G: Curve + ToConstraintField<F>,
     FH: FieldBasedHash<Data = F>,
     GH: FixedLengthCRH<Output = G>,
 {
@@ -384,31 +384,31 @@ where
 mod test {
     use crate::{
         crh::{
-            bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, MNT4PoseidonHash,
-            MNT6PoseidonHash,
+            bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, TweedleFrPoseidonHash,
+            TweedleFqPoseidonHash,
         },
         vrf::{ecvrf::FieldBasedEcVrf, FieldBasedVrf},
         FixedLengthCRH,
     };
     use algebra::curves::{
-        mnt4753::G1Projective as MNT4G1Projective, mnt6753::G1Projective as MNT6G1Projective,
+        tweedle::dee::DeeJacobian, tweedle::dum::DumJacobian,
     };
-    use algebra::fields::{mnt4753::Fr as MNT4Fr, mnt6753::Fr as MNT6Fr};
+    use algebra::fields::{tweedle::Fr, tweedle::Fq};
     use algebra::{to_bytes, FromBytes, FromBytesChecked, SemanticallyValid, ToBytes};
     use rand::{thread_rng, Rng};
 
     #[derive(Clone)]
     struct TestWindow {}
     impl PedersenWindow for TestWindow {
-        const WINDOW_SIZE: usize = 128;
+        const WINDOW_SIZE: usize = 64;
         const NUM_WINDOWS: usize = 2;
     }
 
-    type BHMNT4 = BoweHopwoodPedersenCRH<MNT4G1Projective, TestWindow>;
-    type BHMNT6 = BoweHopwoodPedersenCRH<MNT6G1Projective, TestWindow>;
+    type BHTweedleDee = BoweHopwoodPedersenCRH<DeeJacobian, TestWindow>;
+    type BHTweedleDum = BoweHopwoodPedersenCRH<DumJacobian, TestWindow>;
 
-    type EcVrfMNT4 = FieldBasedEcVrf<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash, BHMNT6>;
-    type EcVrfMNT6 = FieldBasedEcVrf<MNT6Fr, MNT4G1Projective, MNT6PoseidonHash, BHMNT4>;
+    type EcVrfTweedleDee = FieldBasedEcVrf<Fr, DumJacobian, TweedleFrPoseidonHash, BHTweedleDum>;
+    type EcVrfTweedleDum = FieldBasedEcVrf<Fq, DeeJacobian, TweedleFqPoseidonHash, BHTweedleDee>;
 
     fn prove_and_verify<S: FieldBasedVrf, R: Rng>(rng: &mut R, message: S::Data, pp: &S::GHParams) {
         let (pk, sk) = S::keygen(rng);
@@ -461,30 +461,30 @@ mod test {
     }
 
     #[test]
-    fn mnt4_ecvrf_test() {
+    fn tweedle_dee_ecvrf_test() {
         let rng = &mut thread_rng();
-        let pp = <BHMNT6 as FixedLengthCRH>::setup(rng).unwrap();
+        let pp = <BHTweedleDum as FixedLengthCRH>::setup(rng).unwrap();
         let samples = 100;
         for _ in 0..samples {
-            let f: MNT4Fr = rng.gen();
-            let g: MNT4Fr = rng.gen();
-            prove_and_verify::<EcVrfMNT4, _>(rng, f, &pp);
-            failed_verification::<EcVrfMNT4, _>(rng, f, g, &pp);
-            serialize_deserialize::<EcVrfMNT4, _>(rng, f, &pp);
+            let f: Fr = rng.gen();
+            let g: Fr = rng.gen();
+            prove_and_verify::<EcVrfTweedleDee, _>(rng, f, &pp);
+            failed_verification::<EcVrfTweedleDee, _>(rng, f, g, &pp);
+            serialize_deserialize::<EcVrfTweedleDee, _>(rng, f, &pp);
         }
     }
 
     #[test]
-    fn mnt6_ecvrf_test() {
+    fn tweedle_dum_ecvrf_test() {
         let rng = &mut thread_rng();
-        let pp = <BHMNT4 as FixedLengthCRH>::setup(rng).unwrap();
+        let pp = <BHTweedleDee as FixedLengthCRH>::setup(rng).unwrap();
         let samples = 100;
         for _ in 0..samples {
-            let f: MNT6Fr = rng.gen();
-            let g: MNT6Fr = rng.gen();
-            prove_and_verify::<EcVrfMNT6, _>(rng, f, &pp);
-            failed_verification::<EcVrfMNT6, _>(rng, f, g, &pp);
-            serialize_deserialize::<EcVrfMNT6, _>(rng, f, &pp);
+            let f: Fq = rng.gen();
+            let g: Fq = rng.gen();
+            prove_and_verify::<EcVrfTweedleDum, _>(rng, f, &pp);
+            failed_verification::<EcVrfTweedleDum, _>(rng, f, g, &pp);
+            serialize_deserialize::<EcVrfTweedleDum, _>(rng, f, &pp);
         }
     }
 }

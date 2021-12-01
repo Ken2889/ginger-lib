@@ -4,7 +4,7 @@ use crate::darlin::pcd::{
     simple_marlin::{MarlinProof, SimpleMarlinPCD},
     PCDParameters,
 };
-use algebra::{AffineCurve, Field, UniformRand};
+use algebra::{Field, Curve, UniformRand};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
@@ -85,7 +85,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 /// Generates a SimpleMarlinPCD from `Circuit`, by sampling the internal
 /// witnesses a,b at random.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
     marlin_pk: &MarlinProverKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
     num_constraints: usize,
@@ -122,7 +122,7 @@ pub fn generate_test_pcd<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
 /// Generates `num_proofs` random instances of SimpleMarlinPCDs for `Circuit` with
 /// `num_constraints`, using the given `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, G: AffineCurve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_data<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
     params: &Parameters<G>,

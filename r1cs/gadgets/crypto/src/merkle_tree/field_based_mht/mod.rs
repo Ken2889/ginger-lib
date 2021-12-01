@@ -405,31 +405,31 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crh::MNT4PoseidonHashGadget;
-    use algebra::fields::mnt4753::Fr;
-    use primitives::crh::MNT4PoseidonHash;
+    use crate::crh::TweedleFrPoseidonHashGadget;
+    use algebra::{Group, fields::tweedle::Fr};
+    use primitives::crh::TweedleFrPoseidonHash;
     use r1cs_core::ConstraintSystem;
     use r1cs_std::{
-        instantiated::mnt6_753::FqGadget, test_constraint_system::TestConstraintSystem,
+        instantiated::tweedle::FrGadget, test_constraint_system::TestConstraintSystem,
     };
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
     #[derive(Clone)]
-    struct MNT4753FieldBasedMerkleTreeParams;
+    struct TweedleDeeFieldBasedMerkleTreeParams;
 
-    impl FieldBasedMerkleTreeParameters for MNT4753FieldBasedMerkleTreeParams {
+    impl FieldBasedMerkleTreeParameters for TweedleDeeFieldBasedMerkleTreeParams {
         type Data = Fr;
-        type H = MNT4PoseidonHash;
+        type H = TweedleFrPoseidonHash;
         const MERKLE_ARITY: usize = 2;
         const ZERO_NODE_CST: Option<
             FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>,
         > = None;
     }
 
-    type MNT4753FieldBasedMerkleTree = NaiveMerkleTree<MNT4753FieldBasedMerkleTreeParams>;
+    type MNT4753FieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
 
-    type HG = MNT4PoseidonHashGadget;
+    type HG = TweedleFrPoseidonHashGadget;
 
     const TEST_HEIGHT: usize = 5;
 
@@ -446,7 +446,7 @@ mod test {
             assert!(proof.verify(TEST_HEIGHT, &leaf, &root).unwrap());
 
             // Allocate Merkle Tree Root
-            let root = FqGadget::alloc(&mut cs.ns(|| format!("new_digest_{}", i)), || {
+            let root = FrGadget::alloc(&mut cs.ns(|| format!("new_digest_{}", i)), || {
                 if use_bad_root {
                     Ok(Fr::zero())
                 } else {
@@ -456,7 +456,7 @@ mod test {
             .unwrap();
 
             // Allocate Leaf
-            let leaf_g = FqGadget::alloc(cs.ns(|| "alloc leaf"), || Ok(leaf)).unwrap();
+            let leaf_g = FrGadget::alloc(cs.ns(|| "alloc leaf"), || Ok(leaf)).unwrap();
 
             // Allocate Merkle Tree Path
             let cw = FieldBasedBinaryMerkleTreePathGadget::<_, HG, _>::alloc(
@@ -490,7 +490,7 @@ mod test {
             // Enforce leaf_index check
             let fe_index = Fr::from(i as u32);
             let fe_index_g =
-                FqGadget::alloc(cs.ns(|| format!("alloc_index_{}", i)), || Ok(fe_index)).unwrap();
+                FrGadget::alloc(cs.ns(|| format!("alloc_index_{}", i)), || Ok(fe_index)).unwrap();
 
             cw.enforce_leaf_index(
                 &mut cs.ns(|| format!("enforce_leaf_index_{}", i)),
@@ -519,7 +519,7 @@ mod test {
         let mut cs = TestConstraintSystem::<Fr>::new();
 
         // Allocate Merkle Tree Root
-        let root = FqGadget::alloc(&mut cs.ns(|| "root_digest_{}"), || {
+        let root = FrGadget::alloc(&mut cs.ns(|| "root_digest_{}"), || {
             if use_bad_root {
                 Ok(Fr::zero())
             } else {
@@ -532,11 +532,11 @@ mod test {
         let mut leaves_g = vec![];
         for (i, leaf) in leaves.iter().enumerate() {
             leaves_g
-                .push(FqGadget::alloc(cs.ns(|| format!("alloc leaf_{}", i)), || Ok(leaf)).unwrap());
+                .push(FrGadget::alloc(cs.ns(|| format!("alloc leaf_{}", i)), || Ok(leaf)).unwrap());
         }
 
         //Check MR from leaves
-        FieldBasedMerkleTreeGadget::<MNT4753FieldBasedMerkleTreeParams, HG, Fr>::check_leaves(
+        FieldBasedMerkleTreeGadget::<TweedleDeeFieldBasedMerkleTreeParams, HG, Fr>::check_leaves(
             &mut cs.ns(|| "check all leaves belong to MT"),
             &leaves_g,
             &root,

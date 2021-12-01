@@ -8,19 +8,19 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::{AffineCurve, ToConstraintField};
+use algebra::{GroupVec, Group, Curve, ToConstraintField};
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
-    ipa_pc::{Commitment, InnerProductArgPC, VerifierKey as DLogVerifierKey},
-    DomainExtendedCommitment, DomainExtendedPolynomialCommitment, PolynomialCommitment,
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
+pub struct FinalDarlinPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, D>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -30,10 +30,10 @@ pub struct FinalDarlinPCD<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'sta
 
 impl<'a, G1, G2, D> FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'a,
 {
     pub fn new(
@@ -50,7 +50,7 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<'a, G1: AffineCurve, G2: AffineCurve, D: Digest + 'static> {
+pub struct FinalDarlinPCDVerifierKey<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
         DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
@@ -58,7 +58,7 @@ pub struct FinalDarlinPCDVerifierKey<'a, G1: AffineCurve, G2: AffineCurve, D: Di
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: AffineCurve, G2: AffineCurve, D: Digest>
+impl<'a, G1: Curve, G2: Curve, D: Digest>
     AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, D>
 {
@@ -69,10 +69,10 @@ impl<'a, G1: AffineCurve, G2: AffineCurve, D: Digest>
 
 impl<'a, G1, G2, D> PCD for FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;
@@ -134,9 +134,7 @@ where
 
         // Verification successfull: return new accumulator
         let acc = DLogItem::<G1> {
-            g_final: DomainExtendedCommitment::<G1, Commitment<G1>>::new(vec![Commitment::<G1> {
-                comm: verifier_state.final_comm_key.clone(),
-            }]),
+            g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
             xi_s: verifier_state.check_poly.clone(),
         };
 

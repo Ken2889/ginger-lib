@@ -1,4 +1,7 @@
-use algebra::{to_bytes, Group, ToBytes};
+use algebra::{
+    to_bytes, Curve, ToBytes,
+    fields::{Field, PrimeField}
+};
 use primitives::{
     commitment::pedersen::{PedersenCommitment, PedersenParameters, PedersenRandomness},
     crh::pedersen::PedersenWindow,
@@ -6,13 +9,12 @@ use primitives::{
 use r1cs_core::{ConstraintSystem, SynthesisError};
 
 use crate::commitment::CommitmentGadget;
-use algebra::fields::{Field, PrimeField};
 use r1cs_std::prelude::*;
 use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "G: Group, W: PedersenWindow, ConstraintF: Field"))]
-pub struct PedersenCommitmentGadgetParameters<G: Group, W: PedersenWindow, ConstraintF: Field> {
+#[derivative(Clone(bound = "G: Curve, W: PedersenWindow, ConstraintF: Field"))]
+pub struct PedersenCommitmentGadgetParameters<G: Curve, W: PedersenWindow, ConstraintF: Field> {
     params: PedersenParameters<G>,
     #[doc(hidden)]
     _group: PhantomData<G>,
@@ -25,7 +27,7 @@ pub struct PedersenCommitmentGadgetParameters<G: Group, W: PedersenWindow, Const
 #[derive(Clone, Debug)]
 pub struct PedersenRandomnessGadget(Vec<UInt8>);
 
-pub struct PedersenCommitmentGadget<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>(
+pub struct PedersenCommitmentGadget<G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>(
     #[doc(hidden)] PhantomData<*const G>,
     #[doc(hidden)] PhantomData<*const GG>,
     PhantomData<ConstraintF>,
@@ -35,7 +37,7 @@ impl<ConstraintF, G, GG, W> CommitmentGadget<PedersenCommitment<G, W>, Constrain
     for PedersenCommitmentGadget<G, ConstraintF, GG>
 where
     ConstraintF: PrimeField,
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
     W: PedersenWindow,
 {
@@ -106,7 +108,7 @@ where
 impl<G, W, ConstraintF> AllocGadget<PedersenParameters<G>, ConstraintF>
     for PedersenCommitmentGadgetParameters<G, W, ConstraintF>
 where
-    G: Group,
+    G: Curve,
     W: PedersenWindow,
     ConstraintF: PrimeField,
 {
@@ -151,7 +153,7 @@ where
 
 impl<G, ConstraintF> AllocGadget<PedersenRandomness<G>, ConstraintF> for PedersenRandomnessGadget
 where
-    G: Group,
+    G: Curve,
     ConstraintF: PrimeField,
 {
     fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
@@ -187,9 +189,9 @@ where
 #[cfg(test)]
 mod test {
     use crate::commitment::{pedersen::PedersenCommitmentGadget, CommitmentGadget};
-    use algebra::curves::{jubjub::JubJubProjective as JubJub, ProjectiveCurve};
+    use algebra::curves::{tweedle::dee::DeeJacobian, Curve};
     use algebra::{
-        fields::jubjub::{fq::Fq, fr::Fr},
+        fields::tweedle::{Fq, Fr},
         UniformRand,
     };
     use primitives::{
@@ -201,7 +203,7 @@ mod test {
     };
     use r1cs_core::ConstraintSystem;
     use r1cs_std::{
-        instantiated::jubjub::JubJubGadget, prelude::*,
+        instantiated::tweedle::TweedleDeeGadget, prelude::*,
         test_constraint_system::TestConstraintSystem,
     };
     use rand::thread_rng;
@@ -222,14 +224,14 @@ mod test {
 
         let rng = &mut thread_rng();
 
-        type TestCOMM = PedersenCommitment<JubJub, Window>;
-        type TestCOMMGadget = PedersenCommitmentGadget<JubJub, Fq, JubJubGadget>;
+        type TestCOMM = PedersenCommitment<DeeJacobian, Window>;
+        type TestCOMMGadget = PedersenCommitmentGadget<DeeJacobian, Fq, TweedleDeeGadget>;
 
         let randomness = PedersenRandomness(Fr::rand(rng));
 
-        let parameters = PedersenCommitment::<JubJub, Window>::setup(rng).unwrap();
+        let parameters = PedersenCommitment::<DeeJacobian, Window>::setup(rng).unwrap();
         let primitive_result =
-            PedersenCommitment::<JubJub, Window>::commit(&parameters, &input, &randomness).unwrap();
+            PedersenCommitment::<DeeJacobian, Window>::commit(&parameters, &input, &randomness).unwrap();
 
         let input_bytes =
             UInt8::alloc_input_vec(cs.ns(|| "alloc input bytes as public input"), &input).unwrap();
@@ -255,7 +257,7 @@ mod test {
             )
             .unwrap();
 
-        let primitive_result = primitive_result.into_affine();
+        let primitive_result = primitive_result.into_affine().unwrap();
         assert_eq!(primitive_result.x, gadget_result.x.value.unwrap());
         assert_eq!(primitive_result.y, gadget_result.y.value.unwrap());
         assert!(cs.is_satisfied());

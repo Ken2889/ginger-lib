@@ -511,7 +511,7 @@ impl<ConstraintF: PrimeField> PRFGadget<Blake2s, ConstraintF> for Blake2sGadget 
 #[cfg(test)]
 mod test {
     use crate::prf::blake2s::blake2s_gadget;
-    use algebra::fields::bls12_377::fr::Fr;
+    use algebra::fields::tweedle::Fr;
     use blake2::Blake2s;
     use digest::{Digest, FixedOutput};
     use primitives::prf::blake2s::Blake2s as B2SPRF;

@@ -10,12 +10,12 @@ use crate::crh::{
 };
 
 use algebra::{
-    curves::{
-        models::{ModelParameters, TEModelParameters},
-        twisted_edwards_extended::{GroupAffine as TEAffine, GroupProjective as TEProjective},
-    },
     fields::{Field, PrimeField, SquareRootField},
-    groups::Group,
+    curves::{
+        Curve,
+        models::{ModelParameters, TEModelParameters},
+        twisted_edwards_extended::TEExtended,
+    },
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::{
@@ -25,7 +25,7 @@ use r1cs_std::{
 };
 
 pub trait InjectiveMapGadget<
-    G: Group,
+    G: Curve,
     I: InjectiveMap<G>,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
@@ -49,28 +49,7 @@ pub struct TECompressorGadget;
 
 impl<ConstraintF, P>
     InjectiveMapGadget<
-        TEAffine<P>,
-        TECompressor,
-        ConstraintF,
-        TwistedEdwardsGadget<P, ConstraintF, FpGadget<ConstraintF>>,
-    > for TECompressorGadget
-where
-    ConstraintF: PrimeField + SquareRootField,
-    P: TEModelParameters + ModelParameters<BaseField = ConstraintF>,
-{
-    type OutputGadget = FpGadget<ConstraintF>;
-
-    fn evaluate_map<CS: ConstraintSystem<ConstraintF>>(
-        _cs: CS,
-        ge: &TwistedEdwardsGadget<P, ConstraintF, FpGadget<ConstraintF>>,
-    ) -> Result<Self::OutputGadget, SynthesisError> {
-        Ok(ge.x.clone())
-    }
-}
-
-impl<ConstraintF, P>
-    InjectiveMapGadget<
-        TEProjective<P>,
+        TEExtended<P>,
         TECompressor,
         ConstraintF,
         TwistedEdwardsGadget<P, ConstraintF, FpGadget<ConstraintF>>,
@@ -91,7 +70,7 @@ where
 
 pub struct PedersenCRHCompressorGadget<G, I, ConstraintF, GG, IG>
 where
-    G: Group,
+    G: Curve,
     I: InjectiveMap<G>,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
@@ -105,7 +84,7 @@ where
 impl<G, I, ConstraintF, GG, IG, W> FixedLengthCRHGadget<PedersenCRHCompressor<G, I, W>, ConstraintF>
     for PedersenCRHCompressorGadget<G, I, ConstraintF, GG, IG>
 where
-    G: Group,
+    G: Curve,
     I: InjectiveMap<G>,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,

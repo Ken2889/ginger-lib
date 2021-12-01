@@ -158,20 +158,20 @@ pub trait BatchFieldBasedHash {
 #[cfg(test)]
 mod test {
 
-    use algebra::{fields::mnt4753::Fr as MNT4753Fr, Field, UniformRand};
+    use algebra::{Group, fields::tweedle::Fr as Fr, Field, UniformRand};
 
     use super::BatchFieldBasedHash;
-    use crate::crh::poseidon::{MNT4BatchPoseidonHash, MNT4PoseidonHash};
+    use crate::crh::poseidon::{TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash};
 
     use crate::{FieldBasedHash, FieldBasedHashParameters};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    struct DummyMNT4BatchPoseidonHash;
+    struct DummyTweedleFrBatchPoseidonHash;
 
-    impl BatchFieldBasedHash for DummyMNT4BatchPoseidonHash {
-        type Data = MNT4753Fr;
-        type BaseHash = MNT4PoseidonHash;
+    impl BatchFieldBasedHash for DummyTweedleFrBatchPoseidonHash {
+        type Data = Fr;
+        type BaseHash = TweedleFrPoseidonHash;
     }
 
     pub(crate) fn constant_length_field_based_hash_test<H: FieldBasedHash>(
@@ -267,23 +267,23 @@ mod test {
         let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
         for _ in 0..num_inputs {
-            inputs.push(MNT4753Fr::rand(&mut rng))
+            inputs.push(Fr::rand(&mut rng))
         }
 
-        let batch_hash_output = MNT4BatchPoseidonHash::batch_evaluate(inputs.as_slice()).unwrap();
+        let batch_hash_output = TweedleFrBatchPoseidonHash::batch_evaluate(inputs.as_slice()).unwrap();
         let dummy_batch_hash_output =
-            DummyMNT4BatchPoseidonHash::batch_evaluate(inputs.as_slice()).unwrap();
+            DummyTweedleFrBatchPoseidonHash::batch_evaluate(inputs.as_slice()).unwrap();
         assert_eq!(batch_hash_output, dummy_batch_hash_output);
 
-        let mut batch_hash_output_new = vec![MNT4753Fr::zero(); num_inputs / rate];
-        let mut dummy_batch_hash_output_new = vec![MNT4753Fr::zero(); num_inputs / rate];
+        let mut batch_hash_output_new = vec![Fr::zero(); num_inputs / rate];
+        let mut dummy_batch_hash_output_new = vec![Fr::zero(); num_inputs / rate];
 
-        MNT4BatchPoseidonHash::batch_evaluate_in_place(
+        TweedleFrBatchPoseidonHash::batch_evaluate_in_place(
             inputs.as_mut_slice(),
             batch_hash_output_new.as_mut_slice(),
         )
         .unwrap();
-        DummyMNT4BatchPoseidonHash::batch_evaluate_in_place(
+        DummyTweedleFrBatchPoseidonHash::batch_evaluate_in_place(
             inputs.as_mut_slice(),
             dummy_batch_hash_output_new.as_mut_slice(),
         )

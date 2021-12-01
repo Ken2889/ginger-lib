@@ -7,7 +7,7 @@ use crate::darlin::{
     },
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
 };
-use algebra::{AffineCurve, ToConstraintField};
+use algebra::{Group, Curve, ToConstraintField};
 use digest::Digest;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
@@ -15,7 +15,7 @@ use poly_commit::{
     DomainExtendedPolynomialCommitment,
 };
 use rand::RngCore;
-// use rayon::prelude::*;
+use rayon::prelude::*;
 
 /// Given a set of PCDs, their corresponding Marlin verification keys, and the DLogCommitterKey(s)
 /// over two groups of a curve cycle, compute and return the associated accumulators via the
@@ -33,10 +33,10 @@ pub fn get_accumulators<G1, G2, D: Digest>(
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Vec<DLogItem<G1>>, Vec<DLogItem<G2>>), Option<Vec<usize>>>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let accumulators_time = start_timer!(|| "Compute accumulators");
 
@@ -45,7 +45,7 @@ where
     }
 
     let (accs, failing_indices): (Vec<_>, Vec<_>) = pcds
-        .into_iter()
+        .into_par_iter()
         .zip(vks)
         .enumerate()
         .map(|(i, (pcd, vk))| {
@@ -101,10 +101,10 @@ pub fn accumulate_proofs<G1, G2, D: Digest>(
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Option<AccumulationProof<G1>>, Option<AccumulationProof<G2>>), Option<Vec<usize>>>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let accumulation_time = start_timer!(|| "Accumulate proofs");
 
@@ -166,10 +166,10 @@ pub fn verify_aggregated_proofs<G1, G2, D: Digest, R: RngCore>(
     rng: &mut R,
 ) -> Result<bool, Option<Vec<usize>>>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let verification_time = start_timer!(|| "Verify aggregated proofs");
 
@@ -238,10 +238,10 @@ pub fn batch_verify_proofs<G1, G2, D: Digest, R: RngCore>(
     rng: &mut R,
 ) -> Result<bool, Option<Vec<usize>>>
 where
-    G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-    G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-        + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let verification_time = start_timer!(|| "Batch verify proofs");
 

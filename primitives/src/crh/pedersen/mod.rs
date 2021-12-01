@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::crh::FixedLengthCRH;
-use algebra::{groups::Group, Field, ToConstraintField};
+use algebra::{Field, Curve, ToConstraintField};
 use serde::{Deserialize, Serialize};
 
 pub trait PedersenWindow: Clone {
@@ -16,17 +16,17 @@ pub trait PedersenWindow: Clone {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(bound(deserialize = "G: Group"))]
-pub struct PedersenParameters<G: Group> {
+#[serde(bound(deserialize = "G: Curve"))]
+pub struct PedersenParameters<G: Curve> {
     pub generators: Vec<Vec<G>>,
 }
 
-pub struct PedersenCRH<G: Group, W: PedersenWindow> {
+pub struct PedersenCRH<G: Curve, W: PedersenWindow> {
     group: PhantomData<G>,
     window: PhantomData<W>,
 }
 
-impl<G: Group, W: PedersenWindow> PedersenCRH<G, W> {
+impl<G: Curve, W: PedersenWindow> PedersenCRH<G, W> {
     pub fn create_generators<R: Rng>(rng: &mut R) -> Vec<Vec<G>> {
         let mut generators_powers = Vec::new();
         for _ in 0..W::NUM_WINDOWS {
@@ -46,7 +46,7 @@ impl<G: Group, W: PedersenWindow> PedersenCRH<G, W> {
     }
 }
 
-impl<G: Group, W: PedersenWindow> FixedLengthCRH for PedersenCRH<G, W> {
+impl<G: Curve, W: PedersenWindow> FixedLengthCRH for PedersenCRH<G, W> {
     const INPUT_SIZE_BITS: usize = W::WINDOW_SIZE * W::NUM_WINDOWS;
     type Output = G;
     type Parameters = PedersenParameters<G>;
@@ -123,7 +123,7 @@ impl<G: Group, W: PedersenWindow> FixedLengthCRH for PedersenCRH<G, W> {
     }
 }
 
-impl<G: Group> Debug for PedersenParameters<G> {
+impl<G: Curve> Debug for PedersenParameters<G> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "Pedersen Hash Parameters {{\n")?;
         for (i, g) in self.generators.iter().enumerate() {
@@ -133,7 +133,7 @@ impl<G: Group> Debug for PedersenParameters<G> {
     }
 }
 
-impl<G: Group> PedersenParameters<G> {
+impl<G: Curve> PedersenParameters<G> {
     pub fn check_consistency(&self) -> bool {
         for (i, p1) in self.generators.iter().enumerate() {
             if p1[0] == G::zero() {
@@ -152,7 +152,7 @@ impl<G: Group> PedersenParameters<G> {
     }
 }
 
-impl<ConstraintF: Field, G: Group + ToConstraintField<ConstraintF>> ToConstraintField<ConstraintF>
+impl<ConstraintF: Field, G: Curve + ToConstraintField<ConstraintF>> ToConstraintField<ConstraintF>
     for PedersenParameters<G>
 {
     #[inline]

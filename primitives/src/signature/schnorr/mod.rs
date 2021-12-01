@@ -3,6 +3,7 @@ use algebra::{
     bytes::ToBytes,
     fields::{Field, PrimeField},
     groups::Group,
+    curves::Curve,
     to_bytes, ToConstraintField, UniformRand,
 };
 use digest::Digest;
@@ -16,17 +17,17 @@ use std::{
 
 pub mod field_based_schnorr;
 
-pub struct SchnorrSignature<G: Group, D: Digest> {
+pub struct SchnorrSignature<G: Curve, D: Digest> {
     _group: PhantomData<G>,
     _hash: PhantomData<D>,
 }
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "G: Group, H: Digest"))]
+#[derivative(Clone(bound = "G: Curve, H: Digest"))]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "G: Group, H: Digest"))]
-#[serde(bound(deserialize = "G: Group, H: Digest"))]
-pub struct SchnorrSigParameters<G: Group, H: Digest> {
+#[serde(bound(serialize = "G: Curve, H: Digest"))]
+#[serde(bound(deserialize = "G: Curve, H: Digest"))]
+pub struct SchnorrSigParameters<G: Curve, H: Digest> {
     #[serde(skip)]
     _hash: PhantomData<H>,
     pub generator: G,
@@ -36,14 +37,14 @@ pub struct SchnorrSigParameters<G: Group, H: Digest> {
 pub type SchnorrPublicKey<G> = G;
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "G: Group"), Default(bound = "G: Group"))]
+#[derivative(Clone(bound = "G: Curve"), Default(bound = "G: Curve"))]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "G: Group"))]
-#[serde(bound(deserialize = "G: Group"))]
+#[serde(bound(serialize = "G: Curve"))]
+#[serde(bound(deserialize = "G: Curve"))]
 #[serde(transparent)]
-pub struct SchnorrSecretKey<G: Group>(pub G::ScalarField);
+pub struct SchnorrSecretKey<G: Curve>(pub G::ScalarField);
 
-impl<G: Group> ToBytes for SchnorrSecretKey<G> {
+impl<G: Curve> ToBytes for SchnorrSecretKey<G> {
     #[inline]
     fn write<W: Write>(&self, writer: W) -> IoResult<()> {
         self.0.write(writer)
@@ -51,16 +52,16 @@ impl<G: Group> ToBytes for SchnorrSecretKey<G> {
 }
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "G: Group"), Default(bound = "G: Group"))]
+#[derivative(Clone(bound = "G: Curve"), Default(bound = "G: Curve"))]
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "G: Group"))]
-#[serde(bound(deserialize = "G: Group"))]
-pub struct SchnorrSig<G: Group> {
+#[serde(bound(serialize = "G: Curve"))]
+#[serde(bound(deserialize = "G: Curve"))]
+pub struct SchnorrSig<G: Curve> {
     pub prover_response: G::ScalarField,
     pub verifier_challenge: G::ScalarField,
 }
 
-impl<G: Group + Hash, D: Digest + Send + Sync> SignatureScheme for SchnorrSignature<G, D>
+impl<G: Curve + Hash, D: Digest + Send + Sync> SignatureScheme for SchnorrSignature<G, D>
 where
     G::ScalarField: PrimeField,
 {
@@ -220,7 +221,7 @@ where
     }
 }
 
-impl<ConstraintF: Field, G: Group + ToConstraintField<ConstraintF>, D: Digest>
+impl<ConstraintF: Field, G: Curve + ToConstraintField<ConstraintF>, D: Digest>
     ToConstraintField<ConstraintF> for SchnorrSigParameters<G, D>
 {
     #[inline]
@@ -233,7 +234,7 @@ impl<ConstraintF: Field, G: Group + ToConstraintField<ConstraintF>, D: Digest>
 mod test {
     use crate::{signature::schnorr::SchnorrSignature, SignatureScheme};
     use algebra::{
-        curves::edwards_sw6::EdwardsAffine as Edwards, groups::Group, to_bytes, ToBytes,
+        curves::tweedle::dee::DeeJacobian, groups::Group, to_bytes, ToBytes,
         UniformRand,
     };
     use blake2::Blake2s;
@@ -270,13 +271,13 @@ mod test {
     fn schnorr_signature_test() {
         let message = "Hi, I am a Schnorr signature!";
         let rng = &mut thread_rng();
-        sign_and_verify::<SchnorrSignature<Edwards, Blake2s>>(message.as_bytes());
-        failed_verification::<SchnorrSignature<Edwards, Blake2s>>(
+        sign_and_verify::<SchnorrSignature<DeeJacobian, Blake2s>>(message.as_bytes());
+        failed_verification::<SchnorrSignature<DeeJacobian, Blake2s>>(
             message.as_bytes(),
             "Bad message".as_bytes(),
         );
-        let random_scalar = to_bytes!(<Edwards as Group>::ScalarField::rand(rng)).unwrap();
-        randomize_and_verify::<SchnorrSignature<Edwards, Blake2s>>(
+        let random_scalar = to_bytes!(<DeeJacobian as Group>::ScalarField::rand(rng)).unwrap();
+        randomize_and_verify::<SchnorrSignature<DeeJacobian, Blake2s>>(
             message.as_bytes(),
             &random_scalar.as_slice(),
         );

@@ -4,6 +4,7 @@ use crate::{
     fields::{Field, SquareRootField, PrimeField, BitIterator},
     UniformRand,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     convert::{TryFrom, TryInto},
@@ -26,6 +27,8 @@ pub use self::models::*;
 pub trait Curve:
     Group
     + Copy
+    + Serialize
+    + for<'a> Deserialize<'a>
     + UniformRand
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
@@ -60,8 +63,7 @@ pub trait Curve:
     // TODO: move to group trait?
     fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
 
-    // TODO: implement
-    // fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self;
+    fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self;
 
     fn scale_by_cofactor(&self) -> Self;
 

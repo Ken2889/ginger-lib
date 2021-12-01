@@ -301,7 +301,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::fields::bls12_381::Fr;
+    use algebra::fields::tweedle::Fr;
     use r1cs_std::{
         alloc::AllocGadget, boolean::AllocatedBit, test_constraint_system::TestConstraintSystem,
     };

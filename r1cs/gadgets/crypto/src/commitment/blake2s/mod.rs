@@ -113,7 +113,7 @@ mod test {
         commitment::blake2s::{Blake2sCommitmentGadget, Blake2sRandomnessGadget},
         *,
     };
-    use algebra::fields::bls12_381::Fr;
+    use algebra::fields::tweedle::Fr;
     use primitives::commitment::{blake2s::Blake2sCommitment, CommitmentScheme};
     use r1cs_core::ConstraintSystem;
     use r1cs_std::{prelude::*, test_constraint_system::TestConstraintSystem};

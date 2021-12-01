@@ -27,7 +27,6 @@ algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "ref
 primitives = {path = "../../../primitives"}
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
 r1cs-std = { path = "../std"}
-proof-systems = { path = "../../../proof-systems", features = ["groth16", "gm17"], optional = true }
 bench-utils = { path = "../../../bench-utils" }
 
 digest = { version = "0.8", optional = true }
@@ -46,7 +45,6 @@ merkle_tree = ["primitives/merkle_tree"]
 prf = ["digest", "blake2", "ripemd160", "sha2", "hex", "primitives/prf"]
 signature = ["primitives/signature", "digest"]
 vrf = ["primitives/vrf"]
-nizk = ["proof-systems"]
 
 # For Poseidon CRH / Merkle Tree
 tweedle = ["primitives/tweedle"]

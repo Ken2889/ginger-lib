@@ -6,14 +6,13 @@ use crate::darlin::{
     },
     pcd::{error::PCDError, PCD},
 };
-use algebra::{serialize::*, AffineCurve, SemanticallyValid};
+use algebra::{serialize::*, GroupVec, Curve, SemanticallyValid};
 use digest::Digest;
 use marlin::{AHPForR1CS, Marlin, Proof, VerifierKey as MarlinVerifierKey};
-use poly_commit::ipa_pc::Commitment;
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
-    DomainExtendedCommitment, DomainExtendedPolynomialCommitment, PolynomialCommitment,
+    DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -26,11 +25,11 @@ use std::ops::{Deref, DerefMut};
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct MarlinProof<G: AffineCurve, D: Digest + 'static>(
+pub struct MarlinProof<G: Curve, D: Digest + 'static>(
     pub Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
 );
 
-impl<G: AffineCurve, D: Digest> Deref for MarlinProof<G, D> {
+impl<G: Curve, D: Digest> Deref for MarlinProof<G, D> {
     type Target = Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>;
 
     fn deref(&self) -> &Self::Target {
@@ -38,13 +37,13 @@ impl<G: AffineCurve, D: Digest> Deref for MarlinProof<G, D> {
     }
 }
 
-impl<G: AffineCurve, D: Digest> DerefMut for MarlinProof<G, D> {
+impl<G: Curve, D: Digest> DerefMut for MarlinProof<G, D> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<G: AffineCurve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
+impl<G: Curve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
@@ -79,7 +78,7 @@ impl<G: AffineCurve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: AffineCurve, D: Digest + 'static> {
+pub struct SimpleMarlinPCD<'a, G: Curve, D: Digest + 'static> {
     pub proof: MarlinProof<G, D>,
     pub usr_ins: Vec<G::ScalarField>,
     _lifetime: PhantomData<&'a ()>,
@@ -88,7 +87,7 @@ pub struct SimpleMarlinPCD<'a, G: AffineCurve, D: Digest + 'static> {
 /// As every PCD, the `SimpleMarlinPCD` comes as a proof plus "statement".
 impl<'a, G, D> SimpleMarlinPCD<'a, G, D>
 where
-    G: AffineCurve,
+    G: Curve,
     D: Digest + 'a,
 {
     pub fn new(
@@ -107,12 +106,12 @@ where
 
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
-pub struct SimpleMarlinPCDVerifierKey<'a, G: AffineCurve, D: Digest + 'static>(
+pub struct SimpleMarlinPCDVerifierKey<'a, G: Curve, D: Digest + 'static>(
     pub &'a MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: AffineCurve, D: Digest> AsRef<DLogVerifierKey<G>>
+impl<'a, G: Curve, D: Digest> AsRef<DLogVerifierKey<G>>
     for SimpleMarlinPCDVerifierKey<'a, G, D>
 {
     fn as_ref(&self) -> &DLogVerifierKey<G> {
@@ -122,7 +121,7 @@ impl<'a, G: AffineCurve, D: Digest> AsRef<DLogVerifierKey<G>>
 
 impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
 where
-    G: AffineCurve,
+    G: Curve,
     D: Digest + 'static,
 {
     type PCDAccumulator = DLogItemAccumulator<G, D>;
@@ -177,9 +176,7 @@ where
 
         // Successfull verification: return current accumulator
         let acc = DLogItem::<G> {
-            g_final: DomainExtendedCommitment::<G, Commitment<G>>::new(vec![Commitment::<G> {
-                comm: verifier_state.final_comm_key.clone(),
-            }]),
+            g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
             xi_s: verifier_state.check_poly.clone(),
         };
 

@@ -313,7 +313,7 @@ mod test {
         },
         FieldBasedMerkleTreePrecomputedZeroConstants,
     };
-    use algebra::{fields::tweedle::Fr, Field};
+    use algebra::{Group, fields::tweedle::Fr};
 
     #[ignore]
     #[test]

@@ -1,17 +1,9 @@
 //! Test suite for PCD post processing (batch-verification, aggregation)
-use algebra::AffineCurve;
+use algebra::Curve;
 use digest::Digest;
 use poly_commit::{
-<<<<<<< HEAD
-    ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
     PCParameters,
-=======
-    ipa_pc::{
-        CommitterKey as DLogCommitterKey, InnerProductArgPC, UniversalParams,
-        VerifierKey as DLogVerifierKey,
-    },
-    PCUniversalParams, PolynomialCommitment,
->>>>>>> development
+    ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
 };
 
 pub mod final_darlin;
@@ -19,7 +11,7 @@ pub mod simple_marlin;
 
 #[allow(dead_code)]
 /// Extract DLogCommitterKey and DLogVerifierKey from Parameters struct
-pub fn get_keys<G1: AffineCurve, G2: AffineCurve, D: Digest>(
+pub fn get_keys<G1: Curve, G2: Curve, D: Digest>(
     params_g1: &Parameters<G1>,
     params_g2: &Parameters<G2>,
 ) -> (
@@ -48,14 +40,15 @@ mod test {
         },
     };
     use algebra::{
-        curves::tweedle::{dee::Affine as DeeAffine, dum::Affine as DumAffine},
+        Group,
+        curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
         serialize::test_canonical_serialize_deserialize,
         CanonicalDeserialize, CanonicalSerialize, SemanticallyValid, ToConstraintField,
         UniformRand,
     };
     use blake2::Blake2s;
     use marlin::VerifierKey as MarlinVerifierKey;
-    use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+    use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment, DomainExtendedPolynomialCommitment};
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
     use std::collections::HashSet;
@@ -74,21 +67,21 @@ mod test {
     }
 
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
-    fn test_accumulation<'a, G1: AffineCurve, G2: AffineCurve, D: Digest, R: RngCore>(
+    fn test_accumulation<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
+        vks: &mut [MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>],
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>]>,
+        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>]>,
         rng: &mut R,
     ) where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-            + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-            + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+            + ToConstraintField<<G2 as Group>::ScalarField>,
+        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+            + ToConstraintField<<G1 as Group>::ScalarField>,
     {
         // Accumulate PCDs
         let (proof_g1, proof_g2) =
@@ -223,19 +216,19 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: AffineCurve, G2: AffineCurve, D: Digest, R: RngCore>(
+    fn test_batch_verification<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>],
+        vks: &mut [MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>],
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1, InnerProductArgPC<G1, D>>]>,
+        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>]>,
         rng: &mut R,
     ) where
-        G1: AffineCurve<BaseField = <G2 as AffineCurve>::ScalarField>
-            + ToConstraintField<<G2 as AffineCurve>::ScalarField>,
-        G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
-            + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
+        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+            + ToConstraintField<<G2 as Group>::ScalarField>,
+        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+            + ToConstraintField<<G1 as Group>::ScalarField>,
     {
         // Batch Verify
         assert!(batch_verify_proofs::<G1, G2, D, R>(
@@ -332,8 +325,8 @@ mod test {
         }
     }
 
-    type TestIPAPCDee = InnerProductArgPC<DeeAffine, Blake2s>;
-    type TestIPAPCDum = InnerProductArgPC<DumAffine, Blake2s>;
+    type TestIPAPCDee = DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
+    type TestIPAPCDum = DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
 
     #[test]
     fn test_simple_marlin_proof_aggregator() {
@@ -354,11 +347,7 @@ mod test {
         //Generate fake params
         let mut params_g1_fake =
             TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-<<<<<<< HEAD
         params_g1_fake.ut_copy_params(&params_g1);
-=======
-        params_g1_fake.copy_params(&params_g1);
->>>>>>> development
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -413,7 +402,7 @@ mod test {
         let mut simple_marlin_pcds = pcds
             .into_iter()
             .map(|simple_marlin_pcd| {
-                GeneralPCD::SimpleMarlin::<DeeAffine, DumAffine, Blake2s>(simple_marlin_pcd)
+                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, Blake2s>(simple_marlin_pcd)
             })
             .collect::<Vec<_>>();
 
@@ -423,7 +412,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeAffine, DumAffine, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
             simple_marlin_pcds.clone().as_mut_slice(),
             simple_marlin_vks.clone().as_mut_slice(),
             &committer_key_g1,
@@ -436,7 +425,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeAffine, DumAffine, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
             simple_marlin_pcds.as_mut_slice(),
             simple_marlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -533,7 +522,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeAffine, DumAffine, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
             final_darlin_pcds.clone().as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &committer_key_g1,
@@ -546,7 +535,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeAffine, DumAffine, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
             final_darlin_pcds.as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -658,11 +647,7 @@ mod test {
 
                 let mut iteration_pcds = iteration_pcds
                     .into_iter()
-<<<<<<< HEAD
-                    .map(|pcd| GeneralPCD::FinalDarlin(pcd))
-=======
                     .map(GeneralPCD::FinalDarlin)
->>>>>>> development
                     .collect::<Vec<_>>();
 
                 pcds.append(&mut iteration_pcds);
@@ -688,7 +673,7 @@ mod test {
         }
 
         println!("Test accumulation");
-        test_accumulation::<DeeAffine, DumAffine, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
             pcds.clone().as_mut_slice(),
             vks.as_mut_slice(),
             &committer_key_g1,
@@ -701,7 +686,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeAffine, DumAffine, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
             pcds.as_mut_slice(),
             vks.as_mut_slice(),
             &verifier_key_g1,

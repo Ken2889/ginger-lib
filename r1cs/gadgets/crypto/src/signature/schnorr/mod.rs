@@ -1,4 +1,4 @@
-use algebra::{groups::Group, Field};
+use algebra::{Field, Curve};
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::prelude::*;
 
@@ -13,14 +13,14 @@ pub mod field_based_schnorr;
 
 // TODO: Can we declare generator as a constant instead of a gadget ? Are there any applications
 //       in which having it as gadget is useful ?
-pub struct SchnorrSigGadgetParameters<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
+pub struct SchnorrSigGadgetParameters<G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
 {
     generator: GG,
     _group: PhantomData<*const G>,
     _engine: PhantomData<*const ConstraintF>,
 }
 
-impl<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> Clone
+impl<G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> Clone
     for SchnorrSigGadgetParameters<G, ConstraintF, GG>
 {
     fn clone(&self) -> Self {
@@ -34,12 +34,12 @@ impl<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> Clone
 
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
-    Clone(bound = "G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
-    PartialEq(bound = "G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
-    Eq(bound = "G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>")
+    Debug(bound = "G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
+    Clone(bound = "G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
+    PartialEq(bound = "G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"),
+    Eq(bound = "G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>")
 )]
-pub struct SchnorrSigGadgetPk<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> {
+pub struct SchnorrSigGadgetPk<G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> {
     pub_key: GG,
     #[doc(hidden)]
     _group: PhantomData<*const G>,
@@ -47,7 +47,7 @@ pub struct SchnorrSigGadgetPk<G: Group, ConstraintF: Field, GG: GroupGadget<G, C
     _engine: PhantomData<*const ConstraintF>,
 }
 
-pub struct SchnorrRandomizePkGadget<G: Group, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> {
+pub struct SchnorrRandomizePkGadget<G: Curve, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>> {
     #[doc(hidden)]
     _group: PhantomData<*const G>,
     #[doc(hidden)]
@@ -59,7 +59,7 @@ pub struct SchnorrRandomizePkGadget<G: Group, ConstraintF: Field, GG: GroupGadge
 impl<G, GG, D, ConstraintF> SigRandomizePkGadget<SchnorrSignature<G, D>, ConstraintF>
     for SchnorrRandomizePkGadget<G, ConstraintF, GG>
 where
-    G: Group,
+    G: Curve,
     GG: GroupGadget<G, ConstraintF>,
     D: Digest + Send + Sync,
     ConstraintF: Field,
@@ -96,7 +96,7 @@ where
 impl<G, ConstraintF, GG, D> AllocGadget<SchnorrSigParameters<G, D>, ConstraintF>
     for SchnorrSigGadgetParameters<G, ConstraintF, GG>
 where
-    G: Group,
+    G: Curve,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
     D: Digest,
@@ -134,7 +134,7 @@ where
 impl<G, ConstraintF, GG> AllocGadget<SchnorrPublicKey<G>, ConstraintF>
     for SchnorrSigGadgetPk<G, ConstraintF, GG>
 where
-    G: Group,
+    G: Curve,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
 {
@@ -170,7 +170,7 @@ where
 
 impl<G, ConstraintF, GG> EqGadget<ConstraintF> for SchnorrSigGadgetPk<G, ConstraintF, GG>
 where
-    G: Group,
+    G: Curve,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
 {
@@ -208,7 +208,7 @@ where
 
 impl<G, ConstraintF, GG> ToBytesGadget<ConstraintF> for SchnorrSigGadgetPk<G, ConstraintF, GG>
 where
-    G: Group,
+    G: Curve,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
 {

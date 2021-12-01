@@ -231,187 +231,189 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use std::rc::Rc;
-
-    use super::*;
-    use crate::crh::{
-        injective_map::{PedersenCRHCompressorGadget, TECompressorGadget},
-        FixedLengthCRHGadget,
-    };
-    use algebra::{curves::jubjub::JubJubAffine as JubJub, fields::jubjub::fq::Fq};
-    use primitives::crh::{
-        injective_map::{PedersenCRHCompressor, TECompressor},
-        pedersen::PedersenWindow,
-        FixedLengthCRH,
-    };
-    use r1cs_core::ConstraintSystem;
-    use r1cs_std::{
-        instantiated::jubjub::JubJubGadget, test_constraint_system::TestConstraintSystem,
-    };
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
-
-    #[derive(Clone)]
-    pub(super) struct Window4x128;
-    impl PedersenWindow for Window4x128 {
-        const WINDOW_SIZE: usize = 4;
-        const NUM_WINDOWS: usize = 128;
-    }
-
-    type H = PedersenCRHCompressor<JubJub, TECompressor, Window4x128>;
-    type HG =
-        PedersenCRHCompressorGadget<JubJub, TECompressor, Fq, JubJubGadget, TECompressorGadget>;
-
-    struct JubJubMerkleTreeParams;
-
-    impl MerkleTreeConfig for JubJubMerkleTreeParams {
-        const HEIGHT: usize = 3;
-        type H = H;
-    }
-
-    type JubJubMerkleTree = MerkleHashTree<JubJubMerkleTreeParams>;
-
-    fn generate_merkle_tree(leaves: &[[u8; 8]], use_bad_root: bool) -> bool {
-        let mut rng = XorShiftRng::seed_from_u64(9174123u64);
-
-        let crh_parameters = Rc::new(H::setup(&mut rng).unwrap());
-        let tree = JubJubMerkleTree::new(crh_parameters.clone(), leaves).unwrap();
-        let root = tree.root().unwrap();
-        let mut satisfied = true;
-        for (i, leaf) in leaves.iter().enumerate() {
-            let mut cs = TestConstraintSystem::<Fq>::new();
-            let proof = tree.generate_proof(i, &leaf).unwrap();
-            assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
-
-            // Allocate Merkle Tree Root
-            let root = <HG as FixedLengthCRHGadget<H, _>>::OutputGadget::alloc(
-                &mut cs.ns(|| format!("new_digest_{}", i)),
-                || {
-                    if use_bad_root {
-                        Ok(<H as FixedLengthCRH>::Output::default())
-                    } else {
-                        Ok(root)
-                    }
-                },
-            )
-            .unwrap();
-
-            let constraints_from_digest = cs.num_constraints();
-            println!("constraints from digest: {}", constraints_from_digest);
-
-            // Allocate Parameters for CRH
-            let crh_parameters = <HG as FixedLengthCRHGadget<H, Fq>>::ParametersGadget::alloc(
-                &mut cs.ns(|| format!("new_parameters_{}", i)),
-                || Ok(crh_parameters.clone()),
-            )
-            .unwrap();
-
-            let constraints_from_parameters = cs.num_constraints() - constraints_from_digest;
-            println!(
-                "constraints from parameters: {}",
-                constraints_from_parameters
-            );
-
-            // Allocate Leaf
-            let leaf_g = UInt8::constant_vec(leaf);
-
-            let constraints_from_leaf =
-                cs.num_constraints() - constraints_from_parameters - constraints_from_digest;
-            println!("constraints from leaf: {}", constraints_from_leaf);
-
-            // Allocate Merkle Tree Path
-            let cw = MerkleTreePathGadget::<_, HG, _>::alloc(
-                &mut cs.ns(|| format!("new_witness_{}", i)),
-                || Ok(proof),
-            )
-            .unwrap();
-
-            let constraints_from_path = cs.num_constraints()
-                - constraints_from_parameters
-                - constraints_from_digest
-                - constraints_from_leaf;
-            println!("constraints from path: {}", constraints_from_path);
-            let leaf_g: &[UInt8] = leaf_g.as_slice();
-            cw.check_membership(
-                &mut cs.ns(|| format!("new_witness_check_{}", i)),
-                &crh_parameters,
-                &root,
-                &leaf_g,
-            )
-            .unwrap();
-            if !cs.is_satisfied() {
-                satisfied = false;
-                println!(
-                    "Unsatisfied constraint: {}",
-                    cs.which_is_unsatisfied().unwrap()
-                );
-            }
-            let setup_constraints = constraints_from_leaf
-                + constraints_from_digest
-                + constraints_from_parameters
-                + constraints_from_path;
-            println!(
-                "number of constraints: {}",
-                cs.num_constraints() - setup_constraints
-            );
-        }
-
-        satisfied
-    }
-
-    #[test]
-    fn good_root_test() {
-        //Test #leaves << 2^HEIGHT
-        let mut leaves = Vec::new();
-        for i in 0..2u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(generate_merkle_tree(&leaves, false));
-
-        //Test #leaves = 2^HEIGHT - 1
-        let mut leaves = Vec::new();
-        for i in 0..4u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(generate_merkle_tree(&leaves, false));
-
-        //Test #leaves = 2^HEIGHT
-        let mut leaves = Vec::new();
-        for i in 0..8u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(generate_merkle_tree(&leaves, false));
-    }
-
-    #[test]
-    fn bad_root_test() {
-        //Test #leaves << 2^HEIGHT
-        let mut leaves = Vec::new();
-        for i in 0..2u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(!generate_merkle_tree(&leaves, true));
-
-        //Test #leaves = 2^HEIGHT - 1
-        let mut leaves = Vec::new();
-        for i in 0..4u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(!generate_merkle_tree(&leaves, true));
-
-        //Test #leaves = 2^HEIGHT
-        let mut leaves = Vec::new();
-        for i in 0..8u8 {
-            let input = [i; 8];
-            leaves.push(input);
-        }
-        assert!(!generate_merkle_tree(&leaves, true));
-    }
-}
+// TODO: no curves for TE representation
+//
+// #[cfg(test)]
+// mod test {
+//     use std::rc::Rc;
+//
+//     use super::*;
+//     use crate::crh::{
+//         injective_map::{PedersenCRHCompressorGadget, TECompressorGadget},
+//         FixedLengthCRHGadget,
+//     };
+//     use algebra::{curves::tweedle::dee::DeeJacobian, fields::tweedle::Fq};
+//     use primitives::crh::{
+//         injective_map::{PedersenCRHCompressor, TECompressor},
+//         pedersen::PedersenWindow,
+//         FixedLengthCRH,
+//     };
+//     use r1cs_core::ConstraintSystem;
+//     use r1cs_std::{
+//         instantiated::tweedle::TweedleDeeGadget, test_constraint_system::TestConstraintSystem,
+//     };
+//     use rand::SeedableRng;
+//     use rand_xorshift::XorShiftRng;
+//
+//     #[derive(Clone)]
+//     pub(super) struct Window4x128;
+//     impl PedersenWindow for Window4x128 {
+//         const WINDOW_SIZE: usize = 4;
+//         const NUM_WINDOWS: usize = 128;
+//     }
+//
+//     type H = PedersenCRHCompressor<DeeJacobian, TECompressor, Window4x128>;
+//     type HG =
+//         PedersenCRHCompressorGadget<DeeJacobian, TECompressor, Fq, TweedleDeeGadget, TECompressorGadget>;
+//
+//     struct DeeJacobianMerkleTreeParams;
+//
+//     impl MerkleTreeConfig for DeeJacobianMerkleTreeParams {
+//         const HEIGHT: usize = 3;
+//         type H = H;
+//     }
+//
+//     type DeeJacobianMerkleTree = MerkleHashTree<DeeJacobianMerkleTreeParams>;
+//
+//     fn generate_merkle_tree(leaves: &[[u8; 8]], use_bad_root: bool) -> bool {
+//         let mut rng = XorShiftRng::seed_from_u64(9174123u64);
+//
+//         let crh_parameters = Rc::new(H::setup(&mut rng).unwrap());
+//         let tree = DeeJacobianMerkleTree::new(crh_parameters.clone(), leaves).unwrap();
+//         let root = tree.root().unwrap();
+//         let mut satisfied = true;
+//         for (i, leaf) in leaves.iter().enumerate() {
+//             let mut cs = TestConstraintSystem::<Fq>::new();
+//             let proof = tree.generate_proof(i, &leaf).unwrap();
+//             assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
+//
+//             // Allocate Merkle Tree Root
+//             let root = <HG as FixedLengthCRHGadget<H, _>>::OutputGadget::alloc(
+//                 &mut cs.ns(|| format!("new_digest_{}", i)),
+//                 || {
+//                     if use_bad_root {
+//                         Ok(<H as FixedLengthCRH>::Output::default())
+//                     } else {
+//                         Ok(root)
+//                     }
+//                 },
+//             )
+//             .unwrap();
+//
+//             let constraints_from_digest = cs.num_constraints();
+//             println!("constraints from digest: {}", constraints_from_digest);
+//
+//             // Allocate Parameters for CRH
+//             let crh_parameters = <HG as FixedLengthCRHGadget<H, Fq>>::ParametersGadget::alloc(
+//                 &mut cs.ns(|| format!("new_parameters_{}", i)),
+//                 || Ok(crh_parameters.clone()),
+//             )
+//             .unwrap();
+//
+//             let constraints_from_parameters = cs.num_constraints() - constraints_from_digest;
+//             println!(
+//                 "constraints from parameters: {}",
+//                 constraints_from_parameters
+//             );
+//
+//             // Allocate Leaf
+//             let leaf_g = UInt8::constant_vec(leaf);
+//
+//             let constraints_from_leaf =
+//                 cs.num_constraints() - constraints_from_parameters - constraints_from_digest;
+//             println!("constraints from leaf: {}", constraints_from_leaf);
+//
+//             // Allocate Merkle Tree Path
+//             let cw = MerkleTreePathGadget::<_, HG, _>::alloc(
+//                 &mut cs.ns(|| format!("new_witness_{}", i)),
+//                 || Ok(proof),
+//             )
+//             .unwrap();
+//
+//             let constraints_from_path = cs.num_constraints()
+//                 - constraints_from_parameters
+//                 - constraints_from_digest
+//                 - constraints_from_leaf;
+//             println!("constraints from path: {}", constraints_from_path);
+//             let leaf_g: &[UInt8] = leaf_g.as_slice();
+//             cw.check_membership(
+//                 &mut cs.ns(|| format!("new_witness_check_{}", i)),
+//                 &crh_parameters,
+//                 &root,
+//                 &leaf_g,
+//             )
+//             .unwrap();
+//             if !cs.is_satisfied() {
+//                 satisfied = false;
+//                 println!(
+//                     "Unsatisfied constraint: {}",
+//                     cs.which_is_unsatisfied().unwrap()
+//                 );
+//             }
+//             let setup_constraints = constraints_from_leaf
+//                 + constraints_from_digest
+//                 + constraints_from_parameters
+//                 + constraints_from_path;
+//             println!(
+//                 "number of constraints: {}",
+//                 cs.num_constraints() - setup_constraints
+//             );
+//         }
+//
+//         satisfied
+//     }
+//
+//     #[test]
+//     fn good_root_test() {
+//         //Test #leaves << 2^HEIGHT
+//         let mut leaves = Vec::new();
+//         for i in 0..2u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(generate_merkle_tree(&leaves, false));
+//
+//         //Test #leaves = 2^HEIGHT - 1
+//         let mut leaves = Vec::new();
+//         for i in 0..4u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(generate_merkle_tree(&leaves, false));
+//
+//         //Test #leaves = 2^HEIGHT
+//         let mut leaves = Vec::new();
+//         for i in 0..8u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(generate_merkle_tree(&leaves, false));
+//     }
+//
+//     #[test]
+//     fn bad_root_test() {
+//         //Test #leaves << 2^HEIGHT
+//         let mut leaves = Vec::new();
+//         for i in 0..2u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(!generate_merkle_tree(&leaves, true));
+//
+//         //Test #leaves = 2^HEIGHT - 1
+//         let mut leaves = Vec::new();
+//         for i in 0..4u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(!generate_merkle_tree(&leaves, true));
+//
+//         //Test #leaves = 2^HEIGHT
+//         let mut leaves = Vec::new();
+//         for i in 0..8u8 {
+//             let input = [i; 8];
+//             leaves.push(input);
+//         }
+//         assert!(!generate_merkle_tree(&leaves, true));
+//     }
+// }

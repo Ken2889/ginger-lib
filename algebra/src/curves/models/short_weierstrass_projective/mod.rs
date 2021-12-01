@@ -552,12 +552,15 @@ impl<P: Parameters> Curve for Projective<P> {
         if self.is_zero() {
             return *self;
         }
+        Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
+    }
+
+    fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self {
         let mut res = Self::zero();
-        let self_affine = self.into_affine().unwrap();
         for i in bits {
             res.double_in_place();
             if i {
-                res.add_affine_assign(&self_affine);
+                res.add_affine_assign(&affine);
             }
         }
         res

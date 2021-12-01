@@ -1,6 +1,6 @@
 use crate::{CryptoError, Error};
 use algebra::{
-    bytes::ToBytes, groups::Group, BitIterator, Field, FpParameters, PrimeField, ToConstraintField,
+    bytes::ToBytes, curves::Curve, BitIterator, Field, FpParameters, PrimeField, ToConstraintField,
     UniformRand,
 };
 
@@ -19,43 +19,43 @@ use crate::crh::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(bound(deserialize = "G: Group"))]
-pub struct PedersenParameters<G: Group> {
+#[serde(bound(deserialize = "G: Curve"))]
+pub struct PedersenParameters<G: Curve> {
     pub randomness_generator: Vec<G>,
     pub generators: Vec<Vec<G>>,
 }
 
-pub struct PedersenCommitment<G: Group, W: PedersenWindow> {
+pub struct PedersenCommitment<G: Curve, W: PedersenWindow> {
     group: PhantomData<G>,
     window: PhantomData<W>,
 }
 
 #[derive(Derivative)]
 #[derivative(
-    Clone(bound = "G: Group"),
-    PartialEq(bound = "G: Group"),
-    Debug(bound = "G: Group"),
-    Eq(bound = "G: Group"),
-    Default(bound = "G: Group")
+    Clone(bound = "G: Curve"),
+    PartialEq(bound = "G: Curve"),
+    Debug(bound = "G: Curve"),
+    Eq(bound = "G: Curve"),
+    Default(bound = "G: Curve")
 )]
 #[derive(Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct PedersenRandomness<G: Group>(pub G::ScalarField);
+pub struct PedersenRandomness<G: Curve>(pub G::ScalarField);
 
-impl<G: Group> UniformRand for PedersenRandomness<G> {
+impl<G: Curve> UniformRand for PedersenRandomness<G> {
     #[inline]
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
         PedersenRandomness(UniformRand::rand(rng))
     }
 }
 
-impl<G: Group> ToBytes for PedersenRandomness<G> {
+impl<G: Curve> ToBytes for PedersenRandomness<G> {
     fn write<W: Write>(&self, writer: W) -> IoResult<()> {
         self.0.write(writer)
     }
 }
 
-impl<G: Group, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> {
+impl<G: Curve, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> {
     type Parameters = PedersenParameters<G>;
     type Randomness = PedersenRandomness<G>;
     type Output = G;
@@ -138,7 +138,7 @@ impl<G: Group, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> 
     }
 }
 
-impl<ConstraintF: Field, G: Group + ToConstraintField<ConstraintF>> ToConstraintField<ConstraintF>
+impl<ConstraintF: Field, G: Curve + ToConstraintField<ConstraintF>> ToConstraintField<ConstraintF>
     for PedersenParameters<G>
 {
     #[inline]

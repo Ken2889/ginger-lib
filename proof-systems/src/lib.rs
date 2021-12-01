@@ -26,9 +26,3 @@ extern crate derivative;
 
 #[cfg(feature = "darlin")]
 pub mod darlin;
-
-#[cfg(feature = "groth16")]
-pub mod groth16;
-
-#[cfg(feature = "gm17")]
-pub mod gm17;

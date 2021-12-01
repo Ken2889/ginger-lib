@@ -1,7 +1,7 @@
 use crate::crh::FieldBasedHash;
 use crate::merkle_tree::*;
 use crate::Error;
-use algebra::Field;
+use algebra::Group;
 
 /// Merkle Tree whose leaves are field elements, best with hash functions
 /// that works with field elements, such as Poseidon. This implementation
@@ -226,18 +226,18 @@ pub(crate) fn hash_inner_node<H: FieldBasedHash>(
 }
 
 pub(crate) fn hash_empty<H: FieldBasedHash>() -> Result<H::Data, Error> {
-    Ok(<H::Data as Field>::zero())
+    Ok(<H::Data as Group>::zero())
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
-        crh::parameters::{MNT4BatchPoseidonHash, MNT4PoseidonHash},
+        crh::parameters::{TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash},
         merkle_tree::field_based_mht::*,
         FieldBasedHash,
     };
     use algebra::{
-        fields::mnt4753::Fr as MNT4753Fr, to_bytes, Field, FromBytes, ToBytes, UniformRand,
+        fields::tweedle::Fr as Fr, to_bytes, Group, FromBytes, ToBytes, UniformRand,
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -245,22 +245,22 @@ mod test {
     const TEST_HEIGHT: usize = 5;
 
     #[derive(Debug, Clone)]
-    struct MNT4753FieldBasedMerkleTreeParams;
-    impl FieldBasedMerkleTreeParameters for MNT4753FieldBasedMerkleTreeParams {
-        type Data = MNT4753Fr;
-        type H = MNT4PoseidonHash;
+    struct TweedleDeeFieldBasedMerkleTreeParams;
+    impl FieldBasedMerkleTreeParameters for TweedleDeeFieldBasedMerkleTreeParams {
+        type Data = Fr;
+        type H = TweedleFrPoseidonHash;
         const MERKLE_ARITY: usize = 2;
         const ZERO_NODE_CST: Option<
             FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>,
-        > = Some(MNT4753_MHT_POSEIDON_PARAMETERS);
+        > = Some(TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS);
     }
 
-    impl BatchFieldBasedMerkleTreeParameters for MNT4753FieldBasedMerkleTreeParams {
-        type BH = MNT4BatchPoseidonHash;
+    impl BatchFieldBasedMerkleTreeParameters for TweedleDeeFieldBasedMerkleTreeParams {
+        type BH = TweedleFrBatchPoseidonHash;
     }
 
-    type MNT4753FieldBasedMerkleTree = NaiveMerkleTree<MNT4753FieldBasedMerkleTreeParams>;
-    type MNT4PoseidonMHT = FieldBasedOptimizedMHT<MNT4753FieldBasedMerkleTreeParams>;
+    type TweedleDeeFieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
+    type TweedleDeePoseidonMHT = FieldBasedOptimizedMHT<TweedleDeeFieldBasedMerkleTreeParams>;
 
     fn generate_merkle_tree<P: FieldBasedMerkleTreeParameters>(leaves: &[P::Data], height: usize) {
         let mut tree = NaiveMerkleTree::<P>::new(height);
@@ -319,29 +319,29 @@ mod test {
         let mut leaves = Vec::new();
         for _ in 0..4 {
             leaves.push(
-                MNT4PoseidonHash::init_constant_length(1, None)
-                    .update(MNT4753Fr::rand(&mut rng))
+                TweedleFrPoseidonHash::init_constant_length(1, None)
+                    .update(Fr::rand(&mut rng))
                     .finalize()
                     .unwrap(),
             );
         }
-        generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
         //Test #leaves = 2^HEIGHT - 1
         let mut leaves = Vec::new();
         for _ in 0..16 {
-            let f = MNT4753Fr::rand(&mut rng);
+            let f = Fr::rand(&mut rng);
             leaves.push(f);
         }
-        generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
         //Test #leaves == 2^HEIGHT
         let mut leaves = Vec::new();
         for _ in 0..32 {
-            let f = MNT4753Fr::rand(&mut rng);
+            let f = Fr::rand(&mut rng);
             leaves.push(f);
         }
-        generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
     }
 
     fn bad_merkle_tree_verify<P: FieldBasedMerkleTreeParameters>(
@@ -350,7 +350,7 @@ mod test {
     ) {
         let mut tree = NaiveMerkleTree::<P>::new(height);
         tree.append(&leaves).unwrap();
-        let root = <P::Data as Field>::zero();
+        let root = <P::Data as Group>::zero();
         for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.generate_proof(i, leaf).unwrap();
             assert!(!proof.verify(tree.height(), &leaf, &root).unwrap());
@@ -387,56 +387,56 @@ mod test {
         let mut leaves = Vec::new();
         for _ in 0..4 {
             leaves.push(
-                MNT4PoseidonHash::init_constant_length(1, None)
-                    .update(MNT4753Fr::rand(&mut rng))
+                TweedleFrPoseidonHash::init_constant_length(1, None)
+                    .update(Fr::rand(&mut rng))
                     .finalize()
                     .unwrap(),
             );
         }
-        bad_merkle_tree_verify::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        bad_merkle_tree_verify::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
         //Test #leaves = 2^HEIGHT - 1
         let mut leaves = Vec::new();
         for _ in 0..16 {
-            let f = MNT4753Fr::rand(&mut rng);
+            let f = Fr::rand(&mut rng);
             leaves.push(f);
         }
-        bad_merkle_tree_verify::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        bad_merkle_tree_verify::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
         //Test #leaves == 2^HEIGHT
         let mut leaves = Vec::new();
         for _ in 0..32 {
-            let f = MNT4753Fr::rand(&mut rng);
+            let f = Fr::rand(&mut rng);
             leaves.push(f);
         }
-        bad_merkle_tree_verify::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+        bad_merkle_tree_verify::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
     }
 
     #[test]
-    fn compare_merkle_trees_mnt4() {
+    fn compare_merkle_trees_tweedle_dee() {
         let mut rng = XorShiftRng::seed_from_u64(9174123u64);
 
         let num_leaves = 30;
 
         let mut leaves = Vec::new();
         for _ in 0..num_leaves {
-            let f = MNT4753Fr::rand(&mut rng);
+            let f = Fr::rand(&mut rng);
             leaves.push(f);
         }
-        let mut tree = MNT4753FieldBasedMerkleTree::new(TEST_HEIGHT);
+        let mut tree = TweedleDeeFieldBasedMerkleTree::new(TEST_HEIGHT);
         tree.append(&leaves).unwrap();
         let root1 = tree.root().unwrap();
 
-        let mut tree = MNT4PoseidonMHT::init(TEST_HEIGHT, num_leaves).unwrap();
+        let mut tree = TweedleDeePoseidonMHT::init(TEST_HEIGHT, num_leaves).unwrap();
         let mut rng = XorShiftRng::seed_from_u64(9174123u64);
         for _ in 0..num_leaves {
-            tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
+            tree.append(Fr::rand(&mut rng)).unwrap();
         }
         tree.finalize_in_place().unwrap();
         assert_eq!(
             tree.root().unwrap(),
             root1,
-            "Outputs of the Merkle trees for MNT4 do not match."
+            "Outputs of the Merkle trees for Tweedle Dee do not match."
         );
     }
 
@@ -447,19 +447,19 @@ mod test {
         // HEIGHT > 1 with 0 or 1 leaves
         {
             // Generate empty Merkle Tree
-            let mut leaves: Vec<MNT4753Fr> = vec![];
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+            let mut leaves: Vec<Fr> = vec![];
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
             // Generate Merkle Tree with only 1 leaf
-            leaves.push(MNT4753Fr::rand(&mut rng));
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
+            leaves.push(Fr::rand(&mut rng));
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, TEST_HEIGHT);
 
             // Generate Merkle Tree with more leaves with respect to the specified height
             for _ in 0..1 << TEST_HEIGHT {
-                leaves.push(MNT4753Fr::rand(&mut rng));
+                leaves.push(Fr::rand(&mut rng));
             }
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
-                MNT4753FieldBasedMerkleTreeParams,
+                TweedleDeeFieldBasedMerkleTreeParams,
             >(&leaves, TEST_HEIGHT))
             .is_err());
         }
@@ -467,38 +467,38 @@ mod test {
         // HEIGHT == 1
         {
             // Generate empty Merkle Tree
-            let mut leaves: Vec<MNT4753Fr> = vec![];
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, 1);
+            let mut leaves: Vec<Fr> = vec![];
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, 1);
 
             // Generate Merkle Tree with only 1 leaf
-            leaves.push(MNT4753Fr::rand(&mut rng));
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, 1);
+            leaves.push(Fr::rand(&mut rng));
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, 1);
 
             // Generate Merkle Tree with more leaves with respect to the specified height
             for _ in 0..1 << TEST_HEIGHT {
-                leaves.push(MNT4753Fr::rand(&mut rng));
+                leaves.push(Fr::rand(&mut rng));
             }
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
-                MNT4753FieldBasedMerkleTreeParams,
+                TweedleDeeFieldBasedMerkleTreeParams,
             >(&leaves, 1))
             .is_err());
         }
 
         // HEIGHT == 0
         {
-            let mut leaves: Vec<MNT4753Fr> = vec![];
+            let mut leaves: Vec<Fr> = vec![];
 
             // Generate Merkle Tree with only the root, but without passing any leaf
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, 0);
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, 0);
 
             // Generate Merkle Tree with only the root, and passing one leaf
-            leaves.push(MNT4753Fr::rand(&mut rng));
-            generate_merkle_tree::<MNT4753FieldBasedMerkleTreeParams>(&leaves, 0);
+            leaves.push(Fr::rand(&mut rng));
+            generate_merkle_tree::<TweedleDeeFieldBasedMerkleTreeParams>(&leaves, 0);
 
             // Generate Merkle Tree with only the root, passing more than one leaf. Assert error
-            leaves.push(MNT4753Fr::rand(&mut rng));
+            leaves.push(Fr::rand(&mut rng));
             assert!(std::panic::catch_unwind(|| generate_merkle_tree::<
-                MNT4753FieldBasedMerkleTreeParams,
+                TweedleDeeFieldBasedMerkleTreeParams,
             >(&leaves, 0))
             .is_err());
         }
