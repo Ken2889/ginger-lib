@@ -426,7 +426,10 @@ mod test {
     use crate::{
         bits::boolean::Boolean, eq::MultiEq, test_constraint_system::TestConstraintSystem,
     };
-    use algebra::fields::{bls12_381::Fr, Field};
+    use algebra::{
+        Group,
+        fields::{tweedle::Fr, Field}
+    };
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
@@ -591,9 +594,9 @@ mod test {
 
             // Flip a bit_gadget and see if the addition constraint still works
             if cs.get("addition/result bit 0/boolean").is_zero() {
-                cs.set("addition/result bit 0/boolean", Field::one());
+                cs.set("addition/result bit 0/boolean", Fr::one());
             } else {
-                cs.set("addition/result bit 0/boolean", Field::zero());
+                cs.set("addition/result bit 0/boolean", Fr::zero());
             }
 
             assert!(!cs.is_satisfied());

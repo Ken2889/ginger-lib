@@ -365,7 +365,10 @@ impl<ConstraintF: Field> EqGadget<ConstraintF> for UInt64 {
 mod test {
     use super::UInt64;
     use crate::{bits::boolean::Boolean, test_constraint_system::TestConstraintSystem};
-    use algebra::fields::{bls12_381::Fr, Field};
+    use algebra::{
+        Group,
+        fields::{tweedle::Fr, Field}
+    };
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;

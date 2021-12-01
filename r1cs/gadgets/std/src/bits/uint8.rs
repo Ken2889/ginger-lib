@@ -385,7 +385,10 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt8 {
 mod test {
     use super::UInt8;
     use crate::{boolean::AllocatedBit, prelude::*, test_constraint_system::TestConstraintSystem};
-    use algebra::fields::bls12_381::Fr;
+    use algebra::{
+        Group,
+        fields::tweedle::Fr
+    };
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;

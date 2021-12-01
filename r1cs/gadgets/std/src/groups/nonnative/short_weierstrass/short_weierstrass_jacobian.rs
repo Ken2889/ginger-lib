@@ -8,12 +8,8 @@ use algebra::{
     fields::{Field, PrimeField, SquareRootField, BitIterator},
     curves::{
         Curve,
-        models::{
-            SWModelParameters, EndoMulParameters,
-            short_weierstrass_jacobian::{
-                AffineRep as SWAffine, Jacobian as SWProjective,
-            }
-        }
+        SWModelParameters, EndoMulParameters,
+        short_weierstrass_jacobian::{AffineRep, Jacobian}
     },
 };
 
@@ -46,17 +42,18 @@ pub struct GroupAffineNonNativeGadget<
 > {
     pub x: NonNativeFieldGadget<SimulationF, ConstraintF>,
     pub y: NonNativeFieldGadget<SimulationF, ConstraintF>,
+    pub infinity: Boolean,
     _params: PhantomData<P>,
 }
 
-impl<P, ConstraintF, SimulationF> GroupGadget<SWProjective<P>, ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+impl<P, ConstraintF, SimulationF> GroupGadget<Jacobian<P>, ConstraintF>
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
-    type Value = SWProjective<P>;
+    type Value = Jacobian<P>;
     type Variable = ();
 
     fn add<CS: ConstraintSystem<ConstraintF>>(
@@ -68,13 +65,17 @@ where
     }
 
     #[inline]
-    fn zero<CS: ConstraintSystem<ConstraintF>>(mut _cs: CS) -> Result<Self, SynthesisError> {
-        Err(SynthesisError::Other("Affine cannot be zero".to_owned()))?
+    fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+        Ok(Self::new(
+            NonNativeFieldGadget::zero(cs.ns(|| "zero"))?,
+            NonNativeFieldGadget::one(cs.ns(|| "one"))?,
+            Boolean::constant(true),
+        ))
     }
 
     #[inline]
     fn is_zero<CS: ConstraintSystem<ConstraintF>>(&self, _: CS) -> Result<Boolean, SynthesisError> {
-        Ok(Boolean::Constant(false))
+        Ok(self.infinity)
     }
 
     #[inline]
@@ -134,7 +135,7 @@ where
             &old_y_plus_new_y,
         )?;
 
-        *self = Self::new(x, y);
+        *self = Self::new(x, y, Boolean::constant(false));
         Ok(())
     }
 
@@ -145,6 +146,7 @@ where
         Ok(Self::new(
             self.x.clone(),
             self.y.negate(cs.ns(|| "negate y"))?,
+            self.infinity,
         ))
     }
 
@@ -153,7 +155,7 @@ where
     fn add_constant<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        other: &SWProjective<P>,
+        other: &Jacobian<P>,
     ) -> Result<Self, SynthesisError> {
         // lambda = (B.y - A.y)/(B.x - A.x)
         // C.x = lambda^2 - A.x - B.x
@@ -173,7 +175,7 @@ where
         if other.is_zero() {
             return Err(SynthesisError::AssignmentMissing);
         }
-        let other = other.into_affine()?;
+        let other = other.into_affine().unwrap();
         let other_x = other.x;
         let other_y = other.y;
 
@@ -222,7 +224,7 @@ where
 
         lambda.mul_equals(cs.ns(|| ""), &x1_minus_x3, &y3_plus_y1)?;
 
-        Ok(Self::new(x_3, y_3))
+        Ok(Self::new(x_3, y_3, Boolean::Constant(false)))
     }
 
     /// [Hopwood]'s optimized scalar multiplication, adapted to the general case of no
@@ -245,7 +247,7 @@ where
                                    acc: &mut Self,
                                    t: &Self,
                                    safe_arithmetics: bool|
-         -> Result<(), SynthesisError> {
+                                   -> Result<(), SynthesisError> {
             // Q := k[i+1] ? T : −T
             let neg_y = t.y.negate(cs.ns(|| "neg y"))?;
             let selected_y = NonNativeFieldGadget::conditionally_select(
@@ -254,7 +256,7 @@ where
                 &t.y,
                 &neg_y,
             )?;
-            let q = Self::new(t.x.clone(), selected_y);
+            let q = Self::new(t.x.clone(), selected_y, t.infinity);
 
             // Acc := (Acc + Q) + Acc using double_and_add_internal at 5 constraints
             *acc = acc.double_and_add_internal(cs.ns(|| "double and add"), &q, safe_arithmetics)?;
@@ -354,7 +356,7 @@ where
     /// described in `fn check_mul_bits_fixed_base_inputs()`.
     #[inline]
     fn mul_bits_fixed_base<'a, CS: ConstraintSystem<ConstraintF>>(
-        base: &'a SWProjective<P>,
+        base: &'a Jacobian<P>,
         mut cs: CS,
         bits: &[Boolean],
     ) -> Result<Self, SynthesisError> {
@@ -379,7 +381,7 @@ where
         // way.
 
         // Init
-        let mut to_sub = SWProjective::<P>::zero();
+        let mut to_sub = Jacobian::<P>::zero();
 
         // T = 2^{-1} * base
         let mut t = {
@@ -415,7 +417,7 @@ where
             let mut table = [three_ti.neg(), ti.neg(), ti, three_ti];
 
             //Compute constants
-            SWProjective::batch_normalization(&mut table);
+            Jacobian::batch_normalization(&mut table);
             let x_coords = [table[0].x, table[1].x, table[2].x, table[3].x];
             let y_coords = [table[0].y, table[1].y, table[2].y, table[3].y];
             let precomp = Boolean::and(cs.ns(|| format!("b0 AND b1_{}", i)), &bits[0], &bits[1])?;
@@ -438,18 +440,18 @@ where
             match i {
                 // First chunk -> initialize acc
                 chunk if chunk == 0 => {
-                    acc = Self::new(x, y);
+                    acc = Self::new(x, y, Boolean::constant(false));
                 }
 
                 // We can use unsafe add, no exception occur
                 chunk if chunk < num_chunks => {
-                    let adder: Self = Self::new(x, y);
+                    let adder: Self = Self::new(x, y, Boolean::constant(false));
                     acc = acc.add_unsafe(cs.ns(|| format!("Add_{}", i)), &adder)?;
                 }
 
                 // Last chunk we must use safe add
                 _ => {
-                    let adder: Self = Self::new(x, y);
+                    let adder: Self = Self::new(x, y, Boolean::constant(false));
                     acc = acc.add(cs.ns(|| format!("Add_{}", i)), &adder)?;
                 }
             }
@@ -462,15 +464,22 @@ where
         Ok(acc)
     }
 
-    fn get_value(&self) -> Option<<Self as GroupGadget<SWProjective<P>, ConstraintF>>::Value> {
+    fn get_value(&self) -> Option<<Self as GroupGadget<Jacobian<P>, ConstraintF>>::Value> {
         match (
             self.x.get_value(),
             self.y.get_value(),
+            self.infinity.get_value(),
         ) {
-            (Some(x), Some(y)) => {
-                Some(SWProjective::from_affine(&SWAffine::<P>::new(x, y)))
+            (Some(x), Some(y), Some(infinity)) => {
+                Some(
+                    if infinity {
+                        Jacobian::<P>::zero()
+                    } else {
+                        Jacobian::<P>::from_affine(&AffineRep::<P>::new(x, y))
+                    }
+                )
             }
-            (None, None) => None,
+            (None, None, None) => None,
             _ => unreachable!(),
         }
     }
@@ -488,12 +497,12 @@ where
     }
 }
 
-impl<P, ConstraintF, SimulationF> EndoMulCurveGadget<SWProjective<P>, ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: EndoMulParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+impl<P, ConstraintF, SimulationF> EndoMulCurveGadget<Jacobian<P>, ConstraintF>
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: EndoMulParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     /// Given an arbitrary curve element `&self`, applies the endomorphism
     /// defined by `ENDO_COEFF`.
@@ -504,6 +513,7 @@ where
         Ok(Self::new(
             self.x.mul_by_constant(cs.ns(|| "endo x"), &P::ENDO_COEFF)?,
             self.y.clone(),
+            self.infinity,
         ))
     }
 
@@ -556,6 +566,7 @@ where
                     &self.y,
                     &self_y_neg,
                 )?,
+                self.infinity,
             );
 
             // The unsafe double and add, takes 5 constraints.
@@ -567,11 +578,11 @@ where
 }
 
 impl<P, ConstraintF, SimulationF> PartialEq
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y
@@ -579,19 +590,19 @@ where
 }
 
 impl<P, ConstraintF, SimulationF> Eq for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
 }
 
 impl<P, ConstraintF, SimulationF> ToBitsGadget<ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     fn to_bits<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -600,6 +611,7 @@ where
         let mut x_bits = self.x.to_bits(&mut cs.ns(|| "X Coordinate To Bits"))?;
         let y_bits = self.y.to_bits(&mut cs.ns(|| "Y Coordinate To Bits"))?;
         x_bits.extend_from_slice(&y_bits);
+        x_bits.push(self.infinity);
         Ok(x_bits)
     }
 
@@ -614,17 +626,18 @@ where
             .y
             .to_bits_strict(&mut cs.ns(|| "Y Coordinate To Bits"))?;
         x_bits.extend_from_slice(&y_bits);
+        x_bits.push(self.infinity);
 
         Ok(x_bits)
     }
 }
 
 impl<P, ConstraintF, SimulationF> ToBytesGadget<ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -632,7 +645,9 @@ where
     ) -> Result<Vec<UInt8>, SynthesisError> {
         let mut x_bytes = self.x.to_bytes(&mut cs.ns(|| "X Coordinate To Bytes"))?;
         let y_bytes = self.y.to_bytes(&mut cs.ns(|| "Y Coordinate To Bytes"))?;
+        let inf_bytes = self.infinity.to_bytes(&mut cs.ns(|| "Infinity to Bytes"))?;
         x_bytes.extend_from_slice(&y_bytes);
+        x_bytes.extend_from_slice(&inf_bytes);
         Ok(x_bytes)
     }
 
@@ -646,18 +661,20 @@ where
         let y_bytes = self
             .y
             .to_bytes_strict(&mut cs.ns(|| "Y Coordinate To Bytes"))?;
+        let inf_bytes = self.infinity.to_bytes(&mut cs.ns(|| "Infinity to Bytes"))?;
         x_bytes.extend_from_slice(&y_bytes);
+        x_bytes.extend_from_slice(&inf_bytes);
 
         Ok(x_bytes)
     }
 }
 
 impl<P, ConstraintF, SimulationF> EqGadget<ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -666,7 +683,17 @@ where
     ) -> Result<Boolean, SynthesisError> {
         let b0 = self.x.is_eq(cs.ns(|| "x"), &other.x)?;
         let b1 = self.y.is_eq(cs.ns(|| "y"), &other.y)?;
-        Boolean::and(cs.ns(|| "x AND y"), &b0, &b1)
+        let coordinates_equal = Boolean::and(cs.ns(|| "x AND y"), &b0, &b1)?;
+        let both_are_zero = Boolean::and(
+            cs.ns(|| "self.infinity AND other.infinity"),
+            &self.infinity,
+            &other.infinity,
+        )?;
+        Boolean::or(
+            cs.ns(|| "coordinates_equal OR both_are_zero"),
+            &coordinates_equal,
+            &both_are_zero,
+        )
     }
 
     #[inline]
@@ -698,26 +725,28 @@ where
             &is_equal,
             should_enforce,
         )?
-        .enforce_equal(
-            cs.ns(|| "is_equal AND should_enforce == false"),
-            &Boolean::Constant(false),
-        )
+            .enforce_equal(
+                cs.ns(|| "is_equal AND should_enforce == false"),
+                &Boolean::Constant(false),
+            )
     }
 }
 
 impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     pub fn new(
         x: NonNativeFieldGadget<SimulationF, ConstraintF>,
         y: NonNativeFieldGadget<SimulationF, ConstraintF>,
+        infinity: Boolean,
     ) -> Self {
         Self {
             x,
             y,
+            infinity,
             _params: PhantomData,
         }
     }
@@ -791,7 +820,7 @@ where
         let x1_minus_x3 = self.x.sub(cs.ns(|| "x1 - x3"), &x_3)?;
         lambda.mul_equals(cs.ns(|| ""), &x1_minus_x3, &y3_plus_y1)?;
 
-        Ok(Self::new(x_3, y_3))
+        Ok(Self::new(x_3, y_3, Boolean::Constant(false)))
     }
 
     #[inline]
@@ -927,7 +956,7 @@ where
         let x1_minus_x4 = self.x.sub(cs.ns(|| "x1 - x4"), &x_4)?;
         lambda_2.mul_equals(cs.ns(|| ""), &x1_minus_x4, &y4_plus_y1)?;
 
-        Ok(Self::new(x_4, y_4))
+        Ok(Self::new(x_4, y_4, Boolean::Constant(false)))
     }
 
     #[inline]
@@ -956,11 +985,11 @@ where
 }
 
 impl<P, ConstraintF, SimulationF> CondSelectGadget<ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
     fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
@@ -981,8 +1010,14 @@ where
             &first.y,
             &second.y,
         )?;
+        let infinity = Boolean::conditionally_select(
+            &mut cs.ns(|| "infinity"),
+            cond,
+            &first.infinity,
+            &second.infinity,
+        )?;
 
-        Ok(Self::new(x, y))
+        Ok(Self::new(x, y, infinity))
     }
 
     fn cost() -> usize {
@@ -991,56 +1026,69 @@ where
     }
 }
 
-impl<P, ConstraintF, SimulationF> ConstantGadget<SWProjective<P>, ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+impl<P, ConstraintF, SimulationF> ConstantGadget<Jacobian<P>, ConstraintF>
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &SWProjective<P>) -> Self {
-        // TODO: should be wrapper by error handling
-        let value = value.into_affine().unwrap();
-        let x = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode x"), &value.x);
-        let y = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode y"), &value.y);
-
-        Self::new(x, y)
+    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &Jacobian<P>) -> Self {
+        if value.is_zero() {
+            Self::zero(cs).unwrap()
+        } else {
+            let value = value.into_affine().unwrap();
+            let x = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode x"), &value.x);
+            let y = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode y"), &value.y);
+            let infinity = Boolean::constant(false);
+            Self::new(x, y, infinity)
+        }
     }
 
-    fn get_constant(&self) -> SWProjective<P> {
-        let value_proj = SWProjective::from_affine(&SWAffine::<P>::new(
-            self.x.get_value().unwrap(),
-            self.y.get_value().unwrap(),
-        ));
+    fn get_constant(&self) -> Jacobian<P> {
+        let value_proj = if self.infinity.get_value().unwrap() {
+            Jacobian::<P>::zero()
+        } else {
+            Jacobian::<P>::from_affine(&AffineRep::<P>::new(
+                self.x.get_value().unwrap(),
+                self.y.get_value().unwrap(),
+            ))
+        };
         let x = value_proj.x;
         let y = value_proj.y;
         let z = value_proj.z;
-        SWProjective::<P>::new(x, y, z)
+        Jacobian::<P>::new(x, y, z)
     }
 }
 
-impl<P, ConstraintF, SimulationF> AllocGadget<SWProjective<P>, ConstraintF>
-    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-where
-    P: SWModelParameters<BaseField = SimulationF>,
-    ConstraintF: PrimeField,
-    SimulationF: PrimeField + SquareRootField,
+impl<P, ConstraintF, SimulationF> AllocGadget<Jacobian<P>, ConstraintF>
+for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+    where
+        P: SWModelParameters<BaseField = SimulationF>,
+        ConstraintF: PrimeField,
+        SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
     fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<Jacobian<P>>,
     {
-        let (x, y) = match value_gen() {
+        let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine()?;
-                (Ok(ge.x), Ok(ge.y))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
+                Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
             ),
@@ -1052,6 +1100,7 @@ where
 
         let x = NonNativeFieldGadget::alloc(&mut cs.ns(|| "x"), || x)?;
         let y = NonNativeFieldGadget::alloc(&mut cs.ns(|| "y"), || y)?;
+        let infinity = Boolean::alloc(&mut cs.ns(|| "infinity"), || infinity)?;
 
         // Check that y^2 = x^3 + ax +b
         // We do this by checking that y^2 - b = x * (x^2 +a)
@@ -1070,10 +1119,10 @@ where
         x2_plus_a_times_x.conditional_enforce_equal(
             cs.ns(|| "on curve check"),
             &y2_minus_b,
-            &Boolean::constant(true),
+            &infinity.not(),
         )?;
 
-        Ok(Self::new(x, y))
+        Ok(Self::new(x, y, infinity))
     }
 
     #[inline]
@@ -1081,16 +1130,22 @@ where
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<Jacobian<P>>,
     {
-        let (x, y) = match value_gen() {
+        let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine()?;
-                (Ok(ge.x), Ok(ge.y))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
+                Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
             ),
@@ -1098,8 +1153,9 @@ where
 
         let x = NonNativeFieldGadget::alloc(&mut cs.ns(|| "x"), || x)?;
         let y = NonNativeFieldGadget::alloc(&mut cs.ns(|| "y"), || y)?;
+        let infinity = Boolean::alloc(&mut cs.ns(|| "infinity"), || infinity)?;
 
-        Ok(Self::new(x, y))
+        Ok(Self::new(x, y, infinity))
     }
 
     #[inline]
@@ -1107,9 +1163,9 @@ where
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<Jacobian<P>>,
     {
         let alloc_and_prime_order_check =
             |mut cs: r1cs_core::Namespace<_, _>, value_gen: FN| -> Result<Self, SynthesisError> {
@@ -1184,16 +1240,22 @@ where
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-    where
-        FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<Jacobian<P>>,
     {
-        let (x, y) = match value_gen() {
+        let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine()?;
-                (Ok(ge.x), Ok(ge.y))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
+                Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
             ),
@@ -1201,7 +1263,8 @@ where
 
         let x = NonNativeFieldGadget::alloc_input(&mut cs.ns(|| "x"), || x)?;
         let y = NonNativeFieldGadget::alloc_input(&mut cs.ns(|| "y"), || y)?;
+        let infinity = Boolean::alloc_input(&mut cs.ns(|| "infinity"), || infinity)?;
 
-        Ok(Self::new(x, y))
+        Ok(Self::new(x, y, infinity))
     }
 }

@@ -4,7 +4,7 @@ use crate::groups::{
 };
 use algebra::{
     curves::secp256k1::Secp256k1Parameters,
-    fields::{bn_382::Fr as BN382Fr, secp256k1::Fq as secp256k1Fq},
+    fields::{tweedle::Fr as TweedleFr, secp256k1::Fq as secp256k1Fq},
 };
 
 macro_rules! nonnative_test_individual {
@@ -64,9 +64,9 @@ macro_rules! nonnative_group_test_unsafe_add {
 }
 
 nonnative_group_test_unsafe_add!(
-    Bn382Frsecp256k1Fq,
+    TweedleFrsecp256k1Fq,
     1,
     Secp256k1Parameters,
-    BN382Fr,
+    TweedleFr,
     secp256k1Fq
 );

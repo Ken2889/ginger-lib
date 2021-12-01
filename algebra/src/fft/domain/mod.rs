@@ -19,7 +19,7 @@ pub use self::basic_radix_2_domain::*;
 pub mod mixed_radix_2_domain;
 pub use self::mixed_radix_2_domain::*;
 
-#[cfg(all(test, feature = "bls12_381"))]
+#[cfg(all(test, feature = "tweedle"))]
 mod test;
 
 use crate::PrimeField;

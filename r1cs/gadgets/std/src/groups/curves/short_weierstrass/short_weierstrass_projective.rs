@@ -3,12 +3,8 @@ use algebra::{
     fields::{Field, PrimeField, BitIterator},
     curves::{
         Curve,
-        models::{
-            SWModelParameters, EndoMulParameters,
-            short_weierstrass_projective::{
-                AffineRep as SWAffine, Projective as SWProjective,
-            }
-        }
+        SWModelParameters, EndoMulParameters,
+        short_weierstrass_projective::{AffineRep, Projective}
     },
 };
 
@@ -305,14 +301,14 @@ where
 {
 }
 
-impl<P, ConstraintF, F> GroupGadget<SWProjective<P>, ConstraintF>
+impl<P, ConstraintF, F> GroupGadget<Projective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
     ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    type Value = SWProjective<P>;
+    type Value = Projective<P>;
     type Variable = (F::Variable, F::Variable);
 
     #[inline]
@@ -323,7 +319,13 @@ where
             self.infinity.get_value(),
         ) {
             (Some(x), Some(y), Some(infinity)) => {
-                Some(SWAffine::new(x, y, infinity).into_projective())
+                Some(
+                    if infinity {
+                        Projective::<P>::zero()
+                    } else {
+                        Projective::<P>::from_affine(&AffineRep::<P>::new(x, y))
+                    }
+                )
             }
             (None, None, None) => None,
             _ => unreachable!(),
@@ -365,7 +367,7 @@ where
     fn add_constant<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        other: &SWProjective<P>,
+        other: &Projective<P>,
     ) -> Result<Self, SynthesisError> {
         // lambda = (B.y - A.y)/(B.x - A.x)
         // C.x = lambda^2 - A.x - B.x
@@ -385,7 +387,7 @@ where
         if other.is_zero() {
             return Err(SynthesisError::AssignmentMissing);
         }
-        let other = other.into_affine();
+        let other = other.into_affine().unwrap();
         let other_x = other.x;
         let other_y = other.y;
 
@@ -710,7 +712,7 @@ where
     /// [Hopwood]: https://github.com/zcash/zcash/issues/3924
     #[inline]
     fn mul_bits_fixed_base<'a, CS: ConstraintSystem<ConstraintF>>(
-        base: &'a SWProjective<P>,
+        base: &'a Projective<P>,
         mut cs: CS,
         bits: &[Boolean],
     ) -> Result<Self, SynthesisError> {
@@ -735,7 +737,7 @@ where
         // way.
 
         // Init
-        let mut to_sub = SWProjective::<P>::zero();
+        let mut to_sub = Projective::<P>::zero();
 
         // T = 2^{-1} * base
         let mut t = {
@@ -771,7 +773,7 @@ where
             let mut table = [three_ti.neg(), ti.neg(), ti, three_ti];
 
             //Compute constants
-            SWProjective::batch_normalization(&mut table);
+            Projective::batch_normalization(&mut table);
             let x_coords = [table[0].x, table[1].x, table[2].x, table[3].x];
             let y_coords = [table[0].y, table[1].y, table[2].y, table[3].y];
             let precomp = Boolean::and(cs.ns(|| format!("b0 AND b1_{}", i)), &bits[0], &bits[1])?;
@@ -832,7 +834,7 @@ where
         CS: ConstraintSystem<ConstraintF>,
         I: Borrow<[Boolean]>,
         J: Borrow<[I]>,
-        B: Borrow<[SWProjective<P>]>,
+        B: Borrow<[Projective<P>]>,
     {
         const CHUNK_SIZE: usize = 3;
         let mut sw_result: Option<AffineGadget<P, ConstraintF, F>> = None;
@@ -875,7 +877,8 @@ where
                 if bits.len() != CHUNK_SIZE {
                     return Err(SynthesisError::Unsatisfiable);
                 }
-                let coords = coords.iter().map(|p| p.into_affine()).collect::<Vec<_>>();
+                // TODO: check if zero possible
+                let coords = coords.iter().map(|p| p.into_affine()).collect::<Result<Vec<_>, _>>()?;
                 let x_coeffs = coords.iter().map(|p| p.x).collect::<Vec<_>>();
                 let y_coeffs = coords.iter().map(|p| p.y).collect::<Vec<_>>();
                 let precomp = Boolean::and(
@@ -926,7 +929,7 @@ where
     }
 }
 
-impl<P, ConstraintF, F> EndoMulCurveGadget<SWProjective<P>, ConstraintF>
+impl<P, ConstraintF, F> EndoMulCurveGadget<Projective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: EndoMulParameters,
@@ -1099,7 +1102,7 @@ where
     }
 }
 
-impl<P, ConstraintF, F> AllocGadget<SWProjective<P>, ConstraintF>
+impl<P, ConstraintF, F> AllocGadget<Projective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
@@ -1113,12 +1116,17 @@ where
     ) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        T: Borrow<Projective<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine();
-                (Ok(ge.x), Ok(ge.y), Ok(ge.infinity))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
                 Err(SynthesisError::AssignmentMissing),
@@ -1161,12 +1169,17 @@ where
     ) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        T: Borrow<Projective<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine();
-                (Ok(ge.x), Ok(ge.y), Ok(ge.infinity))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
                 Err(SynthesisError::AssignmentMissing),
@@ -1189,7 +1202,7 @@ where
     ) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        T: Borrow<Projective<P>>,
     {
         let alloc_and_prime_order_check =
             |mut cs: r1cs_core::Namespace<_, _>, value_gen: FN| -> Result<Self, SynthesisError> {
@@ -1208,9 +1221,7 @@ where
                     let ge = Self::alloc(cs.ns(|| "Alloc checked"), || {
                         value_gen().map(|ge| {
                             ge.borrow()
-                                .into_affine()
-                                .mul_by_cofactor_inv()
-                                .into_projective()
+                                .scale_by_cofactor_inv()
                         })
                     })?;
                     let mut seen_one = false;
@@ -1270,12 +1281,17 @@ where
     ) -> Result<Self, SynthesisError>
     where
         FN: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<SWProjective<P>>,
+        T: Borrow<Projective<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
-                let ge = ge.borrow().into_affine();
-                (Ok(ge.x), Ok(ge.y), Ok(ge.infinity))
+                let ge = ge.borrow();
+                if ge.is_zero() {
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                } else {
+                    let ge = ge.into_affine().unwrap();
+                    (Ok(ge.x), Ok(ge.y), Ok(false))
+                }
             }
             _ => (
                 Err(SynthesisError::AssignmentMissing),
@@ -1311,33 +1327,38 @@ where
     }
 }
 
-impl<P, ConstraintF, F> ConstantGadget<SWProjective<P>, ConstraintF>
+impl<P, ConstraintF, F> ConstantGadget<Projective<P>, ConstraintF>
     for AffineGadget<P, ConstraintF, F>
 where
     P: SWModelParameters,
     ConstraintF: PrimeField,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &SWProjective<P>) -> Self {
-        let value = value.into_affine();
-        let x = F::from_value(cs.ns(|| "hardcode x"), &value.x);
-        let y = F::from_value(cs.ns(|| "hardcode y"), &value.y);
-        let infinity = Boolean::constant(value.infinity);
-
-        Self::new(x, y, infinity)
+    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &Projective<P>) -> Self {
+        if value.is_zero() {
+            Self::zero(cs).unwrap()
+        } else {
+            let value = value.into_affine().unwrap();
+            let x = F::from_value(cs.ns(|| "hardcode x"), &value.x);
+            let y = F::from_value(cs.ns(|| "hardcode y"), &value.y);
+            let infinity = Boolean::constant(false);
+            Self::new(x, y, infinity)
+        }
     }
 
-    fn get_constant(&self) -> SWProjective<P> {
-        let value_proj = SWAffine::<P>::new(
-            self.x.get_value().unwrap(),
-            self.y.get_value().unwrap(),
-            self.infinity.get_value().unwrap(),
-        )
-        .into_projective();
+    fn get_constant(&self) -> Projective<P> {
+        let value_proj = if self.infinity.get_value().unwrap() {
+            Projective::<P>::zero()
+        } else {
+            Projective::<P>::from_affine(&AffineRep::<P>::new(
+                self.x.get_value().unwrap(),
+                self.y.get_value().unwrap(),
+            ))
+        };
         let x = value_proj.x;
         let y = value_proj.y;
         let z = value_proj.z;
-        SWProjective::<P>::new(x, y, z)
+        Projective::<P>::new(x, y, z)
     }
 }
 

@@ -6,7 +6,7 @@ use crate::{
 };
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
-    io::{Read, Write, Result as IoResult},
+    io::{Read, Write, Error as IoError, ErrorKind, Result as IoResult},
     fmt::{Display, Formatter, Result as FmtResult},
 };
 use core::slice::Iter;
@@ -51,24 +51,17 @@ impl<G: Group> Default for GroupVec<G> {
 impl<G: Group> FromBytes for GroupVec<G> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
-        let len = u64::read(&mut reader)?;
-        let mut items = vec![];
-        for _ in 0..(len as usize) {
-            let item = G::read(&mut reader)?;
-            items.push(item)
-        }
-        Ok(GroupVec(items))
+        Ok(GroupVec(CanonicalDeserialize::deserialize(&mut reader)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        ))
     }
 }
 
 impl<G: Group> ToBytes for GroupVec<G> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        (self.0.len() as u64).write(&mut writer)?;
-        for item in self.0.iter() {
-            item.write(&mut writer)?;
-        }
-        Ok(())
+        CanonicalSerialize::serialize(&self.0, &mut writer)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
     }
 }
 

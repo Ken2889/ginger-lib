@@ -946,7 +946,7 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for Boolean {
 mod test {
     use super::{AllocatedBit, Boolean};
     use crate::{prelude::*, test_constraint_system::TestConstraintSystem};
-    use algebra::{fields::bls12_381::Fr, BitIterator, Field, PrimeField, ToBits, UniformRand};
+    use algebra::{fields::tweedle::Fr, BitIterator, Group, Field, PrimeField, ToBits, UniformRand};
     use r1cs_core::ConstraintSystem;
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
@@ -1066,8 +1066,8 @@ mod test {
                 assert_eq!(c.value.unwrap(), *a_val | *b_val);
 
                 assert!(cs.is_satisfied());
-                assert!(cs.get("a/boolean") == if *a_val { Field::one() } else { Field::zero() });
-                assert!(cs.get("b/boolean") == if *b_val { Field::one() } else { Field::zero() });
+                assert!(cs.get("a/boolean") == if *a_val { Fr::one() } else { Fr::zero() });
+                assert!(cs.get("b/boolean") == if *b_val { Fr::one() } else { Fr::zero() });
             }
         }
     }
@@ -1083,14 +1083,14 @@ mod test {
                 assert_eq!(c.value.unwrap(), *a_val & *b_val);
 
                 assert!(cs.is_satisfied());
-                assert!(cs.get("a/boolean") == if *a_val { Field::one() } else { Field::zero() });
-                assert!(cs.get("b/boolean") == if *b_val { Field::one() } else { Field::zero() });
+                assert!(cs.get("a/boolean") == if *a_val { Fr::one() } else { Fr::zero() });
+                assert!(cs.get("b/boolean") == if *b_val { Fr::one() } else { Fr::zero() });
                 assert!(
                     cs.get("and result")
                         == if *a_val & *b_val {
-                            Field::one()
+                            Fr::one()
                         } else {
-                            Field::zero()
+                            Fr::zero()
                         }
                 );
 
@@ -1098,9 +1098,9 @@ mod test {
                 cs.set(
                     "and result",
                     if *a_val & *b_val {
-                        Field::zero()
+                        Fr::zero()
                     } else {
-                        Field::one()
+                        Fr::one()
                     },
                 );
                 assert!(!cs.is_satisfied());
@@ -1119,14 +1119,14 @@ mod test {
                 assert_eq!(c.value.unwrap(), *a_val & !*b_val);
 
                 assert!(cs.is_satisfied());
-                assert!(cs.get("a/boolean") == if *a_val { Field::one() } else { Field::zero() });
-                assert!(cs.get("b/boolean") == if *b_val { Field::one() } else { Field::zero() });
+                assert!(cs.get("a/boolean") == if *a_val { Fr::one() } else { Fr::zero() });
+                assert!(cs.get("b/boolean") == if *b_val { Fr::one() } else { Fr::zero() });
                 assert!(
                     cs.get("and not result")
                         == if *a_val & !*b_val {
-                            Field::one()
+                            Fr::one()
                         } else {
-                            Field::zero()
+                            Fr::zero()
                         }
                 );
 
@@ -1134,9 +1134,9 @@ mod test {
                 cs.set(
                     "and not result",
                     if *a_val & !*b_val {
-                        Field::zero()
+                        Fr::zero()
                     } else {
-                        Field::one()
+                        Fr::one()
                     },
                 );
                 assert!(!cs.is_satisfied());
@@ -1155,14 +1155,14 @@ mod test {
                 assert_eq!(c.value.unwrap(), !*a_val & !*b_val);
 
                 assert!(cs.is_satisfied());
-                assert!(cs.get("a/boolean") == if *a_val { Field::one() } else { Field::zero() });
-                assert!(cs.get("b/boolean") == if *b_val { Field::one() } else { Field::zero() });
+                assert!(cs.get("a/boolean") == if *a_val { Fr::one() } else { Fr::zero() });
+                assert!(cs.get("b/boolean") == if *b_val { Fr::one() } else { Fr::zero() });
                 assert!(
                     cs.get("nor result")
                         == if !*a_val & !*b_val {
-                            Field::one()
+                            Fr::one()
                         } else {
-                            Field::zero()
+                            Fr::zero()
                         }
                 );
 
@@ -1170,9 +1170,9 @@ mod test {
                 cs.set(
                     "nor result",
                     if !*a_val & !*b_val {
-                        Field::zero()
+                        Fr::zero()
                     } else {
-                        Field::one()
+                        Fr::one()
                     },
                 );
                 assert!(!cs.is_satisfied());
@@ -1398,7 +1398,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1406,7 +1406,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1414,7 +1414,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1422,7 +1422,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
 
@@ -1433,7 +1433,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1441,7 +1441,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1449,7 +1449,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1457,7 +1457,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
 
@@ -1468,7 +1468,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1476,7 +1476,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1484,7 +1484,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1492,7 +1492,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
 
@@ -1503,7 +1503,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1511,7 +1511,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Not(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1519,7 +1519,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::one());
+                        assert!(cs.get("xor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1527,7 +1527,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("xor result") == Field::zero());
+                        assert!(cs.get("xor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
 
@@ -1902,7 +1902,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and result") == Field::one());
+                        assert!(cs.get("and result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -1910,7 +1910,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and result") == Field::zero());
+                        assert!(cs.get("and result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1918,7 +1918,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1926,7 +1926,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::one());
+                        assert!(cs.get("and not result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
 
@@ -1938,7 +1938,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and result") == Field::zero());
+                        assert!(cs.get("and result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1946,7 +1946,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and result") == Field::zero());
+                        assert!(cs.get("and result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1954,7 +1954,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1962,7 +1962,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
 
@@ -1977,7 +1977,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1985,7 +1985,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -1993,7 +1993,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("nor result") == Field::zero());
+                        assert!(cs.get("nor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -2001,7 +2001,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("nor result") == Field::zero());
+                        assert!(cs.get("nor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
 
@@ -2016,7 +2016,7 @@ mod test {
                         OperandType::AllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::one());
+                        assert!(cs.get("and not result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
                     (
@@ -2024,7 +2024,7 @@ mod test {
                         OperandType::AllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("and not result") == Field::zero());
+                        assert!(cs.get("and not result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -2032,7 +2032,7 @@ mod test {
                         OperandType::NegatedAllocatedTrue,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("nor result") == Field::zero());
+                        assert!(cs.get("nor result") == Fr::zero());
                         assert_eq!(v.value, Some(false));
                     }
                     (
@@ -2040,7 +2040,7 @@ mod test {
                         OperandType::NegatedAllocatedFalse,
                         Boolean::Is(ref v),
                     ) => {
-                        assert!(cs.get("nor result") == Field::one());
+                        assert!(cs.get("nor result") == Fr::one());
                         assert_eq!(v.value, Some(true));
                     }
 

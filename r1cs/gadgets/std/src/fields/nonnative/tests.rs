@@ -14,8 +14,7 @@ use crate::{
 };
 use algebra::{
     fields::{
-        bn_382::{Fq as Bn382Fq, Fr as Bn382Fr},
-        secp256k1::Fq as secp256k1Fq,
+        // secp256k1::Fq as secp256k1Fq,
         tweedle::{Fq as TweedleFq, Fr as TweedleFr},
         FpParameters, PrimeField,
     },
@@ -1014,11 +1013,11 @@ macro_rules! nonnative_test {
 // Implementation of the above non-native arithmetic tests for different curves
 nonnative_test!(TweedleFqFr, TweedleFq, TweedleFr);
 nonnative_test!(TweedleFrFq, TweedleFr, TweedleFq);
-nonnative_test!(Bn382FqFr, Bn382Fq, Bn382Fr);
-nonnative_test!(Bn382FrFq, Bn382Fr, Bn382Fq);
-nonnative_test!(Bn382Frsecp256k1Fq, Bn382Fr, secp256k1Fq);
-nonnative_test!(Bn382Fqsecp256k1Fq, Bn382Fq, secp256k1Fq);
-nonnative_test!(Bn382FrTweedleFq, Bn382Fr, TweedleFq);
+// nonnative_test!(Bn382FqFr, Bn382Fq, Bn382Fr);
+// nonnative_test!(Bn382FrFq, Bn382Fr, Bn382Fq);
+// nonnative_test!(Bn382Frsecp256k1Fq, Bn382Fr, secp256k1Fq);
+// nonnative_test!(Bn382Fqsecp256k1Fq, Bn382Fq, secp256k1Fq);
+// nonnative_test!(Bn382FrTweedleFq, Bn382Fr, TweedleFq);
 // TODO: This test, along with some others, seems to cause troubles
 //       with the enforce_in_field gadget. Fix it.
 /*nonnative_test!(

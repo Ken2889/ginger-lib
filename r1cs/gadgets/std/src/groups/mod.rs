@@ -466,7 +466,7 @@ pub(crate) fn scalar_bits_to_constant_length<
 #[cfg(test)]
 pub(crate) mod test {
     use algebra::{
-        BigInteger, EndoMulCurve, Field, FpParameters, Group, PrimeField, ProjectiveCurve, ToBits,
+        BigInteger, Group, Field, Curve, EndoMulCurve, FpParameters, PrimeField, ToBits,
         UniformRand,
     };
     use r1cs_core::ConstraintSystem;
@@ -478,7 +478,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test<
         ConstraintF: Field,
-        G: Group,
+        G: Curve,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = TestConstraintSystem::<ConstraintF>::new();
@@ -536,7 +536,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test_with_incomplete_add<
         ConstraintF: Field,
-        G: Group,
+        G: Curve,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = TestConstraintSystem::<ConstraintF>::new();
@@ -547,7 +547,7 @@ pub(crate) mod test {
         let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
         let b = GG::alloc(&mut cs.ns(|| "generate_b"), || Ok(b_native)).unwrap();
 
-        let _zero = GG::zero(cs.ns(|| "Zero")).unwrap();
+        // let _zero = GG::zero(cs.ns(|| "Zero")).unwrap();
 
         // a + b = b + a
         let a_b = a.add(cs.ns(|| "a_plus_b"), &b).unwrap();
@@ -670,7 +670,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_native_test<
         ConstraintF: Field,
-        G: Group,
+        G: Curve,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs: TestConstraintSystem<ConstraintF> = TestConstraintSystem::<ConstraintF>::new();
@@ -716,7 +716,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_additivity_test<
         ConstraintF: Field,
-        G: Group,
+        G: Curve,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = TestConstraintSystem::<ConstraintF>::new();
@@ -780,11 +780,11 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_test<
         ConstraintF: Field,
-        G: Group,
+        G: Curve,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         for _ in 0..10 {
-            mul_bits_native_test::<ConstraintF, G, GG>();
+            // mul_bits_native_test::<ConstraintF, G, GG>();
             mul_bits_additivity_test::<ConstraintF, G, GG>();
         }
     }
@@ -792,17 +792,14 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn endo_mul_test<
         ConstraintF: Field,
-        G: ProjectiveCurve,
+        G: EndoMulCurve,
         GG: EndoMulCurveGadget<G, ConstraintF, Value = G>,
     >()
-    where
-        <G as ProjectiveCurve>::Affine: EndoMulCurve,
     {
         let mut cs = TestConstraintSystem::<ConstraintF>::new();
 
-        let a_native_proj = G::rand(&mut thread_rng());
-        let a_native = a_native_proj.into_affine();
-        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native_proj)).unwrap();
+        let a_native = G::rand(&mut thread_rng());
+        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
 
         let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
 
