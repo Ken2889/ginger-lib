@@ -14,11 +14,7 @@ impl Fp320Parameters for FqParameters {}
 impl FpParameters for FqParameters {
     type BigInt = BigInteger;
 
-    const C: &'static[u64] = &[0x1000003d1,0x0];
-
-    const C_SIGN: Option<bool> = Some(true);
-
-    const C_LEN: usize = 2;
+    const C: &'static[u64] = &[];
     
     /// p = 2^256 - C =
     ///  = 115792089237316195423570985008687907853269984665640564039457584007908834671663

@@ -94,7 +94,7 @@ macro_rules! impl_prime_field_serializer {
 }
 
 macro_rules! impl_Fp {
-    ($Fp:ident, $FpParameters:ident, $BigInteger:ident, $BigIntegerType:ty, $limbs:expr, $c_len:expr) => {
+    ($Fp:ident, $FpParameters:ident, $BigInteger:ident, $BigIntegerType:ty, $limbs:expr) => {
         pub trait $FpParameters: FpParameters<BigInt = $BigIntegerType> {}
 
         #[derive(Derivative)]
@@ -137,8 +137,6 @@ macro_rules! impl_Fp {
             }
 
             impl_montgomery_reduction!($limbs);
-            impl_mersenne_reduction!($limbs, $c_len);
-            // impl_anti_mersenne_reduction!($limbs);
         }
 
         impl<P: $FpParameters> Field for $Fp<P> {
@@ -338,17 +336,12 @@ macro_rules! impl_Fp {
 
             #[inline]
             fn from_repr(r: $BigIntegerType) -> Self {
-                // If C is defined we are going to use Mersenne reduction so we must not adopt Montgomery representation
-                if P::C.len() > 0 {
-                    Self::from_repr_raw(r)
+                let mut r = $Fp(r, PhantomData);
+                if r.is_valid() {
+                    r.mul_assign(&$Fp(P::R2, PhantomData));
+                    r
                 } else {
-                    let mut r = $Fp(r, PhantomData);
-                    if r.is_valid() {
-                        r.mul_assign(&$Fp(P::R2, PhantomData));
-                        r
-                    } else {
-                        Self::zero()
-                    }
+                    Self::zero()
                 }
             }
 

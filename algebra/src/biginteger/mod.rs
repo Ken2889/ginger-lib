@@ -181,6 +181,20 @@ pub mod arithmetic {
         tmp as u64
     }
 
+    /// Calculate a + carry, returning the sum and modifying the
+    /// carry value.
+    #[inline(always)]
+    pub fn ac(a: &mut u64, carry: &mut u64) {
+        let tmp = (*a).overflowing_add(*carry);
+        *a = tmp.0;
+        if tmp.1 {
+            *carry = 1;
+        }
+        else {
+            *carry = 0;
+        }
+    }
+
     /// Calculate a - b - borrow, returning the result and modifying
     /// the borrow value.
     #[inline(always)]
@@ -196,7 +210,15 @@ pub mod arithmetic {
     /// and setting carry to the most significant digit.
     #[inline(always)]
     pub fn mac_with_carry(a: u64, b: u64, c: u64, carry: &mut u64) -> u64 {
-        let tmp = (u128::from(a)) + u128::from(b) * u128::from(c) + u128::from(*carry);
+        let tmp = (u128::from(a)) + (u128::from(b)) * (u128::from(c)) + u128::from(*carry);
+        
+        *carry = (tmp >> 64) as u64;
+
+        tmp as u64
+    }
+
+    pub fn mac_with_carry_power_of_two(a: u64, b: u64, c: u8, carry: &mut u64) -> u64 {
+        let tmp = (u128::from(a)) + (u128::from(b) << c) + u128::from(*carry);
 
         *carry = (tmp >> 64) as u64;
 

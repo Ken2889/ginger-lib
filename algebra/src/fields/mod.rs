@@ -256,20 +256,14 @@ impl<F: Field> FromBytesChecked for F {
 pub trait FpParameters: 'static + Send + Sync + Sized {
     type BigInt: BigInteger;
 
+    /// MODULUS = 2^(MODULUS_BITS - 1) + C if C.len() != 0
+    const C: &'static[u64];
+
     /// The modulus of the field.
     const MODULUS: Self::BigInt;
 
     /// The number of bits needed to represent the `Self::MODULUS`.
     const MODULUS_BITS: u32;
-
-    /// A relatively small constant C such that MODULUS == 2^(MODULUS_BITS - 1) plus or minus C
-    const C: &'static[u64];
-
-    // C_SIGN = true if the sign is negative, false otherwise
-    const C_SIGN: Option<bool> = None;
-
-    // C_LEN = number of limbs which represent C
-    const C_LEN: usize;
 
     /// The number of bits that must be shaved from the beginning of
     /// the representation when randomly sampling.

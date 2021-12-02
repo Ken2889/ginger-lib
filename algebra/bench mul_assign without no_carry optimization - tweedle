@@ -1,0 +1,92 @@
+
+running 52 tests
+test biginteger::tests::test_biginteger128 ... ignored
+test biginteger::tests::test_biginteger256 ... ignored
+test biginteger::tests::test_biginteger384 ... ignored
+test biginteger::tests::test_biginteger64 ... ignored
+test biginteger::tests::test_biginteger768 ... ignored
+test biginteger::tests::test_biginteger832 ... ignored
+test bytes::test::test_macro ... ignored
+test bytes::test::test_macro_empty ... ignored
+test curves::tweedle::tests::test_dee_addition_correctness ... ignored
+test curves::tweedle::tests::test_dee_endo_mul ... ignored
+test curves::tweedle::tests::test_dee_generator ... ignored
+test curves::tweedle::tests::test_dee_generator_raw ... ignored
+test curves::tweedle::tests::test_dee_projective_curve ... ignored
+test curves::tweedle::tests::test_dee_projective_group ... ignored
+test curves::tweedle::tests::test_dum_addition_correctness ... ignored
+test curves::tweedle::tests::test_dum_endo_mul ... ignored
+test curves::tweedle::tests::test_dum_generator ... ignored
+test curves::tweedle::tests::test_dum_generator_raw ... ignored
+test curves::tweedle::tests::test_dum_projective_curve ... ignored
+test curves::tweedle::tests::test_dum_projective_group ... ignored
+test fields::models::fp12_2over3over2::test::test_characteristic_square_mod_6_is_one ... ignored
+test fields::tweedle::tests::print_field ... ignored
+test fields::tweedle::tests::test_fq_add ... ignored
+test fields::tweedle::tests::test_fq_add_one ... ignored
+test fields::tweedle::tests::test_fq_bytes ... ignored
+test fields::tweedle::tests::test_fq_div ... ignored
+test fields::tweedle::tests::test_fq_double_in_place ... ignored
+test fields::tweedle::tests::test_fq_double_in_place_thrice ... ignored
+test fields::tweedle::tests::test_fq_from_str ... ignored
+test fields::tweedle::tests::test_fq_legendre ... ignored
+test fields::tweedle::tests::test_fq_mul ... ignored
+test fields::tweedle::tests::test_fq_sqrt ... ignored
+test fields::tweedle::tests::test_fq_square_in_place ... ignored
+test fields::tweedle::tests::test_fq_sub ... ignored
+test fields::tweedle::tests::test_fq_triple_mul ... ignored
+test fields::tweedle::tests::test_fr_add ... ignored
+test fields::tweedle::tests::test_fr_bytes ... ignored
+test fields::tweedle::tests::test_fr_from_str ... ignored
+test fields::tweedle::tests::test_fr_mul ... ignored
+test fields::tweedle::tests::test_tweedle_fq ... ignored
+test fields::tweedle::tests::test_tweedle_fr ... ignored
+test serialize::test::test_bool ... ignored
+test serialize::test::test_btreemap ... ignored
+test serialize::test::test_btreeset ... ignored
+test serialize::test::test_option ... ignored
+test serialize::test::test_phantomdata ... ignored
+test serialize::test::test_rc ... ignored
+test serialize::test::test_string ... ignored
+test serialize::test::test_tuple ... ignored
+test serialize::test::test_tuple_vec ... ignored
+test serialize::test::test_uint ... ignored
+test serialize::test::test_vec ... ignored
+
+test result: ok. 0 passed; 0 failed; 52 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 30 tests
+test curves::tweedle::bench_fq_add_assign        ... bench:      28,992 ns/iter (+/- 564)
+test curves::tweedle::bench_fq_double            ... bench:      39,513 ns/iter (+/- 695)
+test curves::tweedle::bench_fq_from_repr         ... bench:          20 ns/iter (+/- 1)
+test curves::tweedle::bench_fq_into_repr         ... bench:          11 ns/iter (+/- 0)
+test curves::tweedle::bench_fq_inverse           ... bench:       3,183 ns/iter (+/- 84)
+test curves::tweedle::bench_fq_mul_assign        ... bench:     178,593 ns/iter (+/- 3,737)
+test curves::tweedle::bench_fq_negate            ... bench:           8 ns/iter (+/- 0)
+test curves::tweedle::bench_fq_repr_add_nocarry  ... bench:       4,565 ns/iter (+/- 160)
+test curves::tweedle::bench_fq_repr_div2         ... bench:       7,899 ns/iter (+/- 369)
+test curves::tweedle::bench_fq_repr_mul2         ... bench:       8,208 ns/iter (+/- 354)
+test curves::tweedle::bench_fq_repr_num_bits     ... bench:           2 ns/iter (+/- 0)
+test curves::tweedle::bench_fq_repr_sub_noborrow ... bench:      14,989 ns/iter (+/- 1,414)
+test curves::tweedle::bench_fq_sqrt              ... bench:      14,187 ns/iter (+/- 419)
+test curves::tweedle::bench_fq_square            ... bench:     137,026 ns/iter (+/- 3,287)
+test curves::tweedle::bench_fq_sub_assign        ... bench:      27,471 ns/iter (+/- 292)
+test curves::tweedle::bench_fr_add_assign        ... bench:      28,530 ns/iter (+/- 569)
+test curves::tweedle::bench_fr_double            ... bench:      40,045 ns/iter (+/- 1,087)
+test curves::tweedle::bench_fr_from_repr         ... bench:          20 ns/iter (+/- 4)
+test curves::tweedle::bench_fr_into_repr         ... bench:          12 ns/iter (+/- 0)
+test curves::tweedle::bench_fr_inverse           ... bench:       3,230 ns/iter (+/- 152)
+test curves::tweedle::bench_fr_mul_assign        ... bench:     179,227 ns/iter (+/- 8,761)
+test curves::tweedle::bench_fr_negate            ... bench:           8 ns/iter (+/- 0)
+test curves::tweedle::bench_fr_repr_add_nocarry  ... bench:       4,650 ns/iter (+/- 423)
+test curves::tweedle::bench_fr_repr_div2         ... bench:       7,953 ns/iter (+/- 344)
+test curves::tweedle::bench_fr_repr_mul2         ... bench:       8,091 ns/iter (+/- 731)
+test curves::tweedle::bench_fr_repr_num_bits     ... bench:           2 ns/iter (+/- 0)
+test curves::tweedle::bench_fr_repr_sub_noborrow ... bench:      14,650 ns/iter (+/- 1,236)
+test curves::tweedle::bench_fr_sqrt              ... bench:      13,633 ns/iter (+/- 287)
+test curves::tweedle::bench_fr_square            ... bench:     132,820 ns/iter (+/- 4,933)
+test curves::tweedle::bench_fr_sub_assign        ... bench:      26,562 ns/iter (+/- 655)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 30 measured; 0 filtered out; finished in 71.02s
+

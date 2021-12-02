@@ -8,9 +8,12 @@ macro_rules! impl_montgomery_reduction {
                 let k = r[i].wrapping_mul(P::INV);
                 let mut carry = 0;
                 fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
-                for j in 1..$limbs {
+                for j in 1..4 {
                     r[j + i] = fa::mac_with_carry(r[j + i], k, P::MODULUS.0[j], &mut carry);
                 }
+                // r[2 + i] = fa::mac_with_carry(r[2 + i], k, P::MODULUS.0[2], &mut carry);
+                // fa::ac(&mut r[2 + i], &mut carry);
+                // r[3 + i] = fa::mac_with_carry(r[3 + i], k, P::MODULUS.0[3], &mut carry);
                 r[$limbs + i] = fa::adc(r[$limbs + i], _carry2, &mut carry);
                 _carry2 = carry;
             }
@@ -19,106 +22,6 @@ macro_rules! impl_montgomery_reduction {
         }
     };
 }
-
-
-macro_rules! impl_mersenne_reduction {
-    ($limbs:expr, $c_len: expr) => {
-
-        // const fn get_bitmask() -> u64 {
-        //     (1 << (64 - P::REPR_SHAVE_BITS)) - 1
-        // }
-
-        #[inline]
-        #[unroll_for_loops]
-        fn mul2pow(base: &mut [u64], n: u32) {
-            let mut last = 0;
-            let m = 64 - n;
-            for i in base {
-                let tmp = *i >> m;
-                *i <<= n;
-                *i |= last;
-                last = tmp;
-            }
-        }
-        
-
-        #[inline]
-        #[unroll_for_loops]
-        fn mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
-            // At each round of the iteration, the length of x is reduced by at least 
-            // $limbs - $c_len. For technical reasons, we can't modifify the size of the
-            // array x, so we modify its first components.
-            let mut carry: u64 = 0;
-            for i in 0..2 {
-                let tmp = x[$limbs - 1] >> (64 - P::REPR_SHAVE_BITS);
-                x[$limbs - 1] &= (1 << (64 - P::REPR_SHAVE_BITS)) - 1;  // x[..$limbs] = x_lo = x mod 2^(MODULUS_BITS)                 
-                Self::mul2pow(&mut x[$limbs..(2*$limbs - i * $c_len)], P::REPR_SHAVE_BITS);
-                x[$limbs] |= tmp; // Now x[$limbs..] = x_hi = (x - x_lo) / 2^MODULUS_BITS
-                let mut x_hi_times_c = [0u64; $limbs + (1 - i) * $c_len];
-                for l in 0..($limbs - i*$c_len) {
-                    carry = 0;
-                    for j in 0..$c_len {
-                        x_hi_times_c[j + l] =
-                            fa::mac_with_carry(x_hi_times_c[j + l], x[$limbs..][l], P::C[j], &mut carry);
-                    }
-                    x_hi_times_c[$c_len + l] = carry;
-                }
-                // x = x_hi_times_c + x_lo
-                for (a, b) in x_hi_times_c.iter_mut().zip(x[..$limbs].iter()) {
-                    *a = fa::adc(*a, *b, &mut carry);
-                }
-                for j in $limbs..($limbs + (1 - i) * $c_len) {
-                    if carry != 0{
-                        x[j] = fa::adc(x[j], 0, &mut carry);
-                    }              
-                }
-                for j in 0..($limbs + (1 - i) * $c_len) {
-                    x[j] = x_hi_times_c[j];
-                }
-            }
-            (self.0).0.copy_from_slice(&x[..$limbs]);
-        }
-
-        // fn anti_mersenne_reduction(&mut self, x: &mut [u64; $limbs * 2]) {
-        //     // At each round of the iteration, the length of x is reduced by at least diff
-        //     for i in 0..2 {
-        //         // equivalent to x mod 2^(64 * $limbs)
-        //       let mut sign = false;
-        //       let mut x_lo = &x[..$limbs];
-        //       let mut tmp = x[$limbs - 1] >> (64 - P::REPR_SHAVE_BITS - 1);
-        //       let mut x_hi = &x[$limbs..];    // equivalent to x - ( x mod 2^(64 * $limbs) )
-        //       x_lo[$limbs - 1] = x[$limbs - 1] & Self::get_bitmask();  // equivalent to x mod 2^(MODULUS_BITS)
-        //       Self::mul2pow(&mut x_hi, P::REPR_SHAVE_BITS + 1);
-        //       x_hi[0] |= tmp;
-        //       let mut x_hi_times_c = [0u64; $limbs + (1 - i) * $c_len];
-        //       // x_hi_times_c = x_hi * c
-        //       for i in 0..$limbs {
-        //           let mut carry = 0;
-        //           for j in 0..$c_len {
-        //               x_hi_times_c[j + i] =
-        //                   fa::mac_with_carry(x_hi_times_c[j + i], x_hi[i], P::C[j], &mut carry);
-        //           }
-        //           x_hi_times_c[P::$c_len + i] = carry;
-        //       }
-        //       // x = x_hi_times_c + x_lo
-        //       x = x_hi_times_c;
-        //       // is_leq to be defined
-        //       if x.is_leq(x_lo) {
-        //           x = sub(x_lo,x);
-        //           if sign {
-        //               x = sub(P::MODULUS.0, x);
-        //           }
-        //       }
-        //       else {
-        //         x = sub(x,x_lo);
-        //         sign ^= true
-        //       }
-        //   }
-        //   self = x;
-        // }
-    };
-}
-
 
 /// This modular multiplication algorithm uses Montgomery
 /// reduction for efficient implementation. It also additionally
@@ -140,13 +43,149 @@ macro_rules! impl_field_mul_assign {
             let _no_carry: bool = !(first_bit_set || all_bits_set);
 
             // No-carry optimisation applied to CIOS
-            if _no_carry  {
+            if _no_carry {
                 #[cfg(use_asm)]
                 #[allow(unsafe_code, unused_mut)]
                 {
                     if $limbs <= 6 {
+                        if false {llvm_asm_mul!($limbs, (self.0).0, (other.0).0, P::MODULUS.0, P::INV);}
                         #[allow(unsafe_code)]
-                        llvm_asm_mul!($limbs, (self.0).0, (other.0).0, P::MODULUS.0, P::INV);
+                        unsafe{
+                            llvm_asm!("
+                                            xorq %rcx, %rcx
+                                            movq 0($0), %rdx
+                                            mulxq 0($1), %r8, %r9
+                                            mulxq 8($1), %rax, %r10
+                                            adcxq %rax, %r9
+                                            mulxq 16($1), %rax, %r11
+                                            adcxq %rax, %r10
+                                            mulxq 24($1), %rax, %rcx
+                                            movq $3, %rbx
+                                            adcxq %rax, %r11
+                                            adcxq %rbx, %rcx
+                                            movq $4, %rdx
+                                            mulxq %r8, %rdx, %rax
+                                            mulxq 0($2), %rax, %rbx
+                                            adcxq %r8, %rax
+                                            adoxq %rbx, %r9
+                                            adcxq %rax, %r9
+                                            adoxq %rbx, %r10
+                                            mulxq 16($2), %rax, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rbx, %r11
+                                            mulxq 24($2), %rax, %r8
+                                            movq $3, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rcx, %r8
+                                            adcxq %rbx, %r8
+                                            movq 8($0), %rdx
+                                            mulxq 0($1), %rax, %rbx
+                                            adcxq %rax, %r9
+                                            adoxq %rbx, %r10
+                                            mulxq 8($1), %rax, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rbx, %r11
+                                            mulxq 16($1), %rax, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rbx, %r8
+                                            mulxq 24($1), %rax, %rcx
+                                            movq $3, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rbx, %rcx
+                                            adcxq %rbx, %rcx
+                                            movq $4, %rdx
+                                            mulxq %r9, %rdx, %rax
+                                            mulxq 0($2), %rax, %rbx
+                                            adcxq %r9, %rax
+                                            adoxq %rbx, %r10
+                                            mulxq 8($2), %rax, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rbx, %r11
+                                            mulxq 16($2), %rax, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rbx, %r8
+                                            mulxq 24($2), %rax, %r9
+                                            movq $3, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rcx, %r9
+                                            adcxq %rbx, %r9
+                                            movq 16($0), %rdx
+                                            mulxq 0($1), %rax, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rbx, %r11
+                                            mulxq 8($1), %rax, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rbx, %r8
+                                            mulxq 16($1), %rax, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rbx, %r9
+                                            mulxq 24($1), %rax, %rcx
+                                            movq $3, %rbx
+                                            adcxq %rax, %r9
+                                            adoxq %rbx, %rcx
+                                            adcxq %rbx, %rcx
+                                            movq $4, %rdx
+                                            mulxq %r10, %rdx, %rax
+                                            mulxq 0($2), %rax, %rbx
+                                            adcxq %r10, %rax
+                                            adoxq %rbx, %r11
+                                            mulxq 8($2), %rax, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rbx, %r8
+                                            mulxq 16($2), %rax, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rbx, %r9
+                                            mulxq 24($2), %rax, %r10
+                                            movq $3, %rbx
+                                            adcxq %rax, %r9
+                                            adoxq %rcx, %r10
+                                            adcxq %rbx, %r10
+                                            movq 24($0), %rdx
+                                            mulxq 0($1), %rax, %rbx
+                                            adcxq %rax, %r11
+                                            adoxq %rbx, %r8
+                                            mulxq 8($1), %rax, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rbx, %r9
+                                            mulxq 16($1), %rax, %rbx
+                                            adcxq %rax, %r9
+                                            adoxq %rbx, %r10
+                                            mulxq 24($1), %rax, %rcx
+                                            movq $3, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rbx, %rcx
+                                            adcxq %rbx, %rcx
+                                            movq $4, %rdx
+                                            mulxq %r11, %rdx, %rax
+                                            mulxq 0($2), %rax, %rbx
+                                            adcxq %r11, %rax
+                                            adoxq %rbx, %r8
+                                            mulxq 8($2), %rax, %rbx
+                                            adcxq %rax, %r8
+                                            adoxq %rbx, %r9
+                                            mulxq 16($2), %rax, %rbx
+                                            adcxq %rax, %r9
+                                            adoxq %rbx, %r10
+                                            mulxq 24($2), %rax, %r11
+                                            movq $3, %rbx
+                                            adcxq %rax, %r10
+                                            adoxq %rcx, %r11
+                                            adcxq %rbx, %r11
+                                            movq %r8, 0($0)
+                                            movq %r9, 8($0)
+                                            movq %r10, 16($0)
+                                            movq %r11, 24($0)
+                                            "
+                                :
+                                :
+                                "r"(&(self.0).0),      // 0
+                                "r"(&(other.0).0),      // 1
+                                "r"(&P::MODULUS.0),      // 2
+                                "i"(0u64),      // 3
+                                "i"(P::INV)      // 4
+                                :  "rcx", "rbx", "rdx", "rax", "r8", "r9", "r10", "r11", "cc", "memory"
+                            );
+                        }
                         self.reduce();
                         return;
                     }
@@ -167,7 +206,7 @@ macro_rules! impl_field_mul_assign {
                 }
                 (self.0).0 = r;
                 self.reduce();
-            // Alternative implementation 
+            // Alternative implementation
             } else {
                 let mut r = [0u64; $limbs * 2];
 
@@ -179,17 +218,7 @@ macro_rules! impl_field_mul_assign {
                     }
                     r[$limbs + i] = carry;
                 }
-
-                // Use Mersenne reduction if C is some, otherwise use Montgomery
-                if P::C.len() > 0 {
-                    // if P::C_SIGN.unwrap() {
-                        self.mersenne_reduction(&mut r)
-                    // } else {
-                    //     self.anti_mersenne_reduction(&mut r)
-                    // }
-                } else{
-                    self.montgomery_reduction(&mut r)
-                }
+                self.montgomery_reduction(&mut r)
             }
         }
     };
@@ -206,30 +235,26 @@ macro_rules! impl_field_mul_short_assign {
         //TODO: Can we write the assembly equivalent of this ? Is it worth ?
         //TODO: Probably there's a more compact way to write this
         fn mul_short_assign(&mut self, other: &Self) {
-            if P::C.len() == 0 {
-                let mut r = [0u64; $limbs + 1];
-                let mut carry1 = 0u64;
-                let mut carry2 = 0u64;
-    
-                for i in 0..$limbs {
-                    r[i] = fa::mac_with_carry(0, (self.0).0[0], (other.0).0[i], &mut carry1);
-                }
-                r[$limbs] = carry1;
-    
-                let k = r[0].wrapping_mul(P::INV);
-                fa::mac_with_carry(r[0], k, P::MODULUS.0[0], &mut carry2);
-                for i in 1..$limbs {
-                    r[i] = fa::mac_with_carry(r[i], k, P::MODULUS.0[i], &mut carry2);
-                }
-                r[$limbs] = fa::adc(r[$limbs], 0, &mut carry2);
-    
-                for i in 0..$limbs {
-                    (self.0).0[i] = r[i + 1];
-                }
-                self.reduce();
-            } else {
-                unimplemented!();
+            let mut r = [0u64; $limbs + 1];
+            let mut carry1 = 0u64;
+            let mut carry2 = 0u64;
+
+            for i in 0..$limbs {
+                r[i] = fa::mac_with_carry(0, (self.0).0[0], (other.0).0[i], &mut carry1);
             }
+            r[$limbs] = carry1;
+
+            let k = r[0].wrapping_mul(P::INV);
+            fa::mac_with_carry(r[0], k, P::MODULUS.0[0], &mut carry2);
+            for i in 1..$limbs {
+                r[i] = fa::mac_with_carry(r[i], k, P::MODULUS.0[i], &mut carry2);
+            }
+            r[$limbs] = fa::adc(r[$limbs], 0, &mut carry2);
+
+            for i in 0..$limbs {
+                (self.0).0[i] = r[i + 1];
+            }
+            self.reduce();
         }
     };
 }
@@ -240,24 +265,20 @@ macro_rules! impl_field_into_repr {
         #[unroll_for_loops]
         fn into_repr(&self) -> $BigIntegerType {
             let mut tmp = self.0;
+            let mut r = tmp.0;
+            // Montgomery Reduction
+            for i in 0..$limbs {
+                let k = r[i].wrapping_mul(P::INV);
+                let mut carry = 0;
 
-            // If C is none we are going to use Montgomery reduction
-            if P::C.len() == 0 {
-                let mut r = tmp.0;
-                // Montgomery Reduction
-                for i in 0..$limbs {
-                    let k = r[i].wrapping_mul(P::INV);
-                    let mut carry = 0;
-    
-                    fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
-                    for j in 1..$limbs {
-                        r[(j + i) % $limbs] =
-                            fa::mac_with_carry(r[(j + i) % $limbs], k, P::MODULUS.0[j], &mut carry);
-                    }
-                    r[i % $limbs] = carry;
+                fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
+                for j in 1..$limbs {
+                    r[(j + i) % $limbs] =
+                        fa::mac_with_carry(r[(j + i) % $limbs], k, P::MODULUS.0[j], &mut carry);
                 }
-                tmp.0 = r;
+                r[i % $limbs] = carry;
             }
+            tmp.0 = r;
             tmp
         }
     };
@@ -280,7 +301,7 @@ macro_rules! impl_field_square_in_place {
             #[cfg(use_asm)]
             #[allow(unsafe_code, unused_mut)]
             {
-                if $limbs <= 6 && _no_carry && P::C.len() == 0 {
+                if $limbs <= 6 && _no_carry {
                     #[allow(unsafe_code)]
                     llvm_asm_square!($limbs, (self.0).0, P::MODULUS.0, P::INV);
                     self.reduce();
@@ -320,16 +341,7 @@ macro_rules! impl_field_square_in_place {
                 r[2 * i] = fa::mac_with_carry(r[2 * i], (self.0).0[i], (self.0).0[i], &mut carry);
                 r[2 * i + 1] = fa::adc(r[2 * i + 1], 0, &mut carry);
             }
-            // Use Mersenne reduction if C is some, otherwise use Montgomery
-            if P::C.len() > 0 {
-                // if P::C_SIGN {
-                    self.mersenne_reduction(&mut r)
-                // } else {
-                //     self.anti_mersenne_reduction(&mut r)
-                // }
-            } else{
-                self.montgomery_reduction(&mut r)
-            }
+            self.montgomery_reduction(&mut r);
             self
         }
     };

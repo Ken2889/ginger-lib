@@ -21,7 +21,7 @@ macro_rules! field_common {
         paste::item! {
             #[bench]
             fn [<bench_ $field_ident _add_assign>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -40,7 +40,7 @@ macro_rules! field_common {
 
             #[bench]
             fn [<bench_ $field_ident _sub_assign>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -59,7 +59,7 @@ macro_rules! field_common {
 
             #[bench]
             fn [<bench_ $field_ident _mul_assign>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -78,7 +78,7 @@ macro_rules! field_common {
 
             #[bench]
             fn [<bench_ $field_ident _double>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -95,7 +95,7 @@ macro_rules! field_common {
 
             #[bench]
             fn [<bench_ $field_ident _square>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -112,7 +112,7 @@ macro_rules! field_common {
 
             #[bench]
             fn [<bench_ $field_ident _inverse>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -134,7 +134,7 @@ macro_rules! sqrt {
         paste::item! {
             #[bench]
             fn [<bench_ $field_ident _sqrt>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -161,7 +161,7 @@ macro_rules! field_base {
         paste::item! {
             #[bench]
             fn [<bench_ $field_ident _repr_add_nocarry>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -189,7 +189,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _repr_sub_noborrow>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -216,7 +216,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _repr_num_bits>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -232,7 +232,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _repr_mul2>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -249,7 +249,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _repr_div2>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -266,7 +266,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _negate>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -283,7 +283,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _into_repr>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
@@ -298,7 +298,7 @@ macro_rules! field_base {
 
             #[bench]
             fn [<bench_ $field_ident _from_repr>](b: &mut ::test::Bencher) {
-                const SAMPLES: usize = 1000;
+                const SAMPLES: usize = 10000;
 
                 let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 

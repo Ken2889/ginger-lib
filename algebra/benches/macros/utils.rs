@@ -3,7 +3,7 @@ macro_rules! n_fold {
         #[cfg(not(feature = "n_fold"))]
         $tmp.$func(&$v[$count].1);
         #[cfg(feature = "n_fold")]
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             $tmp.$func(&$v[$count].1);
         }
     };
@@ -12,7 +12,7 @@ macro_rules! n_fold {
         #[cfg(not(feature = "n_fold"))]
         $tmp.$func();
         #[cfg(feature = "n_fold")]
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             $tmp.$func();
         }
     };

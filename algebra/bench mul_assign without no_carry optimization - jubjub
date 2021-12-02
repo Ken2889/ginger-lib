@@ -1,0 +1,83 @@
+
+running 49 tests
+test biginteger::tests::test_biginteger128 ... ignored
+test biginteger::tests::test_biginteger256 ... ignored
+test biginteger::tests::test_biginteger384 ... ignored
+test biginteger::tests::test_biginteger64 ... ignored
+test biginteger::tests::test_biginteger768 ... ignored
+test biginteger::tests::test_biginteger832 ... ignored
+test bytes::test::test_macro ... ignored
+test bytes::test::test_macro_empty ... ignored
+test curves::jubjub::tests::test_affine_group ... ignored
+test curves::jubjub::tests::test_bytes ... ignored
+test curves::jubjub::tests::test_conversion ... ignored
+test curves::jubjub::tests::test_generator ... ignored
+test curves::jubjub::tests::test_montgomery_conversion ... ignored
+test curves::jubjub::tests::test_projective_curve ... ignored
+test curves::jubjub::tests::test_projective_group ... ignored
+test curves::jubjub::tests::test_scalar_multiplication ... ignored
+test fields::jubjub::tests::print_field ... ignored
+test fields::jubjub::tests::test_fq_add ... ignored
+test fields::jubjub::tests::test_fq_add_one ... ignored
+test fields::jubjub::tests::test_fq_bytes ... ignored
+test fields::jubjub::tests::test_fq_div ... ignored
+test fields::jubjub::tests::test_fq_double_in_place ... ignored
+test fields::jubjub::tests::test_fq_double_in_place_thrice ... ignored
+test fields::jubjub::tests::test_fq_from_str ... ignored
+test fields::jubjub::tests::test_fq_generate_random_jubjub_point ... ignored
+test fields::jubjub::tests::test_fq_legendre ... ignored
+test fields::jubjub::tests::test_fq_mul ... ignored
+test fields::jubjub::tests::test_fq_sqrt ... ignored
+test fields::jubjub::tests::test_fq_square_in_place ... ignored
+test fields::jubjub::tests::test_fq_sub ... ignored
+test fields::jubjub::tests::test_fq_triple_mul ... ignored
+test fields::jubjub::tests::test_fr_add ... ignored
+test fields::jubjub::tests::test_fr_bytes ... ignored
+test fields::jubjub::tests::test_fr_from_str ... ignored
+test fields::jubjub::tests::test_fr_mul ... ignored
+test fields::jubjub::tests::test_jubjub_fq ... ignored
+test fields::jubjub::tests::test_jubjub_fr ... ignored
+test fields::models::fp12_2over3over2::test::test_characteristic_square_mod_6_is_one ... ignored
+test serialize::test::test_bool ... ignored
+test serialize::test::test_btreemap ... ignored
+test serialize::test::test_btreeset ... ignored
+test serialize::test::test_option ... ignored
+test serialize::test::test_phantomdata ... ignored
+test serialize::test::test_rc ... ignored
+test serialize::test::test_string ... ignored
+test serialize::test::test_tuple ... ignored
+test serialize::test::test_tuple_vec ... ignored
+test serialize::test::test_uint ... ignored
+test serialize::test::test_vec ... ignored
+
+test result: ok. 0 passed; 0 failed; 49 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 30 tests
+test curves::jubjub::bench_fq_add_assign        ... bench:      27,498 ns/iter (+/- 503)
+test curves::jubjub::bench_fq_double            ... bench:      38,683 ns/iter (+/- 919)
+test curves::jubjub::bench_fq_from_repr         ... bench:          23 ns/iter (+/- 2)
+test curves::jubjub::bench_fq_into_repr         ... bench:          15 ns/iter (+/- 1)
+test curves::jubjub::bench_fq_inverse           ... bench:       3,120 ns/iter (+/- 200)
+test curves::jubjub::bench_fq_mul_assign        ... bench:     208,231 ns/iter (+/- 7,362)
+test curves::jubjub::bench_fq_negate            ... bench:           8 ns/iter (+/- 1)
+test curves::jubjub::bench_fq_repr_add_nocarry  ... bench:       4,601 ns/iter (+/- 263)
+test curves::jubjub::bench_fq_repr_div2         ... bench:       7,868 ns/iter (+/- 1,024)
+test curves::jubjub::bench_fq_repr_mul2         ... bench:       8,082 ns/iter (+/- 419)
+test curves::jubjub::bench_fq_repr_num_bits     ... bench:           2 ns/iter (+/- 0)
+test curves::jubjub::bench_fq_repr_sub_noborrow ... bench:      14,550 ns/iter (+/- 691)
+test curves::jubjub::bench_fq_sqrt              ... bench:      18,207 ns/iter (+/- 545)
+test curves::jubjub::bench_fq_square            ... bench:     142,212 ns/iter (+/- 5,812)
+test curves::jubjub::bench_fq_sub_assign        ... bench:      29,397 ns/iter (+/- 774)
+test curves::jubjub::bench_fr_add_assign        ... bench:      27,691 ns/iter (+/- 913)
+test curves::jubjub::bench_fr_double            ... bench:      38,555 ns/iter (+/- 885)
+test curves::jubjub::bench_fr_from_repr         ... bench:          23 ns/iter (+/- 1)
+test curves::jubjub::bench_fr_into_repr         ... bench:          14 ns/iter (+/- 1)
+test curves::jubjub::bench_fr_inverse           ... bench:       3,105 ns/iter (+/- 423)
+test curves::jubjub::bench_fr_mul_assign        ... bench:     188,192 ns/iter (+/- 6,237)
+test curves::jubjub::bench_fr_negate            ... bench:           8 ns/iter (+/- 0)
+test curves::jubjub::bench_fr_repr_add_nocarry  ... bench:       4,515 ns/iter (+/- 231)
+test curves::jubjub::bench_fr_repr_div2         ... bench:       7,867 ns/iter (+/- 219)
+test curves::jubjub::bench_fr_repr_mul2         ... bench:       7,951 ns/iter (+/- 555)
+test curves::jubjub::bench_fr_repr_num_bits     ... bench:           2 ns/iter (+/- 0)
+test curves::jubjub::bench_fr_repr_sub_noborrow ... bench:      14,474 ns/iter (+/- 767)

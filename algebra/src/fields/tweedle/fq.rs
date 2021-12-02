@@ -14,10 +14,6 @@ impl FpParameters for FqParameters {
 
     const C: &'static[u64] = &[0x842cafd400000001, 0x038aa127696286c9];
 
-    const C_SIGN: Option<bool> = Some(false);
-
-    const C_LEN: usize = 2;
-
     // MODULUS = 2^254 + C
     const MODULUS: BigInteger = BigInteger([
         0x842cafd400000001,

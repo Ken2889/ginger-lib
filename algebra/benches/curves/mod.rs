@@ -18,3 +18,6 @@ mod secp256k1;
 
 #[cfg(feature = "tweedle")]
 mod tweedle;
+
+#[cfg(feature = "jubjub")]
+mod jubjub;

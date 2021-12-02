@@ -28,6 +28,7 @@ fn main() {
         let out_dir = env::var_os("OUT_DIR").unwrap();
         let dest_path = Path::new(&out_dir).join("field_assembly.rs");
         fs::write(&dest_path, generate_macro_string(NUM_LIMBS)).unwrap();
+        println!("{}",generate_macro_string(NUM_LIMBS));
         println!("cargo:rustc-cfg=use_asm");
     }
 }
