@@ -7,6 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    hash::Hash,
     convert::{TryFrom, TryInto},
 };
 
@@ -34,7 +35,7 @@ pub trait Curve:
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
     type BaseField: Field + SquareRootField;
-    type AffineRep: Sized + Sync + Copy + PartialEq + Debug + TryFrom<Self, Error = Error>;
+    type AffineRep: Sized + Sync + Copy + PartialEq + Debug + Hash + TryFrom<Self, Error = Error>;
 
     #[inline]
     fn into_affine(&self) -> Result<Self::AffineRep, Error> {

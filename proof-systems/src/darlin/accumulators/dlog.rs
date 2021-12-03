@@ -321,7 +321,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             // The vk might be oversized, but the VariableBaseMSM function, will "trim"
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
-            &[final_comm_keys.as_slice(), vk.comm_key.as_slice()].concat(),
+            &[G::batch_normalization_into_affine(final_comm_keys).unwrap().as_slice(), vk.comm_key.as_slice()].concat(),
             &[
                 batching_chal_pows.as_slice(),
                 combined_check_poly.coeffs.as_slice(),
