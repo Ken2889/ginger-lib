@@ -140,35 +140,25 @@ impl<P: Parameters> Distribution<Jacobian<P>> for Standard {
 impl<P: Parameters> ToBytes for Jacobian<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        let normalized = self.normalize();
-        normalized.x.write(&mut writer)?;
-        normalized.y.write(&mut writer)
+        CanonicalSerialize::serialize(&self, &mut writer)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
     }
 }
 
 impl<P: Parameters> FromBytes for Jacobian<P> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read(&mut reader)?;
-        let y = P::BaseField::read(&mut reader)?;
-        let z = P::BaseField::one();
-        Ok(Self::new(x, y, z))
+        Ok(CanonicalDeserialize::deserialize_unchecked(&mut reader)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        )
     }
 }
 
 impl<P: Parameters> FromBytesChecked for Jacobian<P> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
-        let x = P::BaseField::read_checked(&mut reader)?;
-        let y = P::BaseField::read_checked(&mut reader)?;
-        let z = P::BaseField::one();
-        let point = Self::new(x, y, z);
-        if !point.group_membership_test() {
-            return Err(IoError::new(
-                ErrorKind::InvalidData,
-                "invalid point: group membership test failed",
-            ));
-        }
-        Ok(point)
+        Ok(CanonicalDeserialize::deserialize(&mut reader)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        )
     }
 }
 
