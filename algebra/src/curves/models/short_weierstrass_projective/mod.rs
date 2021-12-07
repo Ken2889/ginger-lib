@@ -132,9 +132,9 @@ impl<P: Parameters> Distribution<Projective<P>> for Standard {
 impl<P: Parameters> ToBytes for Projective<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.x.write(&mut writer)?;
-        self.y.write(&mut writer)?;
-        self.z.write(writer)
+        let normalized = self.normalize();
+        normalized.x.write(&mut writer)?;
+        normalized.y.write(&mut writer)
     }
 }
 
@@ -143,7 +143,7 @@ impl<P: Parameters> FromBytes for Projective<P> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         let x = P::BaseField::read(&mut reader)?;
         let y = P::BaseField::read(&mut reader)?;
-        let z = P::BaseField::read(reader)?;
+        let z = P::BaseField::one();
         Ok(Self::new(x, y, z))
     }
 }
@@ -152,7 +152,7 @@ impl<P: Parameters> FromBytesChecked for Projective<P> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         let x = P::BaseField::read_checked(&mut reader)?;
         let y = P::BaseField::read_checked(&mut reader)?;
-        let z = P::BaseField::read_checked(reader)?;
+        let z = P::BaseField::one();
         let point = Self::new(x, y, z);
         if !point.group_membership_test() {
             return Err(IoError::new(
@@ -425,11 +425,8 @@ impl<P: Parameters> TryFrom<Projective<P>> for AffineRep<P> {
             // If Z is one, the point is already normalized.
             Ok(AffineRep::new(p.x, p.y))
         } else {
-            // Z is nonzero, so it must have an inverse in a field.
-            let z_inv = p.z.inverse().unwrap();
-            let x = p.x * &z_inv;
-            let y = p.y * &z_inv;
-            Ok(AffineRep::new(x, y))
+            let normalized = p.normalize();
+            Ok(AffineRep::new(normalized.x, normalized.y))
         }
     }
 }

@@ -138,10 +138,9 @@ impl<P: Parameters> Distribution<TEExtended<P>> for Standard {
 impl<P: Parameters> ToBytes for TEExtended<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.x.write(&mut writer)?;
-        self.y.write(&mut writer)?;
-        self.t.write(&mut writer)?;
-        self.z.write(writer)
+        let normalized = self.normalize();
+        normalized.x.write(&mut writer)?;
+        normalized.y.write(&mut writer)
     }
 }
 
@@ -150,8 +149,8 @@ impl<P: Parameters> FromBytes for TEExtended<P> {
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         let x = P::BaseField::read(&mut reader)?;
         let y = P::BaseField::read(&mut reader)?;
-        let t = P::BaseField::read(&mut reader)?;
-        let z = P::BaseField::read(reader)?;
+        let t = x * y;
+        let z = P::BaseField::one();
         Ok(Self::new(x, y, t, z))
     }
 }
@@ -160,8 +159,8 @@ impl<P: Parameters> FromBytesChecked for TEExtended<P> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         let x = P::BaseField::read_checked(&mut reader)?;
         let y = P::BaseField::read_checked(&mut reader)?;
-        let t = P::BaseField::read_checked(&mut reader)?;
-        let z = P::BaseField::read_checked(reader)?;
+        let t = x * y;
+        let z = P::BaseField::one();
         let point = Self::new(x, y, t, z);
         if !point.group_membership_test() {
             return Err(IoError::new(
@@ -430,11 +429,8 @@ impl<P: Parameters> TryFrom<TEExtended<P>> for AffineRep<P> {
             // If Z is one, the point is already normalized.
             Ok(AffineRep::new(p.x, p.y))
         } else {
-            // Z is nonzero, so it must have an inverse in a field.
-            let z_inv = p.z.inverse().unwrap();
-            let x = p.x * &z_inv;
-            let y = p.y * &z_inv;
-            Ok(AffineRep::new(x, y))
+            let normalized = p.normalize();
+            Ok(AffineRep::new(normalized.x, normalized.y))
         }
     }
 }
