@@ -369,7 +369,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedMerkleTree for FieldBased
 #[cfg(test)]
 mod test {
     use algebra::{
-        // biginteger::BigInteger256,
+        biginteger::BigInteger256,
         Group,
         fields::{tweedle::Fr as Fr, tweedle::Fq as Fq},
         to_bytes, FromBytes, SemanticallyValid, ToBytes, UniformRand,
@@ -567,71 +567,73 @@ mod test {
     }
 
     // TODO: should be updated for Tweedle
-    //
-    // #[test]
-    // fn merkle_tree_test_tweedle_dee() {
-    //     let expected_output = Fr::new(BigInteger256([
-    //         11737642701305799951,
-    //         16779001331075430197,
-    //         11819169129328038354,
-    //         11423404101688341353,
-    //         13644857877536036127,
-    //         136974075146428157,
-    //         13736146501659167139,
-    //         15457726208981564885,
-    //         16287955982068396368,
-    //         2574770790166887043,
-    //         15847921958357229891,
-    //         431926751316706,
-    //     ]));
-    //     let height = 10;
-    //     let num_leaves = 2usize.pow(height as u32);
-    //     let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
-    //
-    //     merkle_tree_root_test::<TweedleDeeFieldBasedOptimizedMerkleTreeParams, _>(
-    //         height,
-    //         num_leaves,
-    //         expected_output,
-    //         rng,
-    //     );
-    //     merkle_tree_reset_test::<TweedleDeeFieldBasedOptimizedMerkleTreeParams, _>(
-    //         height, num_leaves, rng,
-    //     );
-    //     merkle_tree_test_edge_cases::<TweedleDeeFieldBasedOptimizedMerkleTreeParams>();
-    // }
-    //
-    // #[test]
-    // fn merkle_tree_test_tweedle_dum() {
-    //     let expected_output = Fq::new(BigInteger256([
-    //         8485425859071260580,
-    //         10496086997731513209,
-    //         4252500720562453591,
-    //         2141019788822111914,
-    //         14051983083211686650,
-    //         1024951982785915663,
-    //         15435931545111578451,
-    //         10317608288193115884,
-    //         14391757241795953360,
-    //         10971839229749467698,
-    //         17614506209597433225,
-    //         374251447408225,
-    //     ]));
-    //     let height = 10;
-    //     let num_leaves = 2usize.pow(height as u32);
-    //
-    //     let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
-    //
-    //     merkle_tree_root_test::<TweedleDumFieldBasedOptimizedMerkleTreeParams, _>(
-    //         height,
-    //         num_leaves,
-    //         expected_output,
-    //         rng,
-    //     );
-    //     merkle_tree_reset_test::<TweedleDumFieldBasedOptimizedMerkleTreeParams, _>(
-    //         height, num_leaves, rng,
-    //     );
-    //     merkle_tree_test_edge_cases::<TweedleDumFieldBasedOptimizedMerkleTreeParams>();
-    // }
+    #[test]
+    #[ignore]
+    fn merkle_tree_test_tweedle_dee() {
+        let expected_output = Fr::new(BigInteger256([
+            11737642701305799951,
+            16779001331075430197,
+            11819169129328038354,
+            11423404101688341353,
+            // 13644857877536036127,
+            // 136974075146428157,
+            // 13736146501659167139,
+            // 15457726208981564885,
+            // 16287955982068396368,
+            // 2574770790166887043,
+            // 15847921958357229891,
+            // 431926751316706,
+        ]));
+        let height = 10;
+        let num_leaves = 2usize.pow(height as u32);
+        let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+
+        merkle_tree_root_test::<TweedleDeeFieldBasedOptimizedMerkleTreeParams, _>(
+            height,
+            num_leaves,
+            expected_output,
+            rng,
+        );
+        merkle_tree_reset_test::<TweedleDeeFieldBasedOptimizedMerkleTreeParams, _>(
+            height, num_leaves, rng,
+        );
+        merkle_tree_test_edge_cases::<TweedleDeeFieldBasedOptimizedMerkleTreeParams>();
+    }
+
+    // TODO: should be updated for Tweedle
+    #[test]
+    #[ignore]
+    fn merkle_tree_test_tweedle_dum() {
+        let expected_output = Fq::new(BigInteger256([
+            8485425859071260580,
+            10496086997731513209,
+            4252500720562453591,
+            2141019788822111914,
+            // 14051983083211686650,
+            // 1024951982785915663,
+            // 15435931545111578451,
+            // 10317608288193115884,
+            // 14391757241795953360,
+            // 10971839229749467698,
+            // 17614506209597433225,
+            // 374251447408225,
+        ]));
+        let height = 10;
+        let num_leaves = 2usize.pow(height as u32);
+
+        let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
+
+        merkle_tree_root_test::<TweedleDumFieldBasedOptimizedMerkleTreeParams, _>(
+            height,
+            num_leaves,
+            expected_output,
+            rng,
+        );
+        merkle_tree_reset_test::<TweedleDumFieldBasedOptimizedMerkleTreeParams, _>(
+            height, num_leaves, rng,
+        );
+        merkle_tree_test_edge_cases::<TweedleDumFieldBasedOptimizedMerkleTreeParams>();
+    }
 
     fn merkle_tree_test_empty_leaves<T: BatchFieldBasedMerkleTreeParameters, R: RngCore>(
         max_height: usize,

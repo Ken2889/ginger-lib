@@ -1,15 +1,13 @@
 use crate::{
-    Error,
+    fields::{BitIterator, Field, PrimeField, SquareRootField},
     groups::Group,
-    fields::{Field, SquareRootField, PrimeField, BitIterator},
-    UniformRand,
-    CanonicalSerialize, CanonicalDeserialize, ToBytes, FromBytes
+    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand,
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    convert::{TryFrom, TryInto},
     fmt::Debug,
     hash::Hash,
-    convert::{TryFrom, TryInto},
 };
 
 pub mod models;
@@ -35,7 +33,17 @@ pub trait Curve:
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
     type BaseField: Field + SquareRootField;
-    type AffineRep: Sized + Sync + Copy + PartialEq + Debug + Hash + CanonicalSerialize + CanonicalDeserialize + ToBytes + FromBytes + TryFrom<Self, Error = Error>;
+    type AffineRep: Sized
+        + Sync
+        + Copy
+        + PartialEq
+        + Debug
+        + Hash
+        + CanonicalSerialize
+        + CanonicalDeserialize
+        + ToBytes
+        + FromBytes
+        + TryFrom<Self, Error = Error>;
 
     #[inline]
     fn into_affine(&self) -> Result<Self::AffineRep, Error> {
@@ -47,14 +55,18 @@ pub trait Curve:
         Into::<Self>::into(*other)
     }
 
-    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self>
-    {
-        vec_affine.iter().map(|&affine| affine.into()).collect::<Vec<_>>()
+    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
+        vec_affine
+            .iter()
+            .map(|&affine| affine.into())
+            .collect::<Vec<_>>()
     }
 
-    fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error>
-    {
-        vec_self.iter().map(|&projective| projective.into_affine()).collect::<Result<Vec<_>, _>>()
+    fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error> {
+        vec_self
+            .iter()
+            .map(|&projective| projective.into_affine())
+            .collect::<Result<Vec<_>, _>>()
     }
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self;
@@ -64,7 +76,10 @@ pub trait Curve:
     // TODO: move to group trait?
     fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
 
-    fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self;
+    fn mul_bits_affine<'a, S: AsRef<[u64]>>(
+        affine: &'a Self::AffineRep,
+        bits: BitIterator<S>,
+    ) -> Self;
 
     fn scale_by_cofactor(&self) -> Self;
 
