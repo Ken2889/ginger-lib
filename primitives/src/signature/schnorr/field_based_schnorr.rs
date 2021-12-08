@@ -214,12 +214,14 @@ impl<F: PrimeField, G: Curve + ToConstraintField<F>, H: FieldBasedHash<Data = F>
                 break (r);
             }
         };
-        let public_key = G::prime_subgroup_generator().mul(&secret_key);
+        // TODO: check if normalization should be performed here
+        let public_key = G::prime_subgroup_generator().mul(&secret_key).normalize();
         (FieldBasedSchnorrPk(public_key), secret_key)
     }
 
     fn get_public_key(sk: &Self::SecretKey) -> Self::PublicKey {
-        FieldBasedSchnorrPk(G::prime_subgroup_generator().mul(sk))
+        // TODO: check if normalization should be performed here
+        FieldBasedSchnorrPk(G::prime_subgroup_generator().mul(sk).normalize())
     }
 
     fn sign<R: Rng>(

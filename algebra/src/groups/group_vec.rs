@@ -60,7 +60,7 @@ impl<G: Group> Default for GroupVec<G> {
 impl<G: Group> FromBytes for GroupVec<G> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
-        Ok(GroupVec(CanonicalDeserialize::deserialize(&mut reader)
+        Ok(GroupVec(CanonicalDeserialize::deserialize_unchecked(&mut reader)
             .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
         ))
     }
@@ -76,13 +76,9 @@ impl<G: Group> ToBytes for GroupVec<G> {
 
 impl<G: Group> FromBytesChecked for GroupVec<G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
-        let len = u64::read(&mut reader)?;
-        let mut items = vec![];
-        for _ in 0..(len as usize) {
-            let item = G::read_checked(&mut reader)?;
-            items.push(item)
-        }
-        Ok(GroupVec(items))
+        Ok(GroupVec(CanonicalDeserialize::deserialize(&mut reader)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        ))
     }
 }
 

@@ -877,7 +877,7 @@ for AffineGadget<P, ConstraintF, F>
                     return Err(SynthesisError::Unsatisfiable);
                 }
                 // TODO: check if zero possible
-                let coords = coords.iter().map(|p| p.into_affine()).collect::<Result<Vec<_>, _>>()?;
+                let coords = Jacobian::<P>::batch_into_affine(coords.as_slice())?;
                 let x_coeffs = coords.iter().map(|p| p.x).collect::<Vec<_>>();
                 let y_coeffs = coords.iter().map(|p| p.y).collect::<Vec<_>>();
                 let precomp = Boolean::and(
