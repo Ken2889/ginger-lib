@@ -67,6 +67,95 @@ impl<P: Parameters> Neg for AffineRep<P> {
     }
 }
 
+impl<P: Parameters> ToBytes for AffineRep<P> {
+    #[inline]
+    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        CanonicalSerialize::serialize(&self, &mut writer)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
+    }
+}
+
+impl<P: Parameters> FromBytes for AffineRep<P> {
+    #[inline]
+    fn read<R: Read>(mut reader: R) -> IoResult<Self> {
+        Ok(CanonicalDeserialize::deserialize_unchecked(&mut reader)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        )
+    }
+}
+
+impl<P: Parameters> CanonicalSerialize for AffineRep<P> {
+    #[allow(unused_qualifications)]
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        let flags = SWFlags::from_y_parity(self.y.is_odd());
+        self.x.serialize_with_flags(writer, flags)
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        P::BaseField::zero().serialized_size_with_flags::<SWFlags>()
+    }
+
+    #[allow(unused_qualifications)]
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        CanonicalSerialize::serialize(&self.x, &mut writer)?;
+        self.y.serialize_with_flags(&mut writer, SWFlags::default())?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.x.serialized_size() + self.y.serialized_size_with_flags::<SWFlags>()
+    }
+}
+
+impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
+    #[allow(unused_qualifications)]
+    fn deserialize<R: Read>(reader: R) -> Result<Self, SerializationError> {
+        let p = Self::deserialize_unchecked(reader)?;
+        if !Jacobian::<P>::from_affine(&p).is_in_correct_subgroup_assuming_on_curve() {
+            return Err(SerializationError::InvalidData);
+        }
+        Ok(p)
+    }
+
+    #[allow(unused_qualifications)]
+    fn deserialize_unchecked<R: Read>(reader: R) -> Result<Self, SerializationError> {
+        let (x, flags): (P::BaseField, SWFlags) =
+            CanonicalDeserializeWithFlags::deserialize_with_flags(reader)?;
+        if flags.is_infinity() {
+            Err(SerializationError::InvalidData)?
+        } else {
+            let p = Jacobian::<P>::get_point_from_x_and_parity(x, flags.is_odd().unwrap())
+                .ok_or(SerializationError::InvalidData)?;
+            Ok(p.into_affine().map_err(|_| SerializationError::InvalidData)?)
+        }
+    }
+
+    #[allow(unused_qualifications)]
+    fn deserialize_uncompressed<R: Read>(reader: R) -> Result<Self, SerializationError> {
+        let p = Self::deserialize_uncompressed_unchecked(reader)?;
+
+        if !Jacobian::<P>::from_affine(&p).group_membership_test() {
+            return Err(SerializationError::InvalidData);
+        }
+        Ok(p)
+    }
+
+    #[allow(unused_qualifications)]
+    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let x: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
+        let (y, flags): (P::BaseField, SWFlags) =
+            CanonicalDeserializeWithFlags::deserialize_with_flags(&mut reader)?;
+        if flags.is_infinity() {
+            Err(SerializationError::InvalidData)?
+        }
+        Ok(AffineRep::new(x, y))
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(
 Copy(bound = "P: Parameters"),

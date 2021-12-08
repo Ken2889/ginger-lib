@@ -3,6 +3,7 @@ use crate::{
     groups::Group,
     fields::{Field, SquareRootField, PrimeField, BitIterator},
     UniformRand,
+    CanonicalSerialize, CanonicalDeserialize, ToBytes, FromBytes
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,7 +11,6 @@ use std::{
     hash::Hash,
     convert::{TryFrom, TryInto},
 };
-
 
 pub mod models;
 
@@ -35,7 +35,7 @@ pub trait Curve:
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
     type BaseField: Field + SquareRootField;
-    type AffineRep: Sized + Sync + Copy + PartialEq + Debug + Hash + TryFrom<Self, Error = Error>;
+    type AffineRep: Sized + Sync + Copy + PartialEq + Debug + Hash + CanonicalSerialize + CanonicalDeserialize + ToBytes + FromBytes + TryFrom<Self, Error = Error>;
 
     #[inline]
     fn into_affine(&self) -> Result<Self::AffineRep, Error> {
