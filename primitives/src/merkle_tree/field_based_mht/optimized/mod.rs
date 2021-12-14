@@ -120,7 +120,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedOptimizedMHT<T> {
         }
 
         Ok(Self {
-            root: { <T::Data as Field>::zero() },
+            root: { <T::Data as Group>::zero() },
             array_nodes,
             processing_step: processing_block_size,
             initial_pos,
@@ -387,7 +387,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedMerkleTree for FieldBased
 
 #[cfg(test)]
 mod test {
-    use algebra::{fields::Field, to_bytes, FromBytes, SemanticallyValid, ToBytes, UniformRand};
+    use algebra::{groups::Group, to_bytes, FromBytes, SemanticallyValid, ToBytes, UniformRand};
     use rand::{thread_rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
