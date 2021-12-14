@@ -50,4 +50,4 @@ asm = [ "poly-commit/asm", "algebra/llvm_asm" ]
 name = "tweedle_test_circuits"
 path = "benches/tweedle_test_circuits.rs"
 harness = false
-required-features = ["parallel", "asm"]
+required-features = ["asm"]

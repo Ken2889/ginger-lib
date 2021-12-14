@@ -1,7 +1,7 @@
 use algebra::{curves::tweedle::dee::DeeJacobian, fields::tweedle::Fr, UniformRand};
 use blake2::Blake2s;
 use marlin::*;
-use poly_commit::{ipa_pc::InnerProductArgPC, PCUniversalParams, PolynomialCommitment};
+use poly_commit::{ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCParameters};
 
 use algebra::PrimeField;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
@@ -24,7 +24,8 @@ extern crate criterion;
 #[macro_use]
 extern crate bench_utils;
 
-type IPAPC = InnerProductArgPC<DeeJacobian, Blake2s>;
+type IPAPC =
+    DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
 type MarlinInst = Marlin<DeeJacobian, IPAPC, Blake2s>;
 
 /// TestCircuit1a has (almost) full rank R1CS matrices A,B,C such that
@@ -532,7 +533,7 @@ fn bench_prover_circuit1a(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -601,7 +602,7 @@ fn bench_prover_circuit1b(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -670,7 +671,7 @@ fn bench_prover_circuit1c(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -739,7 +740,7 @@ fn bench_prover_circuit2a(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -808,7 +809,7 @@ fn bench_prover_circuit2b(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -877,7 +878,7 @@ fn bench_prover_circuit2c(c: &mut Criterion) {
             b: None,
         };
 
-        let (pc_pk, _) = IPAPC::trim(&universal_srs, universal_srs.max_degree()).unwrap();
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
         let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
