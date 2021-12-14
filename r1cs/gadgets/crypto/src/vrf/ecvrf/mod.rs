@@ -1,4 +1,4 @@
-use algebra::{PrimeField, Curve};
+use algebra::{Curve, PrimeField};
 use r1cs_std::{
     alloc::AllocGadget, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpGadget,
     groups::GroupGadget, to_field_gadget_vec::ToConstraintFieldGadget,
@@ -15,7 +15,7 @@ use crate::{
     vrf::FieldBasedVrfGadget,
 };
 use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
-use r1cs_core::{ConstraintSystem, SynthesisError, ToConstraintField};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError, ToConstraintField};
 use r1cs_std::bits::boolean::Boolean;
 use std::{borrow::Borrow, marker::PhantomData};
 
@@ -45,7 +45,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc_internal<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_internal<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
         gamma_on_curve: bool,
@@ -106,7 +106,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -117,7 +117,7 @@ where
         Self::alloc_internal(cs, f, false, false)
     }
 
-    fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -128,7 +128,7 @@ where
         Self::alloc_internal(cs, f, true, false)
     }
 
-    fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -139,7 +139,7 @@ where
         Self::alloc_internal(cs, f, true, true)
     }
 
-    fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -189,7 +189,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -210,7 +210,7 @@ where
         })
     }
 
-    fn alloc_without_check<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -226,7 +226,7 @@ where
         })
     }
 
-    fn alloc_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -247,7 +247,7 @@ where
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -310,7 +310,7 @@ where
     type PublicKeyGadget = FieldBasedEcVrfPkGadget<ConstraintF, G, GG>;
     type GHParametersGadget = GHG::ParametersGadget;
 
-    fn enforce_proof_to_hash_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_proof_to_hash_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         group_hash_params: &Self::GHParametersGadget,
         public_key: &Self::PublicKeyGadget,
@@ -438,20 +438,18 @@ where
 mod test {
     use crate::{
         crh::{
-            bowe_hopwood::BoweHopwoodPedersenCRHGadget, TweedleFrPoseidonHashGadget,
-            TweedleFqPoseidonHashGadget,
+            bowe_hopwood::BoweHopwoodPedersenCRHGadget, TweedleFqPoseidonHashGadget,
+            TweedleFrPoseidonHashGadget,
         },
         vrf::{ecvrf::FieldBasedEcVrfProofVerificationGadget, FieldBasedVrfGadget},
     };
-    use algebra::curves::{
-        tweedle::dee::DeeJacobian as DeeJacobian, tweedle::dum::DumJacobian as DumJacobian,
-    };
-    use algebra::fields::tweedle::{Fr, Fq};
+    use algebra::curves::{tweedle::dee::DeeJacobian, tweedle::dum::DumJacobian};
+    use algebra::fields::tweedle::{Fq, Fr};
     use primitives::{
         crh::{
             bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters},
             pedersen::PedersenWindow,
-            FixedLengthCRH, TweedleFrPoseidonHash, TweedleFqPoseidonHash,
+            FixedLengthCRH, TweedleFqPoseidonHash, TweedleFrPoseidonHash,
         },
         vrf::{
             ecvrf::{FieldBasedEcVrf, FieldBasedEcVrfProof},
@@ -459,12 +457,12 @@ mod test {
         },
     };
 
-    use r1cs_core::ConstraintSystem;
+    use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
     use r1cs_std::alloc::AllocGadget;
     use r1cs_std::instantiated::tweedle::{TweedleDeeGadget, TweedleDumGadget};
-    use r1cs_std::test_constraint_system::TestConstraintSystem;
-
-    use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
     use rand::{thread_rng, Rng};
 
     #[derive(Clone)]
@@ -529,7 +527,7 @@ mod test {
         proof: EcVrfTweedleDeeProof,
         pp: &BHTweedleDeeParameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
 
         //Alloc proof, pk and message
         let proof_g =
@@ -621,7 +619,7 @@ mod test {
         proof: EcVrfTweedleDumProof,
         pp: &BHTweedleDumParameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<Fq>::new();
+        let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
 
         //Alloc proof, pk and message
         let proof_g =
@@ -714,7 +712,7 @@ mod test {
         for _ in 0..samples {
             let message: Fr = rng.gen();
             let (sig, pk) = prove::<EcVrfTweedleDee, _>(rng, &pp, message);
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
 
             //Alloc proof, pk, hash params and message
             let proof_g =
@@ -761,12 +759,13 @@ mod test {
             //Negative case: wrong message (or wrong proof for another message)
             let new_message: Fr = rng.gen();
 
-            let new_message_g =
-                <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<EcVrfTweedleDee, Fr>>::DataGadget::alloc(
-                    cs.ns(|| "alloc new_message"),
-                    || Ok(new_message),
-                )
-                .unwrap();
+            let new_message_g = <EcVrfTweedleDeeGadget as FieldBasedVrfGadget<
+                EcVrfTweedleDee,
+                Fr,
+            >>::DataGadget::alloc(
+                cs.ns(|| "alloc new_message"), || Ok(new_message)
+            )
+            .unwrap();
 
             EcVrfTweedleDeeGadget::enforce_proof_to_hash_verification(
                 cs.ns(|| "verify new proof"),

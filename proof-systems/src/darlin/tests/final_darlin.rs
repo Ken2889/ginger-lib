@@ -7,15 +7,15 @@ use crate::darlin::{
     pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
-use algebra::{Group, Curve, ToConstraintField, UniformRand};
+use algebra::{Curve, Group, ToConstraintField, UniformRand};
+use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey, InnerProductArgPC, Parameters},
     DomainExtendedPolynomialCommitment, Error as PCError,
 };
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use rand::Rng;
-use digest::Digest;
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
+use rand::Rng;
 use rand::RngCore;
 
 // Dummy Acc used for testing
@@ -138,7 +138,7 @@ where
     G2: Curve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
-    fn generate_constraints<CS: ConstraintSystem<G1::ScalarField>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<G1::ScalarField>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

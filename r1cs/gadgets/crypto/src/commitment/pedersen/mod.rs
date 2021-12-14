@@ -1,12 +1,12 @@
 use algebra::{
+    fields::{Field, PrimeField},
     to_bytes, Curve, ToBytes,
-    fields::{Field, PrimeField}
 };
 use primitives::{
     commitment::pedersen::{PedersenCommitment, PedersenParameters, PedersenRandomness},
     crh::pedersen::PedersenWindow,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::commitment::CommitmentGadget;
 use r1cs_std::prelude::*;
@@ -45,7 +45,7 @@ where
     type ParametersGadget = PedersenCommitmentGadgetParameters<G, W, ConstraintF>;
     type RandomnessGadget = PedersenRandomnessGadget;
 
-    fn check_commitment_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_commitment_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
@@ -112,7 +112,7 @@ where
     W: PedersenWindow,
     ConstraintF: PrimeField,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         _cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -131,7 +131,7 @@ where
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         _cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -156,7 +156,7 @@ where
     G: Curve,
     ConstraintF: PrimeField,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -169,7 +169,7 @@ where
         Ok(PedersenRandomnessGadget(UInt8::alloc_vec(cs, &randomness)?))
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -201,18 +201,17 @@ mod test {
         },
         crh::pedersen::PedersenWindow,
     };
-    use r1cs_core::ConstraintSystem;
-    use r1cs_std::{
-        instantiated::tweedle::TweedleDeeGadget, prelude::*,
-        test_constraint_system::TestConstraintSystem,
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use r1cs_std::{instantiated::tweedle::TweedleDeeGadget, prelude::*};
     use rand::thread_rng;
 
     // TODO: Test should be updated and fixed for tweedle
     #[test]
     #[ignore]
     fn commitment_gadget_test() {
-        let mut cs = TestConstraintSystem::<Fq>::new();
+        let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
 
         #[derive(Clone, PartialEq, Eq, Hash)]
         pub(super) struct Window;
@@ -233,7 +232,8 @@ mod test {
 
         let parameters = PedersenCommitment::<DeeJacobian, Window>::setup(rng).unwrap();
         let primitive_result =
-            PedersenCommitment::<DeeJacobian, Window>::commit(&parameters, &input, &randomness).unwrap();
+            PedersenCommitment::<DeeJacobian, Window>::commit(&parameters, &input, &randomness)
+                .unwrap();
 
         let input_bytes =
             UInt8::alloc_input_vec(cs.ns(|| "alloc input bytes as public input"), &input).unwrap();

@@ -1,4 +1,6 @@
-use algebra::{curves::models::SWModelParameters,/* curves::models::TEModelParameters,*/ PrimeField};
+use algebra::{
+    curves::models::SWModelParameters, /* curves::models::TEModelParameters,*/ PrimeField,
+};
 
 use crate::fields::fp::FpGadget;
 use crate::{
@@ -10,13 +12,13 @@ use crate::{
     // },
     // groups::curves::twisted_edwards::AffineGadget as TEAffineGadget,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError as Error};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError as Error};
 
 /// Types that can be converted to a vector of elements that implement the `Field Gadget` trait.
 pub trait ToConstraintFieldGadget<ConstraintF: PrimeField> {
     type FieldGadget: FieldGadget<ConstraintF, ConstraintF>;
 
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error>;
@@ -25,7 +27,7 @@ pub trait ToConstraintFieldGadget<ConstraintF: PrimeField> {
 impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for FpGadget<ConstraintF> {
     type FieldGadget = Self;
 
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
@@ -37,7 +39,7 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [FpGadget
     type FieldGadget = FpGadget<ConstraintF>;
 
     #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
@@ -49,7 +51,7 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
     type FieldGadget = FpGadget<ConstraintF>;
 
     #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
@@ -68,7 +70,7 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
 //     type FieldGadget = FpGadget<ConstraintF>;
 //
 //     #[inline]
-//     fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+//     fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
 //         &self,
 //         mut cs: CS,
 //     ) -> Result<Vec<Self::FieldGadget>, Error> {
@@ -90,7 +92,7 @@ where
     type FieldGadget = FpGadget<ConstraintF>;
 
     #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
@@ -111,7 +113,7 @@ where
 //     type FieldGadget = FpGadget<ConstraintF>;
 //
 //     #[inline]
-//     fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+//     fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
 //         &self,
 //         mut cs: CS,
 //     ) -> Result<Vec<Self::FieldGadget>, Error> {

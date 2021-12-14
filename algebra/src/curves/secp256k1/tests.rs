@@ -4,10 +4,11 @@ use crate::{
         tests::{curve_tests, sw_jacobian_curve_serialization_test},
         Curve,
     },
-    /*fields::secp256k1::Fr, */ groups::tests::group_test,
-    FromBytes, /*, SemanticallyValid*/
+    fields::secp256k1::Fr,
+    groups::tests::group_test,
+    FromBytes, SemanticallyValid,
 };
-// use hex_literal::hex;
+use hex_literal::hex;
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 

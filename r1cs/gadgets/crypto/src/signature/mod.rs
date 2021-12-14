@@ -1,6 +1,6 @@
 use algebra::{Field, PrimeField};
 use primitives::signature::{FieldBasedSignatureScheme, SignatureScheme};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::prelude::*;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 
@@ -14,7 +14,7 @@ pub trait SigRandomizePkGadget<S: SignatureScheme, ConstraintF: Field> {
         + AllocGadget<S::PublicKey, ConstraintF>
         + Clone;
 
-    fn check_randomization_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_randomization_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         parameters: &Self::ParametersGadget,
         public_key: &Self::PublicKeyGadget,
@@ -36,7 +36,7 @@ pub trait FieldBasedSigGadget<S: FieldBasedSignatureScheme, ConstraintF: PrimeFi
 
     /// Enforce `signature` verification with `public_key` on `message`, returning a Boolean
     /// enforced to be `true` if signature verification is successful, and `false` otherwise.
-    fn enforce_signature_verdict<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_signature_verdict<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         public_key: &Self::PublicKeyGadget,
         signature: &Self::SignatureGadget,
@@ -44,7 +44,7 @@ pub trait FieldBasedSigGadget<S: FieldBasedSignatureScheme, ConstraintF: PrimeFi
     ) -> Result<Boolean, SynthesisError>;
 
     /// Enforce `signature` verification with `public_key` on `message` to be successful.
-    fn enforce_signature_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_signature_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         public_key: &Self::PublicKeyGadget,
         signature: &Self::SignatureGadget,
@@ -61,7 +61,7 @@ pub trait FieldBasedSigGadget<S: FieldBasedSignatureScheme, ConstraintF: PrimeFi
 
     /// Enforce or not enforce, according to `should_enforce` value, `signature` verification with
     /// `public_key` on `message` to be successful.
-    fn conditionally_enforce_signature_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_enforce_signature_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         public_key: &Self::PublicKeyGadget,
         signature: &Self::SignatureGadget,

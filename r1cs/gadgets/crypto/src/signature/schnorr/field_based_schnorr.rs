@@ -1,5 +1,5 @@
 use crate::{crh::FieldBasedHashGadget, signature::FieldBasedSigGadget};
-use algebra::{PrimeField, Curve, ToConstraintField};
+use algebra::{Curve, PrimeField, ToConstraintField};
 use primitives::signature::schnorr::field_based_schnorr::FieldBasedSchnorrPk;
 use primitives::{
     compute_truncation_size,
@@ -8,7 +8,7 @@ use primitives::{
         FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme,
     },
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::alloc::ConstantGadget;
 use r1cs_std::{
     alloc::AllocGadget, bits::boolean::Boolean, eq::EqGadget, fields::fp::FpGadget,
@@ -36,7 +36,7 @@ where
     ConstraintF: PrimeField,
     G: Curve,
 {
-    fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -65,7 +65,7 @@ where
         })
     }
 
-    fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -101,7 +101,7 @@ where
     ConstraintF: PrimeField,
     G: Curve,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value: &FieldBasedSchnorrSignature<ConstraintF, G>,
     ) -> Self {
@@ -127,7 +127,7 @@ where
     ConstraintF: PrimeField,
     G: Curve,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -137,7 +137,7 @@ where
         Boolean::and(cs.ns(|| "b1 && b2"), &b1, &b2)
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -156,7 +156,7 @@ where
         Ok(())
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -184,7 +184,7 @@ where
 {
     type FieldGadget = FpGadget<ConstraintF>;
 
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, SynthesisError> {
@@ -210,7 +210,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -231,7 +231,7 @@ where
         })
     }
 
-    fn alloc_without_check<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -247,7 +247,7 @@ where
         })
     }
 
-    fn alloc_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -268,7 +268,7 @@ where
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -292,7 +292,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF, Value = G>,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value: &FieldBasedSchnorrPk<G>,
     ) -> Self {
@@ -315,7 +315,7 @@ where
     G: Curve,
     GG: GroupGadget<G, ConstraintF, Value = G>,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -323,7 +323,7 @@ where
         self.pk.is_eq(cs, &other.pk)
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -333,7 +333,7 @@ where
             .conditional_enforce_equal(cs, &other.pk, should_enforce)
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -354,7 +354,7 @@ where
 {
     type FieldGadget = FpGadget<ConstraintF>;
 
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, SynthesisError> {
@@ -394,7 +394,7 @@ where
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
-    fn enforce_signature_computation<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_signature_computation<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         public_key: &GG,
         signature: &FieldBasedSchnorrSigGadget<ConstraintF, G>,
@@ -488,7 +488,7 @@ where
     type SignatureGadget = FieldBasedSchnorrSigGadget<ConstraintF, G>;
     type PublicKeyGadget = FieldBasedSchnorrPkGadget<ConstraintF, G, GG>;
 
-    fn enforce_signature_verdict<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_signature_verdict<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         public_key: &Self::PublicKeyGadget,
         signature: &Self::SignatureGadget,
@@ -507,7 +507,7 @@ where
         Ok(is_verified)
     }
 
-    fn conditionally_enforce_signature_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_enforce_signature_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         public_key: &Self::PublicKeyGadget,
         signature: &Self::SignatureGadget,
@@ -531,31 +531,32 @@ where
 
 #[cfg(test)]
 mod test {
-    use algebra::curves::{
-        tweedle::dee::DeeJacobian as DeeJacobian, tweedle::dum::DumJacobian as DumJacobian,
-    };
-    use algebra::fields::tweedle::{Fr, Fq};
+    use algebra::curves::{tweedle::dee::DeeJacobian, tweedle::dum::DumJacobian};
+    use algebra::fields::tweedle::{Fq, Fr};
 
     use primitives::{
-        crh::{TweedleFrPoseidonHash, TweedleFqPoseidonHash},
+        crh::{TweedleFqPoseidonHash, TweedleFrPoseidonHash},
         signature::{schnorr::field_based_schnorr::*, FieldBasedSignatureScheme},
     };
 
     use crate::{
-        crh::{TweedleFrPoseidonHashGadget, TweedleFqPoseidonHashGadget},
+        crh::{TweedleFqPoseidonHashGadget, TweedleFrPoseidonHashGadget},
         signature::{schnorr::field_based_schnorr::*, FieldBasedSigGadget},
     };
 
-    use r1cs_core::ConstraintSystem;
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
     use r1cs_std::alloc::AllocGadget;
 
     use r1cs_std::instantiated::tweedle::{TweedleDeeGadget, TweedleDumGadget};
 
-    use r1cs_std::test_constraint_system::TestConstraintSystem;
     use rand::{thread_rng, Rng};
 
-    type SchnorrTweedleDee = FieldBasedSchnorrSignatureScheme<Fr, DumJacobian, TweedleFrPoseidonHash>;
-    type SchnorrTweedleDum = FieldBasedSchnorrSignatureScheme<Fq, DeeJacobian, TweedleFqPoseidonHash>;
+    type SchnorrTweedleDee =
+        FieldBasedSchnorrSignatureScheme<Fr, DumJacobian, TweedleFrPoseidonHash>;
+    type SchnorrTweedleDum =
+        FieldBasedSchnorrSignatureScheme<Fq, DeeJacobian, TweedleFqPoseidonHash>;
 
     type SchnorrTweedleDeeSig = FieldBasedSchnorrSignature<Fr, DumJacobian>;
     type SchnorrTweedleDumSig = FieldBasedSchnorrSignature<Fq, DeeJacobian>;
@@ -593,7 +594,7 @@ mod test {
         pk: &SchnorrTweedleDeePk,
         sig: SchnorrTweedleDeeSig,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
 
         //Alloc signature, pk and message
         let sig_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::SignatureGadget::alloc(
@@ -646,7 +647,9 @@ mod test {
         let (sig, pk) = sign::<SchnorrTweedleDee, _>(rng, message);
 
         //Positive case
-        assert!(tweedle_dee_schnorr_gadget_generate_constraints(message, &pk, sig));
+        assert!(tweedle_dee_schnorr_gadget_generate_constraints(
+            message, &pk, sig
+        ));
 
         //Change message
         let wrong_message: Fr = rng.gen();
@@ -674,7 +677,7 @@ mod test {
         pk: &SchnorrTweedleDumPk,
         sig: SchnorrTweedleDumSig,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<Fq>::new();
+        let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
 
         //Alloc signature, pk and message
         let sig_g = <SchnorrTweedleDumGadget as FieldBasedSigGadget<SchnorrTweedleDum, Fq>>::SignatureGadget::alloc(
@@ -727,7 +730,9 @@ mod test {
         let (sig, pk) = sign::<SchnorrTweedleDum, _>(rng, message);
 
         //Positive case
-        assert!(tweedle_dum_schnorr_gadget_generate_constraints(message, &pk, sig));
+        assert!(tweedle_dum_schnorr_gadget_generate_constraints(
+            message, &pk, sig
+        ));
 
         //Change message
         let wrong_message: Fq = rng.gen();
@@ -759,7 +764,7 @@ mod test {
         for _ in 0..samples {
             let message: Fr = rng.gen();
             let (sig, pk) = sign::<SchnorrTweedleDee, _>(rng, message);
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
 
             //Alloc signature, pk and message
             let sig_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::SignatureGadget::alloc(
@@ -772,12 +777,13 @@ mod test {
                 || Ok(pk)
             ).unwrap();
 
-            let message_g =
-                <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::DataGadget::alloc(
-                    cs.ns(|| "alloc message"),
-                    || Ok(message),
-                )
-                .unwrap();
+            let message_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<
+                SchnorrTweedleDee,
+                Fr,
+            >>::DataGadget::alloc(cs.ns(|| "alloc message"), || {
+                Ok(message)
+            })
+            .unwrap();
 
             //Verify sig
             let is_verified = SchnorrTweedleDeeGadget::enforce_signature_verdict(
@@ -802,12 +808,13 @@ mod test {
 
             //Negative case: wrong message (or wrong sig for another message)
             let new_message: Fr = rng.gen();
-            let new_message_g =
-                <SchnorrTweedleDeeGadget as FieldBasedSigGadget<SchnorrTweedleDee, Fr>>::DataGadget::alloc(
-                    cs.ns(|| "alloc new_message"),
-                    || Ok(new_message),
-                )
-                .unwrap();
+            let new_message_g = <SchnorrTweedleDeeGadget as FieldBasedSigGadget<
+                SchnorrTweedleDee,
+                Fr,
+            >>::DataGadget::alloc(
+                cs.ns(|| "alloc new_message"), || Ok(new_message)
+            )
+            .unwrap();
 
             let is_verified = SchnorrTweedleDeeGadget::enforce_signature_verdict(
                 cs.ns(|| "new sig result"),

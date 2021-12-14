@@ -1,6 +1,6 @@
 use algebra::PrimeField;
 use primitives::SBox;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{
     alloc::AllocGadget,
     bits::boolean::Boolean,
@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 
 pub trait SBoxGadget<ConstraintF: PrimeField, SB: SBox<Field = ConstraintF>> {
     /// Enforce S(x)
-    fn apply<CS: ConstraintSystem<ConstraintF>>(
+    fn apply<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         x: &mut FpGadget<ConstraintF>,
     ) -> Result<(), SynthesisError>;
@@ -27,7 +27,7 @@ impl<ConstraintF: PrimeField, SB: SBox<Field = ConstraintF>> SBoxGadget<Constrai
     for InverseSBoxGadget<ConstraintF, SB>
 {
     // Enforce S(x) = X^-1 if X != 0 otherwise X
-    fn apply<CS: ConstraintSystem<ConstraintF>>(
+    fn apply<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         x: &mut FpGadget<ConstraintF>,
     ) -> Result<(), SynthesisError> {
@@ -72,7 +72,7 @@ impl<ConstraintF: PrimeField, SB: SBox<Field = ConstraintF>> SBoxGadget<Constrai
     for QuinticSBoxGadget<ConstraintF, SB>
 {
     // Enforce S(X) = X^5
-    fn apply<CS: ConstraintSystem<ConstraintF>>(
+    fn apply<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         x: &mut FpGadget<ConstraintF>,
     ) -> Result<(), SynthesisError> {

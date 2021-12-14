@@ -25,7 +25,10 @@ mod impl_constraint_var;
 mod impl_lc;
 
 pub use algebra::ToConstraintField;
-pub use constraint_system::{ConstraintSynthesizer, ConstraintSystem, Namespace};
+pub use constraint_system::{
+    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger,
+    Namespace, SynthesisMode,
+};
 pub use error::SynthesisError;
 
 use algebra::Field;
@@ -92,4 +95,84 @@ pub enum ConstraintVar<F: Field> {
     LC(LinearCombination<F>),
     /// A wrapper around a `Variable`.
     Var(Variable),
+}
+
+/// Debug a circuit by looking for unsatisfied constraints.
+/// If the circuit is satisfied, return `Ok(None)`.
+/// If there are unsatisfied constraints, return `Ok(Some(name))`,
+/// where `name` is the name of the first unsatisfied constraint.
+pub fn debug_circuit<F: Field, C: ConstraintSynthesizer<F>>(
+    circuit: C,
+) -> Result<Option<String>, SynthesisError> {
+    let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
+    circuit.generate_constraints(&mut cs)?;
+    let unsatisfied_constraint = cs.which_is_unsatisfied();
+    match unsatisfied_constraint {
+        None => Ok(None),
+        Some(name) => Ok(Some(name.into())),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{debug_circuit, ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
+    use algebra::fields::tweedle::fr::Fr;
+    use algebra::Field;
+    use rand;
+
+    struct MyCircuit<F: Field> {
+        a: Option<F>,
+        b: Option<F>,
+        c: Option<F>,
+    }
+
+    impl<F: Field> ConstraintSynthesizer<F> for MyCircuit<F> {
+        fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
+            self,
+            cs: &mut CS,
+        ) -> Result<(), SynthesisError> {
+            let a = cs.alloc(|| "a", || self.a.ok_or(SynthesisError::AssignmentMissing))?;
+            let b = cs.alloc(|| "b", || self.b.ok_or(SynthesisError::AssignmentMissing))?;
+            let c = cs.alloc(|| "c", || self.c.ok_or(SynthesisError::AssignmentMissing))?;
+            cs.enforce(
+                || "multiplication constraint",
+                |lc| lc + a,
+                |lc| lc + b,
+                |lc| lc + c,
+            );
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_debug_circuit_satisfied() {
+        let a: Fr = rand::random();
+        let b: Fr = rand::random();
+        let mut c = a.clone();
+        c *= &b;
+        let circuit = MyCircuit {
+            a: Some(a),
+            b: Some(b),
+            c: Some(c),
+        };
+        let unsatisfied_constraint = debug_circuit(circuit).unwrap();
+        assert!(unsatisfied_constraint.is_none());
+    }
+
+    #[test]
+    fn test_debug_circuit_unsatisfied() {
+        let a: Fr = rand::random();
+        let b: Fr = rand::random();
+        let mut c = a.clone();
+        c *= &b;
+        c += &b;
+        let circuit = MyCircuit {
+            a: Some(a),
+            b: Some(b),
+            c: Some(c),
+        };
+        let unsatisfied_constraint = debug_circuit(circuit).unwrap();
+        assert!(unsatisfied_constraint.is_some());
+        assert_eq!(unsatisfied_constraint.unwrap(), "multiplication constraint");
+    }
 }

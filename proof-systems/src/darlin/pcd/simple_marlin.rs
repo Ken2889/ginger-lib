@@ -6,9 +6,9 @@ use crate::darlin::{
     },
     pcd::{error::PCDError, PCD},
 };
-use algebra::{serialize::*, GroupVec, Curve, SemanticallyValid};
+use algebra::{serialize::*, Curve, GroupVec, SemanticallyValid};
 use digest::Digest;
-use marlin::{AHPForR1CS, Marlin, Proof, VerifierKey as MarlinVerifierKey};
+use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
@@ -47,7 +47,7 @@ impl<G: Curve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
-        let comms_per_round = vec![3, 3, 2];
+        let comms_per_round = vec![3, 2, 2];
 
         // Check commitments are grouped into correct num_rounds
         if self.commitments.len() != num_rounds {
@@ -62,15 +62,13 @@ impl<G: Curve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
         }
 
         // Check evaluations num
-        let num_polys = AHPForR1CS::<G::ScalarField>::PROVER_POLYNOMIALS.len()
-            + AHPForR1CS::<G::ScalarField>::INDEXER_POLYNOMIALS.len();
+        let num_polys = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
+            + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len();
         let evaluations_num = num_polys + 2;
 
         self.commitments.is_valid() &&  // Check that each commitment is valid
             self.evaluations.len() == evaluations_num && // Check correct number of evaluations
             self.evaluations.is_valid() && // Check validity of each evaluation
-            self.prover_messages.len() == num_rounds &&// Check correct number of prover messages
-            self.prover_messages.is_valid() && // Check prover messages are valid
             // Check opening proof
             self.pc_proof.is_valid()
     }
@@ -111,9 +109,7 @@ pub struct SimpleMarlinPCDVerifierKey<'a, G: Curve, D: Digest + 'static>(
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: Curve, D: Digest> AsRef<DLogVerifierKey<G>>
-    for SimpleMarlinPCDVerifierKey<'a, G, D>
-{
+impl<'a, G: Curve, D: Digest> AsRef<DLogVerifierKey<G>> for SimpleMarlinPCDVerifierKey<'a, G, D> {
     fn as_ref(&self) -> &DLogVerifierKey<G> {
         &self.1
     }
@@ -138,7 +134,7 @@ where
             G,
             DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>,
             D,
-        >::verify_ahp(
+        >::verify_iop(
             &vk.1,
             &vk.0,
             self.usr_ins.as_slice(),

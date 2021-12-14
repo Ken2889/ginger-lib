@@ -1,5 +1,5 @@
 use algebra::Field;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::borrow::Borrow;
 
 pub trait AllocGadget<V, ConstraintF: Field>
@@ -7,12 +7,15 @@ where
     Self: Sized,
     V: ?Sized,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(cs: CS, f: F) -> Result<Self, SynthesisError>
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
+        cs: CS,
+        f: F,
+    ) -> Result<Self, SynthesisError>
     where
         F: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<V>;
 
-    fn alloc_without_check<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -23,7 +26,7 @@ where
         Self::alloc(cs, f)
     }
 
-    fn alloc_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -34,7 +37,7 @@ where
         Self::alloc(cs, f)
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -42,7 +45,7 @@ where
         F: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<V>;
 
-    fn alloc_input_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -57,7 +60,7 @@ where
 impl<I, ConstraintF: Field, A: AllocGadget<I, ConstraintF>> AllocGadget<[I], ConstraintF>
     for Vec<A>
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -74,7 +77,7 @@ impl<I, ConstraintF: Field, A: AllocGadget<I, ConstraintF>> AllocGadget<[I], Con
         Ok(vec)
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -92,7 +95,7 @@ impl<I, ConstraintF: Field, A: AllocGadget<I, ConstraintF>> AllocGadget<[I], Con
         Ok(vec)
     }
 
-    fn alloc_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -110,7 +113,7 @@ impl<I, ConstraintF: Field, A: AllocGadget<I, ConstraintF>> AllocGadget<[I], Con
         Ok(vec)
     }
 
-    fn alloc_input_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -136,7 +139,7 @@ where
     Self: Sized,
     V: Sized,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(cs: CS, value: &V) -> Self;
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS, value: &V) -> Self;
 
     fn get_constant(&self) -> V;
 }
@@ -144,7 +147,7 @@ where
 impl<I, ConstraintF: Field, A: ConstantGadget<I, ConstraintF>> ConstantGadget<Vec<I>, ConstraintF>
     for Vec<A>
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &Vec<I>) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, value: &Vec<I>) -> Self {
         let mut vec = Vec::new();
 
         for (i, value) in value.iter().enumerate() {

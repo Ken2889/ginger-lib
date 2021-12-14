@@ -1,5 +1,5 @@
 use algebra::{Field, FpParameters, PrimeField};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{fields::fp::FpGadget, prelude::*};
 
 use crate::crh::FieldBasedHashGadget;
@@ -30,7 +30,7 @@ where
     HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: PrimeField,
 {
-    pub fn enforce_leaf_index_bits<CS: ConstraintSystem<ConstraintF>>(
+    pub fn enforce_leaf_index_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         leaf_index_bits: &[Boolean],
@@ -38,7 +38,7 @@ where
         self.conditionally_enforce_leaf_index_bits(cs, leaf_index_bits, &Boolean::Constant(true))
     }
 
-    pub fn conditionally_enforce_leaf_index_bits<CS: ConstraintSystem<ConstraintF>>(
+    pub fn conditionally_enforce_leaf_index_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         leaf_index_bits: &[Boolean],
@@ -75,7 +75,7 @@ where
 
     /// Enforces correct reconstruction of the root of the Merkle Tree
     /// from `self` and `leaf`.
-    fn enforce_root_from_leaf<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_root_from_leaf<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         leaf: &HGadget::DataGadget,
@@ -112,7 +112,7 @@ where
     /// Given a field element `leaf_index` representing the position of a leaf in a
     /// Merkle Tree, enforce that the leaf index corresponding to `self` path is the
     /// same of `leaf_index`.
-    fn conditionally_enforce_leaf_index<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_enforce_leaf_index<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         leaf_index: &FpGadget<ConstraintF>,
@@ -150,7 +150,7 @@ where
     HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: PrimeField,
 {
-    pub fn check_leaves<CS: ConstraintSystem<ConstraintF>>(
+    pub fn check_leaves<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         leaves: &[HGadget::DataGadget],
         root: &HGadget::DataGadget,
@@ -162,7 +162,7 @@ where
     /// Starting from all the leaves in the Merkle Tree, reconstructs and enforces
     /// the Merkle Root. NOTE: This works iff Merkle Tree has been created by passing
     /// all leaves (i.e. padding_tree = null).
-    pub fn conditionally_check_leaves<CS: ConstraintSystem<ConstraintF>>(
+    pub fn conditionally_check_leaves<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         leaves: &[HGadget::DataGadget],
         root: &HGadget::DataGadget,
@@ -218,7 +218,7 @@ pub(crate) fn hash_inner_node_gadget<H, HG, ConstraintF, CS>(
 ) -> Result<HG::DataGadget, SynthesisError>
 where
     ConstraintF: Field,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF>,
 {
@@ -232,7 +232,7 @@ where
     HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: Field,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -253,7 +253,7 @@ where
         Ok(FieldBasedBinaryMerkleTreePathGadget { path })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -282,7 +282,7 @@ where
     HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: Field,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value: &FieldBasedBinaryMHTPath<P>,
     ) -> Self {
@@ -316,7 +316,7 @@ where
     HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: Field,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -343,7 +343,7 @@ where
         Boolean::kary_and(cs.ns(|| "is eq final"), v.as_slice())
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -372,7 +372,7 @@ where
         Ok(())
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -406,12 +406,12 @@ where
 mod test {
     use super::*;
     use crate::crh::TweedleFrPoseidonHashGadget;
-    use algebra::{Group, fields::tweedle::Fr};
+    use algebra::{fields::tweedle::Fr, Group};
     use primitives::crh::TweedleFrPoseidonHash;
-    use r1cs_core::ConstraintSystem;
-    use r1cs_std::{
-        instantiated::tweedle::FrGadget, test_constraint_system::TestConstraintSystem,
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use r1cs_std::instantiated::tweedle::FrGadget;
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
@@ -427,21 +427,21 @@ mod test {
         > = None;
     }
 
-    type MNT4753FieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
+    type TweedleDeeFieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
 
     type HG = TweedleFrPoseidonHashGadget;
 
     const TEST_HEIGHT: usize = 5;
 
     fn check_merkle_paths(leaves: &[Fr], use_bad_root: bool) -> bool {
-        let mut tree = MNT4753FieldBasedMerkleTree::new(TEST_HEIGHT);
+        let mut tree = TweedleDeeFieldBasedMerkleTree::new(TEST_HEIGHT);
         tree.append(leaves).unwrap();
         let root = tree.root().unwrap();
         let mut satisfied = true;
 
         //Merkle Path Gadget test
         for (i, leaf) in leaves.iter().enumerate() {
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
             let proof = tree.generate_proof(i, leaf).unwrap();
             assert!(proof.verify(TEST_HEIGHT, &leaf, &root).unwrap());
 
@@ -511,12 +511,12 @@ mod test {
     }
 
     fn check_leaves(leaves: &[Fr], use_bad_root: bool) -> bool {
-        let mut tree = MNT4753FieldBasedMerkleTree::new(TEST_HEIGHT);
+        let mut tree = TweedleDeeFieldBasedMerkleTree::new(TEST_HEIGHT);
         tree.append(leaves).unwrap();
         let root = tree.root().unwrap();
 
         //Merkle Tree Gadget test
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
 
         // Allocate Merkle Tree Root
         let root = FrGadget::alloc(&mut cs.ns(|| "root_digest_{}"), || {

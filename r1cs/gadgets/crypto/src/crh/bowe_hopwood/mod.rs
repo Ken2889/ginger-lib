@@ -1,12 +1,12 @@
 use crate::crh::FixedLengthCRHGadget;
-use algebra::{Field, Curve};
+use algebra::{Curve, Field};
 use std::hash::Hash;
 
 use primitives::{
     bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters, CHUNK_SIZE},
     crh::pedersen::PedersenWindow,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, groups::GroupGadget, uint8::UInt8};
 
 use r1cs_std::bits::boolean::Boolean;
@@ -49,7 +49,7 @@ where
     type OutputGadget = GG;
     type ParametersGadget = BoweHopwoodPedersenCRHGadgetParameters<G, W, ConstraintF, GG>;
 
-    fn check_evaluation_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_evaluation_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
@@ -107,7 +107,7 @@ impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
     AllocGadget<BoweHopwoodPedersenParameters<G>, ConstraintF>
     for BoweHopwoodPedersenCRHGadgetParameters<G, W, ConstraintF, GG>
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         _cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -124,7 +124,7 @@ impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         _cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -150,11 +150,10 @@ mod test {
     use primitives::crh::{
         bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, FixedLengthCRH,
     };
-    use r1cs_core::ConstraintSystem;
-    use r1cs_std::{
-        alloc::AllocGadget, instantiated::tweedle::TweedleDeeGadget,
-        test_constraint_system::TestConstraintSystem, uint8::UInt8,
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use r1cs_std::{alloc::AllocGadget, instantiated::tweedle::TweedleDeeGadget, uint8::UInt8};
     use rand::{thread_rng, Rng};
 
     type TestCRH = BoweHopwoodPedersenCRH<DeeJacobian, Window>;
@@ -168,7 +167,7 @@ mod test {
         const NUM_WINDOWS: usize = 8;
     }
 
-    fn generate_input<CS: ConstraintSystem<Fq>, R: Rng>(
+    fn generate_input<CS: ConstraintSystemAbstract<Fq>, R: Rng>(
         mut cs: CS,
         rng: &mut R,
     ) -> ([u8; 270], Vec<UInt8>) {
@@ -186,7 +185,7 @@ mod test {
     #[test]
     fn crh_primitive_gadget_test() {
         let rng = &mut thread_rng();
-        let mut cs = TestConstraintSystem::<Fq>::new();
+        let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
 
         let (input, input_bytes) = generate_input(&mut cs, rng);
         println!("number of constraints for input: {}", cs.num_constraints());

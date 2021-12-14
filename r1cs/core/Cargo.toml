@@ -23,3 +23,8 @@ license = "MIT/Apache-2.0"
 [dependencies]
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
 smallvec = { version = "1.6.1" }
+radix_trie = { version = "0.2.1" }
+rand = { version = "0.8.4" }
+
+[dev-dependencies]
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }

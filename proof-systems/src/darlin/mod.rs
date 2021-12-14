@@ -29,7 +29,7 @@ use crate::darlin::{
         PCDCircuit, PCD,
     },
 };
-use algebra::{Group, GroupVec, Curve, ToConstraintField};
+use algebra::{Curve, Group, GroupVec, ToConstraintField};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
@@ -37,8 +37,8 @@ use poly_commit::{
         CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
         VerifierKey as DLogVerifierKey,
     },
-    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
-    PolynomialCommitment, QuerySet,
+    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, PolynomialCommitment,
+    QuerySet,
 };
 use rand::RngCore;
 use std::marker::PhantomData;
@@ -106,7 +106,7 @@ where
         FinalDarlinError,
     > {
         let c = C::init(config);
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::index(committer_key, c)?;
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::circuit_specific_setup(committer_key, c)?;
 
         Ok(res)
     }
@@ -206,7 +206,7 @@ where
         public_inputs.extend_from_slice(usr_ins);
 
         // Verify AHP
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::verify_ahp(
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::verify_iop(
             pc_vk, index_vk, public_inputs.as_slice(), &proof.proof
         )?;
 

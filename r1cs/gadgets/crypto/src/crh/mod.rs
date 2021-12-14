@@ -2,7 +2,7 @@ use algebra::Field;
 use std::fmt::Debug;
 
 use primitives::crh::{FieldBasedHash, FixedLengthCRH};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use r1cs_std::prelude::*;
 
@@ -26,7 +26,7 @@ pub trait FixedLengthCRHGadget<H: FixedLengthCRH, ConstraintF: Field>: Sized {
         + Sized;
     type ParametersGadget: AllocGadget<H::Parameters, ConstraintF> + Clone;
 
-    fn check_evaluation_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_evaluation_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
@@ -38,7 +38,7 @@ pub trait FieldBasedHashGadget<H: FieldBasedHash<Data = ConstraintF>, Constraint
 {
     type DataGadget: FieldGadget<ConstraintF, ConstraintF>;
 
-    fn enforce_hash_constant_length<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         input: &[Self::DataGadget],
     ) -> Result<Self::DataGadget, SynthesisError>;
@@ -50,7 +50,7 @@ pub trait FieldHasherGadget<
     HG: FieldBasedHashGadget<H, ConstraintF>,
 >
 {
-    fn enforce_hash<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_hash<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         personalization: Option<&[HG::DataGadget]>,
@@ -62,10 +62,10 @@ mod test {
     use crate::FieldBasedHashGadget;
     use algebra::PrimeField;
     use primitives::FieldBasedHash;
-    use r1cs_core::ConstraintSystem;
-    use r1cs_std::{
-        alloc::AllocGadget, fields::fp::FpGadget, test_constraint_system::TestConstraintSystem,
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use r1cs_std::{alloc::AllocGadget, fields::fp::FpGadget};
 
     pub(crate) fn constant_length_field_based_hash_gadget_native_test<
         F: PrimeField,
@@ -74,7 +74,7 @@ mod test {
     >(
         inputs: Vec<F>,
     ) {
-        let mut cs = TestConstraintSystem::<F>::new();
+        let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
 
         let primitive_result = {
             let mut digest = H::init_constant_length(inputs.len(), None);

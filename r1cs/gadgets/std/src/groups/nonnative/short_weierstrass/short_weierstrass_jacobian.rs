@@ -4,16 +4,15 @@
 //!     - PartialEq, Eq, ToBitsGadget, ToBytesGagdet, EqGadget
 //!     - CondSelectGadget, ConstantGadget, AllocGadget.
 use algebra::{
-    groups::Group,
-    fields::{Field, PrimeField, SquareRootField, BitIterator},
     curves::{
-        Curve,
-        SWModelParameters, EndoMulParameters,
-        short_weierstrass_jacobian::{AffineRep, Jacobian}
+        short_weierstrass_jacobian::{AffineRep, Jacobian},
+        Curve, EndoMulParameters, SWModelParameters,
     },
+    fields::{BitIterator, Field, PrimeField, SquareRootField},
+    groups::Group,
 };
 
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{
     alloc::{AllocGadget, ConstantGadget},
@@ -47,16 +46,16 @@ pub struct GroupAffineNonNativeGadget<
 }
 
 impl<P, ConstraintF, SimulationF> GroupGadget<Jacobian<P>, ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     type Value = Jacobian<P>;
     type Variable = ();
 
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -65,7 +64,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         Ok(Self::new(
             NonNativeFieldGadget::zero(cs.ns(|| "zero"))?,
             NonNativeFieldGadget::one(cs.ns(|| "one"))?,
@@ -74,12 +73,15 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn is_zero<CS: ConstraintSystem<ConstraintF>>(&self, _: CS) -> Result<Boolean, SynthesisError> {
+    fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        _: CS,
+    ) -> Result<Boolean, SynthesisError> {
         Ok(self.infinity)
     }
 
     #[inline]
-    fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
     ) -> Result<(), SynthesisError> {
@@ -139,7 +141,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
         Ok(())
     }
 
-    fn negate<CS: ConstraintSystem<ConstraintF>>(
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -152,7 +154,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 
     /// Incomplete addition: neither `self` nor `other` can be the neutral
     /// element.
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Jacobian<P>,
@@ -232,7 +234,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     /// For a detailed explanation, see the native implementation.
     ///
     /// [Hopwood] https://github.com/zcash/zcash/issues/3924
-    fn mul_bits<'a, CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         // variable base point, must be non-trivial and in the prime order subgroup
         &self,
         mut cs: CS,
@@ -247,7 +249,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
                                    acc: &mut Self,
                                    t: &Self,
                                    safe_arithmetics: bool|
-                                   -> Result<(), SynthesisError> {
+         -> Result<(), SynthesisError> {
             // Q := k[i+1] ? T : −T
             let neg_y = t.y.negate(cs.ns(|| "neg y"))?;
             let selected_y = NonNativeFieldGadget::conditionally_select(
@@ -355,7 +357,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     /// CAUTION: Due to the use of incomplete arithemtics, there are few exceptions
     /// described in `fn check_mul_bits_fixed_base_inputs()`.
     #[inline]
-    fn mul_bits_fixed_base<'a, CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits_fixed_base<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         base: &'a Jacobian<P>,
         mut cs: CS,
         bits: &[Boolean],
@@ -470,15 +472,11 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
             self.y.get_value(),
             self.infinity.get_value(),
         ) {
-            (Some(x), Some(y), Some(infinity)) => {
-                Some(
-                    if infinity {
-                        Jacobian::<P>::zero()
-                    } else {
-                        Jacobian::<P>::from_affine(&AffineRep::<P>::new(x, y))
-                    }
-                )
-            }
+            (Some(x), Some(y), Some(infinity)) => Some(if infinity {
+                Jacobian::<P>::zero()
+            } else {
+                Jacobian::<P>::from_affine(&AffineRep::<P>::new(x, y))
+            }),
             (None, None, None) => None,
             _ => unreachable!(),
         }
@@ -498,15 +496,15 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> EndoMulCurveGadget<Jacobian<P>, ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: EndoMulParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: EndoMulParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     /// Given an arbitrary curve element `&self`, applies the endomorphism
     /// defined by `ENDO_COEFF`.
-    fn apply_endomorphism<CS: ConstraintSystem<ConstraintF>>(
+    fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -526,7 +524,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     /// where `phi(bits)` is the equivalent scalar representation of `bits`.
     ///
     /// [Halo]: https://eprint.iacr.org/2019/1021
-    fn endo_mul<CS: ConstraintSystem<ConstraintF>>(
+    fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         bits: &[Boolean],
@@ -578,11 +576,11 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> PartialEq
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y
@@ -590,21 +588,21 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> Eq for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
 }
 
 impl<P, ConstraintF, SimulationF> ToBitsGadget<ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -615,7 +613,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
         Ok(x_bits)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -633,13 +631,13 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> ToBytesGadget<ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -651,7 +649,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
         Ok(x_bytes)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -670,13 +668,13 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> EqGadget<ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -697,7 +695,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -713,7 +711,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -725,18 +723,18 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
             &is_equal,
             should_enforce,
         )?
-            .enforce_equal(
-                cs.ns(|| "is_equal AND should_enforce == false"),
-                &Boolean::Constant(false),
-            )
+        .enforce_equal(
+            cs.ns(|| "is_equal AND should_enforce == false"),
+            &Boolean::Constant(false),
+        )
     }
 }
 
 impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     pub fn new(
         x: NonNativeFieldGadget<SimulationF, ConstraintF>,
@@ -755,7 +753,7 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
     /// Incomplete addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
     /// If `safe` is set, enforce in the circuit exceptional cases not occurring.
-    fn add_internal<CS: ConstraintSystem<ConstraintF>>(
+    fn add_internal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -826,7 +824,7 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
     #[inline]
     /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn add_unsafe<CS: ConstraintSystem<ConstraintF>>(
+    pub fn add_unsafe<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -839,7 +837,7 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
     /// than computing self.double().add(other).
     /// Incomplete add: neither `self` nor `other` can be the neutral element, and other != ±self;
     /// If `safe` is set, enforce in the circuit that exceptional cases not occurring.
-    fn double_and_add_internal<CS: ConstraintSystem<ConstraintF>>(
+    fn double_and_add_internal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -963,7 +961,7 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
     /// Compute 2 * self + other.
     /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn double_and_add<CS: ConstraintSystem<ConstraintF>>(
+    pub fn double_and_add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -975,7 +973,7 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
     /// Compute 2 * self + other.
     /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn double_and_add_unsafe<CS: ConstraintSystem<ConstraintF>>(
+    pub fn double_and_add_unsafe<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -985,14 +983,14 @@ impl<P, ConstraintF, SimulationF> GroupAffineNonNativeGadget<P, ConstraintF, Sim
 }
 
 impl<P, ConstraintF, SimulationF> CondSelectGadget<ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -1027,13 +1025,16 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> ConstantGadget<Jacobian<P>, ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &Jacobian<P>) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        value: &Jacobian<P>,
+    ) -> Self {
         if value.is_zero() {
             Self::zero(cs).unwrap()
         } else {
@@ -1062,20 +1063,20 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 }
 
 impl<P, ConstraintF, SimulationF> AllocGadget<Jacobian<P>, ConstraintF>
-for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
-    where
-        P: SWModelParameters<BaseField = SimulationF>,
-        ConstraintF: PrimeField,
-        SimulationF: PrimeField + SquareRootField,
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: SWModelParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
-    fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-        where
-            FN: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<Jacobian<P>>,
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Jacobian<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
@@ -1126,13 +1127,13 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-        where
-            FN: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<Jacobian<P>>,
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Jacobian<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {
@@ -1159,13 +1160,13 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-        where
-            FN: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<Jacobian<P>>,
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Jacobian<P>>,
     {
         let alloc_and_prime_order_check =
             |mut cs: r1cs_core::Namespace<_, _>, value_gen: FN| -> Result<Self, SynthesisError> {
@@ -1180,10 +1181,7 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
                 // Otherwise we simply enforce that -result == (r-1) * result.
                 if cofactor_weight < r_weight {
                     let ge = Self::alloc(cs.ns(|| "Alloc checked"), || {
-                        value_gen().map(|ge| {
-                            ge.borrow()
-                                .scale_by_cofactor_inv()
-                        })
+                        value_gen().map(|ge| ge.borrow().scale_by_cofactor_inv())
                     })?;
                     let mut seen_one = false;
                     let mut result = Self::zero(cs.ns(|| "result"))?;
@@ -1236,13 +1234,13 @@ for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
     }
 
     #[inline]
-    fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
-        where
-            FN: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<Jacobian<P>>,
+    where
+        FN: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<Jacobian<P>>,
     {
         let (x, y, infinity) = match value_gen() {
             Ok(ge) => {

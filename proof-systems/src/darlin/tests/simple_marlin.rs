@@ -4,12 +4,12 @@ use crate::darlin::pcd::{
     simple_marlin::{MarlinProof, SimpleMarlinPCD},
     PCDParameters,
 };
-use algebra::{Field, Curve, UniformRand};
+use algebra::{Curve, Field, UniformRand};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
 use poly_commit::DomainExtendedPolynomialCommitment;
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;
 
@@ -29,7 +29,7 @@ pub(crate) struct Circuit<F: Field> {
 }
 
 impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<ConstraintF> {
-    fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<ConstraintF>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
@@ -148,7 +148,7 @@ pub fn generate_test_data<'a, G: Curve, D: Digest + 'a, R: RngCore>(
         G,
         DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>,
         D,
-    >::index(&committer_key, circ.clone())
+    >::circuit_specific_setup(&committer_key, circ.clone())
     .unwrap();
 
     // Generate Marlin PCDs

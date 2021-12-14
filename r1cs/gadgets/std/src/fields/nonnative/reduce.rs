@@ -12,7 +12,7 @@ use crate::{
     overhead,
     prelude::*,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::{cmp::min, marker::PhantomData, vec::Vec};
 
 use num_bigint::BigUint;
@@ -74,7 +74,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     /// Convert a limb of `num_bits` into a vector of Boolean gadgets.
     /// Allowing `num_bits` to be at most `ConstraintF::size_in_bits() - 1` for efficient 'unpacking'.
     // Consumes `num_bits` + 1 constraints.
-    pub fn limb_to_bits<CS: ConstraintSystem<ConstraintF>>(
+    pub fn limb_to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         limb: &FpGadget<ConstraintF>,
         num_bits: usize,
@@ -89,7 +89,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     }
 
     /// Reduction to normal form, which again has no excess in its limbs.
-    pub fn reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         elem: &mut NonNativeFieldGadget<SimulationF, ConstraintF>,
     ) -> Result<(), SynthesisError> {
@@ -106,7 +106,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     /// Reduction to be enforced after additions.
     /// Checks if the resulting elem is still "small" enough for a multiplication, and
     /// reduces it otherwise.
-    pub fn post_add_reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn post_add_reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         elem: &mut NonNativeFieldGadget<SimulationF, ConstraintF>,
     ) -> Result<(), SynthesisError> {
@@ -121,7 +121,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     }
 
     /// Reduction used before multiplication to reduce the representations in a way that allows efficient multiplication
-    pub fn pre_mul_reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn pre_mul_reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         elem: &mut NonNativeFieldGadget<SimulationF, ConstraintF>,
         elem_other: &mut NonNativeFieldGadget<SimulationF, ConstraintF>,
@@ -170,7 +170,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     }
 
     /// Reduction to the normal form
-    pub fn pre_eq_reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn pre_eq_reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         elem: &mut NonNativeFieldGadget<SimulationF, ConstraintF>,
     ) -> Result<(), SynthesisError> {
@@ -182,7 +182,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
     }
 
     /// Group and check equality, the low-level function for equality checks?
-    pub fn group_and_check_equality<CS: ConstraintSystem<ConstraintF>>(
+    pub fn group_and_check_equality<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         surfeit: usize,
         bits_per_limb: usize,

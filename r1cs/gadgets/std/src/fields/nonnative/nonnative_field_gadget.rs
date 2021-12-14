@@ -23,7 +23,7 @@ use crate::{
     to_field_gadget_vec::ToConstraintFieldGadget,
     Assignment,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::cmp::{max, min};
 use std::marker::PhantomData;
 use std::{borrow::Borrow, vec, vec::Vec};
@@ -90,7 +90,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
 
     /// Subtract a nonnative field element, without the final reduction step
-    pub fn sub_without_reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn sub_without_reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -233,7 +233,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     /// for advanced use, multiply and output the intermediate representations (without reduction)
     /// This intermediate representations can be added with each other, and they can later be
     /// reduced back to the `NonNativeFieldGadget`.
-    pub fn mul_without_reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_without_reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -337,7 +337,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
 
     #[inline]
-    pub fn is_odd<CS: ConstraintSystem<ConstraintF>>(
+    pub fn is_odd<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Boolean, SynthesisError> {
@@ -347,7 +347,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
 
     // Packs a big endian bit sequence (which does not exceed the length of a normal form)
     // into a NonNativeFieldGadget
-    pub fn from_bits_with_params<CS: ConstraintSystem<ConstraintF>>(
+    pub fn from_bits_with_params<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         bits: &[Boolean],
         params: NonNativeFieldParams,
@@ -406,15 +406,15 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         unimplemented!()
     }
 
-    fn zero<CS: ConstraintSystem<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
         Ok(Self::from_value(cs, &SimulationF::zero()))
     }
 
-    fn one<CS: ConstraintSystem<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
+    fn one<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
         Ok(Self::from_value(cs, &SimulationF::one()))
     }
 
-    fn conditionally_add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
         _cond: &Boolean,
@@ -424,7 +424,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
     }
 
     /// Addition of non-natives without reduction
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -455,7 +455,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
     }
 
     /// Substraction of non-natives without reduction
-    fn sub<CS: ConstraintSystem<ConstraintF>>(
+    fn sub<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -468,14 +468,14 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         Ok(result)
     }
 
-    fn negate<CS: ConstraintSystem<ConstraintF>>(
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
         Self::zero(cs.ns(|| "hardcode zero"))?.sub(cs.ns(|| "0 - self"), self)
     }
 
-    fn mul<CS: ConstraintSystem<ConstraintF>>(
+    fn mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -485,7 +485,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         Ok(res_reduced)
     }
 
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &SimulationF,
@@ -494,7 +494,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         self.add(cs.ns(|| "add constant"), &other_g)
     }
 
-    fn sub_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn sub_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         fe: &SimulationF,
@@ -504,7 +504,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
     }
 
     // TODO: Can be optimized by implementing a mul_by_constant_without_reduce()
-    fn mul_by_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_by_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         fe: &SimulationF,
@@ -513,7 +513,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         self.mul(cs.ns(|| "mul constant"), &other_g)
     }
 
-    fn inverse<CS: ConstraintSystem<ConstraintF>>(
+    fn inverse<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -532,7 +532,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
     }
 
     // The non-native field is a prime field, hence the Frobenious map is trivial
-    fn frobenius_map<CS: ConstraintSystem<ConstraintF>>(
+    fn frobenius_map<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _power: usize,
@@ -556,7 +556,10 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> ConstantGadget<SimulationF, ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &SimulationF) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        value: &SimulationF,
+    ) -> Self {
         let limbs_value = Self::get_limbs_representations(value).unwrap();
 
         let mut limbs = Vec::new();
@@ -584,7 +587,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ConstantGadget<Simulation
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBitsGadget<ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -620,7 +623,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBitsGadget<ConstraintF>
         Ok(bits)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -635,7 +638,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FromBitsGadget<Constraint
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
     // Packs a bit sequence (which does not exceed the length of a normal form) into a NonNativeFieldGadget
-    fn from_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn from_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         bits: &[Boolean],
     ) -> Result<Self, SynthesisError> {
@@ -647,7 +650,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FromBitsGadget<Constraint
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBytesGadget<ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -667,7 +670,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBytesGadget<ConstraintF
         Ok(bytes)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -691,7 +694,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBytesGadget<ConstraintF
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> CondSelectGadget<ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         true_value: &Self,
@@ -732,7 +735,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> TwoBitLookupGadget<Constr
 {
     type TableConstant = SimulationF;
 
-    fn two_bit_lookup<CS: ConstraintSystem<ConstraintF>>(
+    fn two_bit_lookup<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         bits: &[Boolean],
         constants: &[Self::TableConstant],
@@ -774,7 +777,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> TwoBitLookupGadget<Constr
         })
     }
 
-    fn two_bit_lookup_lc<CS: ConstraintSystem<ConstraintF>>(
+    fn two_bit_lookup_lc<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         precomp: &Boolean,
         bits: &[Boolean],
@@ -830,7 +833,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ThreeBitCondNegLookupGadg
 {
     type TableConstant = SimulationF;
 
-    fn three_bit_cond_neg_lookup<CS: ConstraintSystem<ConstraintF>>(
+    fn three_bit_cond_neg_lookup<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         bits: &[Boolean],
         b0b1: &Boolean,
@@ -888,7 +891,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> AllocGadget<SimulationF, 
     /// Allocates a non-native field element and enforces normal form, which consumes at most `bits_per_limb` many bits per limb, and
     /// and altogether at most (non-native) modulus many bits.
     // TODO:  Check why `num_of_additions_over_normal_form` is set to `1` and `is_over_normal_form` is set `false`.
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -939,7 +942,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> AllocGadget<SimulationF, 
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -979,7 +982,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToConstraintFieldGadget<C
 {
     type FieldGadget = FpGadget<ConstraintF>;
 
-    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, SynthesisError> {
@@ -991,7 +994,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> EqGadget<ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
     // Naive implementation
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1016,7 +1019,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> EqGadget<ConstraintF>
         Ok(should_enforce_equal)
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1099,7 +1102,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> EqGadget<ConstraintF>
         Ok(())
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,

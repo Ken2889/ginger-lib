@@ -10,14 +10,14 @@ use crate::crh::{
 };
 
 use algebra::{
-    fields::{Field, PrimeField, SquareRootField},
     curves::{
-        Curve,
         models::{ModelParameters, TEModelParameters},
         twisted_edwards_extended::TEExtended,
+        Curve,
     },
+    fields::{Field, PrimeField, SquareRootField},
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{
     fields::fp::FpGadget,
     groups::{curves::twisted_edwards::AffineGadget as TwistedEdwardsGadget, GroupGadget},
@@ -39,7 +39,7 @@ pub trait InjectiveMapGadget<
         + Clone
         + Sized;
 
-    fn evaluate_map<CS: ConstraintSystem<ConstraintF>>(
+    fn evaluate_map<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         ge: &GG,
     ) -> Result<Self::OutputGadget, SynthesisError>;
@@ -60,7 +60,7 @@ where
 {
     type OutputGadget = FpGadget<ConstraintF>;
 
-    fn evaluate_map<CS: ConstraintSystem<ConstraintF>>(
+    fn evaluate_map<CS: ConstraintSystemAbstract<ConstraintF>>(
         _cs: CS,
         ge: &TwistedEdwardsGadget<P, ConstraintF, FpGadget<ConstraintF>>,
     ) -> Result<Self::OutputGadget, SynthesisError> {
@@ -94,7 +94,7 @@ where
     type OutputGadget = IG::OutputGadget;
     type ParametersGadget = PedersenCRHGadgetParameters<G, W, ConstraintF, GG>;
 
-    fn check_evaluation_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_evaluation_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],

@@ -1,6 +1,6 @@
 // use std::ops::{Mul, MulAssign};
 use algebra::{BitIterator, Field};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::fmt::Debug;
 
 use crate::{prelude::*, Assignment};
@@ -29,24 +29,24 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
 
     fn get_variable(&self) -> Self::Variable;
 
-    fn zero<CS: ConstraintSystem<ConstraintF>>(_: CS) -> Result<Self, SynthesisError>;
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(_: CS) -> Result<Self, SynthesisError>;
 
-    fn one<CS: ConstraintSystem<ConstraintF>>(_: CS) -> Result<Self, SynthesisError>;
+    fn one<CS: ConstraintSystemAbstract<ConstraintF>>(_: CS) -> Result<Self, SynthesisError>;
 
-    fn conditionally_add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &Boolean,
         _: F,
     ) -> Result<Self, SynthesisError>;
 
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &Self,
     ) -> Result<Self, SynthesisError>;
 
-    fn add_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn add_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &Self,
@@ -55,11 +55,14 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn double<CS: ConstraintSystem<ConstraintF>>(&self, cs: CS) -> Result<Self, SynthesisError> {
+    fn double<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Self, SynthesisError> {
         self.add(cs, &self)
     }
 
-    fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -67,13 +70,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn sub<CS: ConstraintSystem<ConstraintF>>(
+    fn sub<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &Self,
     ) -> Result<Self, SynthesisError>;
 
-    fn sub_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn sub_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &Self,
@@ -82,10 +85,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn negate<CS: ConstraintSystem<ConstraintF>>(&self, _: CS) -> Result<Self, SynthesisError>;
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        _: CS,
+    ) -> Result<Self, SynthesisError>;
 
     #[inline]
-    fn negate_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn negate_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -93,13 +99,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn mul<CS: ConstraintSystem<ConstraintF>>(
+    fn mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &Self,
     ) -> Result<Self, SynthesisError>;
 
-    fn mul_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &Self,
@@ -108,11 +114,14 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn square<CS: ConstraintSystem<ConstraintF>>(&self, cs: CS) -> Result<Self, SynthesisError> {
+    fn square<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Self, SynthesisError> {
         self.mul(cs, &self)
     }
 
-    fn square_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn square_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -120,7 +129,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn mul_equals<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_equals<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -130,7 +139,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         result.enforce_equal(&mut cs.ns(|| "test_equals"), &actual_result)
     }
 
-    fn square_equals<CS: ConstraintSystem<ConstraintF>>(
+    fn square_equals<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         result: &Self,
@@ -139,13 +148,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         result.enforce_equal(&mut cs.ns(|| "test_equals"), &actual_result)
     }
 
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &F,
     ) -> Result<Self, SynthesisError>;
 
-    fn add_constant_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &F,
@@ -154,7 +163,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn sub_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn sub_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         fe: &F,
@@ -162,7 +171,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         self.add_constant(cs, &(-(*fe)))
     }
 
-    fn sub_constant_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn sub_constant_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &F,
@@ -170,13 +179,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         self.add_constant_in_place(cs, &(-(*other)))
     }
 
-    fn mul_by_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_by_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         _: &F,
     ) -> Result<Self, SynthesisError>;
 
-    fn mul_by_constant_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_by_constant_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         other: &F,
@@ -185,7 +194,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(self)
     }
 
-    fn inverse<CS: ConstraintSystem<ConstraintF>>(
+    fn inverse<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -197,13 +206,13 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         Ok(inverse)
     }
 
-    fn frobenius_map<CS: ConstraintSystem<ConstraintF>>(
+    fn frobenius_map<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _: CS,
         power: usize,
     ) -> Result<Self, SynthesisError>;
 
-    fn frobenius_map_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn frobenius_map_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
         power: usize,
@@ -215,7 +224,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
     /// Accepts as input a list of bits which, when interpreted in big-endian
     /// form, are a scalar.
     #[inline]
-    fn pow<CS: ConstraintSystem<ConstraintF>>(
+    fn pow<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         bits: &[Boolean],
@@ -236,7 +245,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
 
     /// Computes `self^S`, where S is interpreted as an little-endian
     /// u64-decomposition of an integer.
-    fn pow_by_constant<S: AsRef<[u64]>, CS: ConstraintSystem<ConstraintF>>(
+    fn pow_by_constant<S: AsRef<[u64]>, CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         exp: S,
@@ -271,16 +280,17 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::{fields::fp::FpGadget, prelude::*};
+    use algebra::{leading_zeros, BitIterator, Field, PrimeField, UniformRand};
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
     use rand::{self, thread_rng, Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
-    use crate::{fields::fp::FpGadget, prelude::*, test_constraint_system::TestConstraintSystem};
-    use algebra::{leading_zeros, BitIterator, Field, PrimeField, UniformRand};
-    use r1cs_core::ConstraintSystem;
-
     #[allow(dead_code)]
     pub(crate) fn field_test<FE: Field, ConstraintF: Field, F: FieldGadget<FE, ConstraintF>>() {
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         let mut rng = &mut thread_rng();
 
@@ -486,7 +496,7 @@ pub(crate) mod tests {
     >(
         maxpower: usize,
     ) {
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
         let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
         for i in 0..(maxpower + 1) {
             let mut a = FE::rand(&mut rng);
@@ -504,7 +514,7 @@ pub(crate) mod tests {
     pub(crate) fn even_odd_fp_gadget_test<ConstraintF: PrimeField>() {
         let rng = &mut thread_rng();
 
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         let one = FpGadget::<ConstraintF>::one(cs.ns(|| "one")).unwrap();
         let two = one.double(cs.ns(|| "two")).unwrap();
@@ -543,7 +553,7 @@ pub(crate) mod tests {
     #[allow(dead_code)]
     pub(crate) fn from_bits_fp_gadget_test<ConstraintF: PrimeField>() {
         let mut rng = thread_rng();
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         // Sample a random field element with bit length MODULUS_BITS - 1
         // (Because `from_bits` pack only up until MODULUS_BITS - 1 bits)
@@ -615,7 +625,7 @@ pub(crate) mod tests {
         use crate::algebra::FpParameters;
 
         let mut rng = thread_rng();
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         //Native to_bits test
         let a = ConstraintF::rand(&mut rng);
@@ -700,7 +710,7 @@ pub(crate) mod tests {
 
         //Case a == b
         {
-            let mut cs = TestConstraintSystem::<ConstraintF>::new();
+            let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
             let a_gadget = FpGadget::<ConstraintF>::alloc(cs.ns(|| "alloc a"), || Ok(a)).unwrap();
 
@@ -729,7 +739,7 @@ pub(crate) mod tests {
 
         //Case a != b
         {
-            let mut cs = TestConstraintSystem::<ConstraintF>::new();
+            let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
             let a_gadget = FpGadget::<ConstraintF>::alloc(cs.ns(|| "alloc a"), || Ok(a)).unwrap();
 

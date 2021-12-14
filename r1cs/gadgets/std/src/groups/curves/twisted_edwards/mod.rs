@@ -1,14 +1,13 @@
 use algebra::{
-    groups::Group,
-    fields::{Field, BitIterator},
     curves::{
-        Curve,
-        TEModelParameters, MontgomeryModelParameters,
-        twisted_edwards_extended::{AffineRep, TEExtended}
+        twisted_edwards_extended::{AffineRep, TEExtended},
+        Curve, MontgomeryModelParameters, TEModelParameters,
     },
+    fields::{BitIterator, Field},
+    groups::Group,
 };
 
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::prelude::*;
 
@@ -38,7 +37,7 @@ mod montgomery_affine_impl {
     use std::ops::{AddAssign, MulAssign, SubAssign};
 
     impl<P: TEModelParameters, ConstraintF: Field, F: FieldGadget<P::BaseField, ConstraintF>>
-    MontgomeryAffineGadget<P, ConstraintF, F>
+        MontgomeryAffineGadget<P, ConstraintF, F>
     {
         pub fn new(x: F, y: F) -> Self {
             Self {
@@ -67,7 +66,7 @@ mod montgomery_affine_impl {
             Ok((montgomery_point.x, montgomery_point.y))
         }
 
-        pub fn from_edwards<CS: ConstraintSystem<ConstraintF>>(
+        pub fn from_edwards<CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             p: &TEExtended<P>,
         ) -> Result<Self, SynthesisError> {
@@ -80,7 +79,7 @@ mod montgomery_affine_impl {
             Ok(Self::new(u, v))
         }
 
-        pub fn into_edwards<CS: ConstraintSystem<ConstraintF>>(
+        pub fn into_edwards<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
         ) -> Result<AffineGadget<P, ConstraintF, F>, SynthesisError> {
@@ -127,7 +126,7 @@ mod montgomery_affine_impl {
             Ok(AffineGadget::new(u, v))
         }
 
-        pub fn add<CS: ConstraintSystem<ConstraintF>>(
+        pub fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &Self,
@@ -176,7 +175,7 @@ mod montgomery_affine_impl {
             let yprime = F::alloc(cs.ns(|| "yprime"), || {
                 Ok(-(self.y.get_value().get()?
                     + &(lambda.get_value().get()?
-                    * &(xprime.get_value().get()? - &self.x.get_value().get()?))))
+                        * &(xprime.get_value().get()? - &self.x.get_value().get()?))))
             })?;
 
             let xres = self.x.sub(cs.ns(|| "xres"), &xprime)?;
@@ -205,7 +204,7 @@ pub struct AffineGadget<
 }
 
 impl<P: TEModelParameters, ConstraintF: Field, F: FieldGadget<P::BaseField, ConstraintF>>
-AffineGadget<P, ConstraintF, F>
+    AffineGadget<P, ConstraintF, F>
 {
     pub fn new(x: F, y: F) -> Self {
         Self {
@@ -218,10 +217,10 @@ AffineGadget<P, ConstraintF, F>
 }
 
 impl<P, ConstraintF, F> PartialEq for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
     fn eq(&self, other: &Self) -> bool {
         self.x == other.x && self.y == other.y
@@ -229,10 +228,10 @@ impl<P, ConstraintF, F> PartialEq for AffineGadget<P, ConstraintF, F>
 }
 
 impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
 }
 
@@ -243,10 +242,10 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //     use std::ops::Neg;
 //
 //     impl<P, ConstraintF, F> GroupGadget<TEExtended<P>, ConstraintF> for AffineGadget<P, ConstraintF, F>
-//         where
-//             P: TEModelParameters,
-//             ConstraintF: Field,
-//             F: FieldGadget<P::BaseField, ConstraintF>,
+//     where
+//         P: TEModelParameters,
+//         ConstraintF: Field,
+//         F: FieldGadget<P::BaseField, ConstraintF>,
 //     {
 //         type Value = TEExtended<P>;
 //         type Variable = (F::Variable, F::Variable);
@@ -265,7 +264,9 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //         }
 //
 //         #[inline]
-//         fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+//         fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+//             mut cs: CS,
+//         ) -> Result<Self, SynthesisError> {
 //             Ok(Self::new(
 //                 F::zero(cs.ns(|| "zero"))?,
 //                 F::one(cs.ns(|| "one"))?,
@@ -274,7 +275,7 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //
 //         //TODO: Implement this using enforce_verdict
 //         #[inline]
-//         fn is_zero<CS: ConstraintSystem<ConstraintF>>(
+//         fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
 //             &self,
 //             _: CS,
 //         ) -> Result<Boolean, SynthesisError> {
@@ -284,7 +285,7 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //         /// Optimized constraints for checking Edwards point addition from ZCash
 //         /// developers Daira Hopwood and Sean Bowe. Requires only 6 constraints
 //         /// compared to 7 for the straightforward version we had earlier.
-//         fn add<CS: ConstraintSystem<ConstraintF>>(
+//         fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
 //             &self,
 //             mut cs: CS,
 //             other: &Self,
@@ -345,7 +346,7 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //             Ok(Self::new(x3, y3))
 //         }
 //
-//         fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+//         fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
 //             &self,
 //             mut cs: CS,
 //             other: &TEExtended<P>,
@@ -408,7 +409,7 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //             Ok(Self::new(x3, y3))
 //         }
 //
-//         fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+//         fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
 //             &mut self,
 //             mut cs: CS,
 //         ) -> Result<(), SynthesisError> {
@@ -457,7 +458,7 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //             Ok(())
 //         }
 //
-//         fn negate<CS: ConstraintSystem<ConstraintF>>(
+//         fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
 //             &self,
 //             mut cs: CS,
 //         ) -> Result<Self, SynthesisError> {
@@ -477,19 +478,19 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //     }
 //
 //     impl<P, ConstraintF, F> AllocGadget<TEExtended<P>, ConstraintF> for AffineGadget<P, ConstraintF, F>
-//         where
-//             P: TEModelParameters,
-//             ConstraintF: Field,
-//             F: FieldGadget<P::BaseField, ConstraintF>,
-//             Self: GroupGadget<TEExtended<P>, ConstraintF>,
+//     where
+//         P: TEModelParameters,
+//         ConstraintF: Field,
+//         F: FieldGadget<P::BaseField, ConstraintF>,
+//         Self: GroupGadget<TEExtended<P>, ConstraintF>,
 //     {
-//         fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+//         fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
 //             mut cs: CS,
 //             value_gen: FN,
 //         ) -> Result<Self, SynthesisError>
-//             where
-//                 FN: FnOnce() -> Result<T, SynthesisError>,
-//                 T: Borrow<TEExtended<P>>,
+//         where
+//             FN: FnOnce() -> Result<T, SynthesisError>,
+//             T: Borrow<TEExtended<P>>,
 //         {
 //             let (x, y) = match value_gen() {
 //                 Ok(ge) => {
@@ -527,13 +528,13 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //         }
 //
 //         #[inline]
-//         fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+//         fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
 //             mut cs: CS,
 //             value_gen: FN,
 //         ) -> Result<Self, SynthesisError>
-//             where
-//                 FN: FnOnce() -> Result<T, SynthesisError>,
-//                 T: Borrow<TEExtended<P>>,
+//         where
+//             FN: FnOnce() -> Result<T, SynthesisError>,
+//             T: Borrow<TEExtended<P>>,
 //         {
 //             let (x, y) = match value_gen() {
 //                 Ok(ge) => {
@@ -553,17 +554,17 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //         }
 //
 //         #[inline]
-//         fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+//         fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
 //             mut cs: CS,
 //             value_gen: FN,
 //         ) -> Result<Self, SynthesisError>
-//             where
-//                 FN: FnOnce() -> Result<T, SynthesisError>,
-//                 T: Borrow<TEExtended<P>>,
+//         where
+//             FN: FnOnce() -> Result<T, SynthesisError>,
+//             T: Borrow<TEExtended<P>>,
 //         {
 //             let alloc_and_prime_order_check = |mut cs: r1cs_core::Namespace<_, _>,
 //                                                value_gen: FN|
-//                                                -> Result<Self, SynthesisError> {
+//              -> Result<Self, SynthesisError> {
 //                 let cofactor_weight = BitIterator::new(P::COFACTOR).filter(|b| *b).count();
 //                 // If we multiply by r, we actually multiply by r - 2.
 //                 let r_minus_1 = (-P::ScalarField::one()).into_repr();
@@ -636,13 +637,13 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //             Ok(ge)
 //         }
 //
-//         fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+//         fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
 //             mut cs: CS,
 //             value_gen: FN,
 //         ) -> Result<Self, SynthesisError>
-//             where
-//                 FN: FnOnce() -> Result<T, SynthesisError>,
-//                 T: Borrow<TEExtended<P>>,
+//         where
+//             FN: FnOnce() -> Result<T, SynthesisError>,
+//             T: Borrow<TEExtended<P>>,
 //         {
 //             let (x, y) = match value_gen() {
 //                 Ok(ge) => {
@@ -680,15 +681,19 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 //         }
 //     }
 //
-//     impl<P, ConstraintF, F> ConstantGadget<TEExtended<P>, ConstraintF> for AffineGadget<P, ConstraintF, F>
-//         where
-//             P: TEModelParameters,
-//             ConstraintF: Field,
-//             F: FieldGadget<P::BaseField, ConstraintF>,
-//             Self: GroupGadget<TEExtended<P>, ConstraintF>,
+//     impl<P, ConstraintF, F> ConstantGadget<TEExtended<P>, ConstraintF>
+//         for AffineGadget<P, ConstraintF, F>
+//     where
+//         P: TEModelParameters,
+//         ConstraintF: Field,
+//         F: FieldGadget<P::BaseField, ConstraintF>,
+//         Self: GroupGadget<TEExtended<P>, ConstraintF>,
 //     {
 //         #[inline]
-//         fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &TEExtended<P>) -> Self {
+//         fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+//             mut cs: CS,
+//             value: &TEExtended<P>,
+//         ) -> Self {
 //             let x = F::from_value(cs.ns(|| "hardcode x"), &value.x);
 //             let y = F::from_value(cs.ns(|| "hardcode y"), &value.y);
 //
@@ -708,19 +713,14 @@ impl<P, ConstraintF, F> Eq for AffineGadget<P, ConstraintF, F>
 mod projective_impl {
     use super::*;
     use crate::Assignment;
-    use algebra::{
-        Curve,
-        curves::twisted_edwards_extended::TEExtended, Field,
-        PrimeField,
-    };
+    use algebra::{curves::twisted_edwards_extended::TEExtended, Curve, Field, PrimeField};
     use std::ops::Neg;
 
-    impl<P, ConstraintF, F> GroupGadget<TEExtended<P>, ConstraintF>
-    for AffineGadget<P, ConstraintF, F>
-        where
-            P: TEModelParameters,
-            ConstraintF: Field,
-            F: FieldGadget<P::BaseField, ConstraintF>,
+    impl<P, ConstraintF, F> GroupGadget<TEExtended<P>, ConstraintF> for AffineGadget<P, ConstraintF, F>
+    where
+        P: TEModelParameters,
+        ConstraintF: Field,
+        F: FieldGadget<P::BaseField, ConstraintF>,
     {
         type Value = TEExtended<P>;
         type Variable = (F::Variable, F::Variable);
@@ -728,7 +728,9 @@ mod projective_impl {
         #[inline]
         fn get_value(&self) -> Option<Self::Value> {
             match (self.x.get_value(), self.y.get_value()) {
-                (Some(x), Some(y)) => Some(TEExtended::<P>::from_affine(&AffineRep::<P>::new(x, y))),
+                (Some(x), Some(y)) => {
+                    Some(TEExtended::<P>::from_affine(&AffineRep::<P>::new(x, y)))
+                }
                 (..) => None,
             }
         }
@@ -739,7 +741,9 @@ mod projective_impl {
         }
 
         #[inline]
-        fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+        fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+            mut cs: CS,
+        ) -> Result<Self, SynthesisError> {
             Ok(Self::new(
                 F::zero(cs.ns(|| "zero"))?,
                 F::one(cs.ns(|| "one"))?,
@@ -748,7 +752,7 @@ mod projective_impl {
 
         //TODO: Implement this using enforce_verdict
         #[inline]
-        fn is_zero<CS: ConstraintSystem<ConstraintF>>(
+        fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             _: CS,
         ) -> Result<Boolean, SynthesisError> {
@@ -758,7 +762,7 @@ mod projective_impl {
         /// Optimized constraints for checking Edwards point addition from ZCash
         /// developers Daira Hopwood and Sean Bowe. Requires only 6 constraints
         /// compared to 7 for the straightforward version we had earlier.
-        fn add<CS: ConstraintSystem<ConstraintF>>(
+        fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &Self,
@@ -819,7 +823,7 @@ mod projective_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+        fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &TEExtended<P>,
@@ -884,7 +888,7 @@ mod projective_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+        fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
             &mut self,
             mut cs: CS,
         ) -> Result<(), SynthesisError> {
@@ -933,7 +937,7 @@ mod projective_impl {
             Ok(())
         }
 
-        fn negate<CS: ConstraintSystem<ConstraintF>>(
+        fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
         ) -> Result<Self, SynthesisError> {
@@ -948,10 +952,10 @@ mod projective_impl {
             mut cs: CS,
             scalar_bits_with_base_powers: I,
         ) -> Result<(), SynthesisError>
-            where
-                CS: ConstraintSystem<ConstraintF>,
-                I: Iterator<Item = (B, &'a TEExtended<P>)>,
-                B: Borrow<Boolean>,
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            I: Iterator<Item = (B, &'a TEExtended<P>)>,
+            B: Borrow<Boolean>,
         {
             let scalar_bits_with_base_powers: Vec<_> = scalar_bits_with_base_powers
                 .map(|(bit, base)| (*bit.borrow(), *base))
@@ -1004,11 +1008,11 @@ mod projective_impl {
             bases: &[B],
             scalars: &[J],
         ) -> Result<Self, SynthesisError>
-            where
-                CS: ConstraintSystem<ConstraintF>,
-                I: Borrow<[Boolean]>,
-                J: Borrow<[I]>,
-                B: Borrow<[TEExtended<P>]>,
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            I: Borrow<[Boolean]>,
+            J: Borrow<[I]>,
+            B: Borrow<[TEExtended<P>]>,
         {
             const CHUNK_SIZE: usize = 3;
             let mut edwards_result: Option<AffineGadget<P, ConstraintF, F>> = None;
@@ -1037,7 +1041,7 @@ mod projective_impl {
 
             // Compute ∏(h_i^{m_i}) for all i.
             for (segment_i, (segment_bits_chunks, segment_powers)) in
-            scalars.iter().zip(bases.iter()).enumerate()
+                scalars.iter().zip(bases.iter()).enumerate()
             {
                 for (i, (bits, base_power)) in segment_bits_chunks
                     .borrow()
@@ -1065,8 +1069,10 @@ mod projective_impl {
                         .map(|p| {
                             // Cannot fail for TEExtended
                             let p = p.into_affine().unwrap();
-                            MontgomeryAffineGadget::<P, ConstraintF, F>::from_edwards_to_coords(&TEExtended::<P>::from_affine(&p))
-                                .unwrap()
+                            MontgomeryAffineGadget::<P, ConstraintF, F>::from_edwards_to_coords(
+                                &TEExtended::<P>::from_affine(&p),
+                            )
+                            .unwrap()
                         })
                         .collect::<Vec<_>>();
 
@@ -1129,21 +1135,20 @@ mod projective_impl {
         }
     }
 
-    impl<P, ConstraintF, F> AllocGadget<TEExtended<P>, ConstraintF>
-    for AffineGadget<P, ConstraintF, F>
-        where
-            P: TEModelParameters,
-            ConstraintF: Field,
-            F: FieldGadget<P::BaseField, ConstraintF>,
-            Self: GroupGadget<TEExtended<P>, ConstraintF>,
+    impl<P, ConstraintF, F> AllocGadget<TEExtended<P>, ConstraintF> for AffineGadget<P, ConstraintF, F>
+    where
+        P: TEModelParameters,
+        ConstraintF: Field,
+        F: FieldGadget<P::BaseField, ConstraintF>,
+        Self: GroupGadget<TEExtended<P>, ConstraintF>,
     {
-        fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
-            where
-                FN: FnOnce() -> Result<T, SynthesisError>,
-                T: Borrow<TEExtended<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEExtended<P>>,
         {
             let (x, y) = match value_gen() {
                 Ok(ge) => {
@@ -1182,13 +1187,13 @@ mod projective_impl {
         }
 
         #[inline]
-        fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
-            where
-                FN: FnOnce() -> Result<T, SynthesisError>,
-                T: Borrow<TEExtended<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEExtended<P>>,
         {
             let (x, y) = match value_gen() {
                 Ok(ge) => {
@@ -1209,17 +1214,17 @@ mod projective_impl {
         }
 
         #[inline]
-        fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
-            where
-                FN: FnOnce() -> Result<T, SynthesisError>,
-                T: Borrow<TEExtended<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEExtended<P>>,
         {
             let alloc_and_prime_order_check = |mut cs: r1cs_core::Namespace<_, _>,
                                                value_gen: FN|
-                                               -> Result<Self, SynthesisError> {
+             -> Result<Self, SynthesisError> {
                 let cofactor_weight = BitIterator::new(P::COFACTOR).filter(|b| *b).count();
                 // If we multiply by r, we actually multiply by r - 2.
                 let r_minus_1 = (-P::ScalarField::one()).into_repr();
@@ -1234,10 +1239,7 @@ mod projective_impl {
                 // is zero.
                 if cofactor_weight < r_weight {
                     let ge = Self::alloc(cs.ns(|| "Alloc checked"), || {
-                        value_gen().map(|ge| {
-                            ge.borrow()
-                                .scale_by_cofactor_inv()
-                        })
+                        value_gen().map(|ge| ge.borrow().scale_by_cofactor_inv())
                     })?;
                     let mut seen_one = false;
                     let mut result = Self::zero(cs.ns(|| "result"))?;
@@ -1295,13 +1297,13 @@ mod projective_impl {
             Ok(ge)
         }
 
-        fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
-            where
-                FN: FnOnce() -> Result<T, SynthesisError>,
-                T: Borrow<TEExtended<P>>,
+        where
+            FN: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<TEExtended<P>>,
         {
             let (x, y) = match value_gen() {
                 Ok(ge) => {
@@ -1341,15 +1343,15 @@ mod projective_impl {
     }
 
     impl<P, ConstraintF, F> ConstantGadget<TEExtended<P>, ConstraintF>
-    for AffineGadget<P, ConstraintF, F>
-        where
-            P: TEModelParameters,
-            ConstraintF: Field,
-            F: FieldGadget<P::BaseField, ConstraintF>,
-            Self: GroupGadget<TEExtended<P>, ConstraintF>,
+        for AffineGadget<P, ConstraintF, F>
+    where
+        P: TEModelParameters,
+        ConstraintF: Field,
+        F: FieldGadget<P::BaseField, ConstraintF>,
+        Self: GroupGadget<TEExtended<P>, ConstraintF>,
     {
         #[inline]
-        fn from_value<CS: ConstraintSystem<ConstraintF>>(
+        fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value: &TEExtended<P>,
         ) -> Self {
@@ -1363,7 +1365,10 @@ mod projective_impl {
 
         #[inline]
         fn get_constant(&self) -> TEExtended<P> {
-            let value_proj = TEExtended::<P>::from_affine(&AffineRep::<P>::new(self.x.get_value().unwrap(), self.y.get_value().unwrap()));
+            let value_proj = TEExtended::<P>::from_affine(&AffineRep::<P>::new(
+                self.x.get_value().unwrap(),
+                self.y.get_value().unwrap(),
+            ));
             let x = value_proj.x;
             let y = value_proj.y;
             let t = value_proj.t;
@@ -1374,13 +1379,13 @@ mod projective_impl {
 }
 
 impl<P, ConstraintF, F> CondSelectGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -1398,12 +1403,12 @@ impl<P, ConstraintF, F> CondSelectGadget<ConstraintF> for AffineGadget<P, Constr
 }
 
 impl<P, ConstraintF, F> EqGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1414,7 +1419,7 @@ impl<P, ConstraintF, F> EqGadget<ConstraintF> for AffineGadget<P, ConstraintF, F
     }
 
     #[inline]
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1428,7 +1433,7 @@ impl<P, ConstraintF, F> EqGadget<ConstraintF> for AffineGadget<P, ConstraintF, F
     }
 
     #[inline]
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1440,20 +1445,20 @@ impl<P, ConstraintF, F> EqGadget<ConstraintF> for AffineGadget<P, ConstraintF, F
             &is_equal,
             should_enforce,
         )?
-            .enforce_equal(
-                cs.ns(|| "is_equal AND should_enforce == false"),
-                &Boolean::Constant(false),
-            )
+        .enforce_equal(
+            cs.ns(|| "is_equal AND should_enforce == false"),
+            &Boolean::Constant(false),
+        )
     }
 }
 
 impl<P, ConstraintF, F> ToBitsGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -1463,7 +1468,7 @@ impl<P, ConstraintF, F> ToBitsGadget<ConstraintF> for AffineGadget<P, Constraint
         Ok(x_bits)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -1476,12 +1481,12 @@ impl<P, ConstraintF, F> ToBitsGadget<ConstraintF> for AffineGadget<P, Constraint
 }
 
 impl<P, ConstraintF, F> ToBytesGadget<ConstraintF> for AffineGadget<P, ConstraintF, F>
-    where
-        P: TEModelParameters,
-        ConstraintF: Field,
-        F: FieldGadget<P::BaseField, ConstraintF>,
+where
+    P: TEModelParameters,
+    ConstraintF: Field,
+    F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -1491,7 +1496,7 @@ impl<P, ConstraintF, F> ToBytesGadget<ConstraintF> for AffineGadget<P, Constrain
         Ok(x_bytes)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -1506,21 +1511,19 @@ impl<P, ConstraintF, F> ToBytesGadget<ConstraintF> for AffineGadget<P, Constrain
 #[cfg(test)]
 #[allow(dead_code)]
 pub(crate) fn test<ConstraintF, P, GG>()
-    where
-        ConstraintF: Field,
-        P: TEModelParameters,
-        GG: GroupGadget<TEExtended<P>, ConstraintF, Value = TEExtended<P>>,
+where
+    ConstraintF: Field,
+    P: TEModelParameters,
+    GG: GroupGadget<TEExtended<P>, ConstraintF, Value = TEExtended<P>>,
 {
-    use crate::{
-        boolean::AllocatedBit, groups::test::group_test, prelude::*,
-        test_constraint_system::TestConstraintSystem,
-    };
+    use crate::{boolean::AllocatedBit, groups::test::group_test, prelude::*};
     use algebra::{PrimeField, UniformRand};
+    use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use rand::{thread_rng, Rng};
 
     group_test::<ConstraintF, TEExtended<P>, GG>();
 
-    let mut cs = TestConstraintSystem::new();
+    let mut cs = ConstraintSystem::new(SynthesisMode::Debug);
 
     let a: TEExtended<P> = UniformRand::rand(&mut thread_rng());
     let gadget_a = GG::alloc(&mut cs.ns(|| "a"), || Ok(a)).unwrap();
@@ -1541,7 +1544,7 @@ pub(crate) fn test<ConstraintF, P, GG>()
     assert!(cs.is_satisfied());
 
     // Test the cost of allocation, conditional selection, and point addition.
-    let mut cs = TestConstraintSystem::new();
+    let mut cs = ConstraintSystem::new(SynthesisMode::Debug);
 
     let bit = AllocatedBit::alloc(&mut cs.ns(|| "bool"), || Ok(true))
         .unwrap()

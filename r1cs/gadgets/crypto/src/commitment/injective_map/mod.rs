@@ -1,4 +1,4 @@
-use algebra::{Field, PrimeField, Curve};
+use algebra::{Curve, Field, PrimeField};
 use primitives::{
     commitment::injective_map::{InjectiveMap, PedersenCommCompressor},
     commitment::pedersen::PedersenWindow,
@@ -12,7 +12,7 @@ use crate::commitment::{
 };
 
 pub use crate::crh::injective_map::InjectiveMapGadget;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{groups::GroupGadget, uint8::UInt8};
 
 use std::marker::PhantomData;
@@ -44,7 +44,7 @@ where
     type ParametersGadget = PedersenCommitmentGadgetParameters<G, W, ConstraintF>;
     type RandomnessGadget = PedersenRandomnessGadget;
 
-    fn check_commitment_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_commitment_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],

@@ -13,7 +13,7 @@ use crate::{
 };
 use algebra::fields::{FpParameters, PrimeField};
 use num_bigint::BigUint;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::{marker::PhantomData, vec::Vec};
 
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     FromGadget<&NonNativeFieldGadget<SimulationF, ConstraintF>, ConstraintF>
     for NonNativeFieldMulResultGadget<SimulationF, ConstraintF>
 {
-    fn from<CS: ConstraintSystem<ConstraintF>>(
+    fn from<CS: ConstraintSystemAbstract<ConstraintF>>(
         other: &NonNativeFieldGadget<SimulationF, ConstraintF>,
         cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -77,7 +77,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
 
     /// Constraints for reducing the result of a multiplication mod p, to get an original representation.
-    pub fn reduce<CS: ConstraintSystem<ConstraintF>>(
+    pub fn reduce<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<NonNativeFieldGadget<SimulationF, ConstraintF>, SynthesisError> {
@@ -240,7 +240,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
 
     /// Add unreduced elements.
-    pub fn add<CS: ConstraintSystem<ConstraintF>>(
+    pub fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -261,7 +261,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
 
     /// Add native constant elem
-    pub fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    pub fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &SimulationF,
