@@ -13,9 +13,11 @@ use crate::{
 };
 use algebra::{
     fields::{
-        secp256k1::{Fq as secp256k1Fq, Fr as secp256k1Fr},
+        ed25519::{Fq as ed25519Fq, Fr as ed25519Fr},
+        // secp256k1::{Fq as secp256k1Fq, Fr as secp256k1Fr},
         tweedle::{Fq as TweedleFq, Fr as TweedleFr},
-        FpParameters, PrimeField,
+        FpParameters,
+        PrimeField,
     },
     BigInteger,
 };
@@ -1022,7 +1024,7 @@ nonnative_test!(TweedleFrFq, TweedleFr, TweedleFq);
 #[cfg(feature = "density-optimized")]
 nonnative_test!(TweedleFred25519Fq, TweedleFr, ed25519Fq);
 //TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
-// #[cfg(feature = "density-optimized")]
+#[cfg(feature = "density-optimized")]
 nonnative_test!(TweedleFred25519Fr, TweedleFr, ed25519Fr);
 // nonnative_test!(Bn382FrTweedleFq, Bn382Fr, TweedleFq);
 // TODO: This test, along with some others, seems to cause troubles

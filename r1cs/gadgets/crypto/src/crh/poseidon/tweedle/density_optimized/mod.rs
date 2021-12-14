@@ -1,5 +1,8 @@
 use crate::FieldBasedHashGadget;
-use algebra::fields::{tweedle::Fr, Field};
+use algebra::{
+    fields::{tweedle::Fr, Field},
+    groups::Group,
+};
 use primitives::crh::{FieldBasedHashParameters, PoseidonParameters, TweedleFrPoseidonHash};
 use r1cs_core::{ConstraintSystemAbstract, ConstraintVar, LinearCombination, SynthesisError};
 use r1cs_std::{
