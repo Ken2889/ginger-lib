@@ -1,10 +1,10 @@
 use crate::UniformRand;
 use crate::{
-    groups::Group,
     curves::Curve,
-    fields::{PrimeField, BitIterator},
+    fields::{BitIterator, PrimeField},
+    groups::Group,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
-    SWModelParameters/*, TEModelParameters,*/
+    SWModelParameters, TEModelParameters,
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -180,7 +180,7 @@ fn random_negation_test<G: Curve>() {
     }
 }
 
-fn random_transformation_test<G: Curve>() {
+fn random_transformation_test<G: Curve>(is_twisted_edwards: bool) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     for _ in 0..ITERATIONS {
@@ -208,7 +208,7 @@ fn random_transformation_test<G: Curve>() {
         }
         for _ in 0..5 {
             let s = between.sample(&mut rng);
-            if v[s].is_zero() {
+            if v[s].is_zero() && !is_twisted_edwards {
                 assert!(v[s].into_affine().is_err());
             } else {
                 v[s] = G::from_affine(&v[s].into_affine().unwrap());
@@ -217,7 +217,13 @@ fn random_transformation_test<G: Curve>() {
 
         let expected_v = v
             .iter()
-            .map(|v| if v.is_zero() { G::zero() } else { G::from_affine(&v.into_affine().unwrap()) })
+            .map(|v| {
+                if v.is_zero() && !is_twisted_edwards {
+                    G::zero()
+                } else {
+                    G::from_affine(&v.into_affine().unwrap())
+                }
+            })
             .collect::<Vec<_>>();
         G::batch_normalization(&mut v);
 
@@ -229,7 +235,7 @@ fn random_transformation_test<G: Curve>() {
     }
 }
 
-pub fn curve_tests<G: Curve>() {
+pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     // Negation edge case with zero.
@@ -269,7 +275,11 @@ pub fn curve_tests<G: Curve>() {
     {
         let a = G::rand(&mut rng);
         let b = G::from_affine(&a.into_affine().unwrap());
-        let c = G::from_affine(&G::from_affine(&a.into_affine().unwrap()).into_affine().unwrap());
+        let c = G::from_affine(
+            &G::from_affine(&a.into_affine().unwrap())
+                .into_affine()
+                .unwrap(),
+        );
         assert_eq!(a, b);
         assert_eq!(b, c);
     }
@@ -278,7 +288,7 @@ pub fn curve_tests<G: Curve>() {
     random_multiplication_test::<G>();
     random_doubling_test::<G>();
     random_negation_test::<G>();
-    random_transformation_test::<G>();
+    random_transformation_test::<G>(is_twisted_edwards);
 }
 
 pub fn sw_jacobian_tests<P: SWModelParameters>() {
@@ -527,113 +537,111 @@ pub fn sw_jacobian_curve_serialization_test<P: SWModelParameters>() {
 //     }
 // }
 //
-// pub fn edwards_tests<P: TEModelParameters>()
-// where
-//     P::BaseField: PrimeField,
-// {
-//     edwards_curve_serialization_test::<P>();
-//     edwards_from_random_bytes::<P>();
-// }
-//
-// pub fn edwards_from_random_bytes<P: TEModelParameters>()
-// where
-//     P::BaseField: PrimeField,
-// {
-//     use crate::curves::models::twisted_edwards_extended::{GroupAffine, GroupProjective};
-//     use crate::ToBytes;
-//
-//     let buf_size = GroupAffine::<P>::zero().serialized_size();
-//
-//     let rng = &mut thread_rng();
-//
-//     for _ in 0..ITERATIONS {
-//         let a = GroupProjective::<P>::rand(rng).into_affine();
-//         {
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let p1 = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             let p2 = GroupAffine::<P>::from_random_bytes(&serialized).unwrap();
-//             assert_eq!(p1, p2);
-//         }
-//     }
-//
-//     for _ in 0..ITERATIONS {
-//         let biginteger =
-//             <<GroupAffine<P> as AffineCurve>::BaseField as PrimeField>::BigInt::rand(rng);
-//         let mut bytes = to_bytes![biginteger].unwrap();
-//         let mut g = GroupAffine::<P>::from_random_bytes(&bytes);
-//         while g.is_none() {
-//             bytes.iter_mut().for_each(|i| *i = i.wrapping_sub(1));
-//             g = GroupAffine::<P>::from_random_bytes(&bytes);
-//         }
-//         let _g = g.unwrap();
-//     }
-// }
-//
-// pub fn edwards_curve_serialization_test<P: TEModelParameters>() {
-//     use crate::curves::models::twisted_edwards_extended::{GroupAffine, GroupProjective};
-//
-//     let buf_size = GroupAffine::<P>::zero().serialized_size();
-//
-//     let rng = &mut thread_rng();
-//
-//     for _ in 0..ITERATIONS {
-//         let a = GroupProjective::<P>::rand(rng);
-//         let a = a.into_affine();
-//         {
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; buf_size - 1];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
-//         }
-//
-//         {
-//             let serialized = vec![0; buf_size - 1];
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
-//         }
-//
-//         {
-//             let mut serialized = vec![0; a.uncompressed_size()];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             a.serialize_uncompressed(&mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = GroupAffine::<P>::deserialize_uncompressed(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; a.uncompressed_size()];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             a.serialize_uncompressed(&mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = GroupAffine::<P>::deserialize_uncompressed(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//     }
-// }
+pub fn edwards_tests<P: TEModelParameters>()
+where
+    P::BaseField: PrimeField,
+{
+    edwards_curve_serialization_test::<P>();
+    edwards_from_random_bytes::<P>();
+}
+
+pub fn edwards_from_random_bytes<P: TEModelParameters>()
+where
+    P::BaseField: PrimeField,
+{
+    use crate::curves::models::twisted_edwards_extended::TEExtended;
+    use crate::ToBytes;
+
+    let buf_size = TEExtended::<P>::zero().serialized_size();
+
+    let rng = &mut thread_rng();
+
+    for _ in 0..ITERATIONS {
+        let a = TEExtended::<P>::rand(rng);
+        {
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let p1 = <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            let p2 = TEExtended::<P>::from_random_bytes(&serialized).unwrap();
+            assert_eq!(p1, p2);
+        }
+    }
+
+    for _ in 0..ITERATIONS {
+        let biginteger = <<TEExtended<P> as Curve>::BaseField as PrimeField>::BigInt::rand(rng);
+        let mut bytes = to_bytes![biginteger].unwrap();
+        let mut g = TEExtended::<P>::from_random_bytes(&bytes);
+        while g.is_none() {
+            bytes.iter_mut().for_each(|i| *i = i.wrapping_sub(1));
+            g = TEExtended::<P>::from_random_bytes(&bytes);
+        }
+        let _g = g.unwrap();
+    }
+}
+
+pub fn edwards_curve_serialization_test<P: TEModelParameters>() {
+    use crate::curves::models::twisted_edwards_extended::TEExtended;
+
+    let buf_size = TEExtended::<P>::zero().serialized_size();
+
+    let rng = &mut thread_rng();
+
+    for _ in 0..ITERATIONS {
+        let a = TEExtended::<P>::rand(rng);
+        {
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+
+        {
+            let a = TEExtended::<P>::zero();
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+
+        {
+            let a = TEExtended::<P>::zero();
+            let mut serialized = vec![0; buf_size - 1];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
+        }
+
+        {
+            let serialized = vec![0; buf_size - 1];
+            let mut cursor = Cursor::new(&serialized[..]);
+            <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
+        }
+
+        {
+            let mut serialized = vec![0; a.uncompressed_size()];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            a.serialize_uncompressed(&mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = TEExtended::<P>::deserialize_uncompressed(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+
+        {
+            let a = TEExtended::<P>::zero();
+            let mut serialized = vec![0; a.uncompressed_size()];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            a.serialize_uncompressed(&mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = TEExtended::<P>::deserialize_uncompressed(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+    }
+}

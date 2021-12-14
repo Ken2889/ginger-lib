@@ -57,8 +57,9 @@ derive = ["algebra-derive"]
 
 tweedle = []
 secp256k1 = []
+ed25519 = []
 
-full = [ "tweedle", "secp256k1" ]
+full = [ "tweedle", "secp256k1", "ed25519" ]
 
 [build-dependencies]
 field-assembly = { path = "./field-assembly" }

@@ -1,21 +1,10 @@
 use crate::{
     biginteger::BigInteger,
-    curves::{
-        Curve, EndoMulCurve,
-        models::SWModelParameters,
-        tweedle::*,
-        tests::curve_tests,
-    },
-    fields::{
-        Field, PrimeField, SquareRootField,
-        tweedle::*,
-    },
-    groups::{
-        Group,
-        tests::group_test,
-    }
+    curves::{models::SWModelParameters, tests::curve_tests, tweedle::*, Curve, EndoMulCurve},
+    fields::{tweedle::*, Field, PrimeField, SquareRootField},
+    groups::{tests::group_test, Group},
 };
-use std::ops::{AddAssign, MulAssign, Mul};
+use std::ops::{AddAssign, Mul, MulAssign};
 use std::str::FromStr;
 
 use crate::curves::tests::sw_jacobian_tests;
@@ -27,7 +16,7 @@ use rand_xorshift::XorShiftRng;
 
 #[test]
 fn test_dee_curve() {
-    curve_tests::<dee::DeeJacobian>();
+    curve_tests::<dee::DeeJacobian>(false);
     sw_jacobian_tests::<TweedledeeParameters>()
 }
 
@@ -48,7 +37,7 @@ fn test_dee_generator() {
 
 #[test]
 fn test_dum_curve() {
-    curve_tests::<dum::DumJacobian>();
+    curve_tests::<dum::DumJacobian>(false);
     sw_jacobian_tests::<TweedledumParameters>()
 }
 

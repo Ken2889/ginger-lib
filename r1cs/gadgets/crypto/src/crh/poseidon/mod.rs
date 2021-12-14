@@ -264,7 +264,7 @@ mod test {
     use crate::crh::test::constant_length_field_based_hash_gadget_native_test;
     use algebra::PrimeField;
 
-    fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
+    pub(crate) fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
         let mut inputs = Vec::with_capacity(num);
         for i in 1..=num {
             let input = F::from(i as u32);

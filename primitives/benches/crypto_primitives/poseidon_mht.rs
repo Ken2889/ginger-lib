@@ -1,402 +1,135 @@
 #[macro_use]
 extern crate criterion;
 
-use algebra::{
-    fields::{mnt4753::Fr as MNT4753Fr, mnt6753::Fr as MNT6753Fr},
-    Field, UniformRand,
-};
-
-use primitives::{
-    crh::parameters::{
-        MNT4BatchPoseidonHash, MNT4PoseidonHash, MNT6BatchPoseidonHash, MNT6PoseidonHash,
-    },
-    merkle_tree::field_based_mht::{
-        parameters::{MNT4753_MHT_POSEIDON_PARAMETERS, MNT6753_MHT_POSEIDON_PARAMETERS},
-        BatchFieldBasedMerkleTreeParameters, FieldBasedMerkleTree, FieldBasedMerkleTreeParameters,
-        FieldBasedMerkleTreePrecomputedZeroConstants, FieldBasedOptimizedMHT,
-    },
-};
-
-use criterion::{BenchmarkId, Criterion};
-
+use criterion::{BatchSize, BenchmarkId, Criterion};
+use algebra::{UniformRand, fields::tweedle::Fr as FieldElement};
+use primitives::{FieldBasedMerkleTree, crh::{TweedleFrPoseidonHash as FieldHash, TweedleFrBatchPoseidonHash as BatchFieldHash}, merkle_tree::{
+        TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS as MHT_POSEIDON_PARAMETERS, FieldBasedMerkleTreeParameters,
+        BatchFieldBasedMerkleTreeParameters, FieldBasedMerkleTreePrecomputedZeroConstants,
+        FieldBasedOptimizedMHT
+    }};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 #[derive(Clone, Debug)]
-struct MNT4753FieldBasedMerkleTreeParams;
-impl FieldBasedMerkleTreeParameters for MNT4753FieldBasedMerkleTreeParams {
-    type Data = MNT4753Fr;
-    type H = MNT4PoseidonHash;
+struct FieldBasedMerkleTreeParams;
+impl FieldBasedMerkleTreeParameters for FieldBasedMerkleTreeParams {
+    type Data = FieldElement;
+    type H = FieldHash;
     const MERKLE_ARITY: usize = 2;
     const ZERO_NODE_CST: Option<FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>> =
-        Some(MNT4753_MHT_POSEIDON_PARAMETERS);
+        Some(MHT_POSEIDON_PARAMETERS);
 }
-
-impl BatchFieldBasedMerkleTreeParameters for MNT4753FieldBasedMerkleTreeParams {
-    type BH = MNT4BatchPoseidonHash;
+impl BatchFieldBasedMerkleTreeParameters for FieldBasedMerkleTreeParams {
+    type BH = BatchFieldHash;
 }
-
-type MNT4PoseidonMHT = FieldBasedOptimizedMHT<MNT4753FieldBasedMerkleTreeParams>;
-
-#[derive(Clone, Debug)]
-struct MNT6753FieldBasedMerkleTreeParams;
-impl FieldBasedMerkleTreeParameters for MNT6753FieldBasedMerkleTreeParams {
-    type Data = MNT6753Fr;
-    type H = MNT6PoseidonHash;
-    const MERKLE_ARITY: usize = 2;
-    const ZERO_NODE_CST: Option<FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>> =
-        Some(MNT6753_MHT_POSEIDON_PARAMETERS);
-}
-
-impl BatchFieldBasedMerkleTreeParameters for MNT6753FieldBasedMerkleTreeParams {
-    type BH = MNT6BatchPoseidonHash;
-}
-
-type MNT6PoseidonMHT = FieldBasedOptimizedMHT<MNT6753FieldBasedMerkleTreeParams>;
 
 const BENCH_HEIGHT: usize = 11;
 
-fn batch_poseidon_mht_eval_mnt4_full(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch Full Poseidon MHT Eval for MNT4 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves {
-                    tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt6_full(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
+fn _bench_in_memory_optimized_poseidon_mht(
+    c: &mut Criterion,
+    bench_name: &str,
+    num_leaves: usize,
+    starting_non_zero_idx: Option<usize>,
+) {
+    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
 
     c.bench_function(
-        format!(
-            "Batch Full Poseidon MHT Eval for MNT6 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
+        bench_name,
         move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves {
-                    tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
+            b.iter_batched(
+                || {
+                    let mut leaves = Vec::with_capacity(num_leaves);
 
-fn batch_poseidon_mht_eval_mnt4_3_4(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch 3/4 Poseidon MHT Eval for MNT4 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..(num_leaves * 3) / 4 {
-                    tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt6_3_4(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch 3/4 Poseidon MHT Eval for MNT6 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..(num_leaves * 3) / 4 {
-                    tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt4_half(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch half Poseidon MHT Eval for MNT4 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 2 {
-                    tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt6_half(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch half Poseidon MHT Eval for MNT6 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 2 {
-                    tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt4_1_4(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch 1/4 Poseidon MHT Eval for MNT4 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 4 {
-                    tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt6_1_4(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch 1/4 Poseidon MHT Eval for MNT6 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 4 {
-                    tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt4_interleaved(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch interleaved Poseidon MHT Eval for MNT4 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 3 {
-                    tree.append(MNT4753Fr::zero()).unwrap();
-                }
-                for _ in 0..(num_leaves * 2) / 3 {
-                    tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
-        },
-    );
-}
-
-fn batch_poseidon_mht_eval_mnt6_interleaved(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
-
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, num_leaves).unwrap();
-
-    c.bench_function(
-        format!(
-            "Batch interleaved Poseidon MHT Eval for MNT6 ({} leaves)",
-            num_leaves
-        )
-        .as_str(),
-        move |b| {
-            b.iter(|| {
-                for _ in 0..num_leaves / 3 {
-                    tree.append(MNT6753Fr::zero()).unwrap();
-                }
-                for _ in 0..(num_leaves * 2) / 3 {
-                    tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                }
-                tree.finalize_in_place().unwrap();
-                tree.reset();
-            })
+                    // If starting_non_zero_idx is some, use phantom leaves up to 'starting_non_zero_idx',
+                    // and then random leaves up to 'num_leaves'
+                    if let Some(idx) = starting_non_zero_idx {
+                        leaves.append(&mut (0..idx).map(|_| FieldBasedMerkleTreeParams::ZERO_NODE_CST.unwrap().nodes[0]).collect::<Vec<_>>());
+                        leaves.append(&mut (idx..num_leaves).map(|_| FieldElement::rand(rng)).collect::<Vec<_>>());
+                    } 
+                    // Otherwise just use random leaves up to 'num_leaves'
+                    else {
+                        leaves.append(&mut (0..num_leaves).map(|_| FieldElement::rand(rng)).collect::<Vec<_>>());
+                    };
+                    
+                    // Create tree
+                    let tree = FieldBasedOptimizedMHT::<FieldBasedMerkleTreeParams>::init(
+                        BENCH_HEIGHT,
+                        num_leaves
+                    ).unwrap();
+                    (leaves, tree)
+                },
+                // Bench append and finalize
+                |(leaves, mut tree)| {
+                    leaves.into_iter().for_each(|leaf| { tree.append(leaf).unwrap(); });
+                    tree.finalize_in_place().unwrap();
+                },
+                BatchSize::PerIteration,
+            );
         },
     );
 }
 
 /// Let's create a full tree with different processing_step sizes and bench the total time
-fn batch_poseidon_mht_tune_processing_step_mnt4(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
+fn batch_poseidon_mht_tune_processing_step(c: &mut Criterion) {
+    let num_leaves = 1 << BENCH_HEIGHT;
 
-    let mut processing_steps = Vec::with_capacity(BENCH_HEIGHT - 1);
-    for i in 0..BENCH_HEIGHT {
-        processing_steps.push(2usize.pow(i as u32));
+    let mut processing_steps = Vec::with_capacity(BENCH_HEIGHT);
+    for i in 0..=BENCH_HEIGHT {
+        processing_steps.push(1 << i);
     }
 
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+    let rng = &mut XorShiftRng::seed_from_u64(1231275789u64);
 
     let mut group = c.benchmark_group(format!(
-        "tune processing_step_size for MNT4 with a tree of height {}",
+        "tune processing_step_size for a tree of height {}",
         BENCH_HEIGHT
     ));
 
     for processing_step in processing_steps.iter() {
-        let mut tree = MNT4PoseidonMHT::init(BENCH_HEIGHT, *processing_step).unwrap();
         group.bench_with_input(
             BenchmarkId::from_parameter(processing_step),
             processing_step,
             |b, _processing_step| {
-                b.iter(|| {
-                    for _ in 0..num_leaves {
-                        tree.append(MNT4753Fr::rand(&mut rng)).unwrap();
-                    }
-                    tree.finalize_in_place().unwrap();
-                    tree.reset();
-                });
+                b.iter_batched(
+                    || {
+                        // Generate random leaves    
+                        let leaves = (0..num_leaves).map(|_| FieldElement::rand(rng)).collect::<Vec<_>>();
+                        
+                        // Create tree
+                        let tree = FieldBasedOptimizedMHT::<FieldBasedMerkleTreeParams>::init(
+                            BENCH_HEIGHT,
+                            *processing_step
+                        ).unwrap();
+                        (leaves, tree)
+                    },
+                    // Bench append and finalize
+                    |(leaves, mut tree)| {
+                        leaves.into_iter().for_each(|leaf| { tree.append(leaf).unwrap(); });
+                        tree.finalize_in_place().unwrap();
+                    },
+                    BatchSize::PerIteration,
+                );
             },
         );
     }
 }
 
-/// Let's create a full tree with different processing_step sizes and bench the total time
-fn batch_poseidon_mht_tune_processing_step_mnt6(c: &mut Criterion) {
-    let num_leaves = 2usize.pow(BENCH_HEIGHT as u32 - 1);
+fn bench_in_memory_optimized_poseidon_mht(c: &mut Criterion) {
+    let num_leaves = 1 << BENCH_HEIGHT;
 
-    let mut processing_steps = Vec::with_capacity(BENCH_HEIGHT - 1);
-    for i in 0..BENCH_HEIGHT {
-        processing_steps.push(2usize.pow(i as u32));
-    }
+    _bench_in_memory_optimized_poseidon_mht(c, "Append 1/4 of the total supported leaves", num_leaves/4, None);
+    _bench_in_memory_optimized_poseidon_mht(c, "Append 1/2 of the total supported leaves", num_leaves/2, None);
+    _bench_in_memory_optimized_poseidon_mht(c, "Append 3/4 of the total supported leaves", 3 * num_leaves/4, None);
+    _bench_in_memory_optimized_poseidon_mht(c, "Append the total supported leaves", num_leaves, None);
+    _bench_in_memory_optimized_poseidon_mht(c, "Append 2/3 of total supported leaves, but first 1/3 is empty", num_leaves, Some(num_leaves/3));
 
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    let mut group = c.benchmark_group(format!(
-        "tune processing_step_size for MNT6 with a tree of height {}",
-        BENCH_HEIGHT
-    ));
-
-    for processing_step in processing_steps.iter() {
-        let mut tree = MNT6PoseidonMHT::init(BENCH_HEIGHT, *processing_step).unwrap();
-
-        group.bench_with_input(
-            BenchmarkId::from_parameter(processing_step),
-            processing_step,
-            |b, _processing_step| {
-                b.iter(|| {
-                    for _ in 0..num_leaves {
-                        tree.append(MNT6753Fr::rand(&mut rng)).unwrap();
-                    }
-                    tree.finalize_in_place().unwrap();
-                    tree.reset();
-                });
-            },
-        );
-    }
 }
 
 criterion_group! {
-    name = mht_poseidon_eval;
+    name = in_memory_optimized_poseidon_mht_benches;
     config = Criterion::default().sample_size(100);
-    targets =
-        batch_poseidon_mht_eval_mnt4_full, batch_poseidon_mht_eval_mnt6_full,
-        batch_poseidon_mht_eval_mnt4_3_4, batch_poseidon_mht_eval_mnt6_3_4,
-        batch_poseidon_mht_eval_mnt4_half, batch_poseidon_mht_eval_mnt6_half,
-        batch_poseidon_mht_eval_mnt4_1_4, batch_poseidon_mht_eval_mnt6_1_4,
-        batch_poseidon_mht_eval_mnt4_interleaved, batch_poseidon_mht_eval_mnt6_interleaved
+    targets = bench_in_memory_optimized_poseidon_mht, batch_poseidon_mht_tune_processing_step
 }
 
-criterion_group! {
-    name = mht_poseidon_tuning;
-    config = Criterion::default().sample_size(10);
-    targets =
-        batch_poseidon_mht_tune_processing_step_mnt4, batch_poseidon_mht_tune_processing_step_mnt6
-}
-
-criterion_main!(mht_poseidon_tuning);
+criterion_main!(in_memory_optimized_poseidon_mht_benches);

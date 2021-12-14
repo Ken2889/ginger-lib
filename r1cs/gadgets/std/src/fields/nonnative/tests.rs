@@ -13,7 +13,7 @@ use crate::{
 };
 use algebra::{
     fields::{
-        // secp256k1::Fq as secp256k1Fq,
+        secp256k1::{Fq as secp256k1Fq, Fr as secp256k1Fr},
         tweedle::{Fq as TweedleFq, Fr as TweedleFr},
         FpParameters, PrimeField,
     },
@@ -1017,10 +1017,16 @@ nonnative_test!(TweedleFrFq, TweedleFr, TweedleFq);
 // nonnative_test!(Bn382FqFr, Bn382Fq, Bn382Fr);
 // nonnative_test!(Bn382FrFq, Bn382Fr, Bn382Fq);
 // nonnative_test!(Bn382Frsecp256k1Fq, Bn382Fr, secp256k1Fq);
-// nonnative_test!(Bn382Fqsecp256k1Fq, Bn382Fq, secp256k1Fq);
+// nonnative_test!(Bn382Frsecp256k1Fr, Bn382Fr, secp256k1Fr);
+//TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
+#[cfg(feature = "density-optimized")]
+nonnative_test!(TweedleFred25519Fq, TweedleFr, ed25519Fq);
+//TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
+// #[cfg(feature = "density-optimized")]
+nonnative_test!(TweedleFred25519Fr, TweedleFr, ed25519Fr);
 // nonnative_test!(Bn382FrTweedleFq, Bn382Fr, TweedleFq);
 // TODO: This test, along with some others, seems to cause troubles
-//       with the enforce_in_field gadget. Fix it.
+//       with the enforce_in_field gadget. It doesn't work either in density-optimized or constraint-optimized mode. Fix it.
 /*nonnative_test!(
     TweedleFqBn382Fr,
     TweedleFq,

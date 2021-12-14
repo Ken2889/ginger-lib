@@ -3,8 +3,8 @@ use crate::groups::{
     test::{group_test_with_incomplete_add, mul_bits_native_test},
 };
 use algebra::{
-    curves::secp256k1::Secp256k1Parameters,
-    fields::{tweedle::Fr as TweedleFr, secp256k1::Fq as secp256k1Fq},
+    curves::ed25519::Ed25519Parameters,
+    fields::{ed25519::fq::Fq as ed25519Fq, tweedle::Fr as TweedleFr},
 };
 
 macro_rules! nonnative_test_individual {
@@ -62,11 +62,20 @@ macro_rules! nonnative_group_test_unsafe_add {
         );
     };
 }
-
-nonnative_group_test_unsafe_add!(
-    TweedleFrsecp256k1Fq,
+/*nonnative_group_test_unsafe_add!(
+    Bn382Frsecp256k1Fq,
     1,
     Secp256k1Parameters,
     TweedleFr,
     secp256k1Fq
+);*/
+
+//TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
+#[cfg(feature = "density-optimized")]
+nonnative_group_test_unsafe_add!(
+    TweedleFred25519Fq,
+    1,
+    Ed25519Parameters,
+    TweedleFr,
+    ed25519Fq
 );

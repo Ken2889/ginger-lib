@@ -57,24 +57,24 @@ def two_adicity(n):
 
 #######################################Reading the values from the file containing the curve parameters ########################
 filename = sys.argv[1]
-
 with open(filename) as myfile:
     readfile = myfile.read()
 
-##Reading the Base Field and Scalar Field names.
-pattern = "type\s*BaseField\s*=\s*(\w+)\s*;"
-base_field_name = re.findall(pattern, readfile)[0]
-pattern = "type\s*ScalarField\s*=\s*(\w+)\s*;"
-scalar_field_name = re.findall(pattern, readfile)[0]
-fn = "(?:" + base_field_name + "|" + scalar_field_name + ")" #fn = field name = "(:?Fr|Fq)". Useful declaration for the pattern
-
+#### Checking if the file contains Short Weierstrass parameters. If not, the check is interrupted.
+#### If there are Twisted Edwards and Montgomery parameters, they are discarded.
+if 'SWModelParameters' in readfile:
+    if 'TEModelParameters' in readfile:
+        to_be_removed = readfile[readfile.index('impl TEModelParameters'):readfile.index('impl SWModelParameters')]
+        readfile = readfile.replace(to_be_removed,'')
+else:
+    print("WARNING! THE FILE HAS NO SHORT WEIERSTRASS PARAMETERS!")
+    sys.exit()
 #### Reading the big integers list and extracting names and values
 pattern = "const\s+(\w+)[:\w\s]*=\s*field_new!\([\s\w,]*\(\s*\[" + "([0-9a-fA-Fxu\s,]+)\s*" + "\]\s*\)"
 big_int_ls = re.findall(pattern,readfile)    #####list of couples of the form ('[VARIABLE_NAME]',"[u64],..,[u64]")
 
 big_int_names = [b[0] for b in big_int_ls]
 big_int_values = [BigInteger_to_number(b[1]) for b in big_int_ls]
-
 BigIntegerLen = BigInteger_len(big_int_ls[0][1])
 
 #### Assigning the names to the variables using locals method 
@@ -93,7 +93,9 @@ COFACTOR = BigInteger_to_number(re.findall(pattern,readfile)[0])
 
 ####Reading the value of LAMBDA
 pattern =  "const\s+LAMBDA[:\w\s]*=\s*([\d]+)\s*;"
-LAMBDA = int(re.findall(pattern,readfile)[0])
+findLAMBDA = re.findall(pattern,readfile)
+if len(findLAMBDA) != 0:
+    LAMBDA = int(findLAMBDA[0])
 
 #######################################Reading the values from the file containing the Base Field parameters########################
 filename = sys.argv[2]
@@ -199,9 +201,9 @@ if endo_mul_is_used:
 
 ########## Checking that shortest vector in the lattice ([1,zeta_r),[0,r]) is long enough #########
 ## The Halo paper (https://eprint.iacr.org/2019/1021.pdf) proves the injectivity of the endo_mul map.
-## The injectivity of the map (a,b) |-> a\zeta + b for a,b in [0,A] (essential for using add_unsafe)
+## The injectivity of the map (a,b) |-> a\zeta_r + b for a,b in [0,A] (essential for using add_unsafe)
 ## is equivalent the lattice condition below.
-## a*zeta + b = a'*zeta_r + b' mod r   for a,a',b,b' in [0,A] 
+## a*zeta_r + b = a'*zeta_r + b' mod r   for a,a',b,b' in [0,A] 
 ## is equivalent to the fact that there are non-zero solutions to 
 ##      a * zeta_r = b mod r      for a,b in [-A,A].
 ## Then it would exists c such that

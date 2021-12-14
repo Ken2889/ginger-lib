@@ -10,12 +10,15 @@ pub use self::optimized::*;
 pub mod parameters;
 pub use self::parameters::*;
 
+pub mod smt;
+pub use self::smt::*;
+
 use crate::{
     BatchFieldBasedHash, Error, FieldBasedHash, FieldBasedHashParameters, MerkleTreeError,
 };
 use algebra::{Field, FromBytes, ToBytes};
 use serde::{Deserialize, Serialize};
-use std::{clone::Clone, fmt::Debug};
+use std::{clone::Clone, fmt::Debug, hash::Hash};
 
 /// Definition of parameters needed to implement and optimize a Merkle Tree whose nodes and leaves
 /// are Field elements. The trait is generic with respect to the arity of the Merkle Tree.
@@ -66,6 +69,7 @@ pub(crate) fn check_precomputed_parameters<T: FieldBasedMerkleTreeParameters>(
 /// in memory in order to create the tree. The trait is generic with respect to the arity
 /// of the Merkle Tree and to the hash function used.
 pub trait FieldBasedMerkleTree: Clone {
+    type Position: Hash + Eq;
     type Parameters: FieldBasedMerkleTreeParameters;
     type MerklePath: FieldBasedMerkleTreePath<
         H = <Self::Parameters as FieldBasedMerkleTreeParameters>::H,
@@ -86,7 +90,8 @@ pub trait FieldBasedMerkleTree: Clone {
 
     /// Force the computation of the root whatever its internal state and return an updated copy
     /// of the Merkle Tree. It's more efficient than `finalize` because avoids a copy; however,
-    /// once this function is called, it is not possible to further `update` the tree.
+    /// depending on the implementation, once this function is called, it might not be possible
+    /// to further `update` the tree.
     fn finalize_in_place(&mut self) -> Result<&mut Self, Error>;
 
     /// Resets the internal state of the tree, bringing it back to the initial one.
@@ -98,10 +103,42 @@ pub trait FieldBasedMerkleTree: Clone {
 
     /// Given an `index` returns the MerklePath of the leaf at that index up until the root of the
     /// Merkle Tree. Returns None if the tree has not been finalized before calling this function.
-    fn get_merkle_path(&self, leaf_index: usize) -> Option<Self::MerklePath>;
+    fn get_merkle_path(&self, leaf_index: Self::Position) -> Option<Self::MerklePath>;
 
     /// Returns the height of this Merkle Tree.
     fn height(&self) -> usize;
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum ActionLeaf {
+    Insert,
+    Remove,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+// Action associated to the leaf
+pub struct OperationLeaf <P, F: Field>{
+    pub position: P,
+    pub action: ActionLeaf,
+    pub hash: Option<F>,
+}
+
+impl<P, F: Field> OperationLeaf<P, F> {
+    pub fn new(position: P, action: ActionLeaf, hash: Option<F>) -> Self {
+        Self { position, action, hash }
+    }
+}
+
+pub trait FieldBasedSparseMerkleTree: FieldBasedMerkleTree {
+
+    /// Insert leaves at specified positions
+    fn insert_leaves(&mut self, leaves: Vec<(Self::Position, <Self::Parameters as FieldBasedMerkleTreeParameters>::Data)>) -> Result<&mut Self, Error>;
+    
+    // Remove leaves at specified positions
+    fn remove_leaves(&mut self, leaves: Vec<Self::Position>) -> Result<&mut Self, Error>;
+
+    // Insert or remove leaves at specified positions
+    fn update_leaves(&mut self, leaves: Vec<OperationLeaf<Self::Position, <Self::Parameters as FieldBasedMerkleTreeParameters>::Data>>) -> Result<&mut Self, Error>;
 }
 
 /// Definition of a Merkle Path for a Merkle Tree whose leaves and nodes are field elements. The

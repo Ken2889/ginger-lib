@@ -7,7 +7,7 @@ use crate::darlin::{
     },
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
 };
-use algebra::{Group, Curve, ToConstraintField};
+use algebra::{Curve, Group, ToConstraintField};
 use digest::Digest;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
@@ -41,6 +41,7 @@ where
     let accumulators_time = start_timer!(|| "Compute accumulators");
 
     if pcds.is_empty() || vks.is_empty() || pcds.len() != vks.len() {
+        end_timer!(accumulators_time);
         return Err(None);
     }
 
