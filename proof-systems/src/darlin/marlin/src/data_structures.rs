@@ -124,18 +124,6 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Proof<G, PC> {
         );
         add_to_trace!(|| "Statistics about proof", || stats);
     }
-
-    /// Randomize commiments for testing purpose
-    // TODO: let us put this in [#test] scope.
-    pub fn randomize_commitments(&mut self) {
-        use algebra::UniformRand;
-        let mut rng = rand::thread_rng();
-        for group in self.commitments.iter_mut() {
-            for comm in group.iter_mut() {
-                *comm = comm.clone() * &G::ScalarField::rand(&mut rng);
-            }
-        }
-    }
 }
 
 /*

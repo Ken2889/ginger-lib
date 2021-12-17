@@ -2,8 +2,8 @@
 use algebra::Curve;
 use digest::Digest;
 use poly_commit::{
-    PCParameters,
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
+    PCParameters,
 };
 
 pub mod final_darlin;
@@ -40,15 +40,16 @@ mod test {
         },
     };
     use algebra::{
-        Group,
         curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
         serialize::test_canonical_serialize_deserialize,
-        CanonicalDeserialize, CanonicalSerialize, SemanticallyValid, ToConstraintField,
+        CanonicalDeserialize, CanonicalSerialize, Group, SemanticallyValid, ToConstraintField,
         UniformRand,
     };
     use blake2::Blake2s;
     use marlin::VerifierKey as MarlinVerifierKey;
-    use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment, DomainExtendedPolynomialCommitment};
+    use poly_commit::{
+        ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PolynomialCommitment,
+    };
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
     use std::collections::HashSet;
@@ -69,13 +70,21 @@ mod test {
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
     fn test_accumulation<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>],
+        vks: &mut [MarlinVerifierKey<
+            G1,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        >],
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>]>,
+        fake_vks: Option<
+            &[MarlinVerifierKey<
+                G1,
+                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            >],
+        >,
         rng: &mut R,
     ) where
         G1: Curve<BaseField = <G2 as Group>::ScalarField>
@@ -218,11 +227,19 @@ mod test {
     /// Generic test for `batch_verify_proofs`
     fn test_batch_verification<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
-        vks: &mut [MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>],
+        vks: &mut [MarlinVerifierKey<
+            G1,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        >],
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
-        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>]>,
+        fake_vks: Option<
+            &[MarlinVerifierKey<
+                G1,
+                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            >],
+        >,
         rng: &mut R,
     ) where
         G1: Curve<BaseField = <G2 as Group>::ScalarField>
@@ -325,8 +342,10 @@ mod test {
         }
     }
 
-    type TestIPAPCDee = DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
-    type TestIPAPCDum = DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
+    type TestIPAPCDee =
+        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
+    type TestIPAPCDum =
+        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
 
     #[test]
     fn test_simple_marlin_proof_aggregator() {
@@ -347,7 +366,9 @@ mod test {
         //Generate fake params
         let mut params_g1_fake =
             TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.ut_copy_params(&params_g1);
+        params_g1_fake.s = params_g1.s.clone();
+        params_g1_fake.h = params_g1.h.clone();
+        params_g1_fake.hash = params_g1.hash.clone();
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -455,10 +476,15 @@ mod test {
         //Generate fake params
         let mut params_g1_fake =
             TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.ut_copy_params(&params_g1);
+        params_g1_fake.s = params_g1.s.clone();
+        params_g1_fake.h = params_g1.h.clone();
+        params_g1_fake.hash = params_g1.hash.clone();
+
         let mut params_g2_fake =
             TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g2_fake.ut_copy_params(&params_g2);
+        params_g2_fake.s = params_g2.s.clone();
+        params_g2_fake.h = params_g2.h.clone();
+        params_g2_fake.hash = params_g2.hash.clone();
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);
@@ -565,10 +591,14 @@ mod test {
         //Generate fake params
         let mut params_g1_fake =
             TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g1_fake.ut_copy_params(&params_g1);
+        params_g1_fake.s = params_g1.s.clone();
+        params_g1_fake.h = params_g1.h.clone();
+        params_g1_fake.hash = params_g1.hash.clone();
         let mut params_g2_fake =
             TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
-        params_g2_fake.ut_copy_params(&params_g2);
+        params_g2_fake.s = params_g2.s.clone();
+        params_g2_fake.h = params_g2.h.clone();
+        params_g2_fake.hash = params_g2.hash.clone();
 
         test_canonical_serialize_deserialize(true, &committer_key_g1);
         test_canonical_serialize_deserialize(true, &committer_key_g2);

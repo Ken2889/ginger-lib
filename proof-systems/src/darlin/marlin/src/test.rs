@@ -63,8 +63,9 @@ mod marlin {
     use blake2::Blake2s;
     use digest::Digest;
     use poly_commit::{
-        ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCCommitterKey,
-        PCParameters, PCVerifierKey, PolynomialCommitment,
+        ipa_pc::{InnerProductArgPC, Parameters as IPAParameters},
+        DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PCVerifierKey,
+        PolynomialCommitment,
     };
     use rand::thread_rng;
     use std::ops::MulAssign;
@@ -72,12 +73,27 @@ mod marlin {
     type MultiPC =
         DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
 
+    trait TestUtils {
+        /// Copy other instance params into this
+        fn copy_params(&mut self, other: &Self);
+    }
+
+    impl<G: Curve> TestUtils for IPAParameters<G> {
+        fn copy_params(&mut self, other: &Self) {
+            self.s = other.s.clone();
+            self.h = other.h.clone();
+            self.hash = other.hash.clone();
+        }
+    }
+
     fn test_circuit<G: Curve, PC: PolynomialCommitment<G>, D: Digest>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
-    ) {
+    ) where
+        PC::Parameters: TestUtils,
+    {
         let rng = &mut thread_rng();
 
         let universal_srs = PC::setup(num_constraints - 1).unwrap();
@@ -88,7 +104,8 @@ mod marlin {
         // Fake parameters for opening proof fail test
         let mut universal_srs_fake =
             PC::setup_from_seed(num_constraints - 1, b"FAKE PROTOCOL").unwrap();
-        universal_srs_fake.ut_copy_params(&universal_srs);
+
+        universal_srs_fake.copy_params(&universal_srs);
         let (pc_pk_fake, _) = universal_srs_fake.trim((num_constraints - 1) / 2).unwrap();
 
         for _ in 0..num_samples {
