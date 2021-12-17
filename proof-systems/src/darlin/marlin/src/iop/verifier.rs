@@ -10,13 +10,18 @@ use poly_commit::QuerySet;
 
 /// State of the IOP verifier
 pub struct VerifierState<F: PrimeField> {
-    pub(crate) domain_h: Box<dyn EvaluationDomain<F>>,
-    pub(crate) domain_k: Box<dyn EvaluationDomain<F>>,
+    /// Domain H.
+    pub domain_h: Box<dyn EvaluationDomain<F>>,
+    /// Domain K.
+    pub domain_k: Box<dyn EvaluationDomain<F>>,
 
-    pub(crate) first_round_msg: Option<VerifierFirstMsg<F>>,
-    pub(crate) second_round_msg: Option<VerifierSecondMsg<F>>,
+    /// First round verifier message.
+    pub first_round_msg: Option<VerifierFirstMsg<F>>,
+    /// Second round verifier message.
+    pub second_round_msg: Option<VerifierSecondMsg<F>>,
 
-    pub(crate) gamma: Option<F>,
+    /// Challenge for third round.
+    pub gamma: Option<F>,
 }
 
 /// First message of the verifier.

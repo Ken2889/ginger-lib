@@ -53,7 +53,8 @@ impl<F: PrimeField> IOP<F> {
         "u_2", "h_2",
     ];
 
-    pub(crate) fn polynomial_labels() -> impl Iterator<Item = String> {
+    /// An iterator over the polynomials output by the indexer and the prover.
+    pub fn polynomial_labels() -> impl Iterator<Item = String> {
         Self::INDEXER_POLYNOMIALS
             .iter()
             .chain(&Self::PROVER_POLYNOMIALS)
@@ -109,7 +110,7 @@ impl<F: PrimeField> IOP<F> {
     /// via an `EvaluationProvider` (as defined below).
     // Note: To complete Marlin verification, one still has to check the opening proofs.
     #[allow(non_snake_case)]
-    pub(crate) fn verify_sumchecks(
+    pub fn verify_sumchecks(
         public_input: &[F],
         evals: &poly_commit::Evaluations<F>,
         state: &verifier::VerifierState<F>,
