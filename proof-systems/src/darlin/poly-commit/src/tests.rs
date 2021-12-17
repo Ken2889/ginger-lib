@@ -1,15 +1,13 @@
 //! Unit tests for linear polynomial commitment schemes and their domain extension.
-use crate::*;
-use algebra::{
-    serialize::test_canonical_serialize_deserialize, SemanticallyValid, UniformRand
-};
-use rand::{distributions::Distribution, thread_rng};
 use crate::fiat_shamir_rng::FiatShamirRngSeed;
+use crate::*;
+use algebra::{serialize::test_canonical_serialize_deserialize, SemanticallyValid, UniformRand};
+use rand::{distributions::Distribution, thread_rng};
 
 fn setup_test_fs_rng<G, PC>() -> PC::RandomOracle
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
 {
     let mut fs_rng_seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
     fs_rng_seed_builder.add_bytes(b"TEST_SEED").unwrap();
@@ -29,13 +27,13 @@ pub(crate) enum NegativeType {
 struct TestInfo {
     /// number of random instances to be tested
     num_iters: usize,
-    /// The degree bound for sampling the supported degree of 
-    /// the non-extended scheme. 
+    /// The degree bound for sampling the supported degree of
+    /// the non-extended scheme.
     max_degree: Option<usize>,
     /// The optional maximum degree supported by the non-extended scheme
     /// (i.e. the "segment size")
     supported_degree: Option<usize>,
-    /// The number of polynomials 
+    /// The number of polynomials
     num_polynomials: usize,
     /// the number of query points
     max_num_queries: usize,
@@ -44,13 +42,29 @@ struct TestInfo {
     negative_type: Option<NegativeType>,
 }
 
-/// A test function that  sets up `PC` for `supported_degree` (random, if not given) 
-/// samples `num_polynomials` polynomials of random degree and a symmetric query set 
+pub(crate) trait TestUtils {
+    /// Randomize commitment for test purpose
+    fn randomize(&mut self);
+}
+
+impl<G: Group> TestUtils for LabeledCommitment<G> {
+    fn randomize(&mut self) {
+        *self = LabeledCommitment::new(
+            self.label().clone(),
+            self.commitment().clone() * &G::ScalarField::rand(&mut thread_rng()),
+        );
+    }
+}
+
+/// A test function that  sets up `PC` for `supported_degree` (random, if not given)
+/// samples `num_polynomials` polynomials of random degree and a symmetric query set
 /// of size `max_num_queries`, and verifies MultiPointProofs for these.
 fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     for _ in 0..info.num_iters {
         let TestInfo {
@@ -77,7 +91,7 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
         let supported_degree = match supported_degree {
             Some(0) => 0,
             Some(d) => d,
-            None => rand::distributions::Uniform::from(1..=max_degree).sample(rng)
+            None => rand::distributions::Uniform::from(1..=max_degree).sample(rng),
         };
         assert!(
             max_degree >= supported_degree,
@@ -119,26 +133,27 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
             println!("Poly {} degree: {}", i, degree);
 
             // random choice for hiding or not
-            let is_hiding = if rand::distributions::Uniform::from(0..1).sample(rng) == 1 { true } else { false };
+            let is_hiding = if rand::distributions::Uniform::from(0..1).sample(rng) == 1 {
+                true
+            } else {
+                false
+            };
 
-            polynomials.push(LabeledPolynomial::new(
-                label,
-                poly,
-                is_hiding,
-            ))
+            polynomials.push(LabeledPolynomial::new(label, poly, is_hiding))
         }
-        println!("supported degree by the non-extended scheme: {:?}", supported_degree);
+        println!(
+            "supported degree by the non-extended scheme: {:?}",
+            supported_degree
+        );
         println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-        let (mut ck, mut vk) = pp.trim(
-            supported_degree,
-        )?;
+        let (mut ck, mut vk) = pp.trim(supported_degree)?;
 
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::CommitterKey {
-            ck.ut_randomize();
+            ck.randomize();
         }
 
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::VerifierKey {
-            vk.ut_randomize();
+            vk.randomize();
         }
 
         assert!(ck.is_valid());
@@ -152,7 +167,7 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
         let (mut comms, rands) = PC::commit_vec(&ck, &polynomials, Some(rng))?;
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::Commitments {
             for comm in comms.iter_mut() {
-                comm.ut_randomize();
+                comm.randomize();
             }
         }
 
@@ -200,7 +215,7 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
             &query_set,
             &values,
             &proof,
-            &mut fs_rng
+            &mut fs_rng,
         )?;
         if !result {
             println!(
@@ -217,9 +232,7 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
         // Assert success using a bigger key
         let bigger_degree = max_degree * 2;
         let pp = PC::setup(bigger_degree)?;
-        let (_, vk) = pp.trim(
-            bigger_degree,
-        )?;
+        let (_, vk) = pp.trim(bigger_degree)?;
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
         assert!(PC::multi_point_multi_poly_verify(
@@ -235,10 +248,14 @@ fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
 }
 
 // TODO: what is the difference to `single_poly_test()`?
-pub(crate) fn constant_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+pub(crate) fn constant_poly_test<G, PC>(
+    negative_type: Option<NegativeType>,
+) -> Result<(), PC::Error>
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     let info = TestInfo {
         num_iters: 100,
@@ -253,9 +270,11 @@ pub(crate) fn constant_poly_test<G, PC>(negative_type: Option<NegativeType>) -> 
 }
 
 pub(crate) fn single_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     let info = TestInfo {
         num_iters: 100,
@@ -269,10 +288,14 @@ pub(crate) fn single_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Re
     test_template::<G, PC>(info)
 }
 
-pub(crate) fn two_poly_four_points_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+pub(crate) fn two_poly_four_points_test<G, PC>(
+    negative_type: Option<NegativeType>,
+) -> Result<(), PC::Error>
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     let info = TestInfo {
         num_iters: 1,
@@ -286,10 +309,14 @@ pub(crate) fn two_poly_four_points_test<G, PC>(negative_type: Option<NegativeTyp
     test_template::<G, PC>(info)
 }
 
-pub(crate) fn full_end_to_end_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+pub(crate) fn full_end_to_end_test<G, PC>(
+    negative_type: Option<NegativeType>,
+) -> Result<(), PC::Error>
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     let info = TestInfo {
         num_iters: 100,
@@ -304,9 +331,11 @@ pub(crate) fn full_end_to_end_test<G, PC>(negative_type: Option<NegativeType>) -
 }
 
 pub(crate) fn segmented_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
-    where
-        G: Curve,
-        PC: PolynomialCommitment<G>,
+where
+    G: Curve,
+    PC: PolynomialCommitment<G>,
+    PC::CommitterKey: TestUtils,
+    PC::VerifierKey: TestUtils,
 {
     let info = TestInfo {
         num_iters: 100,

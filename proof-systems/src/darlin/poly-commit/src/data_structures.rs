@@ -14,7 +14,7 @@ use crate::{error::*, Rc, String};
 pub use algebra::DensePolynomial as Polynomial;
 use algebra::{
     serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError},
-    Curve, Field, Group, SemanticallyValid, ToBytes, UniformRand,
+    Curve, Field, Group, SemanticallyValid, ToBytes,
 };
 use std::{
     fmt::Debug,
@@ -23,6 +23,41 @@ use std::{
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
 pub type PolynomialLabel = String;
+
+/// Defines the minimal interface of committer keys for any polynomial
+/// commitment scheme.
+pub trait PCCommitterKey:
+    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
+{
+    /// Outputs the maximum degree supported by the universal parameters
+    /// `Self` was derived from.
+    fn max_degree(&self) -> usize;
+
+    /// Outputs the maximum degree supported by the committer key.
+    fn segment_size(&self) -> usize;
+
+    /// Returns the hash of `self` instance.
+    fn get_hash(&self) -> &[u8];
+
+    /// Returns key length
+    fn get_key_len(&self) -> usize;
+}
+
+/// Defines the minimal interface of verifier keys for any polynomial
+/// commitment scheme.
+pub trait PCVerifierKey:
+    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
+{
+    /// Outputs the maximum degree supported by the universal parameters
+    /// `Self` was derived from.
+    fn max_degree(&self) -> usize;
+
+    /// Outputs the maximum degree supported by the verifier key.
+    fn segment_size(&self) -> usize;
+
+    /// Returns the hash of `self` instance.
+    fn get_hash(&self) -> &[u8];
+}
 
 /// Defines the minimal interface for public params for any polynomial
 /// commitment scheme.
@@ -49,53 +84,6 @@ pub trait PCParameters<G: Curve>:
         &self,
         segment_size: usize,
     ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error>;
-
-    /// Copy other instance params into this. Used for testing purposes.
-    // #[cfg(test)]
-    fn ut_copy_params(&mut self, other: &Self);
-}
-
-/// Defines the minimal interface of committer keys for any polynomial
-/// commitment scheme.
-pub trait PCCommitterKey:
-    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
-{
-    /// Outputs the maximum degree supported by the universal parameters
-    /// `Self` was derived from.
-    fn max_degree(&self) -> usize;
-
-    /// Outputs the maximum degree supported by the committer key.
-    fn segment_size(&self) -> usize;
-
-    /// Returns the hash of `self` instance.
-    fn get_hash(&self) -> &[u8];
-
-    /// Returns key length
-    fn get_key_len(&self) -> usize;
-
-    /// Randomize key for testing purpose
-    // #[cfg(test)]
-    fn ut_randomize(&mut self);
-}
-
-/// Defines the minimal interface of verifier keys for any polynomial
-/// commitment scheme.
-pub trait PCVerifierKey:
-    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
-{
-    /// Outputs the maximum degree supported by the universal parameters
-    /// `Self` was derived from.
-    fn max_degree(&self) -> usize;
-
-    /// Outputs the maximum degree supported by the verifier key.
-    fn segment_size(&self) -> usize;
-
-    /// Returns the hash of `self` instance.
-    fn get_hash(&self) -> &[u8];
-
-    /// Randomize key for testing purpose
-    // #[cfg(test)]
-    fn ut_randomize(&mut self);
 }
 
 /// Defines the minimal interface of the verifier state from succinct
@@ -203,12 +191,6 @@ impl<G: Group> LabeledCommitment<G> {
     /// Retrieve the commitment from `self`.
     pub fn commitment(&self) -> &G {
         &self.commitment
-    }
-
-    /// Randomize commitment for test purpose
-    // #[cfg(test)]
-    pub fn ut_randomize(&mut self) {
-        self.commitment *= &G::ScalarField::rand(&mut rand::thread_rng())
     }
 }
 

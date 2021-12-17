@@ -15,11 +15,6 @@ use std::{
     vec,
 };
 
-// #[cfg(test)]
-use rand::thread_rng;
-// #[cfg(test)]
-// use algebra::UniformRand;
-
 /// `Parameters` are the polynomial commitment parameters for the inner product arg scheme.
 // TODO: it seems to be artificial to have a `Parameters` struct which is the same as
 // the committer key. Let us investigate if this struct is really needed.
@@ -94,13 +89,6 @@ impl<G: Curve> PCParameters<G> for Parameters<G> {
 
         Ok((ck, vk))
     }
-
-    // #[cfg(test)]
-    fn ut_copy_params(&mut self, other: &Self) {
-        self.s = other.s.clone();
-        self.h = other.h.clone();
-        self.hash = other.hash.clone();
-    }
 }
 
 /// `CommitterKey` is used to commit to, and create evaluation proofs for, a given
@@ -134,13 +122,6 @@ pub struct CommitterKey<G: Curve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: Curve> CommitterKey<G> {
-    /// Scale key for testing purpose
-    pub fn scale(&mut self, scaling_scalar: G::ScalarField) {
-        self.h = self.h.mul(&scaling_scalar);
-    }
-}
-
 impl<G: Curve> SemanticallyValid for CommitterKey<G> {
     // Technically this function is redundant, since the keys are generated
     // through a deterministic procedure starting from a public string.
@@ -168,17 +149,6 @@ impl<G: Curve> PCCommitterKey for CommitterKey<G> {
     fn get_key_len(&self) -> usize {
         self.comm_key.len()
     }
-
-    /// Randomize key for testing purpose
-    // #[cfg(test)]
-    fn ut_randomize(&mut self) {
-        let mut rng = thread_rng();
-        self.comm_key = self
-            .comm_key
-            .iter()
-            .map(|_| G::rand(&mut rng).into_affine().unwrap())
-            .collect::<Vec<_>>();
-    }
 }
 
 /// `VerifierKey` is used to check evaluation proofs for a given commitment.
@@ -195,17 +165,6 @@ impl<G: Curve> PCVerifierKey for VerifierKey<G> {
 
     fn get_hash(&self) -> &[u8] {
         self.hash.as_slice()
-    }
-
-    /// Randomize key for testing purpose
-    // #[cfg(test)]
-    fn ut_randomize(&mut self) {
-        let mut rng = thread_rng();
-        self.comm_key = self
-            .comm_key
-            .iter()
-            .map(|_| G::rand(&mut rng).into_affine().unwrap())
-            .collect::<Vec<_>>();
     }
 }
 
