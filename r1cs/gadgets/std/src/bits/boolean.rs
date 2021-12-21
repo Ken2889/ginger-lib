@@ -641,59 +641,65 @@ impl Boolean {
         ConstraintF: Field,
         CS: ConstraintSystemAbstract<ConstraintF>,
     {
-        let mut bits_iter = bits.iter();
-
-        // b = char() - 1
+        // `bits` < F::characteristic() <==> `bits` <= F::characteristic() -1
         let mut b = F::characteristic().to_vec();
         assert_eq!(b[0] % 2, 1);
-        b[0] -= 1;
+        b[0] -= 1; // This works, because the LSB is one, so there's no borrows.
+        let run = Self::enforce_smaller_or_equal_than_le(cs.ns(|| "enforce_smaller_or_equal_than_le"), 
+        bits.into_iter().rev().map(|&b| b).collect::<Vec<_>>().as_slice(), b)?;
+
+        // We should always end in a "run" of zeros, because
+        // the characteristic is an odd prime. So, this should
+        // be empty.
+        assert!(run.is_empty());
+
+        Ok(())
+    }
+
+    /// Enforces that `bits` is less than or equal to `element`,
+    /// when both are interpreted as (little-endian) integers.
+    pub fn enforce_smaller_or_equal_than_le<ConstraintF, CS>(
+        mut cs: CS,
+        bits: &[Self],
+        element: impl AsRef<[u64]>,
+    ) -> Result<Vec<Self>, SynthesisError> 
+        where
+            ConstraintF: Field,
+            CS: ConstraintSystemAbstract<ConstraintF>,
+    {
+        let b: &[u64] = element.as_ref();
+
+        let mut bits_iter = bits.iter().rev(); // Iterate in big-endian
 
         // Runs of ones in r
         let mut last_run = Boolean::constant(true);
         let mut current_run = vec![];
 
-        let mut found_one = false;
-        let mut run_i = 0;
-        let mut nand_i = 0;
-
-        let char_num_bits = <F as PrimeField>::Params::MODULUS_BITS as usize;
-        if bits.len() > char_num_bits {
-            let num_extra_bits = bits.len() - char_num_bits;
-            let mut or_result = Boolean::constant(false);
-            for (i, should_be_zero) in bits[0..num_extra_bits].iter().enumerate() {
-                or_result = Boolean::or(
-                    &mut cs.ns(|| format!("Check {}-th or", i)),
-                    &or_result,
-                    should_be_zero,
-                )?;
-                let _ = bits_iter.next().unwrap();
-            }
-            or_result.enforce_equal(
-                &mut cs.ns(|| "Check that or of extra bits is zero"),
-                &Boolean::constant(false),
-            )?;
+        let mut element_num_bits = 0;
+        for _ in BitIterator::without_leading_zeros(b) {
+            element_num_bits += 1;
         }
 
-        for b in BitIterator::new(b) {
-            // Skip over unset bits at the beginning
-            found_one |= b;
-            if !found_one {
-                continue;
+        if bits.len() > element_num_bits {
+            let mut or_result = Boolean::constant(false);
+            for (i, should_be_zero) in bits[element_num_bits..].into_iter().enumerate() {
+                or_result = Boolean::or(cs.ns(|| format!("or {} {}", should_be_zero.get_value().unwrap(), i)), &or_result, should_be_zero)?;
+                let _ = bits_iter.next().unwrap();
             }
+            or_result.enforce_equal(cs.ns(|| "enforce equal"), &Boolean::constant(false))?;
+        }
 
-            let a = bits_iter.next().unwrap();
-
+        for (i, (b, a)) in BitIterator::without_leading_zeros(b).zip(bits_iter.by_ref()).enumerate() {
             if b {
                 // This is part of a run of ones.
-                current_run.push(*a);
+                current_run.push(a.clone());
             } else {
                 if !current_run.is_empty() {
                     // This is the start of a run of zeros, but we need
                     // to k-ary AND against `last_run` first.
 
-                    current_run.push(last_run);
-                    last_run = Self::kary_and(cs.ns(|| format!("run {}", run_i)), &current_run)?;
-                    run_i += 1;
+                    current_run.push(last_run.clone());
+                    last_run = Self::kary_and(cs.ns(|| format!("kary and {}", i)), &current_run)?;
                     current_run.truncate(0);
                 }
 
@@ -703,19 +709,13 @@ impl Boolean {
                 // If `last_run` is false, `a` can be true or false.
                 //
                 // Ergo, at least one of `last_run` and `a` must be false.
-                Self::enforce_nand(cs.ns(|| format!("nand {}", nand_i)), &[last_run, *a])?;
-                nand_i += 1;
+                Self::enforce_nand(cs.ns(|| format!("enforce nand {}", i)), &[last_run.clone(), a.clone()])?;
             }
         }
         assert!(bits_iter.next().is_none());
 
-        // We should always end in a "run" of zeros, because
-        // the characteristic is an odd prime. So, this should
-        // be empty.
-        assert!(current_run.is_empty());
-
-        Ok(())
-    }
+        Ok(current_run)
+    }    
 }
 
 impl PartialEq for Boolean {
@@ -2123,6 +2123,56 @@ mod test {
         //     assert!(!cs.is_satisfied());
         // }
     }
+
+    #[test]
+    fn test_smaller_than_or_equal_to() {
+        let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+        for i in 0..1000 {
+            let mut r = Fr::rand(&mut rng);
+            let mut s = Fr::rand(&mut rng);
+            if r > s {
+                core::mem::swap(&mut r, &mut s)
+            }
+
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+
+            let native_bits_be: Vec<_> = BitIterator::new(r.into_repr()).collect();
+            let native_bits = native_bits_be.into_iter().rev().collect::<Vec<_>>();
+            //let bits = Vec::alloc(&mut cs.ns(|| "alloc bits"), || Ok(native_bits)).unwrap();
+            let bits = Vec::alloc(&mut cs.ns(|| format!("alloc bits {}",i)), || Ok(native_bits)).unwrap();
+            Boolean::enforce_smaller_or_equal_than_le(cs.ns(|| format!("enforce_smaller_or_equal_than_le {}",i)), &bits, s.into_repr()).unwrap();
+
+            if !cs.is_satisfied(){
+                println!("{:?}", cs.which_is_unsatisfied());
+            }
+            assert!(cs.is_satisfied());
+        }
+
+        for i in 0..1000 {
+            let r = Fr::rand(&mut rng);
+            if r == -Fr::one() {
+                continue;
+            }
+            let s = r + Fr::one();
+            let s2 = r.double();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+
+            let native_bits_be: Vec<_> = BitIterator::new(r.into_repr()).collect();
+            let native_bits = native_bits_be.into_iter().rev().collect::<Vec<_>>();
+            let bits = Vec::alloc(&mut cs.ns(|| format!("alloc bits {}",i)), || Ok(native_bits)).unwrap();
+            Boolean::enforce_smaller_or_equal_than_le(cs.ns(|| format!("enforce_smaller_or_equal_than_le s {}",i)), &bits, s.into_repr()).unwrap();
+
+            if r < s2 {
+                Boolean::enforce_smaller_or_equal_than_le(cs.ns(|| format!("enforce_smaller_or_equal_than_le s2 {}",i)), &bits, s2.into_repr()).unwrap();
+            }
+
+            if !cs.is_satisfied(){
+                println!("{:?}", cs.which_is_unsatisfied());
+            }
+            assert!(cs.is_satisfied());
+        }
+    }
+
 
     #[test]
     fn test_enforce_nand() {

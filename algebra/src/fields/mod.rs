@@ -488,6 +488,10 @@ impl<E: AsRef<[u64]>> BitIterator<E> {
 
         BitIterator { t, n }
     }
+
+    pub fn without_leading_zeros(s: E) -> impl Iterator<Item = bool> {
+        Self::new(s).skip_while(|b| !b)
+    }
 }
 
 impl<E: AsRef<[u64]>> Iterator for BitIterator<E> {

@@ -423,6 +423,21 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         unimplemented!();
     }
 
+    fn conditionally_add<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        cond: &Boolean,
+        other: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let added_values_g = self.add(cs.ns(|| "added values"),&other)?;
+        Self::conditionally_select(
+            cs.ns(|| "select added_values or original value"),
+            cond,
+            &added_values_g,
+            &self
+        )
+    }
+
     /// Addition of non-natives without reduction
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
