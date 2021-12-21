@@ -653,7 +653,7 @@ mod test {
             for condition in variants.iter().cloned() {
                 for var_a_type in var_type.iter().cloned() {
                     for var_b_type in var_type.iter().cloned() {
-                        let mut cs = TestConstraintSystem::<Fr>::new();
+                        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
                         let cond;
                         let a;
                         let b;
