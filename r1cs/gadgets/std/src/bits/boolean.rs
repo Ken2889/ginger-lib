@@ -579,62 +579,207 @@ impl Boolean {
         }
     }
 
-    // k-ary and of `k` Boolean gadgets bits[0],...,bits[k-1]. 
-    // Costs `k - 1` constraints.
+    /// k-ary and of `k` Boolean gadgets `bits[0],...,bits[k-1]`, where `k` is at most 
+    /// the capacity of the field, using the trick form [[zcash]]. 
+    /// Costs `C = min(3, k)` constraints.
+    /// 
+    /// [zcash]: https://zips.z.cash/protocol/protocol.pdf 
+    // One computes `R = and(bits[0],..., bits[k-1])` according to the following constraints. 
+    // ``
+    //      1. R * (1-R) = 0,
+    //      2. (k - sum) * R = 0,
+    //      3. (k - sum) * inv = (1 - R)
+    // ``
+    // where `sum = Sum_i bits[i]`. 
     pub fn kary_and<ConstraintF, CS>(mut cs: CS, bits: &[Self]) -> Result<Self, SynthesisError>
     where
+        // TODO: find out why all Boolean gadgets are over a Field and not a PrimeField.
         ConstraintF: Field,
         CS: ConstraintSystem<ConstraintF>,
     {
         assert!(!bits.is_empty());
-        let mut bits = bits.iter();
+        assert!(bits.len()<= 
+            <<ConstraintF as Field>::BasePrimeField as PrimeField>::Params::CAPACITY as usize - 1
+        );
 
-        let mut cur: Self = *bits.next().unwrap();
-        for (i, next) in bits.enumerate() {
-            cur = Boolean::and(cs.ns(|| format!("AND {}", i)), &cur, next)?;
+        let k = bits.len();
+
+        // The exceptional cases in which a different treatment is cheaper
+        if k == 1 { 
+            return Ok(
+                bits[0]
+            );
+        } 
+        if k == 2{
+            return Ok(
+                Boolean::and(cs.ns(|| "k-ary and for two bits"), &bits[0], &bits[1])?
+            );
         }
 
-        Ok(cur)
+        if bits.iter().all(|b| b.is_constant()) {   
+            let mut r = true;
+            for bit in bits.iter(){
+                r &= bit.get_value().get()?;
+            }
+
+            return Ok(Boolean::Constant(r));
+        }
+    
+        // 1. alloc result as Boolean constraint.
+        let result = Boolean::alloc(cs.ns(|| "alloc result as Boolean"), 
+            ||{
+                let mut r = true;
+                for bit in bits.iter(){
+                    r &= bit.get_value().get()?;
+                }
+
+                Ok(r)
+            }
+        )?;
+
+        let mut lc_sum_minus_k = LinearCombination::zero() - (ConstraintF::from(k as u64), CS::one());
+        for bit in bits.iter(){
+            lc_sum_minus_k = lc_sum_minus_k + &bit.lc(CS::one(), ConstraintF::one());
+        } 
+
+        // 2. (sum - k) * R = 0,
+        cs.enforce(
+            ||  "enforce (sum - k) * result = 0",
+            |lc| lc + &lc_sum_minus_k,
+            |_| result.lc(CS::one(), ConstraintF::one()),
+            |lc| lc,
+        );
+
+        // Preparation for constraint 3.  
+        let inv = cs.alloc(|| "alloc inv", 
+            || {
+                // compute the inverse if 1 - R = true, otherwise
+                // take zero.
+                let mut value = -ConstraintF::from(k as u64);
+                for bit in bits.iter(){
+                    if bit.get_value().get()? { 
+                        value += ConstraintF::one();
+                    }
+                } 
+
+                if result.not().get_value().get()? == true {
+                    value = value.inverse().get()?;
+                } else {
+                    value = ConstraintF::zero();
+                }
+
+                Ok(value)
+            }
+        )?;
+
+        // 3. (sum - k) * inv = 1 - R,
+        cs.enforce(
+            ||  "enforce (sum - k) * inv = 1 - result",
+            |lc| lc + &lc_sum_minus_k,
+            |lc| lc + inv,
+            |_| result.not().lc(CS::one(), ConstraintF::one()),
+        );            
+
+        Ok(result)
     }
 
-    /// Asserts that at least one operand is false.
-    pub fn enforce_nand<ConstraintF, CS>(mut cs: CS, bits: &[Self]) -> Result<(), SynthesisError>
+    /// Enforces that all `k` Boolean gadgets `bits[0],...,bits[k-1]` are `true`,
+    /// where `k` is at most the capacity of the field. Costs 1 constraint.
+    // One simply enforces that  
+    // ``
+    //      1. (k - sum) * 1 = 0,
+    // ``
+    // where `sum = Sum_i bits[i]`. 
+    pub fn enforce_and<ConstraintF, CS>(mut cs: CS, bits: &[Self]) -> Result<(), SynthesisError>
     where
         ConstraintF: Field,
         CS: ConstraintSystem<ConstraintF>,
     {
-        let res = Self::kary_and(&mut cs, bits)?;
+        let k = bits.len();
+    
+        assert!(k > 0);
+        assert!(
+            bits.len()<= 
+            <<ConstraintF as Field>::BasePrimeField as PrimeField>::Params::CAPACITY as usize - 1
+        );
 
-        match res {
-            Boolean::Constant(false) => Ok(()),
-            Boolean::Constant(true) => Err(SynthesisError::AssignmentMissing),
-            Boolean::Is(ref res) => {
-                cs.enforce(
-                    || "enforce nand",
-                    |lc| lc,
-                    |lc| lc,
-                    |lc| lc + res.get_variable(),
-                );
+        // TODO: let us handle the case in which all bits[i] are constant separately.
+        
+        let mut lc_sum_minus_k = LinearCombination::zero() - (ConstraintF::from(k as u64), CS::one());
+        for bit in bits.iter(){
+            lc_sum_minus_k = lc_sum_minus_k + &bit.lc(CS::one(), ConstraintF::one());
+        } 
 
-                Ok(())
-            }
-            Boolean::Not(ref res) => {
-                cs.enforce(
-                    || "enforce nand",
-                    |lc| lc,
-                    |lc| lc,
-                    |lc| lc + CS::one() - res.get_variable(),
-                );
+        // Enforce (sum - k) * 1 = 0,
+        cs.enforce(
+            ||  "enforce (sum - k) * 1 = 0",
+            |lc| lc + &lc_sum_minus_k,
+            |lc| lc + CS::one(), 
+            |lc| lc
+        );
 
-                Ok(())
-            }
-        }
+        Ok(())
     }
 
-    /// Asserts that this bit_gadget representation is "in
-    /// the field" when interpreted in big endian.
+    /// Asserts that at least one operand is false.
+    // Costs a single constraint.
+    pub fn enforce_nand<ConstraintF, CS>(mut cs: CS, bits: &[Self]) -> Result<(), SynthesisError>
+    where
+        // TODO: find out why all Boolean gadgets are over a Field and not a PrimeField.
+        ConstraintF: Field,
+        CS: ConstraintSystem<ConstraintF>,
+    {
+        let k = bits.len();
+    
+        assert!(k > 0);
+        assert!(
+            bits.len()<= 
+            <<ConstraintF as Field>::BasePrimeField as PrimeField>::Params::CAPACITY as usize - 1
+        );
+
+        // TODO: let us handle the case in which all bits[i] are constant separately.
+
+        let mut lc_sum_minus_k = LinearCombination::zero() - (ConstraintF::from(k as u64), CS::one());
+        for bit in bits.iter(){
+            lc_sum_minus_k = lc_sum_minus_k + &bit.lc(CS::one(), ConstraintF::one());
+        } 
+
+        // Preparation  
+        let inv = cs.alloc(|| "alloc inv", 
+            || {
+                // compute the inverse 
+                let mut value = -ConstraintF::from(k as u64);
+                for bit in bits.iter(){
+                    if bit.get_value().get()? { 
+                        value += ConstraintF::one();
+                    }
+                } 
+                if value != ConstraintF::zero() {
+                    Ok(value.inverse().get()?)
+                } else {
+                    Ok(ConstraintF::zero())
+                }
+            }
+        )?;
+   
+        // Enforce (sum - k) * inv = 1,
+        cs.enforce(
+            ||  "enforce (sum - k) * inv = 1",
+            |lc| lc + &lc_sum_minus_k,
+            |lc| lc + inv,
+            |lc| lc + CS::one(),
+        );           
+
+        Ok(())
+    }
+
+    /// Asserts that a slice of Boolean gadgets represents an integer below the 
+    /// characteristic of the constraint field.
+    /// Costs less than one constraint per bit, depending on the runs of ones in 
+    /// `ConstraintF::characteristic() - 1`.
     pub fn enforce_in_field<ConstraintF, CS, F: PrimeField>(
         mut cs: CS,
+        // Big endian slice of Booleans
         bits: &[Self],
     ) -> Result<(), SynthesisError>
     where
@@ -642,7 +787,7 @@ impl Boolean {
         CS: ConstraintSystem<ConstraintF>,
     {
         // `bits` < F::characteristic() <==> `bits` <= F::characteristic() -1
-        let mut b = F::characteristic().to_vec();
+        let mut b = ConstraintF::characteristic().to_vec();
         assert_eq!(b[0] % 2, 1);
         b[0] -= 1; // This works, because the LSB is one, so there's no borrows.
         Self::enforce_smaller_or_equal_than_le(
@@ -650,19 +795,27 @@ impl Boolean {
             bits.into_iter().rev().map(|&b| b).collect::<Vec<_>>().as_slice(), 
             b)?;
 
-        // We should always end in a "run" of zeros, because
-        // the characteristic is an odd prime. So, this should
-        // be empty.
-        //assert!(run.is_empty());
-
         Ok(())
     }
 
-    /// Enforces that a slice of Boolean gadgets `bits` is less than or equal to `element`,
-    /// when interpreted as little-endian integer representation.
+    /// Enforces that a slice of Boolean gadgets `[bits[0],...,bits[k]]`, interpreted 
+    /// as little endian representation of an integer, is smaller or equal to the 
+    /// constant `element` 
+    /// ``
+    ///     Sum_{i=0}^{k-1} bits[i] * 2^i <= element,
+    /// ``
+    /// where the latter is given as a slice of u64 limbs, least significant limb first.
+    /// This is the range proof from [[zcash]], adapted to the case that all
+    /// bits[i] are already boolean constrained. 
+    /// Costs less than one constraint per bit, depending on the runs of ones in 
+    /// `element`.
+    ///  
+    /// [zcash]: https://zips.z.cash/protocol/protocol.pdf 
     pub fn enforce_smaller_or_equal_than_le<ConstraintF, CS>(
         mut cs: CS,
+        // the Boolean gadgets in little endian order
         bits: &[Self],
+        // `element` as a little endian slice of u64 limbs.
         element: impl AsRef<[u64]>,
     ) -> Result<(), SynthesisError> 
         where
@@ -672,8 +825,6 @@ impl Boolean {
         let b: &[u64] = element.as_ref();
 
         let mut bits_iter = bits.iter().rev(); // Iterate in big-endian
-
-
         // The state for deciding a<=b, set `false` if we know already that `a<=b`,
         // and `true` otherwise. 
         let mut state = Boolean::constant(true);
@@ -691,27 +842,47 @@ impl Boolean {
 
         // Otherwise, if the length of `bits` is larger `len(b)`, all bits 
         // beyond `len(b)` must be zero.
-        // Costs `len(bits) - len(b)` constraints.    
+        // Costs a single constraint, enforcing that the linear combination
+        // ``
+        //      Sum_{i=elem_num_bits} bits[i] = 0
+        // ``
         if bits.len() > element_num_bits {
-            for (i, should_be_zero) in bits[element_num_bits..].into_iter().enumerate() {
-                should_be_zero.enforce_equal(cs.ns(|| format!("enforce excess bit {} equal to zero ", i)), &Boolean::constant(false))?;
+            Boolean::enforce_and(cs.ns(|| "enforce exceeding bits zero"), 
+                &bits[element_num_bits..]
+                    .iter()
+                    .map(|b| b.not())
+                    .collect::<Vec<Boolean>>()
+            )?;
+            // and prepare the iterator for the next step
+            for _ in bits[element_num_bits..].iter(){
                 let _ = bits_iter.next().unwrap();
-            }  
+            } 
         }
 
         // The comparison over the "length" of `b`.  We start with the current decision 
         // state `last_run` to be set `true`, and set it false as soon as we know that 
-        // `a <= b`.
-        // Costs one constraint per bit.
+        // `a <= b`. We further use the k-ary and optimization over runs of `1`s in `b`.
+        // Costs less than one constraint per bit.
+        let mut current_run = vec![];
         for (i, (b, a)) in BitIterator::without_leading_zeros(b).zip(bits_iter.by_ref()).enumerate() {
             if b {
                 // If `b[i] = 1` a simple update via
                 // ``
                 //      state = and(a[i], &state)
                 // ``
-                state = Self::and(cs.ns(|| format!("and {}", i)), &a, &state)?;
+                // We postpone that and to a k-ary and over `current_run`
+                current_run.push(a.clone());
             } else {
-                // If `b[i] = 0`: 
+                // If `b[i] = 0`: let us first treat the postponed ands over 
+                // the `a[i]` in `current_run`
+                if !current_run.is_empty() {
+                    // The postpone k-ary and of the state and 
+                    current_run.push(state.clone());
+                    state = Self::kary_and(cs.ns(|| format!("kary and {}", i)), &current_run)?;
+                    // reset `current_run`
+                    current_run.truncate(0);
+                }
+                // And now we treat the current `b[i]=0`:
                 // If `state` is true, telling that we still do not know from the preceeding 
                 // bits that `a <= b` (meaning that they all coincide),
                 // then `a[i]` must be false, or `a > b`. Otherwise, if `state` is false,
@@ -2214,13 +2385,6 @@ mod test {
 
     #[test]
     fn test_enforce_nand() {
-        {
-            let mut cs = TestConstraintSystem::<Fr>::new();
-
-            assert!(Boolean::enforce_nand(&mut cs, &[Boolean::constant(false)]).is_ok());
-            assert!(Boolean::enforce_nand(&mut cs, &[Boolean::constant(true)]).is_err());
-        }
-
         for i in 1..5 {
             // with every possible assignment for them
             for mut b in 0..(1 << i) {
@@ -2261,6 +2425,57 @@ mod test {
                     let expected = !expected;
 
                     Boolean::enforce_nand(&mut cs, &bits).unwrap();
+
+                    if expected {
+                        assert!(cs.is_satisfied());
+                    } else {
+                        assert!(!cs.is_satisfied());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_enforce_and() {
+        for i in 1..5 {
+            // with every possible assignment for them
+            for mut b in 0..(1 << i) {
+                // with every possible negation
+                for mut n in 0..(1 << i) {
+                    let mut cs = TestConstraintSystem::<Fr>::new();
+
+                    let mut expected = true;
+
+                    let mut bits = vec![];
+                    for j in 0..i {
+                        expected &= b & 1 == 1;
+
+                        if n & 1 == 1 {
+                            bits.push(Boolean::from(
+                                AllocatedBit::alloc(cs.ns(|| format!("bit_gadget {}", j)), || {
+                                    Ok(b & 1 == 1)
+                                })
+                                .unwrap(),
+                            ));
+                        } else {
+                            bits.push(
+                                Boolean::from(
+                                    AllocatedBit::alloc(
+                                        cs.ns(|| format!("bit_gadget {}", j)),
+                                        || Ok(b & 1 == 0),
+                                    )
+                                    .unwrap(),
+                                )
+                                .not(),
+                            );
+                        }
+
+                        b >>= 1;
+                        n >>= 1;
+                    }
+
+                    Boolean::enforce_and(&mut cs, &bits).unwrap();
 
                     if expected {
                         assert!(cs.is_satisfied());

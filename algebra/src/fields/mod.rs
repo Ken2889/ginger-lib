@@ -478,7 +478,11 @@ impl LegendreSymbol {
 
 #[derive(Debug)]
 pub struct BitIterator<E> {
+    /// the element under consideration, given as a little 
+    /// endian slice of u64.
     t: E,
+    /// addresses the current bit, which is the one 
+    /// according to `2^{n-1}`.
     n: usize,
 }
 
@@ -489,6 +493,8 @@ impl<E: AsRef<[u64]>> BitIterator<E> {
         BitIterator { t, n }
     }
 
+    /// Returns the bits of `s` in big endian order, 
+    /// with leading zeroes dropped. 
     pub fn without_leading_zeros(s: E) -> impl Iterator<Item = bool> {
         Self::new(s).skip_while(|b| !b)
     }
@@ -501,10 +507,14 @@ impl<E: AsRef<[u64]>> Iterator for BitIterator<E> {
         if self.n == 0 {
             None
         } else {
+            // the current bit corresponds to `2^{n-1}`
             self.n -= 1;
+            // the limb of the current bit.
             let part = self.n / 64;
+            // the exponent `n - 1 mod 64`, which corresponds to the current bit.
             let bit = self.n - (64 * part);
 
+            // pick the current bit from the u64 limb.
             Some(self.t.as_ref()[part] & (1 << bit) > 0)
         }
     }
