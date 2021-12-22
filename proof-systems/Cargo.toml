@@ -53,7 +53,7 @@ r1cs-crypto = { path = "../r1cs/gadgets/crypto", features = ["nizk"] }
 print-trace = [ "bench-utils/print-trace" ]
 groth16 = []
 gm17 = []
-# darlin = ["marlin", "poly-commit", "digest", "derivative", "r1cs-std"]
+darlin = ["marlin", "poly-commit", "digest", "derivative", "r1cs-std"]
 llvm_asm = ["algebra/llvm_asm"]
 
 [[example]]
