@@ -1,21 +1,19 @@
-use algebra::{serialize::*, Group, Curve, ToConstraintField};
+use algebra::{serialize::*, Curve, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
 use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
-use proof_systems::darlin::pcd::{DualPCDVerifierKey, GeneralPCD};
+use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
-use proof_systems::darlin::{
-    pcd::PCD,
-    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
+use proof_systems::darlin::tests::{
+    final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys,
 };
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
-use rayon::prelude::*;
 
 fn bench_succinct_part_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,
@@ -221,7 +219,9 @@ fn bench_batch_verification_complete<G1: Curve, G2: Curve, D: Digest + 'static>(
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
@@ -247,7 +247,9 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
@@ -273,7 +275,9 @@ fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();

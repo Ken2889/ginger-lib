@@ -4,8 +4,7 @@
 set -xeo pipefail
 
 retval=0
-cd proof-systems
+cd proof-systems/src/darlin/marlin
 cargo $CARGOARGS check --features "print-trace" || retval="$?"
-cargo $CARGOARGS check --features "darlin" || retval="$?"
-cargo $CARGOARGS check --features "llvm_asm" || retval="$?"
+cargo $CARGOARGS check --features "asm" || retval="$?"
 exit "$retval"
