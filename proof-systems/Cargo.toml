@@ -28,6 +28,7 @@ r1cs-core = { path = "../r1cs/core" }
 bench-utils = { path = "../bench-utils" }
 
 marlin = { path = "./src/darlin/marlin", optional = true }
+t-dlog-acc-marlin = { path = "./src/darlin/t_dlog_acc_marlin", optional = true }
 poly-commit = { path = "./src/darlin/poly-commit", optional = true }
 
 r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
