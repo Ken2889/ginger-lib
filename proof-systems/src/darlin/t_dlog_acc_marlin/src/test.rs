@@ -50,7 +50,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
     }
 }
 
-mod marlin {
+mod t_dlog_acc_marlin {
     use super::*;
     use crate::Marlin;
 
@@ -124,8 +124,7 @@ mod marlin {
                 num_constraints,
                 num_variables,
             };
-            let (index_pk, index_vk) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
+            let (index_pk, index_vk) = Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
@@ -179,7 +178,7 @@ mod marlin {
 
             // Fake indexes to pass the IOP part
             let (index_pk_fake, index_vk_fake) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk_fake, circ).unwrap();
+                Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
 
             let proof_fake = Marlin::<G, PC, D>::prove(
                 &index_pk_fake,
@@ -209,8 +208,7 @@ mod marlin {
                 num_constraints,
                 num_variables,
             };
-            let (index_pk, index_vk) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
+            let (index_pk, index_vk) = Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());

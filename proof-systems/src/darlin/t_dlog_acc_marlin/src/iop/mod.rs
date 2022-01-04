@@ -33,32 +33,16 @@ pub struct IOP<F: Field> {
 }
 
 impl<F: PrimeField> IOP<F> {
-    /// The labels for the polynomials output by the indexer.
-    #[rustfmt::skip]
-    pub const INDEXER_POLYNOMIALS: [&'static str; 12] = [
-        // Polynomials for A
-        "a_row", "a_col", "a_row_col", "a_val_row_col",
-        // Polynomials for B
-        "b_row", "b_col", "b_row_col", "b_val_row_col",
-        // Polynomials for C
-        "c_row", "c_col", "c_row_col", "c_val_row_col",
-    ];
-
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
-    pub const PROVER_POLYNOMIALS: [&'static str; 7] = [
+    pub const PROVER_POLYNOMIALS: [&'static str; 6] = [
         // First sumcheck
-        "w", "y_a", "y_b", "u_1", "h_1",
-        // Second sumcheck
-        "u_2", "h_2",
+        "w", "y_a", "y_b", "u_1", "h_1", "t"
     ];
 
     /// An iterator over the polynomials output by the indexer and the prover.
     pub fn polynomial_labels() -> impl Iterator<Item = String> {
-        Self::INDEXER_POLYNOMIALS
-            .iter()
-            .chain(&Self::PROVER_POLYNOMIALS)
-            .map(|s| s.to_string())
+        Self::PROVER_POLYNOMIALS.iter().map(|s| s.to_string())
     }
 
     /// The maximum degree of polynomials produced by the indexer and prover
@@ -68,28 +52,15 @@ impl<F: PrimeField> IOP<F> {
     pub fn max_degree(
         num_constraints: usize,
         num_variables: usize,
-        num_non_zero: usize,
         zk: bool,
     ) -> Result<usize, Error> {
-        let num_formatted_variables = num_variables;
-        let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
+        let padded_matrix_dim = std::cmp::max(num_variables, num_constraints);
         let domain_h_size = get_best_evaluation_domain::<F>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
             .size();
-        let domain_k_size = get_best_evaluation_domain::<F>(num_non_zero)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
-            .size();
-        // The largest oracle degrees for the outer and inner sumcheck are
+        // The largest oracle degree for the outer sumcheck is
         //      deg h_1(X) = if zk { 2|H| } else { 2|H| - 1 }.
-        //      deg h_2(X) = 3 * |K| - 4.
-        // We hence return the max (deg h_1(X), deg h_2(X))
-        Ok(*[
-            2 * domain_h_size - (1 - zk as usize), // h_1 max degree
-            3 * domain_k_size - 4,                 // h_2 max degree
-        ]
-        .iter()
-        .max()
-        .unwrap()) // This is really the degree not the number of coefficients
+        Ok(2 * domain_h_size - (1 - zk as usize)) // This is really the degree not the number of coefficients
     }
 
     /// Format the public input according to the requirements of the constraint
@@ -118,10 +89,6 @@ impl<F: PrimeField> IOP<F> {
         let domain_h = &state.domain_h;
         let g_h = domain_h.group_gen();
 
-        let domain_k = &state.domain_k;
-        let g_k = domain_k.group_gen();
-        let k_size_inv = domain_k.size_inv();
-
         let public_input = Self::format_public_input(public_input);
         let domain_x = get_best_evaluation_domain::<F>(public_input.len())
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
@@ -139,12 +106,6 @@ impl<F: PrimeField> IOP<F> {
             None => Err(Error::Other("Second round message is empty".to_owned()))?,
         };
 
-        let gamma = match state.gamma {
-            Some(v) => v,
-            None => Err(Error::Other("Gamma is empty".to_owned()))?,
-        };
-
-        let v_H_at_alpha = domain_h.evaluate_vanishing_polynomial(alpha);
         let v_H_at_beta = domain_h.evaluate_vanishing_polynomial(beta);
 
         // Evaluate polynomials at beta
@@ -157,6 +118,7 @@ impl<F: PrimeField> IOP<F> {
         let u_1_at_beta = get_poly_eval(evals, "u_1".into(), beta)?;
         let u_1_at_g_beta = get_poly_eval(evals, "u_1".into(), g_h * beta)?;
         let h_1_at_beta = get_poly_eval(evals, "h_1".into(), beta)?;
+        let t_at_beta = get_poly_eval(evals, "t".into(), beta)?;
 
         // we compute the public input polynomial using FFT
         // That is, we compute
@@ -168,98 +130,19 @@ impl<F: PrimeField> IOP<F> {
             .zip(public_input) // note that zip automatically manages lower public_input lengths.
             .map(|(l, x)| l * &x)
             .fold(F::zero(), |x, y| x + &y);
+        let y_at_beta = x_at_beta + v_X_at_beta * w_at_beta;
 
         let y_eta_at_beta =
             eta_a * y_a_at_beta + eta_b * y_b_at_beta + eta_c * y_a_at_beta * y_b_at_beta;
 
-        let v_1 =
-            l_alpha_beta * y_eta_at_beta + u_1_at_g_beta - u_1_at_beta + h_1_at_beta * v_H_at_beta;
+        let outer_sumcheck = t_at_beta * y_at_beta - l_alpha_beta * y_eta_at_beta - u_1_at_g_beta
+            + u_1_at_beta
+            - h_1_at_beta * v_H_at_beta;
 
-        let v_2 = x_at_beta + v_X_at_beta * w_at_beta;
-
-        // We could safely consider v2 != 0, because it is overwhelmingly non-zero.
-        // However, considering the case v2 == 0 is more elegant as is guarantees
-        // the perfect completeness of the proving system.
-        if v_2.is_zero() && !v_1.is_zero() {
+        if !outer_sumcheck.is_zero() {
             return Err(Error::VerificationEquationFailed(
-                // TODO: find a more descriptive error name
-                "Inner sumcheck".to_owned(),
+                "Outer sumcheck".to_owned(),
             ));
-        } else {
-            // Inner sumcheck, using the provided evaluation values:
-            //      a(X) == b(X)*(v/m + U_2(gX) - U_2(X)) + h_2(X)*(X^m-1)
-            // at X=gamma, with
-            //      b(X) = Product_{M=A*,B*,C*} (beta - row_M(X))*(alpha - col_M(X)),
-            //      a(X) = (beta^n-1)*(alpha^n-1)*Sum_{M=A*,B*,C*} eta_M * val_M(X)*p_M(X),
-            //      v = v_1/v_2,
-            // where
-            //      p_M(X) =  prod_{N!=M}(beta-row_N(X))(alpha-col_N(X))
-            //             =  prod_{N!=M} (alpha*beta -alpha*row_N(X)-beta*col_N(X)+row.col_N(X))
-            //
-            // In order to avoid an expensive division by v_2, the following equality is
-            // checked instead:
-            //      v_2*a(X) == b(X)*(v_1/m + v_2*(U_2(gX) - U_2(X))) + v_2*h_2(X)*(X^m-1)
-            // at X=gamma.
-            let inner_sumcheck = {
-                let alpha_beta = alpha * beta;
-
-                // Evaluate polynomials at gamma
-
-                let v_K_at_gamma = domain_k.evaluate_vanishing_polynomial(gamma);
-
-                let u_2_at_gamma = get_poly_eval(evals, "u_2".into(), gamma)?;
-                let u_2_at_g_gamma = get_poly_eval(evals, "u_2".into(), g_k * gamma)?;
-                let h_2_at_gamma = get_poly_eval(evals, "h_2".into(), gamma)?;
-
-                let a_row_at_gamma = get_poly_eval(evals, "a_row".into(), gamma)?;
-                let a_col_at_gamma = get_poly_eval(evals, "a_col".into(), gamma)?;
-                let a_row_col_at_gamma = get_poly_eval(evals, "a_row_col".into(), gamma)?;
-                let a_val_row_col_at_gamma = get_poly_eval(evals, "a_val_row_col".into(), gamma)?;
-
-                let b_row_at_gamma = get_poly_eval(evals, "b_row".into(), gamma)?;
-                let b_col_at_gamma = get_poly_eval(evals, "b_col".into(), gamma)?;
-                let b_row_col_at_gamma = get_poly_eval(evals, "b_row_col".into(), gamma)?;
-                let b_val_row_col_at_gamma = get_poly_eval(evals, "b_val_row_col".into(), gamma)?;
-
-                let c_row_at_gamma = get_poly_eval(evals, "c_row".into(), gamma)?;
-                let c_col_at_gamma = get_poly_eval(evals, "c_col".into(), gamma)?;
-                let c_row_col_at_gamma = get_poly_eval(evals, "c_row_col".into(), gamma)?;
-                let c_val_row_col_at_gamma = get_poly_eval(evals, "c_val_row_col".into(), gamma)?;
-
-                // The denominator terms, using row.col_M(X)
-
-                let a_denom_at_gamma =
-                    alpha_beta - (beta * a_row_at_gamma) - (alpha * a_col_at_gamma)
-                        + a_row_col_at_gamma;
-                let b_denom_at_gamma =
-                    alpha_beta - (beta * b_row_at_gamma) - (alpha * b_col_at_gamma)
-                        + b_row_col_at_gamma;
-                let c_denom_at_gamma =
-                    alpha_beta - (beta * c_row_at_gamma) - (alpha * c_col_at_gamma)
-                        + c_row_col_at_gamma;
-
-                // b(X) at X=gamma
-                let b_at_gamma = a_denom_at_gamma * b_denom_at_gamma * c_denom_at_gamma;
-                let b_expr_at_gamma =
-                    b_at_gamma * (v_2 * (u_2_at_g_gamma - u_2_at_gamma) + &(v_1 * k_size_inv));
-
-                let mut inner_sumcheck =
-                    (eta_a * b_denom_at_gamma * c_denom_at_gamma * a_val_row_col_at_gamma)
-                        + (eta_b * a_denom_at_gamma * c_denom_at_gamma * b_val_row_col_at_gamma)
-                        + (eta_c * b_denom_at_gamma * a_denom_at_gamma * c_val_row_col_at_gamma);
-
-                inner_sumcheck *= v_2;
-                inner_sumcheck *= v_H_at_alpha * v_H_at_beta * domain_h.size_inv().square();
-                inner_sumcheck -= b_expr_at_gamma;
-                inner_sumcheck -= v_2 * v_K_at_gamma * h_2_at_gamma;
-                inner_sumcheck
-            };
-
-            if !inner_sumcheck.is_zero() {
-                return Err(Error::VerificationEquationFailed(
-                    "Inner sumcheck".to_owned(),
-                ));
-            }
         }
 
         Ok(())

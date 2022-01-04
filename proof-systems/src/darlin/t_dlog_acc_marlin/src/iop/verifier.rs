@@ -12,16 +12,11 @@ use poly_commit::QuerySet;
 pub struct VerifierState<F: PrimeField> {
     /// Domain H.
     pub domain_h: Box<dyn EvaluationDomain<F>>,
-    /// Domain K.
-    pub domain_k: Box<dyn EvaluationDomain<F>>,
 
     /// First round verifier message.
     pub first_round_msg: Option<VerifierFirstMsg<F>>,
     /// Second round verifier message.
     pub second_round_msg: Option<VerifierSecondMsg<F>>,
-
-    /// Challenge for third round.
-    pub gamma: Option<F>,
 }
 
 /// First message of the verifier.
@@ -60,9 +55,6 @@ impl<F: PrimeField> IOP<F> {
         let domain_h = get_best_evaluation_domain::<F>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-
         let alpha: F = fs_rng.squeeze_128_bits_challenge();
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
@@ -76,10 +68,8 @@ impl<F: PrimeField> IOP<F> {
 
         let new_state = VerifierState {
             domain_h,
-            domain_k,
             first_round_msg: Some(msg),
             second_round_msg: None,
-            gamma: None,
         };
 
         Ok((msg, new_state))
@@ -104,17 +94,6 @@ impl<F: PrimeField> IOP<F> {
         Ok((msg, state))
     }
 
-    /// Third round of the verifier. Samples the random challenge `gamma` for
-    /// probing the inner sumcheck identity.
-    pub fn verifier_third_round<R: FiatShamirRng>(
-        mut state: VerifierState<F>,
-        fs_rng: &mut R,
-    ) -> VerifierState<F> {
-        let gamma: F = fs_rng.squeeze_128_bits_challenge();
-        state.gamma = Some(gamma);
-        state
-    }
-
     /// Output the query state and next round state.
     pub fn verifier_query_set<'a, 'b>(
         state: VerifierState<F>,
@@ -124,17 +103,9 @@ impl<F: PrimeField> IOP<F> {
         }
         let beta = state.second_round_msg.unwrap().beta;
 
-        if state.gamma.is_none() {
-            return Err(Error::Other("Gamma is empty".to_owned()));
-        }
-        let gamma = state.gamma.unwrap();
-
         let g_h = state.domain_h.group_gen();
-        let g_k = state.domain_k.group_gen();
 
         let mut query_set = QuerySet::new();
-
-        // Outer sumcheck
 
         // First round polys
         query_set.insert(("w".into(), ("beta".into(), beta)));
@@ -145,25 +116,7 @@ impl<F: PrimeField> IOP<F> {
         query_set.insert(("u_1".into(), ("beta".into(), beta)));
         query_set.insert(("u_1".into(), ("g * beta".into(), g_h * beta)));
         query_set.insert(("h_1".into(), ("beta".into(), beta)));
-
-        // Inner sumcheck
-
-        // Third round polys
-        query_set.insert(("u_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("u_2".into(), ("g * gamma".into(), g_k * gamma)));
-        query_set.insert(("h_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_val_row_col".into(), ("gamma".into(), gamma)));
+        query_set.insert(("t".into(), ("beta".into(), beta)));
 
         Ok((query_set, state))
     }
