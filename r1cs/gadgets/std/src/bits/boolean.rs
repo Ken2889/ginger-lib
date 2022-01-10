@@ -944,7 +944,7 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for Boolean {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod test {
     use super::{AllocatedBit, Boolean};
     use crate::prelude::*;

@@ -418,7 +418,7 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod test {
     use super::UInt64;
     use crate::{alloc::AllocGadget, bits::boolean::Boolean, boolean::AllocatedBit, select::CondSelectGadget};

@@ -84,8 +84,7 @@ where
         &mut self,
         mut cs: CS,
     ) -> Result<(), SynthesisError> {
-        let x_squared = self.x.mul_without_reduce(cs.ns(|| "x^2"), &self.x)?;
-        //TODO: Once mul_by_constant is implemented properly we can avoid all these adds
+        let x_squared = self.x.mul_without_prereduce(cs.ns(|| "x^2"), &self.x)?;
         let three_x_squared_plus_a = x_squared
             .add(cs.ns(|| "2x^2"), &x_squared)?
             .add(cs.ns(|| "3x^2"), &x_squared)?
@@ -808,6 +807,8 @@ where
         let x3_plus_x1_plus_x2 = x_3
             .add(cs.ns(|| "x3 + x1"), &self.x)?
             .add(cs.ns(|| "x3 + x1 + x2"), &other.x)?;
+        // TODO: the default implementation for mul_equals() calls mul() and 
+        // then enforce_equal(). Both do reduction. Let us improve here.
         lambda.mul_equals(cs.ns(|| "check x3"), &lambda, &x3_plus_x1_plus_x2)?;
 
         // Check y3
@@ -1092,8 +1093,8 @@ where
 
         // Check that y^2 = x^3 + ax +b
         // We do this by checking that y^2 - b = x * (x^2 +a)
-        let x2 = x.mul_without_reduce(cs.ns(|| "x^2"), &x)?;
-        let y2 = y.mul_without_reduce(cs.ns(|| "y^2"), &y)?;
+        let x2 = x.mul_without_prereduce(cs.ns(|| "x^2"), &x)?;
+        let y2 = y.mul_without_prereduce(cs.ns(|| "y^2"), &y)?;
 
         let x2_plus_a = x2
             .add_constant(cs.ns(|| "x^2 + a"), &a)?
