@@ -182,7 +182,7 @@ impl<F: PrimeField> FpGadget<F> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod test {
     use std::cmp::Ordering;
     use rand::{Rng, thread_rng};
