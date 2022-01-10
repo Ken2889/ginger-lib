@@ -120,6 +120,7 @@ fn get_params_test() {
  * elementary arithemtic tests
  * 
  * ***********************************************************************************************/
+ #[allow(dead_code)]
  fn constraint_count_test<SimulationF: PrimeField, ConstraintF: PrimeField, R: RngCore>(rng: &mut R) {
     let (_, _, constraints) = find_parameters(ConstraintF::size_in_bits(), SimulationF::size_in_bits());
 
