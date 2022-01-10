@@ -1,6 +1,6 @@
 [package]
 name = "r1cs-std"
-version = "0.3.0"
+version = "0.3.1"
 authors = [
     "Sean Bowe",
     "Alessandro Chiesa",
@@ -25,14 +25,13 @@ license = "MIT/Apache-2.0"
 [dependencies]
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
-derivative = "2.2.0"
-
-num-traits = { version = "0.2", default-features = false, optional = true }
-num-bigint = { version = "0.3.0", default-features = false, optional = true }
-num-integer = { version = "0.1.44", default-features = false, optional = true }
-hex = "0.4"
-radix_trie = "0.2.1"
-rand = { version = "0.8.4" }
+derivative = "=2.2.0"
+radix_trie = "=0.2.1"
+rand = { version = "=0.8.4" }
+num-traits = { version = "=0.2.14", default-features = false, optional = true }
+num-bigint = { version = "=0.3.0", default-features = false, optional = true }
+num-integer = { version = "=0.1.44", default-features = false, optional = true }
+hex = "=0.4.3"
 
 [features]
 llvm_asm = ["algebra/llvm_asm"]
@@ -55,7 +54,7 @@ nonnative = ["num-traits", "num-bigint", "num-integer"]
 density-optimized = []
 
 [dev-dependencies]
-paste = "1.0"
-rand = { version = "0.8.4" }
-rand_xorshift = { version = "0.3.0" }
+paste = "=1.0.6"
+rand = { version = "=0.8.4" }
+rand_xorshift = { version = "=0.3.0" }
 r1cs-std = { path = "../std", features = ["bls12_381", "jubjub", "tweedle", "secp256k1", "bn_382", "ed25519"] }
