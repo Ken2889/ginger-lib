@@ -67,12 +67,13 @@ mod test;
 /// Coboundary Marlin is an argument for satifiability of an R1CS over a prime
 /// field `F` and uses a polynomial commitment scheme `PC` for
 /// polynomials over that field.
-pub struct Marlin<G: Curve, PC: PolynomialCommitment<G>>(
-    #[doc(hidden)] PhantomData<G>,
+pub struct Marlin<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>>(
+    #[doc(hidden)] PhantomData<G1>,
+    #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<PC>,
 );
 
-impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
+impl<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> Marlin<G1, G2, PC> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"COBOUNDARY-MARLIN-2021";
@@ -83,8 +84,8 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
-    ) -> Result<UniversalSRS<G, PC>, Error<PC::Error>> {
-        let max_degree = IOP::<G::ScalarField>::max_degree(num_constraints, num_variables, zk)?;
+    ) -> Result<UniversalSRS<G1, PC>, Error<PC::Error>> {
+        let max_degree = IOP::<G1, G2>::max_degree(num_constraints, num_variables, zk)?;
         let setup_time = start_timer!(|| {
             format!(
             "Marlin::UniversalSetup with max_degree {}, computed for a maximum of {} constraints, {} vars",
@@ -100,12 +101,12 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The circuit-specific setup. Given a circuit `c` and a committer_key of the polynomial
     /// commitment scheme, generate the key material for the circuit. The latter is split into
     /// a prover key and a verifier key.
-    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G::ScalarField>>(
+    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G1::ScalarField>>(
         c: C,
-    ) -> Result<(ProverKey<G>, VerifierKey<G>), Error<PC::Error>> {
+    ) -> Result<(ProverKey<G1, G2>, VerifierKey<G1, G2>), Error<PC::Error>> {
         let index_time = start_timer!(|| "Marlin::Index");
 
-        let index = IOP::<G::ScalarField>::index(c)?;
+        let index = IOP::<G1, G2>::index(c)?;
 
         end_timer!(index_time);
 
@@ -122,13 +123,13 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     }
 
     /// Produce a zkSNARK asserting given a constraint system `c` over a prime order field `F`
-    pub fn prove<C: ConstraintSynthesizer<G::ScalarField>>(
-        index_pk: &ProverKey<G>,
+    pub fn prove<C: ConstraintSynthesizer<G1::ScalarField>>(
+        index_pk: &ProverKey<G1, G2>,
         pc_pk: &PC::CommitterKey,
         c: C,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
-    ) -> Result<Proof<G, PC>, Error<PC::Error>> {
+    ) -> Result<Proof<G1, G2, PC>, Error<PC::Error>> {
         if zk_rng.is_some() && !zk || zk_rng.is_none() && zk {
             return Err(Error::Other("If ZK is enabled, a RNG must be passed (and viceversa); conversely, if ZK is disabled, a RNG must NOT be passed (and viceversa)".to_owned()));
         }
@@ -237,7 +238,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let evaluations = evaluations
             .into_iter()
             .map(|x| x.1)
-            .collect::<Vec<G::ScalarField>>();
+            .collect::<Vec<G1::ScalarField>>();
         end_timer!(eval_time);
 
         // absorb the evalution claims.
@@ -271,10 +272,10 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// Verify a proof as produced by `fn prove()`.
     /// Internally, the function calls `fn verify_iop` and `fn verify_opening`.
     pub fn verify(
-        index_vk: &VerifierKey<G>,
+        index_vk: &VerifierKey<G1, G2>,
         pc_vk: &PC::VerifierKey,
-        public_input: &[G::ScalarField],
-        proof: &Proof<G, PC>,
+        public_input: &[G1::ScalarField],
+        proof: &Proof<G1, G2, PC>,
     ) -> Result<bool, Error<PC::Error>> {
         let verifier_time = start_timer!(|| "Marlin Verifier");
 
@@ -323,13 +324,13 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     // decision.
     pub fn verify_iop<'a>(
         pc_vk: &PC::VerifierKey,
-        index_vk: &VerifierKey<G>,
-        public_input: &[G::ScalarField],
-        proof: &Proof<G, PC>,
+        index_vk: &VerifierKey<G1, G2>,
+        public_input: &[G1::ScalarField],
+        proof: &Proof<G1, G2, PC>,
     ) -> Result<
         (
-            QuerySet<'a, G::ScalarField>,
-            Evaluations<'a, G::ScalarField>,
+            QuerySet<'a, G1::ScalarField>,
+            Evaluations<'a, G1::ScalarField>,
             Vec<LabeledCommitment<PC::Commitment>>,
             PC::RandomOracle,
         ),
@@ -377,7 +378,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .into_iter()
             .chain(second_comms)
             .cloned()
-            .zip(IOP::<G::ScalarField>::polynomial_labels())
+            .zip(IOP::<G1, G2>::polynomial_labels())
             .map(|(c, l)| LabeledCommitment::new(l, c))
             .collect();
 
@@ -410,10 +411,10 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The remaining check of verifying the batch evaluation proof.
     pub fn verify_opening<'a>(
         pc_vk: &PC::VerifierKey,
-        proof: &Proof<G, PC>,
+        proof: &Proof<G1, G2, PC>,
         labeled_comms: Vec<LabeledCommitment<PC::Commitment>>,
-        query_set: QuerySet<'a, G::ScalarField>,
-        evaluations: Evaluations<'a, G::ScalarField>,
+        query_set: QuerySet<'a, G1::ScalarField>,
+        evaluations: Evaluations<'a, G1::ScalarField>,
         fs_rng: &mut PC::RandomOracle,
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");

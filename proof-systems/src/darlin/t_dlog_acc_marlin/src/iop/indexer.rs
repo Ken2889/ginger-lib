@@ -23,7 +23,7 @@ use std::marker::PhantomData;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IndexInfo<F> {
+pub struct IndexInfo<G1: Curve, G2: Curve> {
     /// The total number of witnesses in the constraint system.
     pub num_witness: usize,
     /// The total number of public inputs in the constraint system.
@@ -34,10 +34,12 @@ pub struct IndexInfo<F> {
     pub num_non_zero: usize,
 
     #[doc(hidden)]
-    pub f: PhantomData<F>,
+    pub g1: PhantomData<G1>,
+    #[doc(hidden)]
+    pub g2: PhantomData<G2>,
 }
 
-impl<F> ToBytes for IndexInfo<F> {
+impl<G1: Curve, G2: Curve> ToBytes for IndexInfo<G1, G2> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         self.num_witness
@@ -56,11 +58,11 @@ impl<F> ToBytes for IndexInfo<F> {
     }
 }
 
-impl<F: PrimeField> IndexInfo<F> {
+impl<G1: Curve, G2: Curve> IndexInfo<G1, G2> {
     /// The maximum degree of polynomial required to represent this index in the
     /// the IOP.
     pub fn max_degree(&self, zk: bool) -> Result<usize, Error> {
-        IOP::<F>::max_degree(self.num_constraints, self.num_witness + self.num_inputs, zk)
+        IOP::<G1, G2>::max_degree(self.num_constraints, self.num_witness + self.num_inputs, zk)
     }
 }
 
@@ -74,35 +76,35 @@ impl<F: PrimeField> IndexInfo<F> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// The "indexed" version of the constraint system.
 /// Besides auxiliary information on the index, contains the R1CS matrices `M=A,B,C`.
-pub struct Index<F: PrimeField> {
+pub struct Index<G1: Curve, G2: Curve> {
     /// Information about the index.
-    pub index_info: IndexInfo<F>,
+    pub index_info: IndexInfo<G1, G2>,
 
     /// The `A` matrix for the R1CS instance, in sparse representation.
-    pub a: SparseMatrix<F>,
+    pub a: SparseMatrix<G1::ScalarField>,
     /// The `B` matrix for the R1CS instance, in sparse representation.
-    pub b: SparseMatrix<F>,
+    pub b: SparseMatrix<G1::ScalarField>,
     /// The `C` matrix for the R1CS instance, in sparse representation
-    pub c: SparseMatrix<F>,
+    pub c: SparseMatrix<G1::ScalarField>,
 }
 
-impl<F: PrimeField> SemanticallyValid for Index<F> {
+impl<G1: Curve, G2: Curve> SemanticallyValid for Index<G1, G2> {
     fn is_valid(&self) -> bool {
         true
     }
 }
 
-impl<F: PrimeField> Index<F> {
+impl<G1: Curve, G2: Curve> Index<G1, G2> {
     /// The maximum degree required to represent polynomials of this index.
     pub fn max_degree(&self, zk: bool) -> Result<usize, Error> {
         self.index_info.max_degree(zk)
     }
 }
 
-impl<F: PrimeField> IOP<F> {
+impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.
-    pub fn index<C: ConstraintSynthesizer<F>>(c: C) -> Result<Index<F>, Error> {
+    pub fn index<C: ConstraintSynthesizer<G1::ScalarField>>(c: C) -> Result<Index<G1, G2>, Error> {
         let index_time = start_timer!(|| "IOP::Index");
 
         let constraint_time = start_timer!(|| "Generating constraints");
@@ -137,7 +139,8 @@ impl<F: PrimeField> IOP<F> {
             num_constraints: ics.num_constraints,
             num_non_zero: num_non_zero(&mut ics),
 
-            f: PhantomData,
+            g1: PhantomData,
+            g2: PhantomData,
         };
 
         end_timer!(index_time);

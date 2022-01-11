@@ -8,6 +8,7 @@ use algebra::serialize::*;
 use algebra::{Curve, Group, ToBytes};
 use derivative::Derivative;
 use poly_commit::PolynomialCommitment;
+use std::marker::PhantomData;
 
 /// The universal public parameters for the argument system.
 pub type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
@@ -21,9 +22,9 @@ pub type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct VerifierKey<G: Curve> {
+pub struct VerifierKey<G1: Curve, G2: Curve> {
     /// Stores R1CS metrics as usually supplied by the constraint system.
-    pub index_info: IndexInfo<G::ScalarField>,
+    pub index_info: IndexInfo<G1, G2>,
 }
 
 /// The prover key for a specific R1CS.
@@ -35,11 +36,11 @@ pub struct VerifierKey<G: Curve> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct ProverKey<G: Curve> {
+pub struct ProverKey<G1: Curve, G2: Curve> {
     /// The index verifier key.
-    pub index_vk: VerifierKey<G>,
+    pub index_vk: VerifierKey<G1, G2>,
     /// The index itself.
-    pub index: Index<G::ScalarField>,
+    pub index: Index<G1, G2>,
 }
 
 /// The SNARK proof itself.
@@ -50,32 +51,35 @@ pub struct ProverKey<G: Curve> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: Curve, PC: PolynomialCommitment<G>> {
+pub struct Proof<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> {
     /// Commitments to the polynomials produced by the prover
     pub commitments: Vec<Vec<PC::Commitment>>,
     /// Evaluations of these polynomials.
-    pub evaluations: Vec<G::ScalarField>,
+    pub evaluations: Vec<G1::ScalarField>,
     /// A batch evaluation proof from the polynomial commitment.
     pub pc_proof: PC::MultiPointProof,
+
+    g2: PhantomData<G2>,
 }
 
-impl<G: Curve, PC: PolynomialCommitment<G>> Proof<G, PC> {
+impl<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> Proof<G1, G2, PC> {
     /// Construct a new proof.
     pub fn new(
         commitments: Vec<Vec<PC::Commitment>>,
-        evaluations: Vec<G::ScalarField>,
+        evaluations: Vec<G1::ScalarField>,
         pc_proof: PC::MultiPointProof,
     ) -> Self {
         Self {
             commitments,
             evaluations,
             pc_proof,
+            g2: PhantomData,
         }
     }
 
     /// Prints information about the size of the proof.
     pub fn print_size_info(&self) {
-        let size_of_fe_in_bytes = G::ScalarField::zero().serialized_size();
+        let size_of_fe_in_bytes = G1::ScalarField::zero().serialized_size();
         let mut num_comms_without_degree_bounds = 0;
         let mut size_bytes_comms_without_degree_bounds = 0;
         let mut size_bytes_proofs = 0;
@@ -112,19 +116,21 @@ impl<G: Curve, PC: PolynomialCommitment<G>> Proof<G, PC> {
     Implement SemanticallyValid for VerifierKey, ProverKey, and Proof.
 */
 
-impl<G: Curve> algebra::SemanticallyValid for VerifierKey<G> {
+impl<G1: Curve, G2: Curve> algebra::SemanticallyValid for VerifierKey<G1, G2> {
     fn is_valid(&self) -> bool {
         true
     }
 }
 
-impl<G: Curve> algebra::SemanticallyValid for ProverKey<G> {
+impl<G1: Curve, G2: Curve> algebra::SemanticallyValid for ProverKey<G1, G2> {
     fn is_valid(&self) -> bool {
         self.index_vk.is_valid() && self.index.is_valid()
     }
 }
 
-impl<G: Curve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof<G, PC> {
+impl<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> algebra::SemanticallyValid
+    for Proof<G1, G2, PC>
+{
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 2;
@@ -143,7 +149,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof
         }
 
         // Check evaluations num
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
         ;
 
@@ -158,7 +164,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof
     Serialization and Deserialization utilities.
 */
 
-impl<G: Curve> ToBytes for VerifierKey<G> {
+impl<G1: Curve, G2: Curve> ToBytes for VerifierKey<G1, G2> {
     #[inline]
     fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
         self.serialize_without_metadata(writer)
@@ -166,7 +172,7 @@ impl<G: Curve> ToBytes for VerifierKey<G> {
     }
 }
 
-impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> {
+impl<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> CanonicalSerialize for Proof<G1, G2, PC> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize commitments: we know in advance exactly how many polynomials will be
         // committed, so we can skip writing the corresponding sizes.
@@ -192,7 +198,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> 
             .flatten()
             .for_each(|comm| size += comm.serialized_size());
 
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
         ;
 
@@ -251,7 +257,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> 
             .flatten()
             .for_each(|comm| size += comm.uncompressed_size());
 
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
             ;
 
@@ -265,7 +271,9 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> 
     }
 }
 
-impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC> {
+impl<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>> CanonicalDeserialize
+    for Proof<G1, G2, PC>
+{
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 2;
@@ -285,13 +293,13 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
         ;
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
-            let eval: G::ScalarField = CanonicalDeserialize::deserialize(&mut reader)?;
+            let eval: G1::ScalarField = CanonicalDeserialize::deserialize(&mut reader)?;
             evaluations.push(eval);
         }
 
@@ -302,6 +310,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
             commitments,
             evaluations,
             pc_proof,
+            g2: PhantomData,
         })
     }
 
@@ -325,13 +334,13 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
             ;
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
-            let eval: G::ScalarField = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+            let eval: G1::ScalarField = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
             evaluations.push(eval);
         }
 
@@ -342,6 +351,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
             commitments,
             evaluations,
             pc_proof,
+            g2: PhantomData,
         })
     }
 
@@ -366,13 +376,14 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
             ;
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
-            let eval: G::ScalarField = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+            let eval: G1::ScalarField =
+                CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
             evaluations.push(eval);
         }
 
@@ -383,6 +394,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
             commitments,
             evaluations,
             pc_proof,
+            g2: PhantomData,
         })
     }
 
@@ -409,13 +421,13 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             1 // boundary polynomial is evaluated at two different points
             ;
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
-            let eval: G::ScalarField =
+            let eval: G1::ScalarField =
                 CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
             evaluations.push(eval);
         }
@@ -427,6 +439,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
             commitments,
             evaluations,
             pc_proof,
+            g2: PhantomData,
         })
     }
 }

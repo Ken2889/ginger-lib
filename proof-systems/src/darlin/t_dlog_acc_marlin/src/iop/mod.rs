@@ -8,7 +8,9 @@
 //! [Marlin]: https://eprint.iacr.org/2019/1047
 //! [Coboundary Marlin]: https://eprint.iacr.org/2021/930
 use crate::{String, ToString, Vec};
-use algebra::{get_best_evaluation_domain, DensePolynomial, EvaluationDomain, Evaluations};
+use algebra::{
+    get_best_evaluation_domain, Curve, DensePolynomial, EvaluationDomain, Evaluations, Group,
+};
 use algebra::{Field, PrimeField};
 use poly_commit::PolynomialLabel;
 use r1cs_core::SynthesisError;
@@ -28,11 +30,12 @@ pub mod verifier;
 /// algebraic oracle proof from [HGB].
 ///
 /// [HGB]: https://eprint.iacr.org/2021/930
-pub struct IOP<F: Field> {
-    field: PhantomData<F>,
+pub struct IOP<G1: Curve, G2: Curve> {
+    g1: PhantomData<G1>,
+    g2: PhantomData<G2>,
 }
 
-impl<F: PrimeField> IOP<F> {
+impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
     pub const PROVER_POLYNOMIALS: [&'static str; 6] = [
@@ -55,7 +58,7 @@ impl<F: PrimeField> IOP<F> {
         zk: bool,
     ) -> Result<usize, Error> {
         let padded_matrix_dim = std::cmp::max(num_variables, num_constraints);
-        let domain_h_size = get_best_evaluation_domain::<F>(padded_matrix_dim)
+        let domain_h_size = get_best_evaluation_domain::<G1::ScalarField>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
             .size();
         // The largest oracle degree for the outer sumcheck is
@@ -65,15 +68,15 @@ impl<F: PrimeField> IOP<F> {
 
     /// Format the public input according to the requirements of the constraint
     /// system
-    pub(crate) fn format_public_input(public_input: &[F]) -> Vec<F> {
-        let mut input = vec![F::one()];
+    pub(crate) fn format_public_input(public_input: &[G1::ScalarField]) -> Vec<G1::ScalarField> {
+        let mut input = vec![G1::ScalarField::one()];
         input.extend_from_slice(public_input);
         input
     }
 
     /// Take in a previously formatted public input and removes the formatting
     /// imposed by the constraint system.
-    pub(crate) fn unformat_public_input(input: &[F]) -> Vec<F> {
+    pub(crate) fn unformat_public_input(input: &[G1::ScalarField]) -> Vec<G1::ScalarField> {
         input[1..].to_vec()
     }
 
@@ -82,15 +85,15 @@ impl<F: PrimeField> IOP<F> {
     // Note: To complete Marlin verification, one still has to check the opening proofs.
     #[allow(non_snake_case)]
     pub fn verify_sumchecks(
-        public_input: &[F],
-        evals: &poly_commit::Evaluations<F>,
-        state: &verifier::VerifierState<F>,
+        public_input: &[G1::ScalarField],
+        evals: &poly_commit::Evaluations<G1::ScalarField>,
+        state: &verifier::VerifierState<G1, G2>,
     ) -> Result<(), Error> {
         let domain_h = &state.domain_h;
         let g_h = domain_h.group_gen();
 
         let public_input = Self::format_public_input(public_input);
-        let domain_x = get_best_evaluation_domain::<F>(public_input.len())
+        let domain_x = get_best_evaluation_domain::<G1::ScalarField>(public_input.len())
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
         if state.first_round_msg.is_none() {
@@ -129,7 +132,7 @@ impl<F: PrimeField> IOP<F> {
             .into_iter()
             .zip(public_input) // note that zip automatically manages lower public_input lengths.
             .map(|(l, x)| l * &x)
-            .fold(F::zero(), |x, y| x + &y);
+            .fold(G1::ScalarField::zero(), |x, y| x + &y);
         let y_at_beta = x_at_beta + v_X_at_beta * w_at_beta;
 
         let y_eta_at_beta =

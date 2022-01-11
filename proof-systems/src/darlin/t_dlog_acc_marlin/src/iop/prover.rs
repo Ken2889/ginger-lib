@@ -6,45 +6,49 @@ use crate::iop::*;
 
 use crate::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
 use crate::{ToString, Vec};
-use algebra::{get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain};
-use algebra::{Field, PrimeField};
+use algebra::{
+    get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
+};
 use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand_core::RngCore;
 
 /// State for the IOP prover.
-pub struct ProverState<'a, F: PrimeField> {
-    formatted_input_assignment: Vec<F>,
-    witness_assignment: Vec<F>,
+pub struct ProverState<'a, G1: Curve, G2: Curve> {
+    formatted_input_assignment: Vec<G1::ScalarField>,
+    witness_assignment: Vec<G1::ScalarField>,
 
     // the witness polynomial w(X), normalized by the vanishing polynomial of
     // the input domain, such that y(X) = x(X) + w(X)*Z_I(X).
-    w_poly: Option<LabeledPolynomial<F>>,
-    my_polys: Option<(LabeledPolynomial<F>, LabeledPolynomial<F>)>,
+    w_poly: Option<LabeledPolynomial<G1::ScalarField>>,
+    my_polys: Option<(
+        LabeledPolynomial<G1::ScalarField>,
+        LabeledPolynomial<G1::ScalarField>,
+    )>,
 
-    index: &'a Index<F>,
+    index: &'a Index<G1, G2>,
 
     /// the random values sent by the verifier in the first round
-    verifier_first_msg: Option<VerifierFirstMsg<F>>,
+    verifier_first_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
 
     /// domain X, sized for the public input
-    domain_x: Box<dyn EvaluationDomain<F>>,
+    domain_x: Box<dyn EvaluationDomain<G1::ScalarField>>,
 
     /// domain H, sized for constraints
-    domain_h: Box<dyn EvaluationDomain<F>>,
+    domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
 }
 
-impl<'a, F: PrimeField> ProverState<'a, F> {
+impl<'a, G1: Curve, G2: Curve> ProverState<'a, G1, G2> {
     /// Get the public input.
-    pub fn public_input(&self) -> Vec<F> {
-        IOP::unformat_public_input(&self.formatted_input_assignment)
+    pub fn public_input(&self) -> Vec<G1::ScalarField> {
+        IOP::<G1, G2>::unformat_public_input(&self.formatted_input_assignment)
     }
     /// Return the concatenation of public input (padded with zeros to match the
     /// size of domain X) and witness variables.
-    pub fn padded_variables(&self) -> Vec<F> {
+    pub fn padded_variables(&self) -> Vec<G1::ScalarField> {
         let padding_size = self.domain_x.size() - self.formatted_input_assignment.len();
         let mut padded_public_input = self.formatted_input_assignment.clone();
-        padded_public_input.extend(vec![F::zero(); padding_size]);
+        padded_public_input.extend(vec![G1::ScalarField::zero(); padding_size]);
         let mut witness_assignment = self.witness_assignment.clone();
         padded_public_input.append(&mut witness_assignment);
         padded_public_input
@@ -87,12 +91,12 @@ impl<F: Field> ProverSecondOracles<F> {
 
 /* The prover rounds
 */
-impl<F: PrimeField> IOP<F> {
+impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     /// Preparation of the prover, computes the witness vector `y`.
-    pub fn prover_init<'a, C: ConstraintSynthesizer<F>>(
-        index: &'a Index<F>,
+    pub fn prover_init<'a, C: ConstraintSynthesizer<G1::ScalarField>>(
+        index: &'a Index<G1, G2>,
         c: C,
-    ) -> Result<ProverState<'a, F>, Error> {
+    ) -> Result<ProverState<'a, G1, G2>, Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -121,10 +125,10 @@ impl<F: PrimeField> IOP<F> {
 
         let num_formatted_variables = num_input_variables + num_witness_variables;
         let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
-        let domain_h = get_best_evaluation_domain::<F>(padded_matrix_dim)
+        let domain_h = get_best_evaluation_domain::<G1::ScalarField>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let domain_x = get_best_evaluation_domain::<F>(num_input_variables)
+        let domain_x = get_best_evaluation_domain::<G1::ScalarField>(num_input_variables)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
         end_timer!(init_time);
@@ -147,10 +151,10 @@ impl<F: PrimeField> IOP<F> {
     ///
     /// [HGB]: https://eprint.iacr.org/2021/930
     pub fn prover_first_round<'a, R: RngCore>(
-        mut state: ProverState<'a, F>,
+        mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<(ProverFirstOracles<F>, ProverState<'a, F>), Error> {
+    ) -> Result<(ProverFirstOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
 
@@ -173,7 +177,7 @@ impl<F: PrimeField> IOP<F> {
 
         let mut w_extended = state.witness_assignment.clone();
         w_extended.extend(vec![
-            F::zero();
+            G1::ScalarField::zero();
             domain_h.size()
                 - domain_x.size()
                 - state.witness_assignment.len()
@@ -190,7 +194,7 @@ impl<F: PrimeField> IOP<F> {
                 // The input domain I is a subgroup of H, with corresponding indices
                 // as multiples of `ratio`.
                 if k % ratio == 0 {
-                    F::zero()
+                    G1::ScalarField::zero()
                 } else {
                     // The mapping of the witness vector to values on H.
                     w_extended[k - (k / ratio) - 1] - &x_evals[k]
@@ -297,13 +301,13 @@ impl<F: PrimeField> IOP<F> {
     // besides that the domain evaluation for L_H(alpha,Y) cost an extra vector
     // product plus a scaling of it.
     fn calculate_t<'a>(
-        matrices: impl Iterator<Item = &'a SparseMatrix<F>>,
-        matrix_randomizers: &[F],
-        input_domain: &Box<dyn EvaluationDomain<F>>,
-        domain_h: Box<dyn EvaluationDomain<F>>,
-        l_x_alpha_on_h: &Vec<F>,
-    ) -> Result<Vec<F>, Error> {
-        let mut t_evals_on_h = vec![F::zero(); domain_h.size()];
+        matrices: impl Iterator<Item = &'a SparseMatrix<G1::ScalarField>>,
+        matrix_randomizers: &[G1::ScalarField],
+        input_domain: &Box<dyn EvaluationDomain<G1::ScalarField>>,
+        domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
+        l_x_alpha_on_h: &Vec<G1::ScalarField>,
+    ) -> Result<Vec<G1::ScalarField>, Error> {
+        let mut t_evals_on_h = vec![G1::ScalarField::zero(); domain_h.size()];
         for (matrix, eta) in matrices.zip(matrix_randomizers) {
             // t(X) = Sum_{M} eta_M * M(alpha, X)
             // with
@@ -324,8 +328,8 @@ impl<F: PrimeField> IOP<F> {
     /// Returns the ratio of the sizes of `domain` and `subdomain` or an Error if
     /// `subdomain` is not a subdomain of `domain`.
     fn get_subdomain_step(
-        domain: &Box<dyn EvaluationDomain<F>>,
-        subdomain: &Box<dyn EvaluationDomain<F>>,
+        domain: &Box<dyn EvaluationDomain<G1::ScalarField>>,
+        subdomain: &Box<dyn EvaluationDomain<G1::ScalarField>>,
     ) -> Result<usize, Error> {
         if domain.size() % subdomain.size() != 0 {
             Err(Error::Other(
@@ -350,11 +354,17 @@ impl<F: PrimeField> IOP<F> {
     /// results from batching and reducing the R1CS identities.
     /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
     pub fn prover_second_round<'a, R: RngCore>(
-        ver_message: &VerifierFirstMsg<F>,
-        mut state: ProverState<'a, F>,
+        ver_message: &VerifierFirstMsg<G1::ScalarField>,
+        mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<(ProverSecondOracles<F>, ProverState<'a, F>), Error> {
+    ) -> Result<
+        (
+            ProverSecondOracles<G1::ScalarField>,
+            ProverState<'a, G1, G2>,
+        ),
+        Error,
+    > {
         let round_time = start_timer!(|| "IOP::Prover::SecondRound");
 
         let domain_h = &state.domain_h;
@@ -363,7 +373,7 @@ impl<F: PrimeField> IOP<F> {
         let (eta_a, eta_b, eta_c) = ver_message.get_etas();
         // In the following we exploit the fact that eta_a == 1 to avoid unnecessary
         // multiplications.
-        assert_eq!(eta_a, F::one());
+        assert_eq!(eta_a, G1::ScalarField::one());
 
         let summed_y_m_poly_time = start_timer!(|| "Compute y_m poly");
         let (y_a_poly, y_b_poly) = match state.my_polys {
@@ -425,9 +435,10 @@ impl<F: PrimeField> IOP<F> {
 
         let y_poly_time = start_timer!(|| "Compute y poly");
 
-        let domain_x = get_best_evaluation_domain::<F>(state.formatted_input_assignment.len())
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)
-            .unwrap();
+        let domain_x =
+            get_best_evaluation_domain::<G1::ScalarField>(state.formatted_input_assignment.len())
+                .ok_or(SynthesisError::PolynomialDegreeTooLarge)
+                .unwrap();
         let x_poly = EvaluationsOnDomain::from_vec_and_domain(
             state.formatted_input_assignment.clone(),
             domain_x.clone(),
@@ -467,7 +478,7 @@ impl<F: PrimeField> IOP<F> {
         .max()
         .unwrap()
             + 1;
-        let domain_b = get_best_evaluation_domain::<F>(domain_b_size)
+        let domain_b = get_best_evaluation_domain::<G1::ScalarField>(domain_b_size)
             .expect("field is not smooth enough to construct domain");
         // TODO: can we reuse the domain evals over H here, instead of recomputing?
         // For example, by coset FFT?
@@ -539,7 +550,7 @@ impl<F: PrimeField> IOP<F> {
             // (1, g, g^2,...., g^n-1, 1, g, ..., g^((deg(z1) - 1) - |H|)
             let size_diff = u_1.coeffs.len() as i32 - domain_h.size() as i32;
 
-            let mut g_s = domain_h.elements().collect::<Vec<F>>();
+            let mut g_s = domain_h.elements().collect::<Vec<G1::ScalarField>>();
             g_s.append(&mut g_s[..size_diff as usize].to_vec());
 
             let mut u_1_g = u_1.clone();

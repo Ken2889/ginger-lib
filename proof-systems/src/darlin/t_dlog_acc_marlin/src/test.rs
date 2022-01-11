@@ -1,4 +1,4 @@
-use algebra::Field;
+use algebra::PrimeField;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 
 /// A simple test circuit for the language {(c,d): (c,d)=a*(b,b^2), a,b from F}
@@ -6,7 +6,7 @@ use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError}
 /// often the same quadratic constraints a*b=c and b*c=d.
 // TODO: replace this example by a more representative (high-rank A,B,C).
 #[derive(Copy, Clone)]
-struct Circuit<F: Field> {
+struct Circuit<F: PrimeField> {
     a: Option<F>,
     b: Option<F>,
     c: Option<F>,
@@ -15,8 +15,8 @@ struct Circuit<F: Field> {
     num_variables: usize,
 }
 
-impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<ConstraintF> {
-    fn generate_constraints<CS: ConstraintSystemAbstract<ConstraintF>>(
+impl<F: PrimeField> ConstraintSynthesizer<F> for Circuit<F> {
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
@@ -57,11 +57,10 @@ mod t_dlog_acc_marlin {
     use crate::error::Error as MarlinError;
     use crate::iop::Error as IOPError;
     use algebra::{
-        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, Curve,
-        SemanticallyValid, UniformRand,
+        curves::tweedle::dee::DeeJacobian, curves::tweedle::dum::DumJacobian,
+        serialize::test_canonical_serialize_deserialize, Curve, SemanticallyValid, UniformRand,
     };
     use blake2::Blake2s;
-    use digest::Digest;
     use poly_commit::{
         ipa_pc::{InnerProductArgPC, Parameters as IPAParameters},
         DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PCVerifierKey,
@@ -86,7 +85,7 @@ mod t_dlog_acc_marlin {
         }
     }
 
-    fn test_circuit<G: Curve, PC: PolynomialCommitment<G>, D: Digest>(
+    fn test_circuit<G1: Curve, G2: Curve, PC: PolynomialCommitment<G1>>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,
@@ -109,8 +108,8 @@ mod t_dlog_acc_marlin {
         let (pc_pk_fake, _) = universal_srs_fake.trim((num_constraints - 1) / 2).unwrap();
 
         for _ in 0..num_samples {
-            let a = G::ScalarField::rand(rng);
-            let b = G::ScalarField::rand(rng);
+            let a = G1::ScalarField::rand(rng);
+            let b = G1::ScalarField::rand(rng);
             let mut c = a;
             c.mul_assign(&b);
             let mut d = c;
@@ -124,7 +123,7 @@ mod t_dlog_acc_marlin {
                 num_constraints,
                 num_variables,
             };
-            let (index_pk, index_vk) = Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
+            let (index_pk, index_vk) = Marlin::<G1, G2, PC>::circuit_specific_setup(circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
@@ -134,7 +133,7 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &index_pk);
             test_canonical_serialize_deserialize(true, &index_vk);
 
-            let proof = Marlin::<G, PC, D>::prove(
+            let proof = Marlin::<G1, G2, PC>::prove(
                 &index_pk,
                 &pc_pk,
                 circ,
@@ -153,34 +152,34 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &proof);
 
             // Success verification
-            assert!(Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(Marlin::<G1, G2, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Fail verification
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
+            assert!(!Marlin::<G1, G2, PC>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
 
             // Use a bigger vk derived from the same universal params and check verification is successful
             let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
             assert_eq!(pc_vk.get_hash(), universal_srs.get_hash());
-            assert!(Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(Marlin::<G1, G2, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
             let universal_srs = PC::setup((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(!Marlin::<G1, G2, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a vk of the same size of the original one, but derived from bigger universal params
             // and check that verification fails (absorbed hash won't be the same)
             let universal_srs = PC::setup((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(!Marlin::<G1, G2, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Fake indexes to pass the IOP part
             let (index_pk_fake, index_vk_fake) =
-                Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
+                Marlin::<G1, G2, PC>::circuit_specific_setup(circ).unwrap();
 
-            let proof_fake = Marlin::<G, PC, D>::prove(
+            let proof_fake = Marlin::<G1, G2, PC>::prove(
                 &index_pk_fake,
                 &pc_pk_fake,
                 circ,
@@ -192,13 +191,14 @@ mod t_dlog_acc_marlin {
             // Fail verification using fake proof at the level of opening proof
             println!("\nShould not verify");
             assert!(
-                !Marlin::<G, PC, D>::verify(&index_vk_fake, &pc_vk, &[c, d], &proof_fake).unwrap()
+                !Marlin::<G1, G2, PC>::verify(&index_vk_fake, &pc_vk, &[c, d], &proof_fake)
+                    .unwrap()
             );
 
             // Check correct error assertion for the case when
             // witness assignment doesn't satisfy the circuit
-            let c = G::ScalarField::rand(rng);
-            let d = G::ScalarField::rand(rng);
+            let c = G1::ScalarField::rand(rng);
+            let d = G1::ScalarField::rand(rng);
 
             let circ = Circuit {
                 a: Some(a),
@@ -208,14 +208,14 @@ mod t_dlog_acc_marlin {
                 num_constraints,
                 num_variables,
             };
-            let (index_pk, index_vk) = Marlin::<G, PC, D>::circuit_specific_setup(circ).unwrap();
+            let (index_pk, index_vk) = Marlin::<G1, G2, PC>::circuit_specific_setup(circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
 
             println!("Called index");
 
-            let proof = Marlin::<G, PC, D>::prove(
+            let proof = Marlin::<G1, G2, PC>::prove(
                 &index_pk,
                 &pc_pk,
                 circ,
@@ -237,10 +237,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 100;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         println!("Marlin ZK passed");
     }
 
@@ -249,10 +254,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 26;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         println!("Marlin ZK passed");
     }
 
@@ -261,10 +271,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 25;
         let num_variables = 100;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         println!("Marlin ZK passed");
     }
 
@@ -273,10 +288,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 25;
         let num_variables = 26;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         println!("Marlin ZK passed");
     }
 
@@ -285,10 +305,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 25;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        // test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        // test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         // println!("Marlin ZK passed");
     }
 
@@ -298,10 +323,15 @@ mod t_dlog_acc_marlin {
         let num_constraints = 1 << 6;
         let num_variables = 1 << 4;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(
+            25,
+            num_constraints,
+            num_variables,
+            false,
+        );
         println!("Marlin No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
+        test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
         println!("Marlin ZK passed");
     }
 }
