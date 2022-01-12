@@ -8,7 +8,7 @@ use std::{
 
 use super::pedersen::{PedersenCRH, PedersenWindow};
 use crate::crh::FixedLengthCRH;
-use algebra::{biginteger::BigInteger, fields::PrimeField, curves::Curve};
+use algebra::{biginteger::BigInteger, curves::Curve, fields::PrimeField};
 use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: usize = 3;
@@ -30,7 +30,6 @@ impl<G: Curve, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
         for _ in 0..W::NUM_WINDOWS {
             let mut generators_for_segment = Vec::new();
             let mut base = G::rand(rng);
-            println!("{:?}", base);
             for _ in 0..W::WINDOW_SIZE {
                 generators_for_segment.push(base);
                 for _ in 0..4 {

@@ -181,7 +181,6 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
 }
 
 pub trait EndoMulCurveGadget<G: Group, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
-
     fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
@@ -472,7 +471,7 @@ pub(crate) fn scalar_bits_to_constant_length<
 #[cfg(test)]
 pub(crate) mod test {
     use algebra::{
-        BigInteger, Group, Field, Curve, EndoMulCurve, FpParameters, PrimeField, ToBits,
+        BigInteger, Curve, EndoMulCurve, Field, FpParameters, Group, PrimeField, ToBits,
         UniformRand,
     };
     use r1cs_core::{
@@ -792,7 +791,7 @@ pub(crate) mod test {
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         for _ in 0..10 {
-            // mul_bits_native_test::<ConstraintF, G, GG>();
+            mul_bits_native_test::<ConstraintF, G, GG>();
             mul_bits_additivity_test::<ConstraintF, G, GG>();
         }
     }
@@ -802,8 +801,7 @@ pub(crate) mod test {
         ConstraintF: Field,
         G: EndoMulCurve,
         GG: EndoMulCurveGadget<G, ConstraintF, Value = G>,
-    >()
-    {
+    >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         let a_native = G::rand(&mut thread_rng());

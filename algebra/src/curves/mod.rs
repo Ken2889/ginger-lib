@@ -1,5 +1,5 @@
 use crate::{
-    fields::{BitIterator, Field, PrimeField, SquareRootField},
+    fields::{BitIterator, Field, SquareRootField},
     groups::Group,
     CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand,
 };
@@ -39,6 +39,8 @@ pub trait Curve:
         + PartialEq
         + Debug
         + Hash
+        + Serialize
+        + for<'a> Deserialize<'a>
         + CanonicalSerialize
         + CanonicalDeserialize
         + ToBytes
@@ -115,12 +117,6 @@ pub trait Curve:
     fn get_point_from_x_and_parity(x: Self::BaseField, parity: bool) -> Option<Self>;
 
     fn from_random_bytes(bytes: &[u8]) -> Option<Self>;
-
-    // TODO: check if used
-    fn recommended_wnaf_for_scalar(scalar: <Self::ScalarField as PrimeField>::BigInt) -> usize;
-
-    // TODO: check if used
-    fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize;
 
     // TODO: check naming
     fn sum_buckets_affine(to_add: &mut [Vec<Self::AffineRep>]);

@@ -1,14 +1,12 @@
 use crate::{
-    CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid,
+    bytes::{FromBytes, ToBytes},
+    fields::PrimeField,
 };
+use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid};
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
-    ops::{Neg, Add, AddAssign, Sub, SubAssign, Mul, MulAssign},
-};
-use crate::{
-    bytes::{FromBytes, ToBytes},
-    fields::PrimeField,
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 mod linear_combination;
