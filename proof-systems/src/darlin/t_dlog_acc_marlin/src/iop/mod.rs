@@ -36,11 +36,20 @@ pub struct IOP<G1: Curve, G2: Curve> {
 }
 
 impl<G1: Curve, G2: Curve> IOP<G1, G2> {
+    /// The labels for the polynomials output by the indexer.
+    #[rustfmt::skip]
+    pub const INDEXER_POLYNOMIALS: [&'static str; 9] = [
+        // Polynomials for A
+        "a_row", "a_col", "a_val_row_col",
+        // Polynomials for B
+        "b_row", "b_col", "b_val_row_col",
+        // Polynomials for C
+        "c_row", "c_col", "c_val_row_col",
+    ];
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
-    pub const PROVER_POLYNOMIALS: [&'static str; 6] = [
-        // First sumcheck
-        "w", "y_a", "y_b", "u_1", "h_1", "t"
+    pub const PROVER_POLYNOMIALS: [&'static str; 10] = [
+        "w", "y_a", "y_b", "u_1", "h_1", "t", "t_eta", "t_eta_prime", "t_second", "t_prime"
     ];
 
     /// An iterator over the polynomials output by the indexer and the prover.
@@ -150,8 +159,51 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         Ok(())
     }
-}
 
+    /// Auxiliary function to verify the inner sumcheck aggragation rounds.
+    pub fn verify_inner_sumcheck_acc(
+        evals: &poly_commit::Evaluations<G1::ScalarField>,
+        state: &verifier::VerifierState<G1, G2>,
+    ) -> Result<(), Error> {
+        let alpha = state.first_round_msg.expect("should not be none").alpha;
+        let alpha_prime = state.previous_inner_sumcheck_acc.1.zeta;
+        let beta = state.second_round_msg.expect("should not be none").beta;
+        let gamma = state.third_round_msg.expect("should not be none").gamma;
+        let lambda = state.third_round_msg.expect("should not be none").lambda;
+
+        let t_eta_at_alpha = get_poly_eval(evals, "t_eta".into(), alpha)?;
+        let t_eta_at_gamma = get_poly_eval(evals, "t_eta".into(), gamma)?;
+        let t_eta_prime_at_alpha_prime = get_poly_eval(evals, "t_eta_prime".into(), alpha_prime)?;
+        let t_eta_prime_at_gamma = get_poly_eval(evals, "t_eta_prime".into(), gamma)?;
+        let t_at_beta = get_poly_eval(evals, "t".into(), beta)?;
+        let t_prime_at_beta = get_poly_eval(evals, "t_prime".into(), beta)?;
+        let t_second_at_beta = get_poly_eval(evals, "t_second".into(), beta)?;
+
+        let check_1 = t_eta_at_alpha - t_at_beta;
+        let check_2 = t_eta_prime_at_alpha_prime - t_prime_at_beta;
+        let check_3 = t_eta_at_gamma + lambda * t_eta_prime_at_gamma - t_second_at_beta;
+
+        if !check_1.is_zero() {
+            return Err(Error::VerificationEquationFailed(
+                "Inner sumcheck aggregation first check".to_owned(),
+            ));
+        }
+
+        if !check_2.is_zero() {
+            return Err(Error::VerificationEquationFailed(
+                "Inner sumcheck aggregation second check".to_owned(),
+            ));
+        }
+
+        if !check_3.is_zero() {
+            return Err(Error::VerificationEquationFailed(
+                "Inner sumcheck aggregation third check".to_owned(),
+            ));
+        }
+
+        Ok(())
+    }
+}
 fn get_poly_eval<F: Field>(
     evals: &poly_commit::Evaluations<F>,
     label: PolynomialLabel,

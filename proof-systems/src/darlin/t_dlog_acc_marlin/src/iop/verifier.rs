@@ -3,61 +3,97 @@
 use crate::iop::indexer::IndexInfo;
 use crate::iop::*;
 
+use crate::DualSumcheckItem;
 use algebra::{get_best_evaluation_domain, EvaluationDomain};
 use poly_commit::fiat_shamir_rng::FiatShamirRng;
 use poly_commit::QuerySet;
 
 /// State of the IOP verifier
-pub struct VerifierState<G1: Curve, G2: Curve> {
+pub struct VerifierState<'a, G1: Curve, G2: Curve> {
     /// Domain H.
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
+    /// the previous inner-sumcheck accumulator
+    pub previous_inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
+    /// the new inner-sumcheck accumulator
+    pub new_inner_sumcheck_acc: Option<DualSumcheckItem<G1, G2>>,
 
     /// First round verifier message.
     pub first_round_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
     /// Second round verifier message.
     pub second_round_msg: Option<VerifierSecondMsg<G1::ScalarField>>,
+    /// Third round verifier message.
+    pub third_round_msg: Option<VerifierThirdMsg<G1::ScalarField>>,
 
     g2: PhantomData<G2>,
 }
 
 /// First message of the verifier.
 #[derive(Copy, Clone)]
-pub struct VerifierFirstMsg<F: Field> {
+pub struct VerifierFirstMsg<G: Group> {
     /// Query for the random polynomial.
-    pub alpha: F,
+    pub alpha: G::ScalarField,
     /// Randomizer for the lincheck for `A`, `B`, and `C`.
-    pub eta: F,
+    pub eta: G::ScalarField,
 }
 
-impl<F: Field> VerifierFirstMsg<F> {
+impl<G: Group> VerifierFirstMsg<G> {
     /// Return a triplet with the randomizers (1, eta, eta^2)
-    pub fn get_etas(&self) -> (F, F, F) {
-        return (F::one(), self.eta, self.eta.square());
+    pub fn get_etas(&self) -> (G::ScalarField, G::ScalarField, G::ScalarField) {
+        return (G::ScalarField::one(), self.eta, self.eta.square());
     }
 }
 
 /// Second verifier message.
 #[derive(Copy, Clone)]
-pub struct VerifierSecondMsg<F> {
+pub struct VerifierSecondMsg<G: Group> {
     /// Query for the second round of polynomials.
-    pub beta: F,
+    pub beta: G::ScalarField,
+}
+
+/// Third verifier message.
+#[derive(Copy, Clone)]
+pub struct VerifierThirdMsg<G: Group> {
+    /// Query for the third round of polynomials.
+    pub gamma: G::ScalarField,
+    /// Randomizer for the aggregation of circuit polynomials.
+    pub lambda: G::ScalarField,
 }
 
 impl<G1: Curve, G2: Curve> IOP<G1, G2> {
-    /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
-    /// to a sumcheck.
-    pub fn verifier_first_round<R: FiatShamirRng>(
-        index_info: IndexInfo<G1, G2>,
-        fs_rng: &mut R,
-    ) -> Result<(VerifierFirstMsg<G1::ScalarField>, VerifierState<G1, G2>), Error> {
+    /// Preparation of the verifier.
+    pub fn verifier_init<'a>(
+        index_info: &IndexInfo<G1, G2>,
+        previous_inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
+    ) -> Result<VerifierState<'a, G1, G2>, Error> {
         let num_formatted_variables = index_info.num_inputs + index_info.num_witness;
         let num_constraints = index_info.num_constraints;
         let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
         let domain_h = get_best_evaluation_domain::<G1::ScalarField>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
+        let state = VerifierState {
+            domain_h,
+            previous_inner_sumcheck_acc,
+            new_inner_sumcheck_acc: None,
+            first_round_msg: None,
+            second_round_msg: None,
+            third_round_msg: None,
+            g2: PhantomData,
+        };
+        Ok(state)
+    }
+    /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
+    /// to a sumcheck.
+    pub fn verifier_first_round<'a, R: FiatShamirRng>(
+        mut state: VerifierState<'a, G1, G2>,
+        fs_rng: &mut R,
+    ) -> Result<(VerifierFirstMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
         let alpha: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
-        if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
+        if state
+            .domain_h
+            .evaluate_vanishing_polynomial(alpha)
+            .is_zero()
+        {
             Err(Error::Other(
                 "Sampled an alpha challenge belonging to H domain".to_owned(),
             ))?
@@ -66,23 +102,23 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let eta: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
 
         let msg = VerifierFirstMsg { alpha, eta };
+        state.first_round_msg = Some(msg);
 
-        let new_state = VerifierState {
-            domain_h,
-            first_round_msg: Some(msg),
-            second_round_msg: None,
-            g2: PhantomData,
-        };
-
-        Ok((msg, new_state))
+        Ok((msg, state))
     }
 
     /// Second round of the verifier, samples the random challenge `beta` for probing
     /// the outer sumcheck identity.
-    pub fn verifier_second_round<R: FiatShamirRng>(
-        mut state: VerifierState<G1, G2>,
+    pub fn verifier_second_round<'a, R: FiatShamirRng>(
+        mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
-    ) -> Result<(VerifierSecondMsg<G1::ScalarField>, VerifierState<G1, G2>), Error> {
+    ) -> Result<
+        (
+            VerifierSecondMsg<G1::ScalarField>,
+            VerifierState<'a, G1, G2>,
+        ),
+        Error,
+    > {
         let beta: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
@@ -96,6 +132,31 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         Ok((msg, state))
     }
 
+    /// Third round of the verifier, samples the random challenges `gamma` and `lambda` for the
+    /// inner sumcheck aggregation.
+    pub fn verifier_third_round<'a, R: FiatShamirRng>(
+        mut state: VerifierState<'a, G1, G2>,
+        fs_rng: &mut R,
+    ) -> Result<(VerifierThirdMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
+        let gamma: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        if state
+            .domain_h
+            .evaluate_vanishing_polynomial(gamma)
+            .is_zero()
+        {
+            Err(Error::Other(
+                "Sampled a gamma challenge belonging to H domain".to_owned(),
+            ))?
+        }
+
+        let lambda: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+
+        let msg = VerifierThirdMsg { gamma, lambda };
+        state.third_round_msg = Some(msg);
+
+        Ok((msg, state))
+    }
+
     /// Output the query state and next round state.
     pub fn verifier_query_set<'a, 'b>(
         state: VerifierState<G1, G2>,
@@ -104,6 +165,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
         let beta = state.second_round_msg.unwrap().beta;
+        let alpha = state.first_round_msg.unwrap().alpha;
+        let alpha_prime = state.previous_inner_sumcheck_acc.1.zeta;
+        let gamma = state.third_round_msg.unwrap().gamma;
 
         let g_h = state.domain_h.group_gen();
 
@@ -119,6 +183,15 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         query_set.insert(("u_1".into(), ("g * beta".into(), g_h * beta)));
         query_set.insert(("h_1".into(), ("beta".into(), beta)));
         query_set.insert(("t".into(), ("beta".into(), beta)));
+
+        // Inner sumcheck aggregation polys
+        query_set.insert(("t_eta".into(), ("alpha".into(), alpha)));
+        query_set.insert(("t_eta_prime".into(), ("alpha_prime".into(), alpha_prime)));
+        query_set.insert(("t_eta".into(), ("gamma".into(), gamma)));
+        query_set.insert(("t_eta_prime".into(), ("gamma".into(), gamma)));
+        query_set.insert(("t_second".into(), ("beta".into(), beta)));
+
+        query_set.insert(("t_prime".into(), ("beta".into(), beta)));
 
         Ok((query_set, state))
     }
