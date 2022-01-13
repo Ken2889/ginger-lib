@@ -1122,13 +1122,13 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
     // If no prereduction step is performed, costs
     // ``
     //     C =  2 *(len(p) + num_limbs^2) + surfeit' 
-    //          +  num_groups * (3 + bits_per_limb + surfeit') + 1
+    //          +  (num_groups - 1) * (3 + bits_per_limb + surfeit') + 1
     // ``
     // constraints, where 
     // ``
-    //      surfeit' =  log(num_limbs * (num_adds(prod) + 1) + 1)
-    //              = log(num_limbs^2 * (num_add(L)+1) * (num_add(R) + 1)),
-    //      num_groups = Ceil[num_limbs / S],
+    //      surfeit' =  log(num_limbs + 2 * (num_adds(prod) + 1))
+    //              = log(num_limbs +  2 * num_limbs * (num_add(L)+1) * (num_add(R) + 1)),
+    //      num_groups = Ceil[(2 * num_limbs - 1)/ S],
     // ``
     // and
     // ``

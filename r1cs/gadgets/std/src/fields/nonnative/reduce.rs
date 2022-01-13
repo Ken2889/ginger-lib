@@ -199,14 +199,17 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> Reducer<SimulationF, Cons
         // ``
         // where
         // ``
-        //      surfeit' =log(num_limbs * (1 + (num_add(L) + 1) * (num_add(R) + 1))).
+        //      surfeit' = log(num_limbs + 2*(num_adds(prod) + 1))
+        //          = log(num_limbs + 2* num_limbs * (num_add(L)+1) * (num_add(R) + 1))
+        //          = log(num_limbs * (1 + 2 * (num_add(L)+1) * (num_add(R) + 1)))
         // ``
         Self::reduce_until_cond_is_satisfied(
             cs.ns(|| "pre mul reduce"),
             elem,
             elem_other,
             |elem, elem_other| {
-                let term = (BigUint::one() + &elem.num_of_additions_over_normal_form)
+                let term = BigUint::from(2u32) 
+                    * (BigUint::one() + &elem.num_of_additions_over_normal_form)
                     * (BigUint::one() + &elem_other.num_of_additions_over_normal_form)
                     + BigUint::one();
                 let surfeit_prime = ceil_log_2!(

@@ -82,19 +82,19 @@ fn get_params_test() {
     ];
     let test_vector_out = vec![
         // Base Field 255 bit
-        (6usize, 43usize, 745usize),
-        (6, 43, 747), 
-        (7, 55, 1211),
-        (14, 54, 2653),
-        (28, 74, 8445),
-        (55, 75, 19886),
+        (6usize, 43usize, 748usize),
+        (6, 43, 750), 
+        (7, 55, 1216),
+        (14, 54, 2663),
+        (28, 74, 8473),
+        (55, 75, 19941),
         // Base Field 382 bit
-        (4, 64, 655),
         (4, 64, 657),
-        (6, 64, 1041),
-        (9, 84, 2249),
-        (24, 86, 6985),
-        (36, 114, 15817),
+        (4, 64, 659),
+        (6, 64, 1044),
+        (9, 84, 2255),
+        (24, 86, 7001),
+        (36, 114, 15853),
     ];
 
     let mut out = vec![];
@@ -617,8 +617,8 @@ fn elementary_test_substraction<SimulationF: PrimeField, ConstraintF: PrimeField
 
         let b_native = b.get_value().unwrap();
 
-        let a_minus_b = a.sub_without_prereduce(cs.ns(|| "a - b"), &b).unwrap();
-        let b_minus_a = b.sub_without_prereduce(cs.ns(|| "b - a"), &a).unwrap();
+        let a_minus_b = a.sub(cs.ns(|| "a - b"), &b).unwrap();
+        let b_minus_a = b.sub(cs.ns(|| "b - a"), &a).unwrap();
     
         assert!(
             a_minus_b.check()
@@ -704,13 +704,13 @@ fn elementary_test_mul_without_prereduce<SimulationF: PrimeField, ConstraintF: P
         // ``
         // Edge cases of mul_without_prereduce() are characterized by
         // ``
-        //    num_limbs * (1 + (num_add(L) + 1) * (num_add(R) + 1))  
-        //                          <= 2^{CAPACITY - 2 - 2*bits_per_limb},
+        //    num_limbs * (1 + 2 * (num_add(L) + 1) * (num_add(R) + 1))  
+        //                          = 2^{CAPACITY - 2 - 2*bits_per_limb},
         // ``
         // or
         // ``
-        //    num_limbs * (1  + 2^{surfeit_a + surfeit_b})
-        //                          <= 2^{CAPACITY - 2 - 2*bits_per_limb},
+        //    num_limbs * (1  + 2^{1 + surfeit_a + surfeit_b})
+        //                          = 2^{CAPACITY - 2 - 2*bits_per_limb}.
         // ``
         let surfeit_bound = (
             BigUint::from(2u32).pow(
@@ -720,13 +720,13 @@ fn elementary_test_mul_without_prereduce<SimulationF: PrimeField, ConstraintF: P
             - BigUint::one()
         ).bits() as usize - 1;
         
-        let surfeit_a = rng.gen_range(0..=surfeit_bound);
+        let surfeit_a = rng.gen_range(0..surfeit_bound);
         // every 10-th run we create an edge case
-        // `surfeit_a + surfeit_b = surfeit_bound`
+        // `surfeit_a + surfeit_b = surfeit_bound - 1`
         let surfeit_b = if i%10 == 0 {
-            surfeit_bound - surfeit_a
+            surfeit_bound - 1 - surfeit_a
         } else {
-            rng.gen_range(0..=(surfeit_bound - surfeit_a))
+            rng.gen_range(0..(surfeit_bound - surfeit_a))
         }; 
 
         let a = NonNativeFieldGadget::<SimulationF, ConstraintF>::alloc_random(
@@ -1821,7 +1821,7 @@ macro_rules! nonnative_test {
         //     $test_simulation_field,
         //     $test_constraint_field
         // );
-        
+
         /* elementary tests
         */
         elementary_test!(

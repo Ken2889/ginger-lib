@@ -55,12 +55,12 @@ pub(crate) const fn find_parameters(
            ((num_add_prod + 1) as u128).leading_zeros() as usize;
         if num_add_prod + 1 == 2usize.pow((surfeit_prod - 1) as u32) {surfeit_prod -= 1}; 
         // alloc k and r 
-        constraints += 2*target_field_prime_length + surfeit_prod;
+        constraints += 2*target_field_prime_length + surfeit_prod + 1;
         // computing k*p + r
         constraints += num_limbs * num_limbs;
 
         // The surfeit caused by (k*p + r)
-        let num_add_kp_r = num_limbs  + num_add_prod;  
+        let num_add_kp_r = num_limbs  + 2 * num_add_prod + 1;  
         // compute the ceil_log_2 of `num_add_kp_r + 1`
         let mut surfeit_kp_r = std::mem::size_of::<u128>() * 8 - 
            ((num_add_kp_r + 1) as u128).leading_zeros() as usize;

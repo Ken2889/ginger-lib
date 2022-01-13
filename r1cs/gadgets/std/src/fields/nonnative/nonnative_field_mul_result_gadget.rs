@@ -139,7 +139,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     /// where 
     /// ``
     ///     bits_per_limb = NonNativeFieldParams::bits_per_limb, 
-    ///     surfeit' =  log(num_limbs + num_adds + 1), 
+    ///     surfeit' =  log(num_limbs + 2*(num_adds + 1)), 
     ///     num_limbs = NonNativeFieldParams::num_limbs,
     /// ``
     /// and `num_adds` is as in the NonNativeMulResultGadget.
@@ -178,7 +178,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         // ``
         // the quotient `k` is length bounded by
         // ``
-        //      len(k) <= len(p) + len(num_adds + 1). 
+        //      len(k) <= len(p) + log(num_adds + 1) + 1. 
         // `` 
         let params = get_params(SimulationF::size_in_bits(), ConstraintF::size_in_bits());
 
@@ -187,7 +187,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         // ``
         //     2 * bits_per_limb + surfeit'  <= CAPACITY,
         // ``
-        // with `surfeit' =  log(num_limbs + num_adds + 1)`.
+        // with `surfeit' = log(num_limbs + 2*(num_adds + 1))`.
         // However, as the final `group_and_check_equality()` panics iff
         // ``
         //     2 * bits_per_limb + surfeit' > CAPACITY - 2.
@@ -218,7 +218,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         let surfeit = ceil_log_2!(BigUint::one() + &self.num_add_over_normal_form);
 
         // Step 3: allocate k,
-        // Costs `C = len(p) + surfeit` constraints.
+        // Costs `C = len(p) + surfeit + 1` constraints.
         let k_bits = {
             let mut res = Vec::new();
 
@@ -231,7 +231,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
             let mut k_cur = value_bigint / p_bigint; // drops the remainder
 
             // The total length of k
-            let total_len = SimulationF::size_in_bits() + surfeit;
+            let total_len = SimulationF::size_in_bits() + surfeit + 1;
 
             for i in 0..total_len {
                 res.push(Boolean::alloc(
@@ -256,7 +256,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
                     params.bits_per_limb
                 } else {
                     // The most significant limb is oversized by 
-                    // `surfeit = len(num_adds + 1)`
+                    // `surfeit = log(num_adds + 1) + 1`
                     k_bits.len() - (params.num_limbs - 1) * params.bits_per_limb
                 };
 
@@ -283,9 +283,15 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
 
         // TODO: let us remove the declaration of `num_adds` as it is not used 
         // anyway.
+        // ``
+        //      k <= x/p < (num_adds + 1)*2^{2len(p)} / p 
+        //               <= 2*(num_adds + 1)*2^len(p).
+        // ``
+        // Hence we may set `num_adds(k) = 2 * num_adds + 1`
         let k_gadget = NonNativeFieldGadget::<SimulationF, ConstraintF> {
             limbs: k_limbs,
-            num_of_additions_over_normal_form: self.num_add_over_normal_form.clone(),
+            num_of_additions_over_normal_form: BigUint::from(2u32) * self.num_add_over_normal_form.clone()
+                + BigUint::one(),
             simulation_phantom: PhantomData,
         };
 
@@ -328,20 +334,20 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         // TODO: Let us remove the `num_adds` declaration, as it is not used anyway.
         // The `k*p + r` limbs are bounded by 
         // ``
-        //      (k * p + r)[i] <= (num_limbs + num_add)* 2^{2*bits_per_limb[i]} 
+        //      (k * p + r)[i] <= (num_limbs - 1 + 2*(num_add + 1))* 2^{2*bits_per_limb[i]} 
         //                      + 2^bits_per_limb[i] 
-        //                      <= (num_limbs + num_add + 1) * 2^{2*bits_per_limb[i]}. 
+        //                      <= (num_limbs + 2*(num_add + 1)) * 2^{2*bits_per_limb[i]}. 
         // ``
         // Hence we may set num_adds and surfeit for the limbs of `k*p + r` according
         // to
         // ``
-        //      num_adds(kp + r) = num_limbs + num_add,
-        //      surfeit(kp + r) = log(num_limbs + num_adds + 1).
+        //      num_adds(kp + r) = num_limbs + 2*num_adds + 1,
+        //      surfeit(kp + r) = log(num_limbs + 2*(num_adds + 1)).
         // ``
         let mut kp_plus_r_gadget = Self {
             limbs: prod_limbs,
             num_add_over_normal_form: BigUint::from(params.num_limbs) +
-                k_gadget.num_of_additions_over_normal_form + BigUint::one(),
+                k_gadget.num_of_additions_over_normal_form,
             simulation_phantom: PhantomData,
         };
         let surfeit_kp_plus_r = ceil_log_2!(kp_plus_r_gadget.num_add_over_normal_form + BigUint::one());
@@ -364,7 +370,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         // ``
         //     2 * bits_per_limb + surfeit' <= CAPACITY - 2,
         // ``
-        // where `surfeit' = log(num_limbs + num_adds + 1)`.
+        // where `surfeit' = surfeit(kp + r) = log(num_limbs + 2*num_adds + 2)`.
         // Costs
         // ``
         //      (num_groups - 1) * (1 + 2*bits_per_limb + surfeit' + 2 - bits_per_limb) + 2
