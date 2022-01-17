@@ -277,6 +277,25 @@ impl UInt64 {
             value: modular_value,
         })
     }
+
+    pub fn conditionally_add<ConstraintF, CS>(
+        mut cs: CS,
+        bit: &Boolean,
+        first: Self,
+        second: Self,
+    ) -> Result<Self, SynthesisError>
+    where
+        ConstraintF: PrimeField,
+        CS: ConstraintSystemAbstract<ConstraintF>,
+    {
+        let added_values_g = UInt64::addmany(cs.ns(|| "added values"), &[first.clone(), second])?;
+        Self::conditionally_select(
+            cs.ns(|| "select added_values or original value"),
+            bit,
+            &added_values_g,
+            &first,
+        )
+    }
 }
 
 impl<ConstraintF: Field> ToBytesGadget<ConstraintF> for UInt64 {
@@ -361,10 +380,50 @@ impl<ConstraintF: Field> EqGadget<ConstraintF> for UInt64 {
     }
 }
 
-#[cfg(test)]
+impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt64 {
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        cond: &Boolean,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let selected_bits = true_value
+            .bits
+            .iter()
+            .zip(&false_value.bits)
+            .enumerate()
+            .map(|(i, (t, f))| {
+                Boolean::conditionally_select(&mut cs.ns(|| format!("bit {}", i)), cond, t, f)
+            });
+        let mut bits = [Boolean::Constant(false); 64];
+        for (result, new) in bits.iter_mut().zip(selected_bits) {
+            *result = new?;
+        }
+
+        let value = cond.get_value().and_then(|cond| {
+            if cond {
+                true_value.get_value()
+            } else {
+                false_value.get_value()
+            }
+        });
+        Ok(Self {
+            bits: bits.to_vec(),
+            value,
+        })
+    }
+
+    fn cost() -> usize {
+        64 * <Boolean as CondSelectGadget<ConstraintF>>::cost()
+    }
+}
+
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
     use super::UInt64;
-    use crate::bits::boolean::Boolean;
+    use crate::{
+        alloc::AllocGadget, bits::boolean::Boolean, boolean::AllocatedBit, select::CondSelectGadget,
+    };
     use algebra::{
         fields::{tweedle::Fr, Field},
         Group,
@@ -561,6 +620,111 @@ mod test {
             }
 
             num = num.rotate_right(1);
+        }
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    enum OperandType {
+        True,
+        False,
+        AllocatedTrue,
+        AllocatedFalse,
+        NegatedAllocatedTrue,
+        NegatedAllocatedFalse,
+    }
+    #[derive(Copy, Clone, Debug)]
+    enum VariableType {
+        Constant,
+        Allocated,
+    }
+
+    #[test]
+    fn test_uint64_cond_select() {
+        let variants = [
+            OperandType::True,
+            OperandType::False,
+            OperandType::AllocatedTrue,
+            OperandType::AllocatedFalse,
+            OperandType::NegatedAllocatedTrue,
+            OperandType::NegatedAllocatedFalse,
+        ];
+        let var_type = [VariableType::Constant, VariableType::Allocated];
+
+        use rand::thread_rng;
+        let rng = &mut thread_rng();
+
+        //random generates a and b numbers and check all the conditions for each couple
+        for _ in 0..1000 {
+            for condition in variants.iter().cloned() {
+                for var_a_type in var_type.iter().cloned() {
+                    for var_b_type in var_type.iter().cloned() {
+                        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+                        let cond;
+                        let a;
+                        let b;
+
+                        {
+                            let mut dyn_construct = |operand, name| {
+                                let cs = cs.ns(|| name);
+
+                                match operand {
+                                    OperandType::True => Boolean::constant(true),
+                                    OperandType::False => Boolean::constant(false),
+                                    OperandType::AllocatedTrue => {
+                                        Boolean::from(AllocatedBit::alloc(cs, || Ok(true)).unwrap())
+                                    }
+                                    OperandType::AllocatedFalse => Boolean::from(
+                                        AllocatedBit::alloc(cs, || Ok(false)).unwrap(),
+                                    ),
+                                    OperandType::NegatedAllocatedTrue => {
+                                        Boolean::from(AllocatedBit::alloc(cs, || Ok(true)).unwrap())
+                                            .not()
+                                    }
+                                    OperandType::NegatedAllocatedFalse => Boolean::from(
+                                        AllocatedBit::alloc(cs, || Ok(false)).unwrap(),
+                                    )
+                                    .not(),
+                                }
+                            };
+                            cond = dyn_construct(condition, "cond");
+                        }
+                        {
+                            let mut dyn_construct_var = |var_type, name, value| {
+                                let cs = cs.ns(|| name);
+                                match var_type {
+                                    VariableType::Constant => UInt64::constant(value),
+                                    VariableType::Allocated => {
+                                        UInt64::alloc(cs, Some(value)).unwrap()
+                                    }
+                                }
+                            };
+
+                            a = dyn_construct_var(var_a_type, "var_a", rng.gen());
+                            b = dyn_construct_var(var_b_type, "var_b", rng.gen());
+                        }
+                        let before = cs.num_constraints();
+                        let c = UInt64::conditionally_select(&mut cs, &cond, &a, &b).unwrap();
+                        let after = cs.num_constraints();
+
+                        assert!(
+                            cs.is_satisfied(),
+                            "failed with operands: cond: {:?}, a: {:?}, b: {:?}",
+                            condition,
+                            a,
+                            b,
+                        );
+                        assert_eq!(
+                            c.get_value(),
+                            if cond.get_value().unwrap() {
+                                a.get_value()
+                            } else {
+                                b.get_value()
+                            }
+                        );
+                        assert!(<UInt64 as CondSelectGadget<Fr>>::cost() >= after - before);
+                    }
+                }
+            }
         }
     }
 }

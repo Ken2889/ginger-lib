@@ -3,6 +3,7 @@ use crate::{
     fields::BitIterator,
     CanonicalDeserialize, CanonicalSerialize, SerializationError, UniformRand,
 };
+use num_bigint::BigUint;
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display},
     io::{Read, Result as IoResult, Write},
+    convert::TryFrom
 };
 
 #[macro_use]
@@ -51,6 +53,8 @@ pub trait BigInteger:
     + AsMut<[u64]>
     + AsRef<[u64]>
     + From<u64>
+    + TryFrom<BigUint>
+    + Into<BigUint>
 {
     /// Add another representation to this one, returning the carry bit.
     fn add_nocarry(&mut self, other: &Self) -> bool;

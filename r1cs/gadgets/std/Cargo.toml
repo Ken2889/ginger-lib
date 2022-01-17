@@ -29,7 +29,7 @@ derivative = "=2.2.0"
 radix_trie = "=0.2.1"
 rand = { version = "=0.8.4" }
 num-traits = { version = "=0.2.14", default-features = false, optional = true }
-num-bigint = { version = "=0.3.0", default-features = false, optional = true }
+num-bigint = { version = "=0.4.3", default-features = false, optional = true }
 num-integer = { version = "=0.1.44", default-features = false, optional = true }
 hex = "=0.4.3"
 
@@ -43,10 +43,10 @@ secp256k1 = ["algebra/secp256k1"]
 ed25519 = ["algebra/ed25519"]
 
 nonnative = ["num-traits", "num-bigint", "num-integer"]
-density-optimized = []
 
 [dev-dependencies]
 paste = "=1.0.6"
 rand = { version = "=0.8.4" }
 rand_xorshift = { version = "=0.3.0" }
+serial_test = { version = "=0.5.1"}
 r1cs-std = { path = "../std", features = ["tweedle", "secp256k1", "ed25519"] }
