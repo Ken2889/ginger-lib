@@ -1,15 +1,15 @@
 use crate::{
-    bits::{FromBits, ToBits, FromCompressedBits, ToCompressedBits, BitSerializationError},
+    bits::{BitSerializationError, FromBits, FromCompressedBits, ToBits, ToCompressedBits},
     bytes::{FromBytes, ToBytes},
-    groups::Group,
     curves::{
-        Curve, EndoMulCurve,
         models::{EndoMulParameters as EndoParameters, SWModelParameters as Parameters},
+        Curve, EndoMulCurve,
     },
     fields::{BitIterator, Field, PrimeField, SquareRootField},
+    groups::Group,
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Error, FromBytesChecked, SWFlags,
-    SemanticallyValid, SerializationError, UniformRand,
+    CanonicalSerializeWithFlags, Error, FromBytesChecked, SWFlags, SemanticallyValid,
+    SerializationError, UniformRand,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -18,9 +18,9 @@ use rand::{
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::{
+    convert::TryFrom,
     fmt::{Display, Formatter, Result as FmtResult},
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
-    convert::TryFrom,
     marker::PhantomData,
 };
 
@@ -71,7 +71,7 @@ impl<P: Parameters> ToBytes for AffineRep<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         CanonicalSerialize::serialize(&self, &mut writer)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
@@ -79,8 +79,7 @@ impl<P: Parameters> FromBytes for AffineRep<P> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         Ok(CanonicalDeserialize::deserialize_unchecked(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
-        )
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?)
     }
 }
 
@@ -101,7 +100,8 @@ impl<P: Parameters> CanonicalSerialize for AffineRep<P> {
     #[inline]
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         CanonicalSerialize::serialize(&self.x, &mut writer)?;
-        self.y.serialize_with_flags(&mut writer, SWFlags::default())?;
+        self.y
+            .serialize_with_flags(&mut writer, SWFlags::default())?;
         Ok(())
     }
 
@@ -130,7 +130,8 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
         } else {
             let p = Jacobian::<P>::get_point_from_x_and_parity(x, flags.is_odd().unwrap())
                 .ok_or(SerializationError::InvalidData)?;
-            Ok(p.into_affine().map_err(|_| SerializationError::InvalidData)?)
+            Ok(p.into_affine()
+                .map_err(|_| SerializationError::InvalidData)?)
         }
     }
 
@@ -145,7 +146,9 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
     }
 
     #[allow(unused_qualifications)]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         let x: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
         let (y, flags): (P::BaseField, SWFlags) =
             CanonicalDeserializeWithFlags::deserialize_with_flags(&mut reader)?;
@@ -158,11 +161,11 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
 
 #[derive(Derivative)]
 #[derivative(
-Copy(bound = "P: Parameters"),
-Clone(bound = "P: Parameters"),
-Eq(bound = "P: Parameters"),
-Debug(bound = "P: Parameters"),
-Hash(bound = "P: Parameters")
+    Copy(bound = "P: Parameters"),
+    Clone(bound = "P: Parameters"),
+    Eq(bound = "P: Parameters"),
+    Debug(bound = "P: Parameters"),
+    Hash(bound = "P: Parameters")
 )]
 #[derive(Serialize, Deserialize)]
 pub struct Jacobian<P: Parameters> {
@@ -230,7 +233,7 @@ impl<P: Parameters> ToBytes for Jacobian<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         CanonicalSerialize::serialize(&self, &mut writer)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
@@ -238,16 +241,14 @@ impl<P: Parameters> FromBytes for Jacobian<P> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         Ok(CanonicalDeserialize::deserialize_unchecked(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
-        )
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?)
     }
 }
 
 impl<P: Parameters> FromBytesChecked for Jacobian<P> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         Ok(CanonicalDeserialize::deserialize(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
-        )
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?)
     }
 }
 
@@ -289,11 +290,14 @@ impl<P: Parameters> CanonicalSerialize for Jacobian<P> {
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         if self.is_zero() {
             CanonicalSerialize::serialize(&self.x, &mut writer)?;
-            self.y.serialize_with_flags(&mut writer, SWFlags::infinity())?;
+            self.y
+                .serialize_with_flags(&mut writer, SWFlags::infinity())?;
         } else {
             let self_affine = self.into_affine().unwrap();
             CanonicalSerialize::serialize(&self_affine.x, &mut writer)?;
-            self_affine.y.serialize_with_flags(&mut writer, SWFlags::default())?;
+            self_affine
+                .y
+                .serialize_with_flags(&mut writer, SWFlags::default())?;
         };
         Ok(())
     }
@@ -338,11 +342,21 @@ impl<P: Parameters> CanonicalDeserialize for Jacobian<P> {
     }
 
     #[allow(unused_qualifications)]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         let x: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
         let (y, flags): (P::BaseField, SWFlags) =
             CanonicalDeserializeWithFlags::deserialize_with_flags(&mut reader)?;
-        let p = Jacobian::<P>::new(x, y, if flags.is_infinity() { P::BaseField::zero() } else { P::BaseField::one() });
+        let p = Jacobian::<P>::new(
+            x,
+            y,
+            if flags.is_infinity() {
+                P::BaseField::zero()
+            } else {
+                P::BaseField::one()
+            },
+        );
         Ok(p)
     }
 }
@@ -487,7 +501,6 @@ impl<P: Parameters> Sub<Self> for Jacobian<P> {
 }
 
 impl<'a, P: Parameters> MulAssign<&'a P::ScalarField> for Jacobian<P> {
-
     /// WARNING: This implementation doesn't take costant time with respect
     /// to the exponent, and therefore is susceptible to side-channel attacks.
     /// Be sure to use it in applications where timing (or similar) attacks
@@ -495,7 +508,9 @@ impl<'a, P: Parameters> MulAssign<&'a P::ScalarField> for Jacobian<P> {
     /// TODO: Add a side-channel secure variant.
     fn mul_assign(&mut self, other: &'a P::ScalarField) {
         if !self.is_zero() {
-            *self = self.mul_bits(BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(*other)))
+            *self = self.mul_bits(BitIterator::new(Into::<
+                <P::ScalarField as PrimeField>::BigInt,
+            >::into(*other)))
         }
     }
 }
@@ -692,15 +707,13 @@ impl<P: Parameters> Curve for Jacobian<P> {
     type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
-    fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self
-    {
+    fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
         copy.add_affine_assign(other);
         copy
     }
 
-    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep)
-    {
+    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep) {
         if self.is_zero() {
             self.x = other.x;
             self.y = other.y;
@@ -778,7 +791,10 @@ impl<P: Parameters> Curve for Jacobian<P> {
         Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
     }
 
-    fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self {
+    fn mul_bits_affine<'a, S: AsRef<[u64]>>(
+        affine: &'a Self::AffineRep,
+        bits: BitIterator<S>,
+    ) -> Self {
         let mut res = Self::zero();
         for i in bits {
             res.double_in_place();
@@ -795,7 +811,9 @@ impl<P: Parameters> Curve for Jacobian<P> {
     }
 
     fn scale_by_cofactor_inv(&self) -> Self {
-        let cofactor_inv = BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(P::COFACTOR_INV));
+        let cofactor_inv = BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(
+            P::COFACTOR_INV,
+        ));
         self.mul_bits(cofactor_inv)
     }
 
@@ -812,10 +830,10 @@ impl<P: Parameters> Curve for Jacobian<P> {
     fn group_membership_test(&self) -> bool {
         self.is_on_curve()
             && if !self.is_zero() {
-            self.is_in_correct_subgroup_assuming_on_curve()
-        } else {
-            true
-        }
+                self.is_in_correct_subgroup_assuming_on_curve()
+            } else {
+                true
+            }
     }
 
     fn is_on_curve(&self) -> bool {
@@ -825,14 +843,16 @@ impl<P: Parameters> Curve for Jacobian<P> {
             // Check that the point is on the curve
             let normalized = self.normalize();
             let y2 = normalized.y.square();
-            let x3b = P::add_b(&((normalized.x.square() * &normalized.x) + &P::mul_by_a(&normalized.x)));
+            let x3b =
+                P::add_b(&((normalized.x.square() * &normalized.x) + &P::mul_by_a(&normalized.x)));
             y2 == x3b
         }
     }
 
     #[inline]
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool {
-        self.mul_bits(BitIterator::new(P::ScalarField::characteristic())).is_zero()
+        self.mul_bits(BitIterator::new(P::ScalarField::characteristic()))
+            .is_zero()
     }
 
     #[inline]
@@ -971,16 +991,6 @@ impl<P: Parameters> Curve for Jacobian<P> {
         })
     }
 
-    #[inline]
-    fn recommended_wnaf_for_scalar(scalar: <Self::ScalarField as PrimeField>::BigInt) -> usize {
-        P::empirical_recommended_wnaf_for_scalar(scalar)
-    }
-
-    #[inline]
-    fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
-        P::empirical_recommended_wnaf_for_num_scalars(num_scalars)
-    }
-
     fn sum_buckets_affine(to_add: &mut [Vec<Self::AffineRep>]) {
         let zero = P::BaseField::zero();
         let one = P::BaseField::one();
@@ -1110,7 +1120,6 @@ impl<P: EndoParameters> EndoMulCurve for Jacobian<P> {
     /// Endomorphism-based multiplication of a curve point
     /// with a scalar in little-endian endomorphism representation.
     fn endo_mul(&self, bits: Vec<bool>) -> Result<Self, Error> {
-
         let mut bits = bits;
         if bits.len() % 2 == 1 {
             bits.push(false);

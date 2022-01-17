@@ -1,15 +1,14 @@
 use crate::{
     bytes::{FromBytes, ToBytes},
-    groups::Group,
     curves::{
-        Curve,
         models::MontgomeryModelParameters as MontgomeryParameters,
-        models::TEModelParameters as Parameters,
+        models::TEModelParameters as Parameters, Curve,
     },
     fields::{BitIterator, Field, PrimeField, SquareRootField},
+    groups::Group,
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Error, FromBytesChecked, EdwardsFlags,
-    SemanticallyValid, SerializationError, UniformRand,
+    CanonicalSerializeWithFlags, EdwardsFlags, Error, FromBytesChecked, SemanticallyValid,
+    SerializationError, UniformRand,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -18,9 +17,9 @@ use rand::{
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::{
+    convert::TryFrom,
     fmt::{Display, Formatter, Result as FmtResult},
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
-    convert::TryFrom,
     marker::PhantomData,
 };
 
@@ -29,12 +28,12 @@ pub mod tests;
 
 #[derive(Derivative)]
 #[derivative(
-Copy(bound = "P: Parameters"),
-Clone(bound = "P: Parameters"),
-PartialEq(bound = "P: Parameters"),
-Eq(bound = "P: Parameters"),
-Debug(bound = "P: Parameters"),
-Hash(bound = "P: Parameters")
+    Copy(bound = "P: Parameters"),
+    Clone(bound = "P: Parameters"),
+    PartialEq(bound = "P: Parameters"),
+    Eq(bound = "P: Parameters"),
+    Debug(bound = "P: Parameters"),
+    Hash(bound = "P: Parameters")
 )]
 #[derive(Serialize, Deserialize)]
 pub struct AffineRep<P: Parameters> {
@@ -74,7 +73,7 @@ impl<P: Parameters> ToBytes for AffineRep<P> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         CanonicalSerialize::serialize(&self, &mut writer)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
@@ -82,8 +81,7 @@ impl<P: Parameters> FromBytes for AffineRep<P> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
         Ok(CanonicalDeserialize::deserialize_unchecked(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
-        )
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?)
     }
 }
 
@@ -104,7 +102,8 @@ impl<P: Parameters> CanonicalSerialize for AffineRep<P> {
     #[inline]
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         CanonicalSerialize::serialize(&self.x, &mut writer)?;
-        self.y.serialize_with_flags(&mut writer, EdwardsFlags::default())?;
+        self.y
+            .serialize_with_flags(&mut writer, EdwardsFlags::default())?;
         Ok(())
     }
 
@@ -130,7 +129,8 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
             CanonicalDeserializeWithFlags::deserialize_with_flags(reader)?;
         let p = TEExtended::<P>::get_point_from_x_and_parity(x, flags.is_odd())
             .ok_or(SerializationError::InvalidData)?;
-        Ok(p.into_affine().map_err(|_| SerializationError::InvalidData)?)
+        Ok(p.into_affine()
+            .map_err(|_| SerializationError::InvalidData)?)
     }
 
     #[allow(unused_qualifications)]
@@ -144,7 +144,9 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
     }
 
     #[allow(unused_qualifications)]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         let x: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
         let (y, _): (P::BaseField, EdwardsFlags) =
             CanonicalDeserializeWithFlags::deserialize_with_flags(&mut reader)?;
@@ -154,11 +156,11 @@ impl<P: Parameters> CanonicalDeserialize for AffineRep<P> {
 
 #[derive(Derivative)]
 #[derivative(
-Copy(bound = "P: Parameters"),
-Clone(bound = "P: Parameters"),
-Eq(bound = "P: Parameters"),
-Debug(bound = "P: Parameters"),
-Hash(bound = "P: Parameters")
+    Copy(bound = "P: Parameters"),
+    Clone(bound = "P: Parameters"),
+    Eq(bound = "P: Parameters"),
+    Debug(bound = "P: Parameters"),
+    Hash(bound = "P: Parameters")
 )]
 #[derive(Serialize, Deserialize)]
 pub struct TEExtended<P: Parameters> {
@@ -185,7 +187,11 @@ impl<P: Parameters> TEExtended<P> {
 
 impl<P: Parameters> Display for TEExtended<P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "Projective(x={}, y={}, t={}, z={})", self.x, self.y, self.t, self.z)
+        write!(
+            f,
+            "Projective(x={}, y={}, t={}, z={})",
+            self.x, self.y, self.t, self.z
+        )
     }
 }
 
@@ -340,7 +346,9 @@ impl<P: Parameters> CanonicalDeserialize for TEExtended<P> {
     }
 
     #[allow(unused_qualifications)]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         let x: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
         let y: P::BaseField = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -465,7 +473,6 @@ impl<P: Parameters> Sub<Self> for TEExtended<P> {
 }
 
 impl<'a, P: Parameters> MulAssign<&'a P::ScalarField> for TEExtended<P> {
-
     /// WARNING: This implementation doesn't take costant time with respect
     /// to the exponent, and therefore is susceptible to side-channel attacks.
     /// Be sure to use it in applications where timing (or similar) attacks
@@ -473,7 +480,9 @@ impl<'a, P: Parameters> MulAssign<&'a P::ScalarField> for TEExtended<P> {
     /// TODO: Add a side-channel secure variant.
     fn mul_assign(&mut self, other: &'a P::ScalarField) {
         if !self.is_zero() {
-            *self = self.mul_bits(BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(*other)))
+            *self = self.mul_bits(BitIterator::new(Into::<
+                <P::ScalarField as PrimeField>::BigInt,
+            >::into(*other)))
         }
     }
 }
@@ -517,7 +526,6 @@ impl<P: Parameters> TryFrom<TEExtended<P>> for AffineRep<P> {
     }
 }
 
-
 impl<P: Parameters> Group for TEExtended<P> {
     type ScalarField = P::ScalarField;
 
@@ -550,15 +558,13 @@ impl<P: Parameters> Curve for TEExtended<P> {
     type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
-    fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self
-    {
+    fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
         copy.add_affine_assign(other);
         copy
     }
 
-    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep)
-    {
+    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep) {
         // A = X1*X2
         let a = self.x * &other.x;
         // B = Y1*Y2
@@ -597,7 +603,10 @@ impl<P: Parameters> Curve for TEExtended<P> {
         Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
     }
 
-    fn mul_bits_affine<'a, S: AsRef<[u64]>>(affine: &'a Self::AffineRep, bits: BitIterator<S>) -> Self {
+    fn mul_bits_affine<'a, S: AsRef<[u64]>>(
+        affine: &'a Self::AffineRep,
+        bits: BitIterator<S>,
+    ) -> Self {
         let mut res = Self::zero();
         for i in bits {
             res.double_in_place();
@@ -614,7 +623,9 @@ impl<P: Parameters> Curve for TEExtended<P> {
     }
 
     fn scale_by_cofactor_inv(&self) -> Self {
-        let cofactor_inv = BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(P::COFACTOR_INV));
+        let cofactor_inv = BitIterator::new(Into::<<P::ScalarField as PrimeField>::BigInt>::into(
+            P::COFACTOR_INV,
+        ));
         self.mul_bits(cofactor_inv)
     }
 
@@ -632,10 +643,10 @@ impl<P: Parameters> Curve for TEExtended<P> {
     fn group_membership_test(&self) -> bool {
         self.is_on_curve()
             && if !self.is_zero() {
-            self.is_in_correct_subgroup_assuming_on_curve()
-        } else {
-            true
-        }
+                self.is_in_correct_subgroup_assuming_on_curve()
+            } else {
+                true
+            }
     }
 
     fn is_on_curve(&self) -> bool {
@@ -774,16 +785,6 @@ impl<P: Parameters> Curve for TEExtended<P> {
                 Self::get_point_from_x_and_parity(x, flags.is_odd())
             }
         })
-    }
-
-    #[inline]
-    fn recommended_wnaf_for_scalar(scalar: <Self::ScalarField as PrimeField>::BigInt) -> usize {
-        P::empirical_recommended_wnaf_for_scalar(scalar)
-    }
-
-    #[inline]
-    fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
-        P::empirical_recommended_wnaf_for_num_scalars(num_scalars)
     }
 
     fn sum_buckets_affine(_: &mut [Vec<Self::AffineRep>]) {
