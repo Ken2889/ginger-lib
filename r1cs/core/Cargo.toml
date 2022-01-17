@@ -25,3 +25,6 @@ algebra = { path = "../../algebra" }
 smallvec = { version = "1.6.1" }
 radix_trie = { version = "0.2.1" }
 rand = { version = "0.8.4" }
+
+[dev-dependencies]
+algebra = { path = "../../algebra", features = ["tweedle"] }
