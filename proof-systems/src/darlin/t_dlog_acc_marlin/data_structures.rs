@@ -2,20 +2,23 @@
 //!     - prover and verifier key,
 //!     - the SNARK proof,
 //! and implementations for serialization and deserialization.
-use crate::iop::indexer::*;
-use crate::{Vec, IOP};
+use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
+use crate::darlin::t_dlog_acc_marlin::EvaluationsOnDomain;
+use crate::darlin::t_dlog_acc_marlin::IOP;
 use algebra::serialize::*;
-use algebra::{Curve, Group, GroupVec, ToBytes};
+use algebra::{get_best_evaluation_domain, Curve, Group, GroupVec, ToBytes, UniformRand};
 use derivative::Derivative;
 use digest::Digest;
+use marlin::iop::LagrangeKernel;
 use poly_commit::ipa_pc::InnerProductArgPC;
 use poly_commit::{DomainExtendedPolynomialCommitment, LabeledRandomness, PolynomialCommitment};
+use rand_core::RngCore;
 use std::marker::PhantomData;
 
 /// The universal public parameters for the argument system.
-pub type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
+pub(crate) type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
 /// Our proving system uses IPA/DLOG polynomial commitment scheme.
-pub type PC<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>;
+pub(crate) type PC<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>;
 
 /// The verification key for a specific R1CS.
 #[derive(Derivative)]
@@ -31,6 +34,8 @@ pub struct VerifierKey<G1: Curve, G2: Curve, D: Digest + 'static> {
     pub index: Index<G1, G2>,
     /// Commitments to the indexed polynomials.
     pub index_comms: Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>,
+    /// Commitments of the lagrange polynomials over the input domain.
+    pub lagrange_comms: Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>,
 }
 
 impl<G1: Curve, G2: Curve, D: Digest + 'static> VerifierKey<G1, G2, D> {
@@ -82,9 +87,9 @@ pub struct Proof<G1: Curve, G2: Curve, D: Digest + 'static> {
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SumcheckItem<G: Curve> {
     /// Sampling point.
-    pub zeta: G::ScalarField,
+    pub alpha: G::ScalarField,
     /// Batching randomness.
-    pub eta: G::ScalarField,
+    pub eta: Vec<G::ScalarField>,
     /// Commitment of the batched circuit polynomials.
     pub c: GroupVec<G>,
 }
@@ -98,9 +103,82 @@ impl<G: Curve> ToBytes for SumcheckItem<G> {
     }
 }
 
+impl<G: Curve> SumcheckItem<G> {
+    /// Generate a random (but valid) inner sumcheck accumulator item
+    pub fn generate_random<G2: Curve, D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index: &Index<G, G2>,
+        pc_pk: &<PC<G, D> as PolynomialCommitment<G>>::CommitterKey,
+    ) -> Self {
+        let alpha = G::ScalarField::rand(rng);
+        let eta: Vec<_> = (0..3)
+            .into_iter()
+            .map(|_| G::ScalarField::rand(rng))
+            .collect();
+
+        let num_inputs = index.index_info.num_inputs;
+        let num_witness = index.index_info.num_witness;
+        let num_constraints = index.index_info.num_constraints;
+
+        let domain_x = get_best_evaluation_domain::<G::ScalarField>(num_inputs).unwrap();
+        let domain_h = get_best_evaluation_domain::<G::ScalarField>(std::cmp::max(
+            num_inputs + num_witness,
+            num_constraints,
+        ))
+        .unwrap();
+
+        let l_x_alpha_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha).unwrap();
+
+        let t_evals_on_h = IOP::<G, G2>::calculate_t(
+            vec![&index.a, &index.b, &index.c].into_iter(),
+            &eta,
+            &domain_x,
+            domain_h.clone(),
+            &l_x_alpha_evals_on_h,
+        )
+        .unwrap();
+        let t = EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), domain_h.clone())
+            .interpolate();
+        let (c, _) = <PC<G, D> as PolynomialCommitment<G>>::commit(pc_pk, &t, false, None).unwrap();
+
+        Self { alpha, eta, c }
+    }
+    /// Generate the trivial inner sumcheck accumulator item
+    pub fn generate_trivial() -> Self {
+        Self {
+            alpha: G::ScalarField::zero(),
+            eta: vec![G::ScalarField::zero(); 3],
+            c: GroupVec::<G>::zero(),
+        }
+    }
+}
+
 /// A dual inner-sumcheck accumulator item.
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DualSumcheckItem<G1: Curve, G2: Curve>(pub SumcheckItem<G1>, pub SumcheckItem<G2>);
+
+impl<G1: Curve, G2: Curve> DualSumcheckItem<G1, G2> {
+    /// Generate a random (but valid) dual inner sumcheck accumulator
+    pub fn generate_random<D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index_g1: &Index<G1, G2>,
+        index_g2: &Index<G2, G1>,
+        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+    ) -> Self {
+        Self(
+            SumcheckItem::generate_random::<G2, D>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_random::<G1, D>(rng, index_g2, pc_pk_g2),
+        )
+    }
+    /// Generate the trivial dual inner sumcheck accumulator
+    pub fn generate_trivial() -> Self {
+        Self(
+            SumcheckItem::generate_trivial(),
+            SumcheckItem::generate_trivial(),
+        )
+    }
+}
 
 impl<G1: Curve, G2: Curve> ToBytes for DualSumcheckItem<G1, G2> {
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
@@ -181,7 +259,7 @@ impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for Proof<G1, G
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 4;
-        let comms_per_round = vec![3, 3, 2, 1];
+        let comms_per_round = vec![4, 3, 2, 1];
 
         // Check commitments are grouped into correct num_rounds
         if self.commitments.len() != num_rounds {
@@ -325,7 +403,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![3, 3, 2, 1];
+        let comms_per_round = vec![4, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -365,7 +443,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![3, 3, 2, 1];
+        let comms_per_round = vec![4, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -406,7 +484,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![3, 3, 2, 1];
+        let comms_per_round = vec![4, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -450,7 +528,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     ) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![3, 3, 2, 1];
+        let comms_per_round = vec![4, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {

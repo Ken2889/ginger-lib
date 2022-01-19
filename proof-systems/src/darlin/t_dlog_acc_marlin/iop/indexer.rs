@@ -1,17 +1,19 @@
 #![allow(non_snake_case)]
 
-use crate::iop::*;
-use crate::iop::{Error, IOP};
-use crate::Vec;
 use algebra::{
-    get_best_evaluation_domain, serialize::*, Evaluations as EvaluationsOnDomain, PrimeField,
-    SemanticallyValid, ToBytes,
+    get_best_evaluation_domain, serialize::*, Curve, EvaluationDomain,
+    Evaluations as EvaluationsOnDomain, Field, PrimeField, SemanticallyValid, ToBytes,
 };
 use derivative::Derivative;
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, Index as VarIndex, SynthesisMode};
+use r1cs_core::{
+    ConstraintSynthesizer, ConstraintSystem, Index as VarIndex, SynthesisError, SynthesisMode,
+};
 
-use crate::iop::sparse_linear_algebra::SparseMatrix;
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use marlin::iop::sparse_linear_algebra::SparseMatrix;
+use marlin::iop::Error;
 use poly_commit::LabeledPolynomial;
+use rayon::prelude::*;
 use std::marker::PhantomData;
 
 /// Information about the index, including the field of definition, the number of
@@ -189,14 +191,11 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let c_star_arith = arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_x)?;
         end_timer!(c_arithmetization_time);
 
-        end_timer!(index_time);
-
         let index_info = IndexInfo {
             num_witness: ics.num_aux,
             num_inputs: ics.num_inputs,
             num_constraints: ics.num_constraints,
             num_non_zero: num_non_zero(&mut ics),
-
             g1: PhantomData,
             g2: PhantomData,
         };

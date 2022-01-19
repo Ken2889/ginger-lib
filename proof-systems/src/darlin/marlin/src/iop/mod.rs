@@ -20,7 +20,8 @@ use rayon::prelude::*;
 pub mod indexer;
 /// Describes data structures and the algorithms used by the interactive prover.
 pub mod prover;
-pub(crate) mod sparse_linear_algebra;
+/// Utilities for basic linear algebra operations on sparse matrices.
+pub mod sparse_linear_algebra;
 /// Describes data structures and the algorithms used by the interactive verifier.
 pub mod verifier;
 

@@ -1,12 +1,14 @@
 #![allow(non_snake_case)]
 
-use crate::iop::indexer::IndexInfo;
-use crate::iop::*;
-
-use crate::DualSumcheckItem;
-use algebra::{get_best_evaluation_domain, EvaluationDomain};
+use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
+use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use algebra::{get_best_evaluation_domain, Curve, EvaluationDomain, Group};
+use marlin::iop::Error;
 use poly_commit::fiat_shamir_rng::FiatShamirRng;
 use poly_commit::QuerySet;
+use r1cs_core::SynthesisError;
+use std::marker::PhantomData;
 
 /// State of the IOP verifier
 pub struct VerifierState<'a, G1: Curve, G2: Curve> {
@@ -14,8 +16,6 @@ pub struct VerifierState<'a, G1: Curve, G2: Curve> {
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
     /// the previous inner-sumcheck accumulator
     pub previous_inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
-    /// the new inner-sumcheck accumulator
-    pub new_inner_sumcheck_acc: Option<DualSumcheckItem<G1, G2>>,
 
     /// First round verifier message.
     pub first_round_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
@@ -28,19 +28,12 @@ pub struct VerifierState<'a, G1: Curve, G2: Curve> {
 }
 
 /// First message of the verifier.
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct VerifierFirstMsg<G: Group> {
     /// Query for the random polynomial.
     pub alpha: G::ScalarField,
     /// Randomizer for the lincheck for `A`, `B`, and `C`.
-    pub eta: G::ScalarField,
-}
-
-impl<G: Group> VerifierFirstMsg<G> {
-    /// Return a triplet with the randomizers (1, eta, eta^2)
-    pub fn get_etas(&self) -> (G::ScalarField, G::ScalarField, G::ScalarField) {
-        return (G::ScalarField::one(), self.eta, self.eta.square());
-    }
+    pub eta: Vec<G::ScalarField>,
 }
 
 /// Second verifier message.
@@ -74,7 +67,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let state = VerifierState {
             domain_h,
             previous_inner_sumcheck_acc,
-            new_inner_sumcheck_acc: None,
             first_round_msg: None,
             second_round_msg: None,
             third_round_msg: None,
@@ -99,10 +91,13 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             ))?
         }
 
-        let eta: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let eta: Vec<_> = (0..3)
+            .into_iter()
+            .map(|_| fs_rng.squeeze_128_bits_challenge())
+            .collect();
 
         let msg = VerifierFirstMsg { alpha, eta };
-        state.first_round_msg = Some(msg);
+        state.first_round_msg = Some(msg.clone());
 
         Ok((msg, state))
     }
@@ -165,8 +160,8 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
         let beta = state.second_round_msg.unwrap().beta;
-        let alpha = state.first_round_msg.unwrap().alpha;
-        let alpha_prime = state.previous_inner_sumcheck_acc.1.zeta;
+        let alpha = state.first_round_msg.as_ref().unwrap().alpha;
+        let prev_alpha = state.previous_inner_sumcheck_acc.1.alpha;
         let gamma = state.third_round_msg.unwrap().gamma;
 
         let g_h = state.domain_h.group_gen();
@@ -174,6 +169,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let mut query_set = QuerySet::new();
 
         // First round polys
+        query_set.insert(("x".into(), ("beta".into(), beta)));
         query_set.insert(("w".into(), ("beta".into(), beta)));
         query_set.insert(("y_a".into(), ("beta".into(), beta)));
         query_set.insert(("y_b".into(), ("beta".into(), beta)));
@@ -185,13 +181,18 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         query_set.insert(("t".into(), ("beta".into(), beta)));
 
         // Inner sumcheck aggregation polys
-        query_set.insert(("t_eta".into(), ("alpha".into(), alpha)));
-        query_set.insert(("t_eta_prime".into(), ("alpha_prime".into(), alpha_prime)));
-        query_set.insert(("t_eta".into(), ("gamma".into(), gamma)));
-        query_set.insert(("t_eta_prime".into(), ("gamma".into(), gamma)));
-        query_set.insert(("t_second".into(), ("beta".into(), beta)));
+        query_set.insert(("curr_bridging_poly".into(), ("alpha".into(), alpha)));
+        query_set.insert((
+            "prev_bridging_poly".into(),
+            ("prev_alpha".into(), prev_alpha),
+        ));
+        query_set.insert(("curr_bridging_poly".into(), ("gamma".into(), gamma)));
+        query_set.insert(("prev_bridging_poly".into(), ("gamma".into(), gamma)));
+        query_set.insert(("curr_t_acc_poly".into(), ("beta".into(), beta)));
+        query_set.insert(("prev_t_acc_poly".into(), ("beta".into(), beta)));
 
-        query_set.insert(("t_prime".into(), ("beta".into(), beta)));
+        // Dlog accumulation poly
+        query_set.insert(("prev_bullet_poly".into(), ("gamma".into(), gamma)));
 
         Ok((query_set, state))
     }

@@ -1,63 +1,28 @@
-//! A crate for [Coboundary Marlin], a variant of the [Marlin] zk-SNARK.
-//! The SNARK is obtained from the interactive protocol by Fiat-Shamir transforming
-//! the "compiled" algebraic oracle proof, in which oracles are instantiated by
-//! a secure polynomial commitment scheme.
-//!
-//! This implementation is based on the Marlin implementation from [arkworks], using
-//! the modifications as described in [HGB].
-//!
-//! [Coboundary Marlin]: https://eprint.iacr.org/2021/930
-//! [Marlin]: https://eprint.iacr.org/2019/1047
-//! [HGB]: https://eprint.iacr.org/2021/930
-//! [arkworks]: http://github.com/arkworks-rs/marlin
-#![deny(unused_import_braces, unused_qualifications, trivial_casts)]
-#![deny(trivial_numeric_casts, private_in_public)]
-#![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
-#![deny(unused_attributes, unused_imports, unused_mut, missing_docs)]
-#![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
-#![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
-#![forbid(unsafe_code)]
-#![allow(
-    clippy::upper_case_acronyms,
-    clippy::too_many_arguments,
-    clippy::type_complexity,
-    clippy::try_err,
-    clippy::map_collect_result_unit,
-    clippy::not_unsafe_ptr_arg_deref,
-    clippy::suspicious_op_assign_impl,
-    clippy::assertions_on_constants
-)]
-
-#[macro_use]
-extern crate bench_utils;
-
-use algebra::{to_bytes, Curve};
-use algebra::{Group, ToBytes};
-use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
+use crate::darlin::accumulators::dlog::{DLogItem, DualDLogItem};
+use crate::darlin::t_dlog_acc_marlin::data_structures::{
+    DualSumcheckItem, Proof, ProverKey, SumcheckItem, UniversalSRS, VerifierKey, PC,
+};
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use algebra::{
+    get_best_evaluation_domain, to_bytes, Curve, DensePolynomial,
+    Evaluations as EvaluationsOnDomain, Field, Group, GroupVec, ToBytes,
+};
+use digest::Digest;
+use marlin::iop::Error::VerificationEquationFailed;
+use marlin::iop::LagrangeKernel;
+use marlin::Error;
+use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
+use poly_commit::optional_rng::OptionalRng;
 use poly_commit::{
-    optional_rng::OptionalRng, LabeledCommitment, PCVerifierKey, PolynomialCommitment,
+    evaluate_query_set, evaluate_query_set_to_vec, Evaluations, LabeledCommitment,
+    LabeledPolynomial, LabeledRandomness, PCVerifierKey, PolynomialCommitment,
 };
 use r1cs_core::ConstraintSynthesizer;
-use rand_core::RngCore;
+use rand::RngCore;
 use std::marker::PhantomData;
 
-use digest::Digest;
-use std::{
-    string::{String, ToString},
-    vec::Vec,
-};
-
-use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
-
-mod error;
-pub use error::*;
-
-mod data_structures;
-pub use data_structures::*;
-
+pub mod data_structures;
 pub mod iop;
-pub use iop::IOP;
-
 #[cfg(test)]
 mod test;
 
@@ -72,6 +37,11 @@ pub struct Marlin<G1: Curve, G2: Curve, D: Digest>(
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<D>,
 );
+
+pub struct VerificationResult<F: Field> {
+    pub bullet_poly: DensePolynomial<F>,
+    pub t_acc_poly: DensePolynomial<F>,
+}
 
 impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
     /// The personalization string for this protocol. Used to personalize the
@@ -109,16 +79,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         (ProverKey<G1, G2, D>, VerifierKey<G1, G2, D>),
         Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
     > {
-        // the setup for now (i.e. without using a "recursive circuit") will
-        // call the marlin setup and just use
-        //  1. R1CS matrices
-        //  2. The commitments of the row(M), col(M), val.row.col(M) (overall
-        // 9 group elements)
-        // Therefore the key material for t-dlog-acc marlin is
-        //  1. prover key: the above key material & the full-length polynomial
-        //   (i.e. the coeffs) of the T_eta(alpha',Y) in the prev. acc.
-        //   (This poly can be returned by the t-acc verifier?)
-        // 2. verifier key: the above key material.
         let index_time = start_timer!(|| "Marlin::Index");
 
         let index = IOP::<G1, G2>::index(c)?;
@@ -137,7 +97,27 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             .map(|c| c.commitment().clone())
             .collect();
 
-        let index_vk = VerifierKey { index, index_comms };
+        // Compute the commitments of the Lagrange polynomials over the input domain.
+        // They are included into the verifier key in order to help the verifier check that the
+        // polynomial behind the commitment of the input poly provided by the prover is indeed the
+        // input poly.
+        let domain_x = get_best_evaluation_domain(index.index_info.num_inputs).unwrap();
+        let lagrange_comms: Vec<_> = domain_x
+            .elements()
+            .into_iter()
+            .map(|y| domain_x.slice_lagrange_kernel(y))
+            .map(|poly| {
+                <PC<G1, D> as PolynomialCommitment<G1>>::commit(committer_key, &poly, false, None)
+                    .unwrap()
+                    .0
+            })
+            .collect();
+
+        let index_vk = VerifierKey {
+            index,
+            index_comms,
+            lagrange_comms,
+        };
 
         let index_pk = ProverKey {
             index_vk: index_vk.clone(),
@@ -182,10 +162,17 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         pc_pk: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
         c: C,
         previous_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
+        previous_dlog_acc: &DualDLogItem<G2, G1>,
+        previous_inner_sumcheck_poly: &DensePolynomial<G1::ScalarField>,
+        previous_bullet_poly: &DensePolynomial<G1::ScalarField>,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
     ) -> Result<
-        (Proof<G1, G2, D>, DualSumcheckItem<G1, G2>),
+        (
+            Proof<G1, G2, D>,
+            DualSumcheckItem<G1, G2>,
+            DualDLogItem<G1, G2>,
+        ),
         Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
     > {
         if zk_rng.is_some() && !zk || zk_rng.is_none() && zk {
@@ -195,9 +182,11 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         let zk_rng = &mut OptionalRng(zk_rng);
         let prover_time = start_timer!(|| "Marlin::Prover");
 
-        // prover precomputations
-        let prover_init_state =
-            IOP::prover_init(&index_pk.index_vk.index, c, previous_inner_sumcheck_acc)?;
+        let prover_init_state = IOP::prover_init(
+            &index_pk.index_vk.index,
+            c,
+            previous_inner_sumcheck_acc,
+        )?;
         let public_input = prover_init_state.public_input();
 
         let verifier_init_state = IOP::verifier_init(
@@ -292,7 +281,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         /*  Fourth round of the compiled and Fiat-Shamir transformed oracle proof
          */
 
-        let (prover_fourth_oracles, prover_state) =
+        let (prover_fourth_oracles, _) =
             IOP::prover_fourth_round(&verifier_third_msg, prover_state).map_err(|e| {
                 end_timer!(prover_time);
                 e
@@ -311,11 +300,38 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         // absorb the prove oracles by the Fiat-Shamir rng
         fs_rng.absorb(&to_bytes![fourth_comms].unwrap());
 
-        let (prover_accumulator_oracles, _) =
-            IOP::prover_compute_acc_polys(prover_state).map_err(|e| {
-                end_timer!(prover_time);
-                e
-            })?;
+        let prover_accumulator_oracles = vec![
+            LabeledPolynomial::new(
+                "prev_t_acc_poly".to_string(),
+                previous_inner_sumcheck_poly.clone(),
+                false,
+            ),
+            LabeledPolynomial::new(
+                "prev_bullet_poly".to_string(),
+                previous_bullet_poly.clone(),
+                false,
+            ),
+        ];
+        let accumulator_comms = vec![
+            LabeledCommitment::new(
+                "prev_t_acc_poly".to_string(),
+                previous_inner_sumcheck_acc.1.c.clone(),
+            ),
+            LabeledCommitment::new(
+                "prev_bullet_poly".to_string(),
+                previous_dlog_acc.1[0].g_final.clone(),
+            ),
+        ];
+        let accumulator_comm_rands = vec![
+            LabeledRandomness::new(
+                "prev_t_acc_poly".to_string(),
+                <PC<G1, D> as PolynomialCommitment<G1>>::Randomness::zero(),
+            ),
+            LabeledRandomness::new(
+                "prev_bullet_poly".to_string(),
+                <PC<G1, D> as PolynomialCommitment<G1>>::Randomness::zero(),
+            ),
+        ];
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = prover_first_oracles
@@ -335,7 +351,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             fourth_comms.iter().map(|p| p.commitment().clone()).collect(),
         ];
 
-        let mut labeled_comms: Vec<_> = index_pk
+        let labeled_comms: Vec<_> = index_pk
             .index_vk
             .iter()
             .cloned()
@@ -345,15 +361,11 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             .chain(second_comms.iter().cloned())
             .chain(third_comms.iter().cloned())
             .chain(fourth_comms.iter().cloned())
+            .chain(accumulator_comms.iter().cloned())
             .collect();
 
-        labeled_comms.push(LabeledCommitment::new(
-            "t_prime".to_string(),
-            previous_inner_sumcheck_acc.1.c.clone(),
-        ));
-
         // Gather commitment randomness together.
-        let mut comm_rands: Vec<
+        let comm_rands: Vec<
             LabeledRandomness<<PC<G1, D> as PolynomialCommitment<G1>>::Randomness>,
         > = index_pk
             .index_comm_rands
@@ -363,12 +375,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             .chain(second_comm_rands)
             .chain(third_comm_rands)
             .chain(fourth_comm_rands)
+            .chain(accumulator_comm_rands)
             .collect();
-
-        comm_rands.push(LabeledRandomness::new(
-            "t_prime".to_string(),
-            <PC<G1, D> as PolynomialCommitment<G1>>::Randomness::zero(),
-        ));
 
         // Set up the IOP verifier's query set.
         let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
@@ -388,6 +396,9 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         // absorb the evalution claims.
         fs_rng.absorb(&evaluations);
 
+        // Saving the rng state for later recomputing the challenges
+        let fs_rng_state = fs_rng.get_state().clone();
+
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
         */
@@ -405,12 +416,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         .map_err(Error::from_pc_err)?;
         end_timer!(opening_time);
 
-        let proof = Proof::new(commitments, evaluations, pc_proof);
-
         let accumulated_sumcheck_acc = SumcheckItem {
-            zeta: verifier_third_msg.gamma,
-            eta: verifier_first_msg.eta
-                + verifier_third_msg.lambda * previous_inner_sumcheck_acc.1.eta,
+            alpha: verifier_third_msg.gamma,
+            eta: verifier_first_msg
+                .eta
+                .iter()
+                .zip(previous_inner_sumcheck_acc.1.eta.iter())
+                .map(|(&eta, &eta_prime)| eta + verifier_third_msg.lambda * eta_prime)
+                .collect(),
             c: fourth_comms[0].commitment().clone(),
         };
         let new_inner_sumcheck_acc = DualSumcheckItem(
@@ -418,63 +431,81 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             previous_inner_sumcheck_acc.0.clone(),
         );
 
+        let succinct_verifier_state = PC::<G1, D>::batch_succinct_verify(
+            pc_pk,
+            vec![labeled_comms.as_slice()],
+            vec![&query_set],
+            // TODO: we evaluate polynomials a further (third...) time. Can we do
+            //       better by reusing evaluations?
+            vec![&evaluate_query_set(polynomials.clone(), &query_set)],
+            vec![&pc_proof],
+            vec![&fs_rng_state],
+        )
+        .map_err(Error::from_pc_err)?;
+
+        let accumulated_dlog_acc = DLogItem {
+            g_final: GroupVec::new(vec![succinct_verifier_state[0].final_comm_key]),
+            xi_s: succinct_verifier_state[0].check_poly.clone(),
+        };
+
+        let new_dlog_acc =
+            DualDLogItem::<G1, G2>(vec![accumulated_dlog_acc], previous_dlog_acc.0.clone());
+
+        let proof = Proof::new(commitments, evaluations, pc_proof);
+
         end_timer!(prover_time);
 
         proof.print_size_info();
-        Ok((proof, new_inner_sumcheck_acc))
+        Ok((proof, new_inner_sumcheck_acc, new_dlog_acc))
     }
 
     /// Verify a proof as produced by `fn prove()`.
     /// Internally, the function calls `fn verify_iop` and `fn verify_opening`.
     pub fn verify(
-        index_vk: &VerifierKey<G1, G2, D>,
-        pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
+        index_vk_g1: &VerifierKey<G1, G2, D>,
+        index_vk_g2: &VerifierKey<G2, G1, D>,
+        pc_vk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
+        pc_vk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::VerifierKey,
         public_input: &[G1::ScalarField],
         previous_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
-        new_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
+        previous_dlog_acc: &DualDLogItem<G2, G1>,
+        next_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
+        next_dlog_acc: &DualDLogItem<G1, G2>,
         proof: &Proof<G1, G2, D>,
     ) -> Result<bool, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
         let verifier_time = start_timer!(|| "Marlin Verifier");
-
-        // The Fiat-Shamir verifier  for the algebraic oracle proof part.
-        let iop_result = Self::verify_iop(
-            pc_vk,
-            index_vk,
-            &public_input,
+        let succinct_check = Self::succinct_verify(
+            pc_vk_g1,
+            index_vk_g1,
+            public_input,
             previous_inner_sumcheck_acc,
-            new_inner_sumcheck_acc,
+            previous_dlog_acc,
+            next_inner_sumcheck_acc,
+            next_dlog_acc,
             proof,
         );
-
-        if iop_result.is_err() {
+        if succinct_check.is_err() {
             end_timer!(verifier_time);
-            eprintln!("IOP Verification failed: {:?}", iop_result.err());
+            eprintln!("IOP Verification failed: {:?}", succinct_check.err());
             return Ok(false);
         }
 
-        let (query_set, evaluations, commitments, mut fs_rng) = iop_result.unwrap();
-
-        // Check opening proof
-        let opening_result = Self::verify_opening(
-            pc_vk,
-            proof,
-            commitments,
-            query_set,
-            evaluations,
-            &mut fs_rng,
+        let hard_check = Self::hard_verify(
+            pc_vk_g1,
+            pc_vk_g2,
+            index_vk_g1,
+            index_vk_g2,
+            next_inner_sumcheck_acc,
+            next_dlog_acc,
         );
-
-        if opening_result.is_err() {
+        if hard_check.is_err() {
             end_timer!(verifier_time);
-            eprintln!(
-                "Opening proof Verification failed: {:?}",
-                opening_result.err()
-            );
+            eprintln!("IOP Verification failed: {:?}", hard_check.err());
             return Ok(false);
         }
 
         end_timer!(verifier_time);
-        opening_result
+        Ok(true)
     }
 
     /// The Fiat-Shamir verifier for the algebraic oracle proof of Coboundary Marlin,
@@ -486,22 +517,16 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
     // TODO: By now, the only external call is from the batch verifier for FinalDarlin /
     // SimpleMarlin proofs. Let us think whether serving this functionality as public is a good
     // decision.
-    pub fn verify_iop<'a>(
+    pub fn succinct_verify<'a>(
         pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
         index_vk: &VerifierKey<G1, G2, D>,
         public_input: &[G1::ScalarField],
         previous_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
-        new_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
+        previous_dlog_acc: &DualDLogItem<G2, G1>,
+        next_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
+        next_dlog_acc: &DualDLogItem<G1, G2>,
         proof: &Proof<G1, G2, D>,
-    ) -> Result<
-        (
-            QuerySet<'a, G1::ScalarField>,
-            Evaluations<'a, G1::ScalarField>,
-            Vec<LabeledCommitment<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>>,
-            <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle,
-        ),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
-    > {
+    ) -> Result<(), Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
         let public_input = public_input.to_vec();
@@ -545,20 +570,22 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         let fourth_comms = &proof.commitments[3];
         fs_rng.absorb(&to_bytes![fourth_comms].unwrap());
 
+        let accumulator_comms = &vec![
+            previous_inner_sumcheck_acc.1.c.clone(),
+            previous_dlog_acc.1[0].g_final.clone(),
+        ];
+
         // Gather commitments in one vector.
-        let mut commitments: Vec<_> = first_comms
+        let commitments: Vec<_> = first_comms
             .into_iter()
             .chain(second_comms)
             .chain(third_comms)
             .chain(fourth_comms)
+            .chain(accumulator_comms)
             .cloned()
             .zip(IOP::<G1, G2>::polynomial_labels())
             .map(|(c, l)| LabeledCommitment::new(l, c))
             .collect();
-        commitments.push(LabeledCommitment::new(
-            "t_prime".to_string(),
-            previous_inner_sumcheck_acc.1.c.clone(),
-        ));
 
         // Check sumchecks equations
         let (query_set, verifier_state) = IOP::verifier_query_set(verifier_state)?;
@@ -574,50 +601,207 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             evaluations.insert(((q.0).0, q.1), *eval);
         }
 
-        let result = IOP::verify_sumchecks(&public_input, &evaluations, &verifier_state);
+        // Check that the polynomial behind the commitment of the `x` poly from the first round is
+        // indeed the (formatted) input polynomial.
+        // This is done by performing a MSM between the `lagrange_comms` and the (formatted) input
+        // poly and comparing the result with the aforementioned commitment.
+        let x_poly_comm = index_vk
+            .lagrange_comms
+            .iter()
+            .zip(IOP::<G1, G2>::format_public_input(&public_input).iter())
+            .map(|(g, x)| g[0] * x)
+            .reduce(|a, b| a + b)
+            .expect("public input should include at least one element");
+
+        if x_poly_comm != first_comms[0][0] {
+            end_timer!(iop_verification_time);
+            return Err(Error::Other(
+                "Wrong polynomial behind input poly commitment".to_string(),
+            ));
+        }
+
+        let result = IOP::verify_outer_sumcheck(&public_input, &evaluations, &verifier_state);
 
         if result.is_err() {
             end_timer!(iop_verification_time);
             return Err(Error::IOPError(result.unwrap_err()));
         }
 
-        let result = IOP::verify_inner_sumcheck_acc(&evaluations, &verifier_state);
+        let result = IOP::verify_inner_sumcheck_aggregation(&evaluations, &verifier_state);
 
         if result.is_err() {
             end_timer!(iop_verification_time);
             return Err(Error::IOPError(result.unwrap_err()));
+        }
+
+        fs_rng.absorb(&proof.evaluations);
+
+        // Perform succinct verification of opening proof
+        let result =
+            <PC<G1, D> as PolynomialCommitment<G1>>::succinct_multi_point_multi_poly_verify(
+                pc_vk,
+                &commitments,
+                &query_set,
+                &evaluations,
+                &proof.pc_proof,
+                &mut fs_rng,
+            );
+
+        if result.is_err() {
+            end_timer!(iop_verification_time);
+            return Err(Error::PolynomialCommitmentError(result.unwrap_err()));
+        }
+
+        let opening_result = result.unwrap();
+        if opening_result.is_none() {
+            return Err(Error::PolynomialCommitmentError(
+                poly_commit::Error::FailedSuccinctCheck,
+            ));
+        }
+
+        let dlog_verifier_state = opening_result.unwrap();
+
+        if next_dlog_acc.1 != previous_dlog_acc.0
+            || next_dlog_acc.0[0].xi_s != dlog_verifier_state.check_poly
+            || next_dlog_acc.0[0].g_final[0] != dlog_verifier_state.final_comm_key
+        {
+            end_timer!(iop_verification_time);
+            return Err(Error::IOPError(VerificationEquationFailed(
+                "New dlog accumulator is not valid".to_owned(),
+            )));
+        }
+
+        let mut eta = verifier_state.first_round_msg.unwrap().eta;
+        for (eta, eta_prime) in eta.iter_mut().zip(previous_inner_sumcheck_acc.1.eta.iter()) {
+            *eta += verifier_state.third_round_msg.unwrap().lambda * eta_prime;
+        }
+
+        if next_inner_sumcheck_acc.1 != previous_inner_sumcheck_acc.0
+            || next_inner_sumcheck_acc.0.alpha != verifier_state.third_round_msg.unwrap().gamma
+            || next_inner_sumcheck_acc.0.eta != eta
+            || next_inner_sumcheck_acc.0.c != fourth_comms[0]
+        {
+            end_timer!(iop_verification_time);
+            return Err(Error::IOPError(VerificationEquationFailed(
+                "New inner sumcheck accumulator is not valid".to_owned(),
+            )));
         }
 
         end_timer!(iop_verification_time);
 
-        Ok((query_set, evaluations, commitments, fs_rng))
+        Ok(())
     }
 
-    /// The remaining check of verifying the batch evaluation proof.
-    pub fn verify_opening<'a>(
-        pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        proof: &Proof<G1, G2, D>,
-        labeled_comms: Vec<LabeledCommitment<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>>,
-        query_set: QuerySet<'a, G1::ScalarField>,
-        evaluations: Evaluations<'a, G1::ScalarField>,
-        fs_rng: &mut <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle,
-    ) -> Result<bool, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
-        let check_time = start_timer!(|| "Check opening proof");
+    pub fn hard_verify(
+        pc_vk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
+        pc_vk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::VerifierKey,
+        index_vk_g1: &VerifierKey<G1, G2, D>,
+        index_vk_g2: &VerifierKey<G2, G1, D>,
+        inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
+        dlog_acc: &DualDLogItem<G1, G2>,
+    ) -> Result<
+        Option<(
+            VerificationResult<G1::ScalarField>,
+            VerificationResult<G2::ScalarField>,
+        )>,
+        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+    > {
+        let check_dlog_g1 = Self::check_dlog_item(pc_vk_g1, &dlog_acc.0[0])?;
+        let check_inner_sumcheck_g1 =
+            Self::check_inner_sumcheck_item(pc_vk_g1, index_vk_g1, &inner_sumcheck_acc.0)?;
+        if check_dlog_g1.is_none() || check_inner_sumcheck_g1.is_none() {
+            return Ok(None);
+        }
+        let verification_result_g1 = VerificationResult {
+            bullet_poly: check_dlog_g1.unwrap(),
+            t_acc_poly: check_inner_sumcheck_g1.unwrap(),
+        };
 
-        fs_rng.absorb(&proof.evaluations);
+        let check_dlog_g2 = Self::check_dlog_item(pc_vk_g2, &dlog_acc.1[0])?;
+        let check_inner_sumcheck_g2 =
+            Self::check_inner_sumcheck_item(pc_vk_g2, index_vk_g2, &inner_sumcheck_acc.1)?;
+        if check_dlog_g2.is_none() || check_inner_sumcheck_g2.is_none() {
+            return Ok(None);
+        }
+        let verification_result_g2 = VerificationResult {
+            bullet_poly: check_dlog_g2.unwrap(),
+            t_acc_poly: check_inner_sumcheck_g2.unwrap(),
+        };
 
-        let result = PC::multi_point_multi_poly_verify(
-            pc_vk,
-            &labeled_comms,
-            &query_set,
-            &evaluations,
-            &proof.pc_proof,
-            fs_rng,
-        )
-        .map_err(Error::from_pc_err);
+        Ok(Some((verification_result_g1, verification_result_g2)))
+    }
 
-        end_timer!(check_time);
+    fn check_dlog_item<G: Curve>(
+        pc_vk: &<PC<G, D> as PolynomialCommitment<G>>::VerifierKey,
+        dlog_item: &DLogItem<G>,
+    ) -> Result<
+        Option<DensePolynomial<G::ScalarField>>,
+        Error<<PC<G, D> as PolynomialCommitment<G>>::Error>,
+    > {
+        let time = start_timer!(|| "Checking dlog accumulator item");
+        let verifier_state = poly_commit::ipa_pc::VerifierState {
+            check_poly: dlog_item.xi_s.clone(),
+            final_comm_key: dlog_item
+                .g_final
+                .get_vec()
+                .get(0)
+                .unwrap_or(&G::zero())
+                .clone(),
+        };
+        let res = <PC<G, D> as PolynomialCommitment<G>>::hard_verify(pc_vk, &verifier_state)
+            .map_err(Error::from_pc_err)?
+            .map(|verifier_output| verifier_output.bullet_poly);
 
-        result
+        end_timer!(time);
+
+        Ok(res)
+    }
+
+    fn check_inner_sumcheck_item<Ga: Curve, Gb: Curve>(
+        pc_vk: &<PC<Ga, D> as PolynomialCommitment<Ga>>::VerifierKey,
+        index_vk: &VerifierKey<Ga, Gb, D>,
+        inner_sumcheck_item: &SumcheckItem<Ga>,
+    ) -> Result<
+        Option<DensePolynomial<Ga::ScalarField>>,
+        Error<<PC<Ga, D> as PolynomialCommitment<Ga>>::Error>,
+    > {
+        let time = start_timer!(|| "Checking inner sumcheck accumulator item");
+        let num_inputs = index_vk.index.index_info.num_inputs;
+        let num_witness = index_vk.index.index_info.num_witness;
+        let num_constraints = index_vk.index.index_info.num_constraints;
+
+        let domain_x = get_best_evaluation_domain::<Ga::ScalarField>(num_inputs).unwrap();
+        let domain_h = get_best_evaluation_domain::<Ga::ScalarField>(std::cmp::max(
+            num_constraints,
+            num_inputs + num_witness,
+        ))
+        .unwrap();
+
+        let alpha = inner_sumcheck_item.alpha;
+        let l_x_alpha_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha)?;
+
+        let t_evals_on_h = IOP::<Ga, Gb>::calculate_t(
+            vec![&index_vk.index.a, &index_vk.index.b, &index_vk.index.c].into_iter(),
+            &inner_sumcheck_item.eta,
+            &domain_x,
+            domain_h.clone(),
+            &l_x_alpha_evals_on_h,
+        )?;
+        let t_poly =
+            EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), domain_h.clone())
+                .interpolate();
+
+        let t_comm = <PC<Ga, D> as PolynomialCommitment<Ga>>::commit(&pc_vk, &t_poly, false, None)
+            .map_err(Error::from_pc_err)?;
+
+        if t_comm.0 != inner_sumcheck_item.c {
+            end_timer!(time);
+            return Err(Error::IOPError(VerificationEquationFailed(
+                "Hard check of inner sumcheck accumulator failed".to_owned(),
+            )));
+        }
+
+        end_timer!(time);
+        Ok(Some(t_poly))
     }
 }

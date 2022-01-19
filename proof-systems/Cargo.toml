@@ -28,12 +28,12 @@ r1cs-core = { path = "../r1cs/core" }
 bench-utils = { path = "../bench-utils" }
 
 marlin = { path = "./src/darlin/marlin", optional = true }
-t-dlog-acc-marlin = { path = "./src/darlin/t_dlog_acc_marlin", optional = true }
 poly-commit = { path = "./src/darlin/poly-commit", optional = true }
 
 r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
 
 rand = { version = "0.8.4" }
+rand_core = { version = "0.6.3" }
 rayon = { version = "1" }
 smallvec = { version = "1.6.1" }
 byteorder = { version = "1" }

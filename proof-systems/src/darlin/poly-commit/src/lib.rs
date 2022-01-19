@@ -1024,7 +1024,7 @@ pub fn evaluate_query_set<'a, F: Field>(
     for (label, (_, point)) in query_set {
         let poly = polys
             .get(label)
-            .expect("polynomial in evaluated lc is not found");
+            .expect(format!("polynomial `{}` in evaluated lc is not found", label).as_str());
         let eval = poly.evaluate(*point);
         evaluations.insert((label.clone(), *point), eval);
     }
@@ -1039,10 +1039,9 @@ pub fn evaluate_query_set_to_vec<'a, F: Field>(
     let polys = BTreeMap::from_iter(polys.into_iter().map(|p| (p.label(), p)));
     let mut v = Vec::new();
     for (label, (point_label, point)) in query_set {
-        let poly = polys.get(label).expect(&*format!(
-            "polynomial `{}` in evaluated lc is not found",
-            label
-        ));
+        let poly = polys
+            .get(label)
+            .expect(format!("polynomial `{}` in evaluated lc is not found", label).as_str());
         let eval = poly.evaluate(*point);
         v.push(((label.clone(), point_label.clone()), eval));
     }

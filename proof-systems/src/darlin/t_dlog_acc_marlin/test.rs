@@ -52,17 +52,20 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for Circuit<F> {
 
 mod t_dlog_acc_marlin {
     use super::*;
-    use crate::{DualSumcheckItem, Marlin, SumcheckItem, IOP, PC};
 
-    use crate::error::Error as MarlinError;
-    use crate::iop::Error as IOPError;
+    use crate::darlin::accumulators::dlog::DualDLogItem;
+    use crate::darlin::data_structures::FinalDarlinDeferredData;
+    use crate::darlin::t_dlog_acc_marlin::data_structures::{DualSumcheckItem, PC};
+    use crate::darlin::t_dlog_acc_marlin::Marlin;
     use algebra::{
         curves::tweedle::dee::DeeJacobian, curves::tweedle::dum::DumJacobian,
-        serialize::test_canonical_serialize_deserialize, Curve, GroupVec, SemanticallyValid,
-        UniformRand,
+        serialize::test_canonical_serialize_deserialize, Curve, Group, SemanticallyValid,
+        ToConstraintField, UniformRand,
     };
     use blake2::Blake2s;
     use digest::Digest;
+    use marlin::iop::Error as IOPError;
+    use marlin::Error as MarlinError;
     use poly_commit::{
         ipa_pc::Parameters as IPAParameters, PCCommitterKey, PCParameters, PCVerifierKey,
         PolynomialCommitment,
@@ -83,19 +86,43 @@ mod t_dlog_acc_marlin {
         }
     }
 
-    fn test_circuit<G1: Curve, G2: Curve, D: Digest + 'static>(
+    fn test_circuit<G1, G2, D>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
-    ) {
+    ) where
+        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+            + ToConstraintField<<G2 as Group>::ScalarField>,
+        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+            + ToConstraintField<<G1 as Group>::ScalarField>,
+        D: Digest + 'static,
+    {
         let rng = &mut thread_rng();
 
-        let universal_srs =
+        let universal_srs_g1 =
             <PC<G1, D> as PolynomialCommitment<G1>>::setup(num_constraints - 1).unwrap();
-        let (pc_pk, pc_vk) = universal_srs.trim((num_constraints - 1) / 2).unwrap();
-        assert_eq!(PCCommitterKey::get_hash(&pc_pk), universal_srs.get_hash());
-        assert_eq!(PCVerifierKey::get_hash(&pc_vk), universal_srs.get_hash());
+        let (pc_pk_g1, pc_vk_g1) = universal_srs_g1.trim((num_constraints - 1) / 2).unwrap();
+        assert_eq!(
+            PCCommitterKey::get_hash(&pc_pk_g1),
+            universal_srs_g1.get_hash()
+        );
+        assert_eq!(
+            PCVerifierKey::get_hash(&pc_vk_g1),
+            universal_srs_g1.get_hash()
+        );
+
+        let universal_srs_g2 =
+            <PC<G2, D> as PolynomialCommitment<G2>>::setup(num_constraints - 1).unwrap();
+        let (pc_pk_g2, pc_vk_g2) = universal_srs_g2.trim((num_constraints - 1) / 2).unwrap();
+        assert_eq!(
+            PCCommitterKey::get_hash(&pc_pk_g2),
+            universal_srs_g2.get_hash()
+        );
+        assert_eq!(
+            PCVerifierKey::get_hash(&pc_vk_g2),
+            universal_srs_g2.get_hash()
+        );
 
         // Fake parameters for opening proof fail test
         let mut universal_srs_fake = <PC<G1, D> as PolynomialCommitment<G1>>::setup_from_seed(
@@ -104,7 +131,7 @@ mod t_dlog_acc_marlin {
         )
         .unwrap();
 
-        universal_srs_fake.copy_params(&universal_srs);
+        universal_srs_fake.copy_params(&universal_srs_g1);
         let (pc_pk_fake, _) = universal_srs_fake.trim((num_constraints - 1) / 2).unwrap();
 
         for _ in 0..num_samples {
@@ -115,7 +142,7 @@ mod t_dlog_acc_marlin {
             let mut d = c;
             d.mul_assign(&b);
 
-            let circ = Circuit {
+            let circ_g1 = Circuit {
                 a: Some(a),
                 b: Some(b),
                 c: Some(c),
@@ -123,51 +150,93 @@ mod t_dlog_acc_marlin {
                 num_constraints,
                 num_variables,
             };
-            let (index_pk, index_vk) =
-                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
 
-            assert!(index_pk.is_valid());
-            assert!(index_vk.is_valid());
+            let a_g2 = G2::ScalarField::rand(rng);
+            let b_g2 = G2::ScalarField::rand(rng);
+            let mut c_g2 = a_g2;
+            c_g2.mul_assign(&b_g2);
+            let mut d_g2 = c_g2;
+            d_g2.mul_assign(&b_g2);
+
+            let circ_g2 = Circuit {
+                a: Some(a_g2),
+                b: Some(b_g2),
+                c: Some(c_g2),
+                d: Some(d_g2),
+                num_constraints,
+                num_variables,
+            };
+
+            let (index_pk_g1, index_vk_g1) =
+                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ_g1).unwrap();
+            let (index_pk_g2, index_vk_g2) =
+                Marlin::<G2, G1, D>::circuit_specific_setup(&pc_pk_g2, circ_g2).unwrap();
+
+            assert!(index_pk_g1.is_valid());
+            assert!(index_vk_g1.is_valid());
 
             println!("Called index");
 
-            test_canonical_serialize_deserialize(true, &index_pk);
-            test_canonical_serialize_deserialize(true, &index_vk);
+            test_canonical_serialize_deserialize(true, &index_pk_g1);
+            test_canonical_serialize_deserialize(true, &index_vk_g1);
 
-            let mut previous_inner_sumcheck_acc = DualSumcheckItem {
-                0: SumcheckItem {
-                    zeta: G2::ScalarField::rand(rng),
-                    eta: G2::ScalarField::rand(rng),
-                    c: GroupVec::new(vec![G2::rand(rng)]),
-                },
-                1: SumcheckItem {
-                    zeta: G1::ScalarField::rand(rng),
-                    eta: G1::ScalarField::rand(rng),
-                    c: GroupVec::new(vec![G1::rand(rng)]),
-                },
-            };
-            let prover_init_state =
-                IOP::prover_init(&index_pk.index_vk.index, circ, &previous_inner_sumcheck_acc)
-                    .unwrap();
-            let (acc_oracles, _) = IOP::prover_compute_acc_polys(prover_init_state).unwrap();
-            let t_prime_poly = acc_oracles.t_prime;
-            let (t_prime_poly_comm, _) =
-                <PC<G1, D> as PolynomialCommitment<G1>>::commit(&pc_pk, &t_prime_poly, false, None)
-                    .unwrap();
-            previous_inner_sumcheck_acc.1.c = t_prime_poly_comm;
+            let deferred_darlin = FinalDarlinDeferredData::<G1, G2>::generate_random::<_, D>(
+                rng, &pc_pk_g1, &pc_pk_g2,
+            );
+
+            let starting_dlog_acc = DualDLogItem(
+                vec![deferred_darlin.pre_previous_acc],
+                vec![deferred_darlin.previous_acc],
+            );
+
+            let starting_inner_sumcheck_acc = DualSumcheckItem::<G1, G2>::generate_random::<D>(
+                rng,
+                &index_pk_g1.index_vk.index,
+                &index_pk_g2.index_vk.index,
+                &pc_pk_g1,
+                &pc_pk_g2,
+            );
+
+            let (verification_g1, verification_g2) = Marlin::<G1, G2, D>::hard_verify(
+                &pc_vk_g1,
+                &pc_vk_g2,
+                &index_vk_g1,
+                &index_vk_g2,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
+            )
+            .unwrap()
+            .unwrap();
+
+            let proof = Marlin::<G2, G1, D>::prove(
+                &index_pk_g2,
+                &pc_pk_g2,
+                circ_g2,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
+                &verification_g2.t_acc_poly,
+                &verification_g2.bullet_poly,
+                zk,
+                if zk { Some(rng) } else { None },
+            );
+
+            let (_, previous_inner_sumcheck_acc, previous_dlog_acc) = proof.unwrap();
 
             let proof = Marlin::<G1, G2, D>::prove(
-                &index_pk,
-                &pc_pk,
-                circ,
+                &index_pk_g1,
+                &pc_pk_g1,
+                circ_g1,
                 &previous_inner_sumcheck_acc,
+                &previous_dlog_acc,
+                &verification_g1.t_acc_poly,
+                &verification_g1.bullet_poly,
                 zk,
                 if zk { Some(rng) } else { None },
             );
 
             assert!(proof.is_ok());
 
-            let (proof, new_inner_sumcheck_acc) = proof.unwrap();
+            let (proof, new_inner_sumcheck_acc, new_dlog_acc) = proof.unwrap();
 
             assert!(proof.is_valid());
 
@@ -177,96 +246,105 @@ mod t_dlog_acc_marlin {
 
             // Success verification
             assert!(Marlin::<G1, G2, D>::verify(
-                &index_vk,
-                &pc_vk,
+                &index_vk_g1,
+                &index_vk_g2,
+                &pc_vk_g1,
+                &pc_vk_g2,
                 &[c, d],
                 &previous_inner_sumcheck_acc,
+                &previous_dlog_acc,
                 &new_inner_sumcheck_acc,
+                &new_dlog_acc,
                 &proof
             )
             .unwrap());
 
             // Fail verification
             assert!(!Marlin::<G1, G2, D>::verify(
-                &index_vk,
-                &pc_vk,
+                &index_vk_g1,
+                &index_vk_g2,
+                &pc_vk_g1,
+                &pc_vk_g2,
                 &[a, a],
                 &previous_inner_sumcheck_acc,
+                &previous_dlog_acc,
                 &new_inner_sumcheck_acc,
+                &new_dlog_acc,
                 &proof
             )
             .unwrap());
 
-            // Use a bigger vk derived from the same universal params and check verification is successful
-            let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
-            assert_eq!(PCVerifierKey::get_hash(&pc_vk), universal_srs.get_hash());
-            assert!(Marlin::<G1, G2, D>::verify(
-                &index_vk,
-                &pc_vk,
-                &[c, d],
-                &previous_inner_sumcheck_acc,
-                &new_inner_sumcheck_acc,
-                &proof
-            )
-            .unwrap());
-
-            // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
-            let universal_srs =
-                <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
-            let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
-            assert_ne!(PCVerifierKey::get_hash(&pc_pk), universal_srs.get_hash());
-            assert!(!Marlin::<G1, G2, D>::verify(
-                &index_vk,
-                &pc_vk,
-                &[c, d],
-                &previous_inner_sumcheck_acc,
-                &new_inner_sumcheck_acc,
-                &proof
-            )
-            .unwrap());
-
-            // Use a vk of the same size of the original one, but derived from bigger universal params
-            // and check that verification fails (absorbed hash won't be the same)
-            let universal_srs =
-                <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
-            let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
-            assert_ne!(PCVerifierKey::get_hash(&pc_pk), universal_srs.get_hash());
-            assert!(!Marlin::<G1, G2, D>::verify(
-                &index_vk,
-                &pc_vk,
-                &[c, d],
-                &previous_inner_sumcheck_acc,
-                &new_inner_sumcheck_acc,
-                &proof
-            )
-            .unwrap());
-
-            // Fake indexes to pass the IOP part
-            let (index_pk_fake, index_vk_fake) =
-                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
-
-            let (proof_fake, new_inner_sumcheck_acc) = Marlin::<G1, G2, D>::prove(
-                &index_pk_fake,
-                &pc_pk_fake,
-                circ,
-                &previous_inner_sumcheck_acc,
-                zk,
-                if zk { Some(rng) } else { None },
-            )
-            .unwrap();
-
-            // Fail verification using fake proof at the level of opening proof
-            println!("\nShould not verify");
-            assert!(!Marlin::<G1, G2, D>::verify(
-                &index_vk_fake,
-                &pc_vk,
-                &[c, d],
-                &previous_inner_sumcheck_acc,
-                &new_inner_sumcheck_acc,
-                &proof_fake
-            )
-            .unwrap());
-
+            // // Use a bigger vk derived from the same universal params and check verification is successful
+            // let (_, pc_vk) = universal_srs_g1.trim(num_constraints - 1).unwrap();
+            // assert_eq!(PCVerifierKey::get_hash(&pc_vk), universal_srs_g1.get_hash());
+            // assert!(Marlin::<G1, G2, D>::verify(
+            //     &index_vk,
+            //     &pc_vk,
+            //     &[c, d],
+            //     &previous_inner_sumcheck_acc,
+            //     &new_inner_sumcheck_acc,
+            //     &proof
+            // )
+            // .unwrap());
+            //
+            // // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
+            // let universal_srs =
+            //     <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
+            // let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
+            // assert_ne!(PCVerifierKey::get_hash(&pc_pk_g1), universal_srs.get_hash());
+            // assert!(!Marlin::<G1, G2, D>::verify(
+            //     &index_vk,
+            //     &pc_vk,
+            //     &[c, d],
+            //     &previous_inner_sumcheck_acc,
+            //     &new_inner_sumcheck_acc,
+            //     &proof
+            // )
+            // .unwrap());
+            //
+            // // Use a vk of the same size of the original one, but derived from bigger universal params
+            // // and check that verification fails (absorbed hash won't be the same)
+            // let universal_srs =
+            //     <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
+            // let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
+            // assert_ne!(PCVerifierKey::get_hash(&pc_pk_g1), universal_srs.get_hash());
+            // assert!(!Marlin::<G1, G2, D>::verify(
+            //     &index_vk,
+            //     &pc_vk,
+            //     &[c, d],
+            //     &previous_inner_sumcheck_acc,
+            //     &new_inner_sumcheck_acc,
+            //     &proof
+            // )
+            // .unwrap());
+            //
+            // // Fake indexes to pass the IOP part
+            // let (index_pk_fake, index_vk_fake) =
+            //     Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ).unwrap();
+            //
+            // let (proof_fake, new_inner_sumcheck_acc, new_dlog_acc) = Marlin::<G1, G2, D>::prove(
+            //     &index_pk_fake,
+            //     &pc_pk_fake,
+            //     circ,
+            //     &previous_inner_sumcheck_acc,
+            //     &previous_dlog_acc,
+            //     zk,
+            //     if zk { Some(rng) } else { None },
+            // )
+            // .unwrap();
+            //
+            // // Fail verification using fake proof at the level of opening proof
+            // println!("\nShould not verify");
+            // assert!(!Marlin::<G1, G2, D>::verify(
+            //     &index_vk_fake,
+            //     &pc_vk,
+            //     &[c, d],
+            //     &previous_inner_sumcheck_acc,
+            //     &new_inner_sumcheck_acc,
+            //     &proof_fake
+            // )
+            // .unwrap());
+            //
             // Check correct error assertion for the case when
             // witness assignment doesn't satisfy the circuit
             let c = G1::ScalarField::rand(rng);
@@ -281,7 +359,7 @@ mod t_dlog_acc_marlin {
                 num_variables,
             };
             let (index_pk, index_vk) =
-                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
+                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
@@ -290,9 +368,12 @@ mod t_dlog_acc_marlin {
 
             let proof = Marlin::<G1, G2, D>::prove(
                 &index_pk,
-                &pc_pk,
+                &pc_pk_g1,
                 circ,
                 &previous_inner_sumcheck_acc,
+                &previous_dlog_acc,
+                &verification_g1.t_acc_poly,
+                &verification_g1.bullet_poly,
                 zk,
                 if zk { Some(rng) } else { None },
             );
@@ -387,8 +468,8 @@ mod t_dlog_acc_marlin {
         );
         println!("Marlin No ZK passed");
 
-        // test_circuit::<DumJacobian, DeeJacobian, MultiPC>(25, num_constraints, num_variables, true);
-        // println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, DeeJacobian, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin ZK passed");
     }
 
     #[test]

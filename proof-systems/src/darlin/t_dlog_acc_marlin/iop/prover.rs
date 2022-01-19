@@ -1,17 +1,21 @@
 #![allow(non_snake_case)]
 
-use crate::iop::indexer::*;
-use crate::iop::verifier::*;
-use crate::iop::*;
-
-use crate::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
-use crate::{DualSumcheckItem, ToString, Vec};
-use algebra::{
-    get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
+use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
+use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
+use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
+    VerifierFirstMsg, VerifierSecondMsg, VerifierThirdMsg,
 };
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use algebra::{
+    get_best_evaluation_domain, Curve, EvaluationDomain,
+    Evaluations as EvaluationsOnDomain, Field, Group,
+};
+use marlin::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
+use marlin::iop::{BoundaryPolynomial, Error, LagrangeKernel};
 use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand_core::RngCore;
+use rayon::prelude::*;
 
 /// State for the IOP prover.
 pub struct ProverState<'a, G1: Curve, G2: Curve> {
@@ -61,18 +65,22 @@ impl<'a, G1: Curve, G2: Curve> ProverState<'a, G1, G2> {
 /// The recomputed polynomials represented by the accumulators.
 pub struct ProverAccumulatorOracles<F: Field> {
     /// The inner sumcheck accumulator polynomial.
-    pub t_prime: LabeledPolynomial<F>,
+    pub prev_t_acc_poly: LabeledPolynomial<F>,
+    /// The bullet polynomial of the previous dlog accumulator.
+    pub prev_bullet_poly: LabeledPolynomial<F>,
 }
 
 impl<F: Field> ProverAccumulatorOracles<F> {
     /// Iterate over the accumulator polynomials.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.t_prime].into_iter()
+        vec![&self.prev_t_acc_poly, &self.prev_bullet_poly].into_iter()
     }
 }
 
 /// The first set of prover oracles.
 pub struct ProverFirstOracles<F: Field> {
+    /// The public input polynomial `x`
+    pub x: LabeledPolynomial<F>,
     /// The randomized witness polynomial `w`.
     pub w: LabeledPolynomial<F>,
     /// The randomized y_A(X)= Sum_{z in H} A(X,z)*y(z)
@@ -84,7 +92,7 @@ pub struct ProverFirstOracles<F: Field> {
 impl<F: Field> ProverFirstOracles<F> {
     /// Iterate over the polynomials output by the prover in the first round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.w, &self.y_a, &self.y_b].into_iter()
+        vec![&self.x, &self.w, &self.y_a, &self.y_b].into_iter()
     }
 }
 
@@ -108,28 +116,28 @@ impl<F: Field> ProverSecondOracles<F> {
 /// The third set of prover oracles.
 pub struct ProverThirdOracles<F: Field> {
     /// The current bridging polynomial
-    pub t_eta: LabeledPolynomial<F>,
+    pub curr_bridging_poly: LabeledPolynomial<F>,
     /// The previous bridging polynomial
-    pub t_prime: LabeledPolynomial<F>,
+    pub prev_bridging_poly: LabeledPolynomial<F>,
 }
 
 impl<F: Field> ProverThirdOracles<F> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.t_eta, &self.t_prime].into_iter()
+        vec![&self.curr_bridging_poly, &self.prev_bridging_poly].into_iter()
     }
 }
 
 /// The fourth set of prover oracles.
 pub struct ProverFourthOracles<F: Field> {
     /// The new circuit polynomial
-    pub t_second: LabeledPolynomial<F>,
+    pub curr_t_acc_poly: LabeledPolynomial<F>,
 }
 
 impl<F: Field> ProverFourthOracles<F> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.t_second].into_iter()
+        vec![&self.curr_t_acc_poly].into_iter()
     }
 }
 
@@ -189,39 +197,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             domain_h,
             domain_x,
         })
-    }
-
-    /// Compute the polynomials associated to the accumulators.
-    pub fn prover_compute_acc_polys<'a>(
-        state: ProverState<'a, G1, G2>,
-    ) -> Result<
-        (
-            ProverAccumulatorOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2>,
-        ),
-        Error,
-    > {
-        let round_time = start_timer!(|| "IOP::Prover::RecomputeAccumulatorPolys");
-        let alpha = state.inner_sumcheck_acc.1.zeta;
-        let eta = state.inner_sumcheck_acc.1.eta;
-        let l_x_alpha_evals_on_h = state.domain_h.domain_eval_lagrange_kernel(alpha)?;
-
-        let t_prime_evals_on_h = Self::calculate_t(
-            vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &[G1::ScalarField::one(), eta, eta * eta],
-            &state.domain_x,
-            state.domain_h.clone(),
-            &l_x_alpha_evals_on_h,
-        )?;
-        let t_prime = EvaluationsOnDomain::from_vec_and_domain(
-            t_prime_evals_on_h.clone(),
-            state.domain_h.clone(),
-        )
-        .interpolate();
-        let t_prime = LabeledPolynomial::new("t_prime".to_string(), t_prime, false);
-        let oracles = ProverAccumulatorOracles { t_prime };
-        end_timer!(round_time);
-        Ok((oracles, state))
     }
 
     /// Prover first round of the algebraic oracle proof, the initial round in [HGB].
@@ -347,43 +322,18 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         };
         end_timer!(y_b_poly_time);
 
+        assert!(x_poly.degree() <= domain_x.size() - 1);
         assert!(w_poly.degree() <= domain_h.size() - domain_x.size() + zk as usize - 1);
         assert!(y_a_poly.degree() <= domain_h.size() + zk as usize - 1);
         assert!(y_b_poly.degree() <= domain_h.size() + zk as usize - 1);
 
-        // Compute the circuit polynomial from the previous accumulator
-        let l_x_alpha_prime_evals_time = start_timer!(|| "Compute l_x_alpha_prime evals");
-        let alpha_prime = state.inner_sumcheck_acc.1.zeta;
-        let l_x_alpha_prime_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha_prime)?;
-        end_timer!(l_x_alpha_prime_evals_time);
-
-        let t_poly_time = start_timer!(|| "Compute t poly");
-        let eta = state.inner_sumcheck_acc.1.eta;
-        let eta_a = G1::ScalarField::one();
-        let eta_b = eta;
-        let eta_c = eta * eta;
-        // TODO: why not keep the domain evals of T also?
-        // It might be more efficient to compute the domain evals of the outer_poly
-        // by using the domains evals of its components (which are already present anyway)
-        let t_evals_on_h = Self::calculate_t(
-            vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &[eta_a, eta_b, eta_c],
-            &state.domain_x,
-            domain_h.clone(),
-            &l_x_alpha_prime_evals_on_h,
-        )?;
-        let t_poly =
-            EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), domain_h.clone())
-                .interpolate();
-        end_timer!(t_poly_time);
-
-        assert!(t_poly.degree() < domain_h.size());
-
+        let x = LabeledPolynomial::new("x".to_string(), x_poly, false);
         let w = LabeledPolynomial::new("w".to_string(), w_poly, zk);
         let y_a = LabeledPolynomial::new("y_a".to_string(), y_a_poly, zk);
         let y_b = LabeledPolynomial::new("y_b".to_string(), y_b_poly, zk);
 
         let oracles = ProverFirstOracles {
+            x: x.clone(),
             w: w.clone(),
             y_a: y_a.clone(),
             y_b: y_b.clone(),
@@ -472,10 +422,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let domain_h = &state.domain_h;
 
         let alpha = ver_message.alpha;
-        let (eta_a, eta_b, eta_c) = ver_message.get_etas();
-        // In the following we exploit the fact that eta_a == 1 to avoid unnecessary
-        // multiplications.
-        assert_eq!(eta_a, G1::ScalarField::one());
+        let eta = &ver_message.eta;
 
         let summed_y_m_poly_time = start_timer!(|| "Compute y_m poly");
         let (y_a_poly, y_b_poly) = match state.my_polys {
@@ -483,27 +430,24 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             None => return Err(Error::Other("mz_polys are empty".to_owned())),
         };
 
-        // Performed via FFT using a domain of size = deg(y_a) + deg(y_b) + 1
-        // TODO: check if the `*` is really doing FFT here, and if so
-        // why we do the FFT product for the outer_poly below manually
         let y_c_poly = y_a_poly.polynomial() * y_b_poly.polynomial();
 
         let mut summed_y_m_coeffs = y_c_poly.coeffs;
         // Note: Can't combine these two loops, because y_c_poly has 2x the degree
         // of y_a_poly and y_b_poly, so the second loop gets truncated due to
         // the `zip`s.
-        summed_y_m_coeffs.par_iter_mut().for_each(|c| *c *= &eta_c);
+        summed_y_m_coeffs.par_iter_mut().for_each(|c| *c *= eta[2]);
 
         // We cannot combine y_a and y_b iterators too, because in some exceptional
         // cases with no zk, they may differ in degree.
         summed_y_m_coeffs
             .par_iter_mut()
             .zip(&y_a_poly.polynomial().coeffs)
-            .for_each(|(c, a)| *c += a);
+            .for_each(|(c, a)| *c += eta[0] * a);
         summed_y_m_coeffs
             .par_iter_mut()
             .zip(&y_b_poly.polynomial().coeffs)
-            .for_each(|(c, b)| *c += &(eta_b * b));
+            .for_each(|(c, b)| *c += eta[1] * b);
 
         let summed_y_m_poly = Polynomial::from_coefficients_vec(summed_y_m_coeffs);
         end_timer!(summed_y_m_poly_time);
@@ -523,7 +467,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         // by using the domains evals of its components (which are already present anyway)
         let t_evals_on_h = Self::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &[eta_a, eta_b, eta_c],
+            &eta,
             &state.domain_x,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
@@ -696,7 +640,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         };
 
         state.w_poly = None;
-        state.verifier_first_msg = Some(*ver_message);
+        state.verifier_first_msg = Some(ver_message.clone());
         end_timer!(round_time);
 
         Ok((oracles, state))
@@ -715,16 +659,12 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     ) -> Result<(ProverThirdOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::ThirdRound");
 
-        let ProverState {
-            index,
-            verifier_first_msg,
-            ..
-        } = state;
+        let ProverState { index, .. } = state;
 
-        let verifier_first_msg = verifier_first_msg.expect(
+        let verifier_first_msg = state.verifier_first_msg.as_ref().expect(
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
-        let (eta_a, eta_b, eta_c) = verifier_first_msg.get_etas();
+        let eta = &verifier_first_msg.eta;
 
         let beta = ver_message.beta;
 
@@ -749,7 +689,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             .iter()
             .zip(&m_b)
             .zip(&m_c)
-            .map(|((a, b), c)| eta_a * a + eta_b * b + eta_c * c)
+            .map(|((a, b), c)| eta[0] * a + eta[1] * b + eta[2] * c)
             .collect();
         let t_eta_poly =
             EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), state.domain_h.clone())
@@ -758,16 +698,13 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         let t_prime_poly_time = start_timer!(|| "Compute t_prime_poly");
 
-        let eta = state.inner_sumcheck_acc.1.eta;
-        let eta_a = G1::ScalarField::one();
-        let eta_b = eta;
-        let eta_c = eta * eta;
+        let eta = &state.inner_sumcheck_acc.1.eta;
 
         let t_evals_on_h: Vec<_> = m_a
             .iter()
             .zip(&m_b)
             .zip(&m_c)
-            .map(|((a, b), c)| eta_a * a + eta_b * b + eta_c * c)
+            .map(|((a, b), c)| eta[0] * a + eta[1] * b + eta[2] * c)
             .collect();
         let t_prime_poly =
             EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), state.domain_h.clone())
@@ -775,8 +712,16 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         end_timer!(t_prime_poly_time);
 
         let oracles = ProverThirdOracles {
-            t_eta: LabeledPolynomial::new("t_eta".into(), t_eta_poly, false),
-            t_prime: LabeledPolynomial::new("t_eta_prime".into(), t_prime_poly, false),
+            curr_bridging_poly: LabeledPolynomial::new(
+                "curr_bridging_poly".into(),
+                t_eta_poly,
+                false,
+            ),
+            prev_bridging_poly: LabeledPolynomial::new(
+                "prev_bridging_poly".into(),
+                t_prime_poly,
+                false,
+            ),
         };
 
         end_timer!(round_time);
@@ -802,55 +747,34 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         Error,
     > {
         let round_time = start_timer!(|| "IOP::Prover::FourthRound");
-
-        let ProverState {
-            verifier_first_msg, ..
-        } = state;
-
-        let verifier_first_msg = verifier_first_msg.expect(
+        let verifier_first_msg = state.verifier_first_msg.as_ref().expect(
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
-        let (eta_a, eta_b, eta_c) = verifier_first_msg.get_etas();
-
+        let eta = &verifier_first_msg.eta;
+        let eta_prime = &state.inner_sumcheck_acc.1.eta;
+        let lambda = ver_message.lambda;
         let gamma = ver_message.gamma;
 
-        let l_x_gamma_evals_time = start_timer!(|| "Compute l_x_beta evals");
+        let eta_second: Vec<_> = eta
+            .iter()
+            .zip(eta_prime.iter())
+            .map(|(&eta, &eta_prime)| eta + lambda * eta_prime)
+            .collect();
+
+        let l_x_gamma_evals_time = start_timer!(|| "Compute l_x_gamma evals");
         let l_x_gamma_evals_on_h = state.domain_h.domain_eval_lagrange_kernel(gamma)?;
         end_timer!(l_x_gamma_evals_time);
 
-        let t_eta_poly_time = start_timer!(|| "Compute t_eta_poly evaluations");
+        let t_second_poly_time = start_timer!(|| "Compute t_second_poly evaluations");
 
-        let t_eta_evals_on_h = Self::calculate_t(
+        let t_second_evals_on_h = Self::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &[eta_a, eta_b, eta_c],
+            &eta_second,
             &state.domain_x,
             state.domain_h.clone(),
             &l_x_gamma_evals_on_h,
         )?;
-        end_timer!(t_eta_poly_time);
 
-        let t_prime_poly_time = start_timer!(|| "Compute t_prime_poly evauations");
-
-        let eta = state.inner_sumcheck_acc.1.eta;
-        let eta_a = G1::ScalarField::one();
-        let eta_b = eta;
-        let eta_c = eta * eta;
-
-        let t_prime_evals_on_h = Self::calculate_t(
-            vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &[eta_a, eta_b, eta_c],
-            &state.domain_x,
-            state.domain_h.clone(),
-            &l_x_gamma_evals_on_h,
-        )?;
-        end_timer!(t_prime_poly_time);
-
-        let t_second_poly_time = start_timer!(|| "Compute t_second_poly");
-        let t_second_evals_on_h: Vec<_> = t_eta_evals_on_h
-            .iter()
-            .zip(&t_prime_evals_on_h)
-            .map(|(&t_eta, t_prime)| t_eta + ver_message.lambda * t_prime)
-            .collect();
         let t_second_poly = EvaluationsOnDomain::from_vec_and_domain(
             t_second_evals_on_h.clone(),
             state.domain_h.clone(),
@@ -859,7 +783,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         end_timer!(t_second_poly_time);
 
         let oracles = ProverFourthOracles {
-            t_second: LabeledPolynomial::new("t_second".into(), t_second_poly, false),
+            curr_t_acc_poly: LabeledPolynomial::new("curr_t_acc_poly".into(), t_second_poly, false),
         };
 
         end_timer!(round_time);

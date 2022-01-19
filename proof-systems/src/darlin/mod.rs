@@ -18,6 +18,7 @@ pub mod dlog_acc_marlin;
 pub mod error;
 pub mod pcd;
 pub mod proof_aggregator;
+pub mod t_dlog_acc_marlin;
 
 pub mod tests;
 
