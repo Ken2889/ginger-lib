@@ -1,4 +1,4 @@
-use crate::{BigInteger, Error, Field, FpParameters, PrimeField, Curve};
+use crate::{BigInteger, Curve, Error, Field, FpParameters, PrimeField};
 use rayon::prelude::*;
 
 pub struct VariableBaseMSM;
@@ -117,8 +117,7 @@ impl VariableBaseMSM {
     pub fn multi_scalar_mul<G: Curve>(
         bases: &[G::AffineRep],
         scalars: &[<G::ScalarField as PrimeField>::BigInt],
-    ) -> Result<G, Error>
-    {
+    ) -> Result<G, Error> {
         let c = Self::get_optimal_window_size_for_msm_affine::<G>(scalars.len());
 
         Self::msm_inner_affine_c(bases, scalars, c)
@@ -270,8 +269,8 @@ impl VariableBaseMSM {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::UniformRand;
     use crate::fields::BitIterator;
+    use crate::UniformRand;
     use rand::Rng;
 
     #[allow(dead_code)]
@@ -292,9 +291,7 @@ mod test {
         let v = (0..samples)
             .map(|_| G::ScalarField::rand(rng).into_repr())
             .collect::<Vec<_>>();
-        let g = (0..samples)
-            .map(|_| G::rand(rng))
-            .collect::<Vec<_>>();
+        let g = (0..samples).map(|_| G::rand(rng)).collect::<Vec<_>>();
 
         let g_affine = G::batch_into_affine(g.as_slice()).unwrap();
 

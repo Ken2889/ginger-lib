@@ -5,7 +5,4 @@ mod ec;
 mod field;
 
 #[macro_use]
-mod pairing;
-
-#[macro_use]
 mod utils;

@@ -7,16 +7,13 @@
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    Group, GroupVec, Field, Curve,
-    serialize::*, to_bytes, SemanticallyValid, ToBytes,
-    UniformRand,
+    serialize::*, to_bytes, Curve, Field, Group, GroupVec, SemanticallyValid, ToBytes, UniformRand,
 };
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed},
     ipa_pc::{CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
-    DomainExtendedPolynomialCommitment, Error, LabeledCommitment,
-    PolynomialCommitment,
+    DomainExtendedPolynomialCommitment, Error, LabeledCommitment, PolynomialCommitment,
 };
 use rand::RngCore;
 use rayon::prelude::*;
@@ -26,7 +23,7 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DLogItem<G: Curve> {
     /// Final committer key after the DLOG reduction.
-    pub(crate) g_final: GroupVec<G>,
+    pub(crate) g_final: G,
 
     /// Challenges of the DLOG reduction.
     pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
@@ -35,41 +32,40 @@ pub struct DLogItem<G: Curve> {
 impl<G: Curve> CanonicalSerialize for DLogItem<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize(&self.g_final[0], &mut writer)?;
+        CanonicalSerialize::serialize(&self.g_final, &mut writer)?;
 
         CanonicalSerialize::serialize(&self.xi_s, &mut writer)
     }
 
     fn serialized_size(&self) -> usize {
-        self.g_final[0].serialized_size() + self.xi_s.serialized_size()
+        self.g_final.serialized_size() + self.xi_s.serialized_size()
     }
 
     fn serialize_without_metadata<W: Write>(
         &self,
         mut writer: W,
     ) -> Result<(), SerializationError> {
-        CanonicalSerialize::serialize_without_metadata(&self.g_final[0], &mut writer)?;
+        CanonicalSerialize::serialize_without_metadata(&self.g_final, &mut writer)?;
 
         CanonicalSerialize::serialize_without_metadata(&self.xi_s, &mut writer)
     }
 
     fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize_uncompressed(&self.g_final[0], &mut writer)?;
+        CanonicalSerialize::serialize_uncompressed(&self.g_final, &mut writer)?;
 
         CanonicalSerialize::serialize_uncompressed(&self.xi_s, &mut writer)
     }
 
     fn uncompressed_size(&self) -> usize {
-        self.g_final[0].uncompressed_size() + self.xi_s.uncompressed_size()
+        self.g_final.uncompressed_size() + self.xi_s.uncompressed_size()
     }
 }
 
 impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize(&mut reader)?]);
+        let g_final = CanonicalDeserialize::deserialize(&mut reader)?;
 
         let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -78,10 +74,7 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize_unchecked(
-                &mut reader,
-            )?]);
+        let g_final = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
         let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
@@ -91,10 +84,7 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
     #[inline]
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize_uncompressed(
-                &mut reader,
-            )?]);
+        let g_final = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
@@ -106,9 +96,7 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
         mut reader: R,
     ) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final = GroupVec::new(vec![
-            CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?,
-        ]);
+        let g_final = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
@@ -118,14 +106,14 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
 
 impl<G: Curve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
-        self.g_final.is_valid() && self.g_final.len() == 1 && self.xi_s.0.is_valid()
+        self.g_final.is_valid() && self.xi_s.0.is_valid()
     }
 }
 
 impl<G: Curve> Default for DLogItem<G> {
     fn default() -> Self {
         Self {
-            g_final: GroupVec::<G>::default(),
+            g_final: G::default(),
             xi_s: SuccinctCheckPolynomial(vec![]),
         }
     }
@@ -202,7 +190,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
                 let labeled_comm = {
                     let comm = final_comm_key;
 
-                    LabeledCommitment::new(format!("check_poly_{}", i), comm)
+                    LabeledCommitment::new(format!("check_poly_{}", i), GroupVec::new(vec![comm]))
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
@@ -251,7 +239,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
         if verifier_state.is_some() {
             let verifier_state = verifier_state.unwrap();
             Ok(Some(DLogItem::<G> {
-                g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
+                g_final: verifier_state.final_comm_key.clone(),
                 xi_s: verifier_state.check_poly.clone(),
             }))
         } else {
@@ -277,7 +265,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
 
         let final_comm_keys = accumulators
             .iter()
-            .flat_map(|acc| acc.g_final.get_vec())
+            .map(|acc| acc.g_final)
             .collect::<Vec<_>>();
         let xi_s_vec = accumulators
             .iter()
@@ -321,7 +309,13 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             // The vk might be oversized, but the VariableBaseMSM function, will "trim"
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
-            &[G::batch_normalization_into_affine(final_comm_keys).unwrap().as_slice(), vk.comm_key.as_slice()].concat(),
+            &[
+                G::batch_normalization_into_affine(final_comm_keys)
+                    .unwrap()
+                    .as_slice(),
+                vk.comm_key.as_slice(),
+            ]
+            .concat(),
             &[
                 batching_chal_pows.as_slice(),
                 combined_check_poly.coeffs.as_slice(),
@@ -826,8 +820,8 @@ mod test {
                 .into_iter()
                 .map(|verifier_state| {
                     let acc = DLogItem::<G> {
-                        g_final: GroupVec::new(vec![verifier_state.final_comm_key]),
-                        xi_s: verifier_state.check_poly.clone()
+                        g_final: verifier_state.final_comm_key,
+                        xi_s: verifier_state.check_poly.clone(),
                     };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
@@ -928,7 +922,7 @@ mod test {
                 .into_iter()
                 .map(|verifier_state| {
                     let acc = DLogItem::<G> {
-                        g_final: GroupVec::new(vec![verifier_state.final_comm_key]),
+                        g_final: verifier_state.final_comm_key,
                         xi_s: verifier_state.check_poly.clone(),
                     };
                     test_canonical_serialize_deserialize(true, &acc);
@@ -948,7 +942,9 @@ mod test {
         Ok(())
     }
 
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     #[test]
     fn test_tweedle_accumulate_verify() {

@@ -1,10 +1,10 @@
 use crate::UniformRand;
 use crate::{
-    groups::Group,
     curves::Curve,
-    fields::{PrimeField, BitIterator},
+    fields::{BitIterator, PrimeField},
+    groups::Group,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
-    SWModelParameters/*, TEModelParameters,*/
+    SWModelParameters, /*, TEModelParameters,*/
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -217,7 +217,13 @@ fn random_transformation_test<G: Curve>() {
 
         let expected_v = v
             .iter()
-            .map(|v| if v.is_zero() { G::zero() } else { G::from_affine(&v.into_affine().unwrap()) })
+            .map(|v| {
+                if v.is_zero() {
+                    G::zero()
+                } else {
+                    G::from_affine(&v.into_affine().unwrap())
+                }
+            })
             .collect::<Vec<_>>();
         G::batch_normalization(&mut v);
 
@@ -269,7 +275,11 @@ pub fn curve_tests<G: Curve>() {
     {
         let a = G::rand(&mut rng);
         let b = G::from_affine(&a.into_affine().unwrap());
-        let c = G::from_affine(&G::from_affine(&a.into_affine().unwrap()).into_affine().unwrap());
+        let c = G::from_affine(
+            &G::from_affine(&a.into_affine().unwrap())
+                .into_affine()
+                .unwrap(),
+        );
         assert_eq!(a, b);
         assert_eq!(b, c);
     }

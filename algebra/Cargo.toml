@@ -65,20 +65,8 @@ field-assembly = { path = "./field-assembly" }
 rustc_version = "0.4.0"
 
 [[bench]]
-name = "fft_bn382"
-path = "benches/criterion_fft/fft_bn382.rs"
-harness = false
-required-features = ["parallel", "fft", "bench-utils"]
-
-[[bench]]
 name = "fft_tweedle"
 path = "benches/criterion_fft/fft_tweedle.rs"
-harness = false
-required-features = ["parallel", "fft", "bench-utils"]
-
-[[bench]]
-name = "variable_msm_bn382"
-path = "benches/criterion_msm/variable_msm_bn382.rs"
 harness = false
 required-features = ["parallel", "fft", "bench-utils"]
 
