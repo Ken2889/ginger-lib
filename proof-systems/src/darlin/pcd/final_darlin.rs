@@ -8,7 +8,7 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::{Curve, Group, GroupVec, ToConstraintField};
+use algebra::{Curve, Group, ToConstraintField};
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
@@ -133,7 +133,7 @@ where
 
         // Verification successfull: return new accumulator
         let acc = DLogItem::<G1> {
-            g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
+            g_final: verifier_state.final_comm_key.clone(),
             xi_s: verifier_state.check_poly.clone(),
         };
 

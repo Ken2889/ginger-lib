@@ -50,7 +50,8 @@ algebra = { path = "../algebra", features = ["full", "parallel", "fft"] }
 r1cs-crypto = { path = "../r1cs/gadgets/crypto" }
 
 [features]
-print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
+#TODO: with print-trace UTs fails
+#print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
 darlin = ["marlin", "poly-commit", "digest", "derivative", "r1cs-std"]
 llvm_asm = ["algebra/llvm_asm", "marlin/asm", "poly-commit/asm"]
 

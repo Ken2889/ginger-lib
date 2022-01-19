@@ -201,7 +201,7 @@ where
         //       However, fixing this may cause unit tests to crash since num_constraints
         //       and num_variables are generated at random and an underflow may happen.
         //       Fix both.
-        for i in 0..(self.num_variables - 7 - (4 * deferred_len)) {
+        for i in 0..(self.num_variables - 7 - deferred_len) {
             let _ = cs.alloc(
                 || format!("var {}", i),
                 || self.a.ok_or(SynthesisError::AssignmentMissing),

@@ -2,12 +2,12 @@
 //! our conversion/exiting chain.
 use crate::darlin::{accumulators::dlog::DLogItem, pcd::simple_marlin::MarlinProof};
 use algebra::{
-    serialize::*, Group, GroupVec, Curve, PrimeField, SemanticallyValid, ToBits,
-    ToConstraintField, UniformRand,
+    serialize::*, Curve, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
+    UniformRand,
 };
 use digest::Digest;
-use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial},
+use poly_commit::ipa_pc::{
+    CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
 };
 use rand::RngCore;
 
@@ -59,7 +59,7 @@ where
         .unwrap();
 
         let acc_g1 = DLogItem::<G1> {
-            g_final: GroupVec::new(vec![g_final_g1]),
+            g_final: g_final_g1,
             xi_s: random_xi_s_g1,
         };
 
@@ -80,7 +80,7 @@ where
         .unwrap();
 
         let acc_g2 = DLogItem::<G2> {
-            g_final: GroupVec::new(vec![g_final_g2]),
+            g_final: g_final_g2,
             xi_s: random_xi_s_g2,
         };
 
@@ -110,9 +110,7 @@ where
 
         // The G_final of the previous node consists of native field elements only
         let g_final_g2 = self.previous_acc.g_final.clone();
-        for c in g_final_g2.into_iter() {
-            fes.append(&mut c.to_field_elements()?);
-        }
+        fes.append(&mut g_final_g2.to_field_elements()?);
 
         // Convert xi_s, which are 128 bit elements from G2::ScalarField, to the native field.
         // We packing the full bit vector into native field elements as efficient as possible (yet
@@ -138,11 +136,9 @@ where
         // We serialize them all to bits and pack them safely into native field elements
         let g_final_g1 = self.pre_previous_acc.g_final.clone();
         let mut g_final_g1_bits = Vec::new();
-        for c in g_final_g1.iter() {
-            let c_fes = c.to_field_elements()?;
-            for fe in c_fes {
-                g_final_g1_bits.append(&mut fe.write_bits());
-            }
+        let c_fes = g_final_g1.to_field_elements()?;
+        for fe in c_fes {
+            g_final_g1_bits.append(&mut fe.write_bits());
         }
         fes.append(&mut g_final_g1_bits.to_field_elements()?);
 
@@ -186,9 +182,7 @@ pub struct FinalDarlinProof<G1: Curve, G2: Curve, D: Digest + 'static> {
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> SemanticallyValid
-    for FinalDarlinProof<G1, G2, D>
-{
+impl<G1: Curve, G2: Curve, D: Digest> SemanticallyValid for FinalDarlinProof<G1, G2, D> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }
