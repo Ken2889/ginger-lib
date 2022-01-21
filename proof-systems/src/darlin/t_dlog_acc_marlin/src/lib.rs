@@ -147,6 +147,35 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         Ok((index_pk, index_vk))
     }
 
+    fn fiat_shamir_rng_init(
+        pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
+        index_vk: &VerifierKey<G1, G2, D>,
+        public_input: &Vec<G1::ScalarField>,
+        inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
+        dlog_acc: &DualDLogItem<G2, G1>,
+    ) -> Result<<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle, poly_commit::error::Error>
+    {
+        let fs_rng_init_seed = {
+            let mut seed_builder =
+                <<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle as FiatShamirRng>::Seed::new(
+                );
+            seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
+            seed_builder.add_bytes(&PCVerifierKey::get_hash(pc_vk))?;
+            seed_builder.add_bytes(inner_sumcheck_acc)?;
+            seed_builder.add_bytes(dlog_acc)?;
+
+            // NOTE: As both vk and public input use constant length encoding of field elements,
+            // we can simply apply add_bytes to achieve a one-to-one serialization.
+            seed_builder.add_bytes(index_vk)?;
+            seed_builder.add_bytes(public_input)?;
+
+            seed_builder.finalize()
+        };
+        let fs_rng =
+            <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle::from_seed(fs_rng_init_seed);
+        Ok(fs_rng)
+    }
+
     /// Produce a zkSNARK asserting given a constraint system `c` over a prime order field `F`
     pub fn prove<C: ConstraintSynthesizer<G1::ScalarField>>(
         index_pk: &ProverKey<G1, G2, D>,
@@ -176,31 +205,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             previous_inner_sumcheck_acc,
         )?;
 
-        // initialise the Fiat-Shamir rng.
-        let fs_rng_init_seed = {
-            let mut seed_builder =
-                <<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle as FiatShamirRng>::Seed::new(
-                );
-            seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&PCVerifierKey::get_hash(pc_pk))
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&index_pk.index_vk)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&previous_inner_sumcheck_acc)
-                .map_err(Error::from_pc_err)?;
-
-            seed_builder.finalize()
-        };
-        let mut fs_rng =
-            <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = Self::fiat_shamir_rng_init(
+            pc_pk,
+            &index_pk.index_vk,
+            &public_input,
+            previous_inner_sumcheck_acc,
+            previous_dlog_acc,
+        )
+        .map_err(Error::from_pc_err)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -497,30 +509,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         let verifier_init_state =
             IOP::verifier_init(&index_vk.index.index_info, previous_inner_sumcheck_acc)?;
 
-        let fs_rng_init_seed = {
-            let mut seed_builder =
-                <<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle as FiatShamirRng>::Seed::new(
-                );
-            seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&PCVerifierKey::get_hash(pc_vk))
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&index_vk)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&previous_inner_sumcheck_acc)
-                .map_err(Error::from_pc_err)?;
-
-            seed_builder.finalize()
-        };
-        let mut fs_rng =
-            <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = Self::fiat_shamir_rng_init(
+            pc_vk,
+            index_vk,
+            &public_input,
+            previous_inner_sumcheck_acc,
+            previous_dlog_acc,
+        )
+        .map_err(Error::from_pc_err)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
