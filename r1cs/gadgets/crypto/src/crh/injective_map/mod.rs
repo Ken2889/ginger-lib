@@ -1,5 +1,5 @@
 use primitives::crh::{
-    injective_map::{InjectiveMap, PedersenCRHCompressor, TECompressor},
+    injective_map::{InjectiveMap, JacobianCompressor, PedersenCRHCompressor, TECompressor},
     pedersen::PedersenWindow,
 };
 use std::{fmt::Debug, marker::PhantomData};
@@ -12,15 +12,20 @@ use crate::crh::{
 use algebra::{
     curves::{
         models::{ModelParameters, TEModelParameters},
+        short_weierstrass_jacobian::Jacobian,
         twisted_edwards_extended::TEExtended,
         Curve,
     },
     fields::{Field, PrimeField, SquareRootField},
+    SWModelParameters,
 };
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{
     fields::fp::FpGadget,
-    groups::{curves::twisted_edwards::AffineGadget as TwistedEdwardsGadget, GroupGadget},
+    groups::{
+        curves::short_weierstrass::AffineGadget as SWGadget,
+        curves::twisted_edwards::AffineGadget as TwistedEdwardsGadget, GroupGadget,
+    },
     prelude::*,
 };
 
@@ -43,6 +48,29 @@ pub trait InjectiveMapGadget<
         cs: CS,
         ge: &GG,
     ) -> Result<Self::OutputGadget, SynthesisError>;
+}
+
+pub struct JacobianCompressorGadget;
+
+impl<ConstraintF, P>
+    InjectiveMapGadget<
+        Jacobian<P>,
+        JacobianCompressor,
+        ConstraintF,
+        SWGadget<P, ConstraintF, FpGadget<ConstraintF>>,
+    > for JacobianCompressorGadget
+where
+    ConstraintF: PrimeField + SquareRootField,
+    P: SWModelParameters + ModelParameters<BaseField = ConstraintF>,
+{
+    type OutputGadget = FpGadget<ConstraintF>;
+
+    fn evaluate_map<CS: ConstraintSystemAbstract<ConstraintF>>(
+        _cs: CS,
+        ge: &SWGadget<P, ConstraintF, FpGadget<ConstraintF>>,
+    ) -> Result<Self::OutputGadget, SynthesisError> {
+        Ok(ge.x.clone())
+    }
 }
 
 pub struct TECompressorGadget;

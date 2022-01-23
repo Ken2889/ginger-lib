@@ -434,13 +434,13 @@ mod test {
     use rand_xorshift::XorShiftRng;
 
     #[derive(Clone)]
-    pub(super) struct Window8x256;
-    impl PedersenWindow for Window8x256 {
-        const WINDOW_SIZE: usize = 8;
-        const NUM_WINDOWS: usize = 256;
+    pub(super) struct Window4x128;
+    impl PedersenWindow for Window4x128 {
+        const WINDOW_SIZE: usize = 4;
+        const NUM_WINDOWS: usize = 128;
     }
 
-    type H = PedersenCRH<DeeJacobian, Window8x256>;
+    type H = PedersenCRH<DeeJacobian, Window4x128>;
 
     struct DeeJacobianMerkleTreeParams;
 

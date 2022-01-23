@@ -7,12 +7,11 @@ use super::{
     pedersen::{PedersenCRH, PedersenParameters, PedersenWindow},
     FixedLengthCRH,
 };
-use algebra::{
-    curves::{
-        Curve,
-        models::{ModelParameters, TEModelParameters},
-        twisted_edwards_extended::TEExtended,
-    },
+use algebra::curves::{
+    models::{ModelParameters, SWModelParameters, TEModelParameters},
+    short_weierstrass_jacobian::Jacobian,
+    twisted_edwards_extended::TEExtended,
+    Curve,
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +19,19 @@ use serde::{Deserialize, Serialize};
 pub trait InjectiveMap<G: Curve> {
     type Output: ToBytes + Serialize + for<'a> Deserialize<'a> + Clone + Eq + Hash + Default + Debug;
     fn injective_map(ge: &G) -> Result<Self::Output, CryptoError>;
+}
+
+pub struct JacobianCompressor;
+
+impl<P: SWModelParameters> InjectiveMap<Jacobian<P>> for JacobianCompressor {
+    type Output = <P as ModelParameters>::BaseField;
+
+    fn injective_map(ge: &Jacobian<P>) -> Result<Self::Output, CryptoError> {
+        if !ge.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(CryptoError::InvalidElement(format!("{}", ge)));
+        }
+        Ok(ge.x)
+    }
 }
 
 pub struct TECompressor;
