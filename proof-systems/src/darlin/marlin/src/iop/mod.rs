@@ -330,6 +330,9 @@ pub trait LagrangeKernel<F: PrimeField> {
 
     /// Domain evaluation of `L(X,y)`, for `y` not being from `H`.
     fn domain_eval_lagrange_kernel(&self, y: F) -> Result<Vec<F>, Error>;
+
+    /// Return the univariate polynomial `L_H(X, y)`, where `y` belongs to `H`
+    fn slice_lagrange_kernel(&self, y: F) -> DensePolynomial<F>;
 }
 
 impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
@@ -351,7 +354,8 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
         }
     }
 
-    // Compute L_H(X,y) = -(y^n - 1) / n * X / (X-y) using batch inversion and index reversion.
+    // Compute domain evaluations of L_H(X,y) = -(y^n - 1) / n * X / (X-y) using batch inversion
+    // and index reversion.
     // Costs essentially a vector product and a batch inversion.
     fn domain_eval_lagrange_kernel(&self, y: F) -> Result<Vec<F>, Error> {
         let v_at_y = self.evaluate_vanishing_polynomial(y);
@@ -368,6 +372,23 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
             algebra::fields::batch_inversion(&mut inverses);
             Ok(inverses)
         }
+    }
+
+    // The Fourier representation of the bivariate Lagrange polynomial is used to compute the
+    // univariate sliced polynomial:
+    //   L_H(X, y) = 1/n * (1 + y^(n-1)*X + y^(n-2)*X^2 + ... + y^2*X^(n-2) + y*X^(n-1))
+    fn slice_lagrange_kernel(&self, y: F) -> DensePolynomial<F> {
+        let domain_size = self.size();
+        let inv_domain_size = self.size_inv();
+        let mut coeff = Vec::with_capacity(domain_size);
+        coeff.push(inv_domain_size);
+        let mut c = y;
+        for _ in 0..domain_size - 1 {
+            coeff.push(c * inv_domain_size);
+            c *= y;
+        }
+        coeff[1..].reverse();
+        DensePolynomial::from_coefficients_vec(coeff)
     }
 }
 
@@ -572,6 +593,27 @@ mod tests {
                 .collect();
             let fast = domain.domain_eval_lagrange_kernel(y).unwrap();
             assert_eq!(fast, manual);
+        }
+    }
+
+    #[test]
+    fn test_slice_lagrange_kernel() {
+        // If both x and y belong to the domain, then test that
+        //   L(X,y)|_{X=x} = 1 if x == y,
+        //   L(X,y)|_{X=x} = 0 if x != y.
+        for domain_size in 1..5 {
+            let domain = get_best_evaluation_domain::<Fr>(1 << domain_size).unwrap();
+            for y in domain.elements() {
+                let sliced_poly = domain.slice_lagrange_kernel(y);
+                for x in domain.elements() {
+                    let val = sliced_poly.evaluate(x);
+                    if x == y {
+                        assert!(val.is_one())
+                    } else {
+                        assert!(val.is_zero())
+                    }
+                }
+            }
         }
     }
 
