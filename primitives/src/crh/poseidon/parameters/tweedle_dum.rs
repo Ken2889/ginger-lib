@@ -1,3 +1,4 @@
+use crate::PoseidonSponge;
 use crate::crh::{
     batched_crh::PoseidonBatchHash, FieldBasedHashParameters, PoseidonHash, PoseidonParameters,
     PoseidonQuinticSBox,
@@ -1874,3 +1875,4 @@ pub type TweedleFqPoseidonHash =
     PoseidonHash<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;
 pub type TweedleFqBatchPoseidonHash =
     PoseidonBatchHash<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;
+pub type TweedleFqPoseidonSponge = PoseidonSponge<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;

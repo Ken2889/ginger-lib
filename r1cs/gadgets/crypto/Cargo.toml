@@ -54,5 +54,5 @@ llvm_asm = ["algebra/llvm_asm"]
 [dev-dependencies]
 rand_xorshift = { version = "=0.3.0" }
 algebra = { path = "../../../algebra", features = ["tweedle"] }
-r1cs-std = { path = "../std", features = ["tweedle"] }
+r1cs-std = { path = "../std", features = ["tweedle", "nonnative"] }
 r1cs-crypto = { path = "../crypto", features = ["tweedle"] }

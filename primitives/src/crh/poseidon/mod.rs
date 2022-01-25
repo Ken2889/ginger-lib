@@ -18,6 +18,9 @@ pub use self::parameters::*;
 pub mod sbox;
 pub use self::sbox::*;
 
+pub mod sponge;
+pub use self::sponge::*;
+
 pub trait PoseidonParameters: 'static + FieldBasedHashParameters + Clone {
     const T: usize; // Number of S-Boxes
     const R_F: i32; // Number of full rounds

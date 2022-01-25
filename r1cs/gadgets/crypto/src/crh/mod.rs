@@ -1,4 +1,9 @@
 use algebra::Field;
+use algebra::PrimeField;
+use primitives::AlgebraicSponge;
+use primitives::SpongeMode;
+use r1cs_std::fields::fp::FpGadget;
+use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::fmt::Debug;
 
 use primitives::crh::{FieldBasedHash, FixedLengthCRH};
@@ -57,24 +62,59 @@ pub trait FieldHasherGadget<
     ) -> Result<HG::DataGadget, SynthesisError>;
 }
 
+pub trait AlgebraicSpongeGadget<ConstraintF: PrimeField, H: AlgebraicSponge<ConstraintF>>:
+    ConstantGadget<H, ConstraintF>
+    + From<Vec<FpGadget<ConstraintF>>>
+    + Sized
+{
+    type StateGadget;
+
+    fn new<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError>;
+
+    fn get_state(&self) -> &[Self::StateGadget];
+
+    fn set_state(&mut self, state: Vec<Self::StateGadget>);
+
+    fn get_mode(&self) -> &SpongeMode;
+
+    fn set_mode(&mut self, mode: SpongeMode);
+
+    fn enforce_absorb<CS: ConstraintSystemAbstract<ConstraintF>, AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>>(
+        &mut self,
+        cs: CS,
+        to_absorb: &AG
+    ) -> Result<(), SynthesisError>;
+
+    fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        cs: CS,
+        num: usize
+    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError>;
+}
+
 #[cfg(test)]
 mod test {
-    use crate::FieldBasedHashGadget;
+    use crate::{FieldBasedHashGadget, AlgebraicSpongeGadget};
     use algebra::PrimeField;
-    use primitives::FieldBasedHash;
+    use primitives::{FieldBasedHash, AlgebraicSponge};
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
-    use r1cs_std::{alloc::AllocGadget, fields::fp::FpGadget};
+    use r1cs_std::{
+        alloc::AllocGadget,
+        fields::{FieldGadget, fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget},
+    };
+    use rand::RngCore;
 
     pub(crate) fn constant_length_field_based_hash_gadget_native_test<
         F: PrimeField,
         H: FieldBasedHash<Data = F>,
         HG: FieldBasedHashGadget<H, F, DataGadget = FpGadget<F>>,
-    >(
-        inputs: Vec<F>,
-    ) {
+        R: RngCore,
+    >(rng: &mut R, num_inputs: usize)
+    {
         let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
+        let inputs = (0..num_inputs).map(|_| F::rand(rng)).collect::<Vec<_>>();
 
         let primitive_result = {
             let mut digest = H::init_constant_length(inputs.len(), None);
@@ -102,6 +142,81 @@ mod test {
         if !cs.is_satisfied() {
             println!("{:?}", cs.which_is_unsatisfied());
         }
+        assert!(cs.is_satisfied());
+    }
+
+    pub(crate) fn algebraic_sponge_gadget_test<
+        F: PrimeField,
+        ConstraintF: PrimeField,
+        H: AlgebraicSponge<ConstraintF>,
+        HG: AlgebraicSpongeGadget<ConstraintF, H>,
+        R: RngCore
+    >(rng: &mut R, num_inputs: usize)
+    {
+        use std::collections::HashSet;
+
+        // Generate inputs
+        let native_inputs = (0..num_inputs).map(|_| ConstraintF::rand(rng)).collect::<Vec<_>>();
+        let nonnative_inputs = (0..num_inputs).map(|_| F::rand(rng)).collect::<Vec<_>>();
+
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+
+        // Check equality between primitive and gadget result
+        let mut primitive_sponge = H::init();
+        primitive_sponge.absorb(&native_inputs);
+        primitive_sponge.absorb(&nonnative_inputs);
+
+        // Allocate native
+        let mut native_input_gadgets = Vec::with_capacity(num_inputs);
+        native_inputs.into_iter().enumerate().for_each(|(i, elem)|{
+            let elem_gadget = FpGadget::<ConstraintF>::alloc(
+                cs.ns(|| format!("alloc native input {}", i)),
+                || Ok(elem.clone())
+            ).unwrap();
+            native_input_gadgets.push(elem_gadget);
+        });
+
+        // Allocate nonnative
+        let mut nonnative_input_gadgets = Vec::with_capacity(num_inputs);
+        nonnative_inputs.into_iter().enumerate().for_each(|(i, elem)|{
+            let elem_gadget = NonNativeFieldGadget::<F, ConstraintF>::alloc(
+                cs.ns(|| format!("alloc nonnative input {}", i)),
+                || Ok(elem.clone())
+            ).unwrap();
+            nonnative_input_gadgets.push(elem_gadget);
+        });
+
+        // Enforce absorption
+        let mut sponge_gadget = HG::new(cs.ns(|| "new poseidon sponge")).unwrap();
+        sponge_gadget.enforce_absorb(cs.ns(|| "absorb native inputs"), &native_input_gadgets).unwrap();
+        sponge_gadget.enforce_absorb(cs.ns(|| "absorb nonnative inputs"), &nonnative_input_gadgets).unwrap();
+
+        // Enforce squeeze
+        for i in 0..num_inputs {
+            let output_gadgets = sponge_gadget.enforce_squeeze(
+                cs.ns(|| format!("squeeze {} field elements",  i + 1)),
+                i + 1
+            ).unwrap().iter().map(|fe_gadget| fe_gadget.get_value().unwrap()).collect::<Vec<_>>();
+            assert_eq!(output_gadgets, primitive_sponge.squeeze(i + 1));
+        }
+
+        // Check squeeze() outputs the correct number of field elements
+        // all different from each others
+        let mut set = HashSet::new();
+        for i in 0..=10 {
+
+            let outs = sponge_gadget.enforce_squeeze(
+                cs.ns(|| format!("test squeeze {} field elements",  i)),
+                i
+            ).unwrap();
+            assert_eq!(i, outs.len());
+
+            // HashSet::insert(val) returns false if val was already present, so to check
+            // that all the elements output by the sponge are different, we assert insert()
+            // returning always true
+            outs.into_iter().for_each(|f| assert!(set.insert(f.get_value().unwrap())));
+        }
+
         assert!(cs.is_satisfied());
     }
 }
