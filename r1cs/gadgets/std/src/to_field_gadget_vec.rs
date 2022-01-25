@@ -33,12 +33,11 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for FpGadget<
     }
 }
 
-impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [FpGadget<ConstraintF>] {
+impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for Vec<FpGadget<ConstraintF>> {
     type FieldGadget = FpGadget<ConstraintF>;
 
-    #[inline]
     fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(&self, _cs: CS) -> Result<Vec<Self::FieldGadget>, Error> {
-        Ok(self.to_vec())
+        Ok(self.clone())
     }
 }
 

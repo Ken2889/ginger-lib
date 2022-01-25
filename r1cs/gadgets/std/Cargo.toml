@@ -25,11 +25,12 @@ r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "a
 derivative = "2.2.0"
 hex = "0.4"
 
-num-traits = { version = "0.2", default-features = false, optional = true }
-num-bigint = { version = "0.3.0", default-features = false, optional = true }
-num-integer = { version = "0.1.44", default-features = false, optional = true }
 radix_trie = "0.2.1"
 rand = { version = "0.8.4" }
+
+num-bigint = { version = "0.3.0", default-features = false, optional = true }
+num-traits = { version = "0.2", default-features = false, optional = true }
+num-integer = { version = "0.1.44", default-features = false, optional = true }
 
 [features]
 default = ["nonnative", "full"]
@@ -46,8 +47,8 @@ mnt4_753 = [ "algebra/mnt4_753" ]
 mnt6_753 = [ "algebra/mnt6_753" ]
 tweedle = [ "algebra/tweedle" ]
 
-nonnative = ["num-traits", "num-bigint", "num-integer"]
-density-optimized = []
+nonnative = ["algebra/nonnative", "num-bigint", "num-traits", "num-integer"]
+density-optimized = ["algebra/density-optimized"]
 
 [dev-dependencies]
 paste = "1.0"

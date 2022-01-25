@@ -18,6 +18,9 @@ use serde::{Serialize, Deserialize};
 #[macro_use]
 mod macros;
 
+#[cfg(feature = "nonnative")]
+pub mod nonnative;
+
 #[cfg(feature = "bls12_377")]
 pub mod bls12_377;
 

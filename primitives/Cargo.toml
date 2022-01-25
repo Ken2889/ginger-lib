@@ -20,7 +20,7 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "algebraic_sponge", features = ["parallel"] }
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "algebraic_sponge", features = ["parallel", "nonnative"] }
 bench-utils = { path = "../bench-utils" }
 
 digest = { version = "0.8", optional = true }

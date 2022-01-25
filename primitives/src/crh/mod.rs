@@ -1,3 +1,4 @@
+use algebra::ToConstraintField;
 use algebra::{
     Field, PrimeField, bytes::ToBytes
 };
@@ -127,22 +128,33 @@ pub enum SpongeMode {
     Squeezing,
 }
 
-/// the trait for algebraic sponge
-pub trait AlgebraicSponge<F: PrimeField>: Clone + From<Vec<F>> {
+/// The trait for an algebraic sponge
+pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
+{
+    /// The internal state of the Sponge
+    type State: Clone + Eq + PartialEq + std::fmt::Debug;
+
     /// Initialize the sponge
     fn init() -> Self;
+
     /// Get the sponge internal state
-    fn get_state(&self) -> &[F];
+    fn get_state(&self) -> Self::State;
+
     /// Set the sponge internal state
-    fn set_state(&mut self, state: Vec<F>);
+    fn set_state(&mut self, state: Self::State);
+
     /// Get Sponge current operating mode
     fn get_mode(&self) -> &SpongeMode;
+
     /// Set Sponge operating mode
     fn set_mode(&mut self, mode: SpongeMode);
-    /// Update the sponge with `elems`
-    fn absorb(&mut self, elems: Vec<F>);
-    /// Output `num` field elements from the sponge.
-    fn squeeze(&mut self, num: usize) -> Vec<F>;
+
+    /// Absorb field elements belonging to F.
+    fn absorb<F: PrimeField, A: ToConstraintField<F>>(&mut self, to_absorb: &A);
+
+    /// Squeeze field elements belonging to SpongeF.
+    fn squeeze(&mut self, num: usize) -> Vec<SpongeF>;
+
     /// Reset the sponge to its initial state
     fn reset(&mut self) {
         *self = Self::init();
@@ -162,7 +174,7 @@ mod test {
     };
 
     use rand_xorshift::XorShiftRng;
-    use rand::{SeedableRng, thread_rng};
+    use rand::{SeedableRng, thread_rng, RngCore};
     use crate::{FieldBasedHash, FieldBasedHashParameters, AlgebraicSponge};
     use std::collections::HashSet;
 
@@ -234,22 +246,25 @@ mod test {
         }
     }
 
-    pub(crate) fn algebraic_sponge_test<H: AlgebraicSponge<F>, F: PrimeField>(
-        to_absorb: Vec<F>,
-        expected_squeeze: F
-    )
+    pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: PrimeField, F2: PrimeField, R: RngCore>(rng: &mut R, expected_output: F1)
     {
         let mut sponge = H::init();
 
-        // Absorb all field elements
-        sponge.absorb(to_absorb);
+        // Absorb random native field elements
+        let to_absorb = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+        sponge.absorb(&to_absorb);
 
-        // Squeeze and check the output
-        assert_eq!(expected_squeeze, sponge.squeeze(1)[0]);
+        // Absorb random non native field elements
+        let to_absorb = (0..10).map(|_| F2::rand(rng)).collect::<Vec<_>>();
+        sponge.absorb(&to_absorb);
+
+        let out: F1 = sponge.squeeze(1)[0];
+        assert_eq!(out, expected_output);
+        // println!("{:?}", out);
 
         // Check that calling squeeze() multiple times without absorbing
         // changes the output
-        let mut prev = expected_squeeze;
+        let mut prev = out;
         for _ in 0..100 {
             let curr = sponge.squeeze(1)[0];
             assert!(prev != curr);
@@ -260,11 +275,15 @@ mod test {
 
         // Check squeeze() outputs the correct number of field elements
         // all different from each others
-        let mut set = HashSet::new();
         for i in 0..=10 {
-            sponge.absorb((0..i).map(|_| F::rand(rng)).collect::<Vec<_>>());
-            let outs = sponge.squeeze(i);
+            let mut set = HashSet::new();
+            let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+            sponge.absorb(&random_fes);
+            
+            // Native squeeze test
+            let outs: Vec<F1> = sponge.squeeze(i);
             assert_eq!(i, outs.len());
+
 
             // HashSet::insert(val) returns false if val was already present, so to check
             // that all the elements output by the sponge are different, we assert insert()
@@ -276,21 +295,22 @@ mod test {
         sponge.reset();
 
         // Absorb nothing. Check that the internal state is not changed.
-        let prev_state = sponge.get_state().to_vec();
-        sponge.absorb(vec![]);
+        let prev_state = sponge.get_state();
+        sponge.absorb(&Vec::<F1>::new());
         assert_eq!(prev_state, sponge.get_state());
 
         // Squeeze nothing. Check that the internal state is not changed.
-        let prev_state = sponge.get_state().to_vec();
+        let prev_state = sponge.get_state();
         sponge.squeeze(0);
         assert_eq!(prev_state, sponge.get_state());
 
         // Absorb up to rate elements and trigger a permutation. Assert that calling squeeze()
         // afterwards won't trigger another permutation.
-        sponge.absorb((0..2).map(|_| F::rand(rng)).collect::<Vec<_>>());
-        let prev_state = sponge.get_state().to_vec();
+        let fes = (0..2).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+        sponge.absorb(&fes);
+        let prev_state = sponge.get_state();
         sponge.squeeze(1);
-        let curr_state = sponge.get_state().to_vec();
+        let curr_state = sponge.get_state();
         assert_eq!(prev_state, curr_state);
 
         // The next squeeze() should instead change the state

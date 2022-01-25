@@ -37,6 +37,9 @@ unroll = "0.1.4"
 
 serde = { version = "1.0.117", features = ["derive"]}
 
+num-traits = { version = "0.2", default-features = false, optional = true }
+num-bigint = { version = "0.3.0", default-features = false, optional = true }
+
 [dev-dependencies]
 blake2 = "0.8.1"
 rand_xorshift = { version = "0.3.0" }
@@ -50,6 +53,9 @@ fft = ["rayon", "derive"]
 n_fold = []
 llvm_asm = []
 derive = ["algebra-derive"]
+
+nonnative = ["num-traits", "num-bigint"]
+density-optimized = []
 
 bls12_377 = []
 bls12_381 = []

@@ -1,4 +1,12 @@
-use crate::fields::nonnative::NonNativeFieldParams;
+/// Parameters for a specific `NonNativeFieldGadget` instantiation
+#[derive(Clone, Debug)]
+pub struct NonNativeFieldParams {
+    /// The number of limbs (`ConstraintF` elements) used to represent a `SimulationF` element. Highest limb first.
+    pub num_limbs: usize,
+
+    /// The number of bits of the limb
+    pub bits_per_limb: usize,
+}
 
 /// Obtain the parameters from a `ConstraintSystem`'s cache or generate a new one
 #[must_use]

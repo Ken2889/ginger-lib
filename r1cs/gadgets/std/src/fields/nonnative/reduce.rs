@@ -1,63 +1,20 @@
-use algebra::{biginteger::BigInteger, fields::{PrimeField, FpParameters}, BitIterator};
+use algebra::{biginteger::BigInteger, fields::{PrimeField, FpParameters}, BitIterator, fields::nonnative::*};
+use num_bigint::BigUint;
+use num_integer::Integer;
+use num_traits::Zero;
 
 use crate::{
     prelude::*,
     fields::{
         fp::FpGadget,
-        nonnative::{
-            params::get_params, nonnative_field_gadget::NonNativeFieldGadget
-        }
+        nonnative::nonnative_field_gadget::NonNativeFieldGadget
     },
     overhead
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use std::{cmp::min, marker::PhantomData, vec::Vec};
 
-use num_bigint::BigUint;
-use num_integer::Integer;
-use num_traits::{Zero, One};
-
 use crate::fields::FieldGadget;
-
-pub fn limbs_to_bigint<ConstraintF: PrimeField>(
-    bits_per_limb: usize,
-    limbs: &[ConstraintF],
-) -> BigUint {
-    let mut val = BigUint::zero();
-    let mut big_cur = BigUint::one();
-    let two = BigUint::from(2u32);
-    for limb in limbs.iter().rev() {
-        let mut limb_repr = limb.into_repr().to_bits();
-        limb_repr.reverse(); //We need them in little endian
-        let mut small_cur = big_cur.clone();
-        for limb_bit in limb_repr.iter() {
-            if *limb_bit {
-                val += &small_cur;
-            }
-            small_cur *= 2u32;
-        }
-        big_cur *= two.pow(bits_per_limb as u32);
-    }
-
-    val
-}
-
-pub fn bigint_to_constraint_field<ConstraintF: PrimeField>(bigint: &BigUint) -> ConstraintF {
-    let mut val = ConstraintF::zero();
-    let mut cur = ConstraintF::one();
-    let bytes = bigint.to_bytes_be();
-
-    let basefield_256 = ConstraintF::from_repr(<ConstraintF as PrimeField>::BigInt::from(256));
-
-    for byte in bytes.iter().rev() {
-        let bytes_basefield = ConstraintF::from(*byte as u128);
-        val += cur * bytes_basefield;
-
-        cur *= &basefield_256;
-    }
-
-    val
-}
 
 /// the collections of methods for reducing the presentations
 pub struct Reducer<SimulationF: PrimeField, ConstraintF: PrimeField> {

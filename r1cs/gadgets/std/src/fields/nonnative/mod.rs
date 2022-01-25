@@ -11,18 +11,6 @@
 /// DISCLAIMER: This is entirely a porting of [arkworks/nonnative](https://github.com/arkworks-rs/nonnative)
 ///             to work with our GingerLib.
 
-use std::fmt::Debug;
-
-/// example parameters of non-native field gadget
-///
-/// Sample parameters for non-native field gadgets
-/// - `ConstraintF`:            the constraint field
-/// - `SimulationF`:            the field being simulated
-/// - `num_limbs`:              how many limbs are used
-/// - `bits_per_limb`:          the size of the limbs
-///
-pub mod params;
-
 /// a submodule for reducing the representations
 pub mod reduce;
 
@@ -63,14 +51,4 @@ macro_rules! overhead {
             num_bits.len() - skipped_bits + 1
         }
     }};
-}
-
-/// Parameters for a specific `NonNativeFieldGadget` instantiation
-#[derive(Clone, Debug)]
-pub struct NonNativeFieldParams {
-    /// The number of limbs (`ConstraintF` elements) used to represent a `SimulationF` element. Highest limb first.
-    pub num_limbs: usize,
-
-    /// The number of bits of the limb
-    pub bits_per_limb: usize,
 }

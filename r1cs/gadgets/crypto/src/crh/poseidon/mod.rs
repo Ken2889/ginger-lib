@@ -1,18 +1,16 @@
 use algebra::PrimeField;
-use primitives::crh::{
+use primitives::{crh::{
     SBox, SpongeMode, AlgebraicSponge,
     poseidon::{
         PoseidonHash, PoseidonSponge, PoseidonParameters
     }
-};
+}};
 use crate::crh::{
     SBoxGadget, FieldBasedHashGadget, AlgebraicSpongeGadget,
 };
 use r1cs_std::{
-    fields::{
-        FieldGadget, fp::FpGadget
-    },
-    alloc::ConstantGadget,
+    fields::{FieldGadget, fp::FpGadget},
+    alloc::ConstantGadget, to_field_gadget_vec::ToConstraintFieldGadget,
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use std::marker::PhantomData;
@@ -321,9 +319,77 @@ impl<ConstraintF, P, SB, SBG> PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
         }
         Ok(())
     }
+
+    fn _enforce_absorb<CS: ConstraintSystem<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        elems: &[FpGadget<ConstraintF>]
+    ) -> Result<(), SynthesisError> {
+        if elems.len() > 0 {
+            match self.mode {
+
+                SpongeMode::Absorbing => {
+                    elems.iter().enumerate().map(|(i, f)| {
+                        self.enforce_update(cs.ns(|| format!("update_{}", i)), f.clone())
+                    }).collect::<Result<(), SynthesisError>>()?;
+                },
+
+                SpongeMode::Squeezing => {
+                    self.mode = SpongeMode::Absorbing;
+                    self._enforce_absorb(cs, elems)?;
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    fn _enforce_squeeze<CS: ConstraintSystem<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        num: usize
+    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> {
+        let mut outputs = Vec::with_capacity(num);
+
+        if num > 0 {
+            match self.mode {
+                SpongeMode::Absorbing => {
+
+                    if self.pending.len() == 0 {
+                        outputs.push(self.state[0].clone());
+                    } else {
+                        self.enforce_permutation(
+                            cs.ns(|| "permutation")
+                        )?;
+
+                        outputs.push(self.state[0].clone());
+                    }
+                    self.mode = SpongeMode::Squeezing;
+                    outputs.append(&mut self._enforce_squeeze(
+                        cs.ns(|| "squeeze remaining elements"),
+                        num - 1
+                    )?);
+                },
+
+                // If we were squeezing, then squeeze the required number of field elements
+                SpongeMode::Squeezing => {
+                    for i in 0..num {
+                        debug_assert!(self.pending.len() == 0);
+
+                        PoseidonHashGadget::<ConstraintF, P, SB, SBG>::poseidon_perm(
+                            cs.ns(|| format!("poseidon_perm_{}", i)),
+                            &mut self.state
+                        )?;
+                        outputs.push(self.state[0].clone());
+                    }
+                }
+            }
+        }
+        Ok(outputs)
+    }
 }
 
-impl<ConstraintF, P, SB, SBG> AlgebraicSpongeGadget<PoseidonSponge<ConstraintF, P, SB>, ConstraintF>
+impl<ConstraintF, P, SB, SBG> AlgebraicSpongeGadget<ConstraintF, PoseidonSponge<ConstraintF, P, SB>>
 for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
     where
         ConstraintF: PrimeField,
@@ -331,7 +397,7 @@ for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
         SB:          SBox<Field = ConstraintF, Parameters = P>,
         SBG:         SBoxGadget<ConstraintF, SB>,
 {
-    type DataGadget = FpGadget<ConstraintF>;
+    type StateGadget = FpGadget<ConstraintF>;
 
     fn new<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         let mut state = Vec::with_capacity(P::T);
@@ -371,71 +437,21 @@ for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
         self.mode = mode;
     }
 
-    fn enforce_absorb<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_absorb<CS: ConstraintSystem<ConstraintF>, AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>>(
         &mut self,
         mut cs: CS,
-        elems: &[Self::DataGadget]
+        to_absorb: &AG
     ) -> Result<(), SynthesisError> {
-        if elems.len() > 0 {
-            match self.mode {
-
-                SpongeMode::Absorbing => {
-                    elems.iter().enumerate().map(|(i, f)| {
-                        self.enforce_update(cs.ns(|| format!("update_{}", i)), f.clone())
-                    }).collect::<Result<(), SynthesisError>>()?;
-                },
-
-                SpongeMode::Squeezing => {
-                    self.mode = SpongeMode::Absorbing;
-                    self.enforce_absorb(cs, elems)?;
-                }
-            }
-        }
-        Ok(())
+        let fes = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
+        self._enforce_absorb(cs.ns(|| "absorb fes"), &fes)
     }
 
     fn enforce_squeeze<CS: ConstraintSystem<ConstraintF>>(
         &mut self,
-        mut cs: CS,
+        cs: CS,
         num: usize
-    ) -> Result<Vec<Self::DataGadget>, SynthesisError> {
-        let mut outputs = Vec::with_capacity(num);
-
-        if num > 0 {
-            match self.mode {
-                SpongeMode::Absorbing => {
-
-                    if self.pending.len() == 0 {
-                        outputs.push(self.state[0].clone());
-                    } else {
-                        self.enforce_permutation(
-                            cs.ns(|| "permutation")
-                        )?;
-
-                        outputs.push(self.state[0].clone());
-                    }
-                    self.mode = SpongeMode::Squeezing;
-                    outputs.append(&mut self.enforce_squeeze(
-                        cs.ns(|| "squeeze remaining elements"),
-                        num - 1
-                    )?);
-                },
-
-                // If we were squeezing, then squeeze the required number of field elements
-                SpongeMode::Squeezing => {
-                    for i in 0..num {
-                        debug_assert!(self.pending.len() == 0);
-
-                        PoseidonHashGadget::<ConstraintF, P, SB, SBG>::poseidon_perm(
-                            cs.ns(|| format!("poseidon_perm_{}", i)),
-                            &mut self.state
-                        )?;
-                        outputs.push(self.state[0].clone());
-                    }
-                }
-            }
-        }
-        Ok(outputs)
+    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> {
+        self._enforce_squeeze(cs, num)
     }
 }
 
@@ -503,26 +519,21 @@ for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
 #[cfg(test)]
 mod test {
 
-    use algebra::PrimeField;
-    use crate::crh::test::{constant_length_field_based_hash_gadget_native_test, algebraic_sponge_gadget_native_test};
-
-    fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F>{
-        let mut inputs = Vec::with_capacity(num);
-        for i in 1..=num {
-            let input = F::from(i as u32);
-            inputs.push(input);
-        }
-        inputs
-    }
+    use crate::crh::test::{constant_length_field_based_hash_gadget_native_test, algebraic_sponge_gadget_test};
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
 
     #[cfg(feature = "mnt4_753")]
     #[test]
     fn poseidon_mnt4_753_gadget_native_test() {
         use crate::mnt4753::*;
+        use algebra::fields::mnt4753::{Fr as MNT4753Fr, Fq as MNT4753Fq};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, MNT4PoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, MNT4PoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, MNT4PoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<MNT4753Fq, MNT4753Fr, _, MNT4PoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
@@ -530,54 +541,69 @@ mod test {
     #[test]
     fn poseidon_mnt6_753_gadget_native_test() {
         use crate::mnt6753::*;
+        use algebra::fields::mnt6753::{Fr as MNT6753Fr, Fq as MNT6753Fq};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, MNT6PoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, MNT6PoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, MNT6PoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<MNT6753Fq, MNT6753Fr, _, MNT6PoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
     #[cfg(feature = "bn_382")]
     #[test]
-    fn crh_bn382_fr_primitive_gadget_test() {
+    fn poseidon_bn382_fr_gadget_test() {
         use crate::bn382::*;
+        use algebra::fields::bn_382::{Fr as Bn382Fr, Fq as Bn382Fq};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FrPoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, BN382FrPoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FrPoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<Bn382Fq, Bn382Fr, _, BN382FrPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
     #[cfg(feature = "bn_382")]
     #[test]
-    fn crh_bn382_fq_primitive_gadget_test() {
+    fn poseidon_bn382_fq_gadget_test() {
         use crate::bn382::*;
+        use algebra::fields::bn_382::{Fq as Bn382Fq, Fr as Bn382Fr};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FqPoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, BN382FqPoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FqPoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<Bn382Fr, Bn382Fq, _, BN382FqPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
     #[cfg(feature = "tweedle")]
     #[test]
-    fn crh_tweedle_fr_primitive_gadget_test() {
+    fn poseidon_tweedle_fr_gadget_test() {
         use crate::tweedle::*;
+        use algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, TweedleFrPoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<TweedleFq, TweedleFr, _, TweedleFrPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
     #[cfg(feature = "tweedle")]
     #[test]
-    fn crh_tweedle_fq_primitive_gadget_test() {
+    fn poseidon_tweedle_fq_gadget_test() {
         use crate::tweedle::*;
+        use algebra::fields::tweedle::{Fq as TweedleFq, Fr as TweedleFr};
+
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget>(generate_inputs(ins));
-            algebraic_sponge_gadget_native_test::<_, _, TweedleFqPoseidonSpongeGadget>(generate_inputs(ins));
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<TweedleFr, TweedleFq, _, TweedleFqPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 }

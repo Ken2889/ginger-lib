@@ -1,8 +1,9 @@
+use algebra::fields::nonnative::*;
+use num_bigint::BigUint;
 use crate::{prelude::*, fields::{
     fp::FpGadget,
     nonnative::{
-        params::get_params,
-        reduce::{bigint_to_constraint_field, limbs_to_bigint, Reducer},
+        reduce::Reducer,
         nonnative_field_gadget::NonNativeFieldGadget,
     }
 }, overhead, FromGadget};
@@ -12,7 +13,6 @@ use std::{
     marker::PhantomData,
     vec::Vec,
 };
-use num_bigint::BigUint;
 
 #[derive(Debug)]
 #[must_use]
@@ -56,9 +56,9 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> NonNativeFieldMulResultGa
         let params = get_params(SimulationF::size_in_bits(), ConstraintF::size_in_bits());
 
         let p_representations =
-            NonNativeFieldGadget::<SimulationF, ConstraintF>::get_limbs_representations_from_big_integer(
-                &<SimulationF as PrimeField>::Params::MODULUS
-            )?;
+            get_limbs_representations_from_big_integer::<SimulationF, ConstraintF>(
+                &<SimulationF as PrimeField>::Params::MODULUS,
+            );
         let p_bigint = limbs_to_bigint(params.bits_per_limb, &p_representations);
 
         let mut limbs_values = Vec::<ConstraintF>::new();
@@ -81,9 +81,9 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> NonNativeFieldMulResultGa
 
         // Step 1: get p
         let p_representations =
-            NonNativeFieldGadget::<SimulationF, ConstraintF>::get_limbs_representations_from_big_integer(
+            get_limbs_representations_from_big_integer::<SimulationF, ConstraintF>(
                 &<SimulationF as PrimeField>::Params::MODULUS,
-            )?;
+            );
         let p_bigint = limbs_to_bigint(params.bits_per_limb, &p_representations);
 
         let mut p_gadget_limbs = Vec::new();
@@ -252,8 +252,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> NonNativeFieldMulResultGa
         mut cs: CS,
         other: &SimulationF
     ) -> Result<Self, SynthesisError> {
-        let mut other_limbs =
-            NonNativeFieldGadget::<SimulationF, ConstraintF>::get_limbs_representations(other)?;
+        let mut other_limbs = get_limbs_representations::<SimulationF, ConstraintF>(other);
         other_limbs.reverse();
 
         let mut new_limbs = Vec::new();
