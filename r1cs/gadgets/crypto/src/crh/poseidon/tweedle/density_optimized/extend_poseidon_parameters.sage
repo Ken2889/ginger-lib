@@ -1,4 +1,5 @@
-load('dee_parameters.sage')
+# load('dee_parameters.sage')
+load('dum_parameters.sage')
 load('rust_big_integers.sage')
 
 rc = [[F(round_constants[t*i + j]) for j in range(0,t)] for i in range(0,R_P + R_F)]
