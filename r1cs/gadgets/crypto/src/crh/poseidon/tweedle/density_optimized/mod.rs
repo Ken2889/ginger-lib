@@ -10,8 +10,8 @@ use r1cs_std::{
     Assignment, to_field_gadget_vec::ToConstraintFieldGadget,
 };
 
-mod constants;
-use constants::*;
+pub mod constants;
+pub use constants::*;
 
 /// Poseidon Hash implementation optimized for densities, in this
 /// very particular use case (e.g. SBox = x^5, R_F = 8 and R_P = 56).
@@ -759,32 +759,42 @@ for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
     }
 }
 
-use algebra::fields::tweedle::Fr;
+use algebra::fields::tweedle::{Fr, Fq};
 use crate::crh::poseidon::{
-    tweedle::TweedleFrPoseidonParameters,
-    density_optimized::TweedleFrDensityOptimizedPoseidonParameters,
+    tweedle::{TweedleFrPoseidonParameters, TweedleFqPoseidonParameters},
+    density_optimized::{TweedleFrDensityOptimizedPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters}
 };
 
 pub type TweedleFrDensityOptimizedPoseidonHashGadget = DensityOptimizedPoseidonQuinticSboxHashGadget<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters>;
 pub type TweedleFrDensityOptimizedPoseidonSpongeGadget = DensityOptimizedPoseidonQuinticSboxSpongeGadget<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters>;
+pub type TweedleFqDensityOptimizedPoseidonHashGadget = DensityOptimizedPoseidonQuinticSboxHashGadget<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters>;
+pub type TweedleFqDensityOptimizedPoseidonSpongeGadget = DensityOptimizedPoseidonQuinticSboxSpongeGadget<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters>;
 
 #[cfg(test)]
 mod test {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-
-    use algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq};
     use crate::crh::test::{constant_length_field_based_hash_gadget_native_test, algebraic_sponge_gadget_test};
 
     use super::*;
 
     #[test]
-    fn test_native_density_optimized_tweedle_fr_poseidon_hash() {
+    fn test_density_optimized_tweedle_fr_poseidon() {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrDensityOptimizedPoseidonHashGadget, _>(rng, ins);
-            algebraic_sponge_gadget_test::<TweedleFq, TweedleFr, _, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<Fq, Fr, _, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
+        }
+    }
+
+    #[test]
+    fn test_density_optimized_tweedle_fq_poseidon() {
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
+
+        for ins in 1..=5 {
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqDensityOptimizedPoseidonHashGadget, _>(rng, ins);
+            algebraic_sponge_gadget_test::<Fr, Fq, _, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 }
