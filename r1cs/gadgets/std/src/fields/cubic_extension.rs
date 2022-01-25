@@ -132,6 +132,25 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
+    fn conditionally_add<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        bit: &Boolean,
+        other: &Self
+    ) -> Result<Self, SynthesisError> {
+        let c0 = self
+            .c0
+            .conditionally_add(cs.ns(|| "c0"), bit, &other.c0)?;
+        let c1 = self
+            .c1
+            .conditionally_add(cs.ns(|| "c1"), bit, &other.c1)?;
+        let c2 = self
+            .c2
+            .conditionally_add(cs.ns(|| "c2"), bit, &other.c2)?;
+        Ok(Self::new(c0, c1, c2))
+    }
+
+    #[inline]
     fn sub<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,

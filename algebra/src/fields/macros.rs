@@ -637,5 +637,19 @@ macro_rules! impl_Fp {
                 self.mul_assign(&other.inverse().unwrap());
             }
         }
+
+        impl<P: $FpParameters> From<num_bigint::BigUint> for $Fp<P> {
+            #[inline]
+            fn from(val: num_bigint::BigUint) -> $Fp<P> {
+                $Fp::<P>::from_le_bytes_mod_order(&val.to_bytes_le())
+            }
+        }
+    
+        impl<P: $FpParameters> From<$Fp<P>> for num_bigint::BigUint {
+            #[inline]
+            fn from(other: $Fp<P>) -> Self {
+                other.into_repr().into()
+            }
+        }
     }
 }

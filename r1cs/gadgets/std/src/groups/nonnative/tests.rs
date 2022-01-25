@@ -1,13 +1,26 @@
+#![allow(unused_imports, unused_macros)]
+
 use crate::groups::{
     nonnative::short_weierstrass_jacobian::GroupAffineNonNativeGadget,
     test::{group_test_with_incomplete_add, mul_bits_native_test},
 };
+
+#[cfg(feature = "tweedle")]
+use algebra::fields::tweedle::Fr as TweedleFr;
+
+#[cfg(feature = "bn_382")]
+use algebra::fields::bn_382::fr::Fr as BN382Fr;
+
+#[cfg(feature = "ed25519")]
 use algebra::{
     curves::ed25519::Ed25519Parameters,
-    fields::{
-        ed25519::fq::Fq as ed25519Fq,
-        tweedle::Fr as TweedleFr,
-    },
+    fields::ed25519::fq::Fq as ed25519Fq,
+};
+
+#[cfg(feature = "secp256k1")]
+use algebra::{
+    curves::secp256k1::Secp256k1Parameters,
+    fields::secp256k1::fq::Fq as secp256k1Fq,
 };
 
 macro_rules! nonnative_test_individual {
@@ -65,16 +78,17 @@ macro_rules! nonnative_group_test_unsafe_add {
         );
     };
 }
-/*nonnative_group_test_unsafe_add!(
+
+#[cfg(all(feature = "bn_382", feature = "secp256k1"))]
+nonnative_group_test_unsafe_add!(
     Bn382Frsecp256k1Fq,
     1,
     Secp256k1Parameters,
     BN382Fr,
     secp256k1Fq
-);*/
+);
 
-//TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
-#[cfg(feature = "density-optimized")]
+#[cfg(all(feature = "tweedle", feature = "ed25519"))]
 nonnative_group_test_unsafe_add!(
     TweedleFred25519Fq,
     1,

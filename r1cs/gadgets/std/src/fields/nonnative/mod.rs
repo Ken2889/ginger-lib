@@ -1,6 +1,5 @@
-//! A module for simulating non-native field arithmetics according to [Kosba et al.](https://ieeexplore.ieee.org/document/8418647),
-//! using some of the optimizations from [Ozdemir et al.](https://eprint.iacr.org/2019/1494).
-//! Ported from [arkworks/nonnative](https://github.com/arkworks-rs/nonnative).
+//! A module for simulating non-native field arithmetics using the techniques of [[Kosba et al]]. 
+//! Ported from [[arkworks/nonnative]]. 
 //! The following types are defined/supported:
 //! - `NonNativeFieldParams` specifies the constraint prime field (called `ConstraintF`),
 //!     the simulated prime field (called `SimulationF`), and internal parameters.
@@ -10,14 +9,17 @@
 //!     result of multiplication, which is hidden from the `FieldGadget` interface
 //!     and is left for advanced users who want better performance.
 //! DISCLAIMER: THIS LIBRARY IS EXPERIMENTAL AND NEEDS TO UNDERGO A MORE IN-DEPTH REVIEW
+//! 
+//! [Kosba et al]: https://ieeexplore.ieee.org/document/8418647
+//! [arkworks]: https://github.com/arkworks-rs/nonnative
 use std::fmt::Debug;
 
 pub mod params;
 
-/// a submodule for reducing the representations
+/// A submodule for reducing internal representations of non-natives.
 pub mod reduce;
 
-/// the main module, non-native field gadgets and its arithmetic operations
+/// The main module, non-native field gadgets and its arithmetic operations.
 pub mod nonnative_field_gadget;
 
 /// The intermediate non-normalized representation resulting from products.
@@ -26,14 +28,33 @@ pub mod nonnative_field_mul_result_gadget;
 #[cfg(test)]
 mod tests;
 
-/// a macro for computing the bit length ceil(log2(x)) of a field element x
+/// a macro for computing the ceil(log2(x)) of a BigUint x
 #[doc(hidden)]
 #[macro_export]
-macro_rules! overhead {
+macro_rules! ceil_log_2 {
     ($x:expr) => {{
-        use algebra::BigInteger;
-        let num = $x;
-        let num_bits = num.into_repr().to_bits();
+        // Let `len` be the number of bits, and let `z` be the number 
+        // of leading zeros. Then
+        // ``
+        //             z        len - z
+        //      ------------- -----------
+        //      0    ....   0 1 ** .... *
+        // ``
+        // Hence `ceil_log_2(x) = len - z` if `x` is not a pure power 
+        // of two. Otherwise `ceil_log_2(x) = len - z - 1`.                   
+        use num_bigint::BigUint;
+        let num: BigUint = $x;
+        // big endian bit rep, might have leading zeros.
+        let num_bits = num.to_radix_be(2u32).into_iter()
+            .map(|byte| {
+                if byte == 1u8 {
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<bool>>(); 
+
         let mut skipped_bits = 0;
         for b in num_bits.iter() {
             if *b == false {
@@ -51,9 +72,9 @@ macro_rules! overhead {
         }
 
         if is_power_of_2 {
-            num_bits.len() - skipped_bits
+            num_bits.len() - skipped_bits - 1 
         } else {
-            num_bits.len() - skipped_bits + 1
+            num_bits.len() - skipped_bits 
         }
     }};
 }
