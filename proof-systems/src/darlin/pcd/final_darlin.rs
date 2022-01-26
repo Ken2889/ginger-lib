@@ -11,7 +11,7 @@ use crate::darlin::{
 use algebra::{Curve, Group, ToConstraintField};
 use digest::Digest;
 use poly_commit::{
-    fiat_shamir_rng::FiatShamirRng,
+    fiat_shamir::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };

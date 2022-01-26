@@ -1,7 +1,7 @@
 use crate::{
     fields::{BitIterator, Field, SquareRootField},
     groups::Group,
-    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand,
+    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand, ToConstraintField,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -32,6 +32,7 @@ pub trait Curve:
     + Serialize
     + for<'a> Deserialize<'a>
     + UniformRand
+    + ToConstraintField<<Self as Curve>::BaseField>
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {

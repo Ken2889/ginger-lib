@@ -4,8 +4,9 @@
 use super::InnerProductArgPC;
 use crate::Error;
 
-use crate::fiat_shamir_rng::{
-    FiatShamirChaChaRng, FiatShamirChaChaRngSeed, FiatShamirRng, FiatShamirRngSeed,
+use crate::fiat_shamir::{
+    FiatShamirRng, FiatShamirRngSeed,
+    chacha20::{FiatShamirChaChaRng, FiatShamirChaChaRngSeed}
 };
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
@@ -261,8 +262,8 @@ fn fiat_shamir_rng_test() {
         assert_eq!(a, b);
         assert_eq!(rng1.get_state(), rng2.get_state());
 
-        rng1.absorb(b"ABSORBABLE_ELEM");
-        rng2.absorb(b"ABSORBABLE_ELEM");
+        rng1.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
+        rng2.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
 
         assert_eq!(rng1.get_state(), rng2.get_state());
 
@@ -299,8 +300,8 @@ fn fiat_shamir_rng_test() {
         assert_ne!(a, b);
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
-        fs_rng.absorb(b"ABSORBABLE_ELEM");
-        malicious_fs_rng.absorb(b"ABSORBABLE_ELEM");
+        fs_rng.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
+        malicious_fs_rng.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
 
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
@@ -325,8 +326,8 @@ fn fiat_shamir_rng_test() {
 
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
 
-        fs_rng.absorb(b"ABSORBABLE_ELEM");
-        fs_rng_copy.absorb(b"ABSORBABLE_ELEM");
+        fs_rng.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
+        fs_rng_copy.absorb::<Fr, _>("ABSORBABLE_ELEM").unwrap();
 
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
 

@@ -31,8 +31,7 @@
 #[macro_use]
 extern crate bench_utils;
 
-use algebra::ToBytes;
-use algebra::{to_bytes, Curve};
+use algebra::Curve;
 use digest::Digest;
 use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
@@ -48,7 +47,7 @@ use std::{
     vec::Vec,
 };
 
-use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
+use poly_commit::fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 
 mod error;
 pub use error::*;
@@ -197,7 +196,11 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         end_timer!(first_round_comm_time);
 
         // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        fs_rng.absorb(first_comms
+            .iter()
+            .map(|labeled_comm| labeled_comm.commitment().clone())
+            .collect::<Vec<_>>()
+        )?;
 
         let (verifier_first_msg, verifier_state) =
             IOP::verifier_first_round(index_pk.index_vk.index_info, &mut fs_rng)?;
@@ -220,7 +223,11 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         end_timer!(second_round_comm_time);
 
         // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        fs_rng.absorb(second_comms
+            .iter()
+            .map(|labeled_comm| labeled_comm.commitment().clone())
+            .collect::<Vec<_>>()
+        )?;
 
         let (verifier_second_msg, verifier_state) =
             IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
@@ -241,7 +248,11 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         end_timer!(third_round_comm_time);
 
         // again, absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        fs_rng.absorb(third_comms
+            .iter()
+            .map(|labeled_comm| labeled_comm.commitment().clone())
+            .collect::<Vec<_>>()
+        )?;
 
         /* Preparations before entering the batch evaluation proof
          */
@@ -301,7 +312,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         end_timer!(eval_time);
 
         // absorb the evalution claims.
-        fs_rng.absorb(&evaluations);
+        fs_rng.absorb(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
@@ -422,7 +433,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let first_comms = &proof.commitments[0];
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        fs_rng.absorb(first_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_first_round(index_vk.index_info, &mut fs_rng)?;
 
@@ -430,7 +441,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         The verification of the outer sumcheck equation is postponed to below
         */
         let second_comms = &proof.commitments[1];
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        fs_rng.absorb(second_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
 
@@ -439,7 +450,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         */
 
         let third_comms = &proof.commitments[2];
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        fs_rng.absorb(third_comms.clone())?;
 
         let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng);
 
@@ -491,7 +502,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");
 
-        fs_rng.absorb(&proof.evaluations);
+        fs_rng.absorb(proof.evaluations.clone())?;
 
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,

@@ -20,7 +20,7 @@ pub trait ToConstraintField<F: Field> {
     fn to_field_elements(&self) -> Result<Vec<F>, Error>;
 }
 
-impl<'a, F: PrimeField, T: ToConstraintField<F>> ToConstraintField<F> for &'a [T] {
+impl<'a, F: Field, T: ToConstraintField<F>> ToConstraintField<F> for &'a [T] {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
         let mut fes = Vec::with_capacity(self.len());
         for elem in self.iter() {
@@ -30,23 +30,21 @@ impl<'a, F: PrimeField, T: ToConstraintField<F>> ToConstraintField<F> for &'a [T
     }
 }
 
-impl<F: PrimeField, T: ToConstraintField<F>> ToConstraintField<F> for Vec<T> {
-    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        self.as_slice().to_field_elements()
-    }
-}
-
-impl<F: PrimeField> ToConstraintField<F> for F {
+impl<F: Field> ToConstraintField<F> for F {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
         Ok(vec![*self])
     }
 }
 
-// Impl for base field
-impl<F: Field> ToConstraintField<F> for [F] {
-    #[inline]
+impl<F: Field, T: ToConstraintField<F>, const N: usize> ToConstraintField<F> for [T; N] {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        Ok(self.to_vec())
+        self.as_ref().to_field_elements()
+    }
+}
+
+impl<F: Field, T: ToConstraintField<F>> ToConstraintField<F> for Vec<T> {
+    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+        self.as_slice().to_field_elements()
     }
 }
 
@@ -99,44 +97,41 @@ where
     }
 }
 
-impl<ConstraintF: PrimeField> ToConstraintField<ConstraintF> for [u8] {
+impl<ConstraintF: Field> ToConstraintField<ConstraintF> for [u8] {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let max_size = <ConstraintF as PrimeField>::Params::CAPACITY / 8;
-        let max_size = max_size as usize;
-        let bigint_size = (<ConstraintF as PrimeField>::Params::MODULUS_BITS
-            + <ConstraintF as PrimeField>::Params::REPR_SHAVE_BITS)
-            / 8;
-        let fes = self
-            .chunks(max_size)
-            .map(|chunk| {
-                let mut chunk = chunk.to_vec();
-                let len = chunk.len();
-                for _ in len..(bigint_size as usize) {
-                    chunk.push(0u8);
-                }
-                ConstraintF::read(chunk.as_slice())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(fes)
+        let mut bits = Vec::<bool>::new();
+        for elem in self.iter() {
+            bits.append(&mut vec![
+                elem & 128 != 0,
+                elem & 64 != 0,
+                elem & 32 != 0,
+                elem & 16 != 0,
+                elem & 8 != 0,
+                elem & 4 != 0,
+                elem & 2 != 0,
+                elem & 1 != 0,
+            ]);
+        }
+        bits.to_field_elements()
     }
 }
 
-impl<ConstraintF: PrimeField> ToConstraintField<ConstraintF> for [bool] {
+impl<'a, ConstraintF: Field> ToConstraintField<ConstraintF> for &'a str {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let max_size = <ConstraintF as PrimeField>::Params::CAPACITY as usize;
+        self.as_bytes().to_field_elements()
+    }
+}
+
+impl<ConstraintF: Field> ToConstraintField<ConstraintF> for [bool] {
+    #[inline]
+    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
+        let max_size = <ConstraintF::BasePrimeField as PrimeField>::Params::CAPACITY as usize;
         let fes = self
             .chunks(max_size)
             .map(|chunk| ConstraintF::read_bits(chunk.to_vec()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(fes)
-    }
-}
-
-impl<ConstraintF: PrimeField> ToConstraintField<ConstraintF> for [u8; 32] {
-    #[inline]
-    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        self.as_ref().to_field_elements()
     }
 }

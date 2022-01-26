@@ -21,7 +21,7 @@ pub use data_structures::*;
 
 use rayon::prelude::*;
 
-use crate::fiat_shamir_rng::{FiatShamirChaChaRng, FiatShamirRng};
+use crate::fiat_shamir::{chacha20::FiatShamirChaChaRng, FiatShamirRng};
 use digest::Digest;
 
 #[cfg(test)]
@@ -131,12 +131,7 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
             .collect::<Vec<_>>();
 
         // Absorb evaluations
-        fs_rng.absorb(
-            &values
-                .iter()
-                .flat_map(|val| to_bytes!(val).unwrap())
-                .collect::<Vec<_>>(),
-        );
+        fs_rng.absorb(values)?;
 
         // Sample new batching challenge
         let random_scalar: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
@@ -319,7 +314,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             // We assume that the commitments, the query point, and the evaluations are already
             // bound to the internal state of the Fiat-Shamir rng. Hence the same is true for
             // the deterministically derived combined_commitment and its combined_v.
-            fs_rng.absorb(&to_bytes![hiding_commitment].unwrap());
+            fs_rng.absorb(hiding_commitment)?;
             // the random coefficient `rho`
             let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
 
@@ -327,7 +322,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             // both for witnesses and commitments (and it's randomness)
             polynomial += (hiding_challenge, &hiding_polynomial);
             rand += &(hiding_challenge * &hiding_randomness);
-            fs_rng.absorb(&to_bytes![rand].unwrap());
+            fs_rng.absorb(rand)?;
 
             end_timer!(hiding_time);
 
@@ -393,7 +388,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
 
             // the previous challenge is bound to the internal state, hence
             // no need to absorb it
-            fs_rng.absorb(&to_bytes![lr[0], lr[1]].unwrap());
+            fs_rng.absorb([lr[0], lr[1]])?;
 
             round_challenge = fs_rng.squeeze_128_bits_challenge();
             // round_challenge is guaranteed to be non-zero by squeeze function
@@ -472,9 +467,9 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             let hiding_comm = proof.hiding_comm.unwrap();
             let rand = proof.rand.unwrap();
 
-            fs_rng.absorb(&to_bytes![hiding_comm].unwrap());
+            fs_rng.absorb(hiding_comm)?;
             let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
-            fs_rng.absorb(&(to_bytes![rand].unwrap()));
+            fs_rng.absorb(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
         }
@@ -492,7 +487,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         let r_iter = proof.r_vec.iter();
 
         for (l, r) in l_iter.zip(r_iter) {
-            fs_rng.absorb(&to_bytes![l, r].unwrap());
+            fs_rng.absorb([*l, *r])?;
             round_challenge = fs_rng.squeeze_128_bits_challenge();
 
             round_challenges.push(round_challenge);

@@ -58,35 +58,36 @@ rand_xorshift = { version = "=0.3.0" }
 
 ################################# Benchmarks ##################################
 
-[[bench]]
-name = "pedersen_crh"
-path = "benches/crypto_primitives/crh.rs"
-harness = false
-required-features = ["tweedle", "llvm_asm"]
+# TODO: Fix these benches
+# [[bench]]
+# name = "pedersen_crh"
+# path = "benches/crypto_primitives/crh.rs"
+# harness = false
+# required-features = ["tweedle", "llvm_asm"]
 
-[[bench]]
-name = "pedersen_comm"
-path = "benches/crypto_primitives/comm.rs"
-harness = false
-required-features = ["commitment", "tweedle", "llvm_asm"]
+# [[bench]]
+# name = "pedersen_comm"
+# path = "benches/crypto_primitives/comm.rs"
+# harness = false
+# required-features = ["commitment", "tweedle", "llvm_asm"]
+
+# [[bench]]
+# name = "schnorr_sig"
+# path = "benches/crypto_primitives/signature.rs"
+# harness = false
+# required-features = ["signature", "tweedle", "llvm_asm"]
+
+# [[bench]]
+# name = "ecvrf"
+# path = "benches/crypto_primitives/ecvrf.rs"
+# harness = false
+# required-features = ["vrf", "tweedle", "llvm_asm"]
 
 [[bench]]
 name = "blake2s_prf"
 path = "benches/crypto_primitives/prf.rs"
 harness = false
 required-features = ["prf", "llvm_asm"]
-
-[[bench]]
-name = "schnorr_sig"
-path = "benches/crypto_primitives/signature.rs"
-harness = false
-required-features = ["signature", "tweedle", "llvm_asm"]
-
-[[bench]]
-name = "ecvrf"
-path = "benches/crypto_primitives/ecvrf.rs"
-harness = false
-required-features = ["vrf", "tweedle", "llvm_asm"]
 
 [[bench]]
 name = "poseidon_crh"

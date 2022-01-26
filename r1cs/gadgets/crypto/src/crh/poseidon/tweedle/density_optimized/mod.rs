@@ -7,7 +7,7 @@ use r1cs_core::{ConstraintSystemAbstract, ConstraintVar, LinearCombination, Synt
 use r1cs_std::{
     alloc::{AllocGadget, ConstantGadget},
     fields::{fp::FpGadget, FieldGadget},
-    Assignment, to_field_gadget_vec::ToConstraintFieldGadget,
+    Assignment, to_field_gadget_vec::ToConstraintFieldGadget, ToBytesGadget,
 };
 
 pub mod constants;
@@ -632,11 +632,16 @@ where
         self.mode = mode;
     }
 
-    fn enforce_absorb<CS: ConstraintSystemAbstract<ConstraintF>, AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>>(
+    fn enforce_absorb<CS, AG>(
         &mut self,
         mut cs: CS,
         to_absorb: &AG
-    ) -> Result<(), SynthesisError> {
+    ) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
+            + ToBytesGadget<ConstraintF>
+    {
         let elems = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
         if elems.len() > 0 {
             match self.mode {

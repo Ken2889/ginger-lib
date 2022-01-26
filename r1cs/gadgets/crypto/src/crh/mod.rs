@@ -79,11 +79,16 @@ pub trait AlgebraicSpongeGadget<ConstraintF: PrimeField, H: AlgebraicSponge<Cons
 
     fn set_mode(&mut self, mode: SpongeMode);
 
-    fn enforce_absorb<CS: ConstraintSystemAbstract<ConstraintF>, AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>>(
+    fn enforce_absorb<CS, AG>(
         &mut self,
         cs: CS,
         to_absorb: &AG
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
+            + ToBytesGadget<ConstraintF>
+    ;
 
     fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,

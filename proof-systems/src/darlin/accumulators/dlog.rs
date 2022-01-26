@@ -11,7 +11,7 @@ use algebra::{
 };
 use digest::Digest;
 use poly_commit::{
-    fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed},
+    fiat_shamir::{FiatShamirRng, FiatShamirRngSeed},
     ipa_pc::{CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
     DomainExtendedPolynomialCommitment, Error, LabeledCommitment, PolynomialCommitment,
 };
@@ -216,12 +216,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
 
-        fs_rng.absorb(
-            &values
-                .iter()
-                .flat_map(|val| to_bytes!(val).unwrap())
-                .collect::<Vec<_>>(),
-        );
+        fs_rng.absorb(&values);
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).

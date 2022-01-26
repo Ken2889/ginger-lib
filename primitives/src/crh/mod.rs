@@ -1,4 +1,4 @@
-use algebra::{PrimeField, ToConstraintField};
+use algebra::ToConstraintField;
 use algebra::{bytes::ToBytes, Field};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -163,7 +163,7 @@ pub enum SpongeMode {
 }
 
 /// The trait for an algebraic sponge
-pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
+pub trait AlgebraicSponge<SpongeF: Field>: Clone
 {
     /// The internal state of the Sponge
     type State: Clone + Eq + PartialEq + std::fmt::Debug;
@@ -184,7 +184,7 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
     fn set_mode(&mut self, mode: SpongeMode);
 
     /// Absorb field elements belonging to F.
-    fn absorb<F: PrimeField, A: ToConstraintField<F>>(&mut self, to_absorb: &A);
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: &A);
 
     /// Squeeze field elements belonging to SpongeF.
     fn squeeze(&mut self, num: usize) -> Vec<SpongeF>;
@@ -297,7 +297,7 @@ mod test {
         }
     }
 
-    pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: PrimeField, F2: PrimeField, R: RngCore>(rng: &mut R, expected_output: F1)
+    pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: Field, F2: Field, R: RngCore>(rng: &mut R, expected_output: F1)
     {
         let mut sponge = H::init();
 

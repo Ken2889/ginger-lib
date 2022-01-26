@@ -10,7 +10,7 @@ use algebra::{serialize::*, Curve, SemanticallyValid};
 use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
-    fiat_shamir_rng::FiatShamirRng,
+    fiat_shamir::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };

@@ -80,48 +80,51 @@ impl UInt8 {
         ConstraintF: PrimeField,
         CS: ConstraintSystemAbstract<ConstraintF>,
     {
-        let values_len = values.len();
-        let field_elements: Vec<ConstraintF> =
-            ToConstraintField::<ConstraintF>::to_field_elements(values).unwrap();
+        // Convert bytes to Field Elements using efficient and safe packing
+        let capacity = ConstraintF::Params::CAPACITY as usize;
+        let modulus = ConstraintF::Params::MODULUS_BITS as usize;
+        let num_bits = values.len() * 8;
+        let num_fes = (num_bits + capacity - 1)/capacity; // ceil(num_bits/capacity)
+        let bits_to_consider_in_last_elem = num_bits % capacity;
 
-        let max_size = (<ConstraintF as PrimeField>::Params::CAPACITY / 8) as usize;
+        // Create vector of skip amounts
+        let mut to_skip =  vec![modulus - capacity; num_fes - 1];
+        to_skip.push(modulus - bits_to_consider_in_last_elem);
 
         let mut allocated_bits = Vec::new();
-        for (i, (field_element, byte_chunk)) in field_elements
-            .into_iter()
-            .zip(values.chunks(max_size))
-            .enumerate()
-        {
-            let fe = FpGadget::alloc_input(&mut cs.ns(|| format!("Field element {}", i)), || {
-                Ok(field_element)
-            })?;
+        let fes: Vec<ConstraintF> = ToConstraintField::<ConstraintF>::to_field_elements(values)
+            .map_err(|e| SynthesisError::Other(format!("Unable to convert bytes to field elements: {:?}", e)))?;
 
-            // Let's use the length-restricted variant of the ToBitsGadget to remove the
-            // padding: the padding bits are not constrained to be zero, so any field element
-            // passed as input (as long as it has the last bits set to the proper value) can
-            // satisfy the constraints. This kind of freedom might not be desiderable in
-            // recursive SNARK circuits, where the public inputs of the inner circuit are
-            // usually involved in other kind of constraints inside the wrap circuit.
-            let to_skip: usize =
-                <ConstraintF as PrimeField>::Params::MODULUS_BITS as usize - (byte_chunk.len() * 8);
-            let mut fe_bits = fe.to_bits_with_length_restriction(
-                cs.ns(|| format!("Convert fe to bits {}", i)),
-                to_skip,
+        debug_assert_eq!(num_fes, fes.len());
+
+        // Allocate field elements and collect all the bits
+        for (i, (fe, to_skip)) in fes.into_iter().zip(to_skip).enumerate() {
+
+            // Allocate field element as public input
+            let fe_g = FpGadget::alloc_input(
+                cs.ns(|| format!("Field element {}", i)),
+                || Ok(fe)
             )?;
 
-            // FpGadget::to_bits outputs a big-endian binary representation of
-            // fe_gadget's value, so we have to reverse it to get the little-endian
-            // form.
-            fe_bits.reverse();
+            // Get the bits by skipping required amount
+            let mut fe_bits_g = fe_g
+                .to_bits_with_length_restriction(cs.ns(|| format!("Field element {} to bits", i)), to_skip)?;
 
-            allocated_bits.extend_from_slice(fe_bits.as_slice());
+            allocated_bits.append(&mut fe_bits_g);
         }
 
-        // Chunk up slices of 8 bit into bytes.
-        Ok(allocated_bits[0..8 * values_len]
-            .chunks(8)
-            .map(Self::from_bits_le)
-            .collect())
+        debug_assert_eq!(allocated_bits.len()/8, values.len());
+
+        // Transform back the bits into bytes
+        Ok(allocated_bits
+            .chunks_mut(8)
+            .map(|bits| {
+                // Re-convert bits into their LE representation as Field Elements
+                // were read by converting them into BE
+                bits.reverse();
+                Self::from_bits_le(bits)
+            }).collect()
+        )
     }
 
     /// Turns this `UInt8` into its big-endian byte order representation.
@@ -381,7 +384,7 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt8 {
     }
 }
 
-#[cfg(all(test, feature = "tweelde"))]
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
     use super::UInt8;
     use crate::{boolean::AllocatedBit, prelude::*};

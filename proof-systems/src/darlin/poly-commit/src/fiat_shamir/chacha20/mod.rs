@@ -1,68 +1,12 @@
-// A sponge-like random oracle for Fiat-Shamir transform usage.
-//!
-//! The module includes
-//! * the general traits [`FiatShamirRng`] and [`FiatShamirRngSeed`], and
-//! * an implementation using the ChaCha20 based pseudo random number generator from
-//!   [rand_chacha].
-//!
-//! [rand_chacha]: https://crates.io/crates/rand_chacha
 use crate::error::Error;
 use crate::Vec;
-use algebra::{to_bytes, Field, FromBytes, ToBytes};
+use algebra::{to_bytes, PrimeField, FromBytes, ToBytes, ToConstraintField};
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
 use rand_core::{RngCore, SeedableRng};
-use std::{convert::TryInto, fmt::Debug, marker::PhantomData};
-
-/// A trait for serialization of [`FiatShamirRng`] seed material.
-pub trait FiatShamirRngSeed {
-    /// Output type of the seed, to be consistent with the seed type accepted
-    /// by the `from_seed` function of FiatShamirRng.
-    type FinalizedSeed: Sized + Clone;
-
-    /// Error type
-    type Error: std::error::Error + From<Error>;
-
-    /// Initialize this seed
-    fn new() -> Self;
-
-    /// Update this seed with a new element interpreted as a sequence of byte
-    fn add_bytes<'a, T: 'a + ToBytes>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error>;
-
-    /// Finalize this seed to the type needed by the corresponding FiatShamirRng impl
-    fn finalize(self) -> Self::FinalizedSeed;
-}
-
-/// General trait for Fiat-Shamir transform, designed as a Sponge-based construction.
-pub trait FiatShamirRng: RngCore + Sized + Default {
-    /// Internal State
-    type State: Clone + Debug;
-
-    /// Seed from which initializing this Rng
-    type Seed: FiatShamirRngSeed<Error = Self::Error>;
-
-    /// Error type
-    type Error: std::error::Error + From<Error>;
-
-    /// Create a new `Self` by initializing its internal state with a fresh `seed`.
-    fn from_seed(seed: <Self::Seed as FiatShamirRngSeed>::FinalizedSeed) -> Self;
-
-    /// Refresh the internal state with new material `seed`, generically being
-    /// something serializable to a byte array.
-    fn absorb<'a, T: 'a + ToBytes>(&mut self, elem: &'a T);
-
-    /// Squeeze a new random field element, changing the internal state.
-    fn squeeze_128_bits_challenge<F: Field>(&mut self) -> F {
-        self.gen_range(1u128..=u128::MAX).into()
-    }
-
-    /// Get the internal state in the form of an instance of `Self::Seed`.
-    fn get_state(&self) -> &Self::State;
-
-    /// Set interal state according to the specified `new_seed`
-    fn set_state(&mut self, new_state: Self::State);
-}
+use std::{convert::TryInto, marker::PhantomData};
+use super::*;
 
 #[derive(Default)]
 /// Encoding of seed material as discussed in [issue/22](https://github.com/HorizenLabs/poly-commit/issues/22).
@@ -84,7 +28,7 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
         Self::default()
     }
 
-    fn add_bytes<'a, T: 'a + ToBytes>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error> {
+    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error> {
         // Check we have not reached the maximum allowed seed size
         if self.num_elements == u64::MAX {
             return Err(Error::BadFiatShamirInitialization(format!(
@@ -94,7 +38,8 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
         }
 
         // Get elem bytes and check that they are not over the maximum allowed elem len
-        let mut elem_bytes = to_bytes!(elem).map_err(|_| {
+        let mut elem_bytes = Vec::with_capacity(elem.serialized_size()); 
+        elem.serialize_without_metadata(&mut elem_bytes).map_err(|_| {
             Error::BadFiatShamirInitialization("Unable to convert elem to bytes".to_owned())
         })?;
         let elem_bytes_len: u64 = elem_bytes.len().try_into().map_err(|_| {
@@ -109,6 +54,14 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
         self.elements_len.push(elem_bytes_len);
         self.seed_bytes.append(&mut elem_bytes);
         Ok(self)
+    }
+
+    fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Self::Error> {
+        let fe_bytes = to_bytes!(elem).map_err(|_| {
+            Error::BadFiatShamirInitialization("Unable to convert fe to bytes".to_owned())
+        })?;
+
+        self.add_bytes(&fe_bytes)
     }
 
     fn finalize(mut self) -> Self::FinalizedSeed {
@@ -167,14 +120,14 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
     /// Refresh `self.seed` with new material. Achieved by setting
     /// `self.seed = H(self.seed || new_seed)`.
-    #[inline]
-    fn absorb<'a, T: 'a + ToBytes>(&mut self, seed: &'a T) {
+    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Self::Error> {
         let mut bytes = Vec::new();
-        seed.write(&mut bytes).expect("failed to convert to bytes");
+        to_absorb.serialize_without_metadata(&mut bytes).expect("failed to convert to bytes");
         bytes.extend_from_slice(&self.seed);
         self.seed = D::digest(&bytes);
         let seed: [u8; 32] = FromBytes::read(self.seed.as_ref()).expect("failed to get [u32; 8]");
         self.r = ChaChaRng::from_seed(seed);
+        Ok(self)
     }
 
     /// Create a new `Self` by initializing with a fresh seed.
@@ -206,5 +159,15 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
         self.seed = new_state.clone();
         let r_seed: [u8; 32] = new_state.as_ref().try_into().unwrap(); // Cannot fail at run-time
         self.r = ChaChaRng::from_seed(r_seed);
+    }
+
+    /// Squeeze a new random field element, changing the internal state.
+    fn squeeze<F: PrimeField>(&mut self) -> F {
+        F::rand(self)
+    }
+
+    /// Squeeze a new random field element having bit length of 128, changing the internal state.
+    fn squeeze_128_bits_challenge<F: PrimeField>(&mut self) -> F {
+        self.gen_range(1u128..=u128::MAX).into()
     }
 }

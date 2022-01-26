@@ -5,7 +5,7 @@ pub mod short_weierstrass_projective;
 pub mod twisted_edwards_extended;
 
 pub trait ModelParameters: Send + Sync + 'static {
-    type BaseField: Field + SquareRootField;
+    type BaseField: Field + SquareRootField;// + ToConstraintField<<Self as ModelParameters>::BaseField>;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInt>;
 }
 

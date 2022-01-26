@@ -2,7 +2,7 @@ use super::Group;
 use crate::{
     bytes::{FromBytes, ToBytes, FromBytesChecked},
     serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError},
-    SemanticallyValid,
+    SemanticallyValid, ToConstraintField, Field, Error
 };
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
@@ -224,5 +224,11 @@ impl<G: Group> Group for GroupVec<G> {
             self.0[i] += item;
         }
         self
+    }
+}
+
+impl<F: Field, G: Group + ToConstraintField<F>> ToConstraintField<F> for GroupVec<G> {
+    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+        self.0.to_field_elements()
     }
 }

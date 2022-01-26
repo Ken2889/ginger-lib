@@ -14,11 +14,11 @@ use crate::{error::*, Rc, String};
 pub use algebra::DensePolynomial as Polynomial;
 use algebra::{
     serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError},
-    Curve, Field, Group, SemanticallyValid, ToBytes,
+    Curve, Field, Group, SemanticallyValid,
 };
 use std::{
     fmt::Debug,
-    io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
+    io::{Read, Write},
 };
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
@@ -197,14 +197,6 @@ impl<G: Group> LabeledCommitment<G> {
 impl<G: Group> SemanticallyValid for LabeledCommitment<G> {
     fn is_valid(&self) -> bool {
         self.commitment.is_valid()
-    }
-}
-
-impl<G: Group> ToBytes for LabeledCommitment<G> {
-    #[inline]
-    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        CanonicalSerialize::serialize(&self.commitment, &mut writer)
-            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 

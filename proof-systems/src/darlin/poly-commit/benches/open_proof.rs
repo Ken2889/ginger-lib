@@ -2,7 +2,7 @@ use algebra::{Curve, DensePolynomial as Polynomial, UniformRand};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
+use poly_commit::fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC};
 use poly_commit::{LabeledPolynomial, PCParameters, PolynomialCommitment};
 use rand::{thread_rng, RngCore};

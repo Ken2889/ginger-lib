@@ -208,6 +208,18 @@ impl CanonicalSerialize for String {
     }
 }
 
+impl<'a> CanonicalSerialize for &'a str {
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.to_string().serialize(writer)
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.to_string().serialized_size()
+    }
+}
+
 impl CanonicalDeserialize for String {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
@@ -262,6 +274,36 @@ impl<T: CanonicalSerialize> CanonicalSerialize for [T] {
             .iter()
             .map(|item| item.uncompressed_size())
             .sum::<usize>()
+    }
+}
+
+impl<T: CanonicalSerialize, const N: usize> CanonicalSerialize for [T; N] {
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.as_ref().serialize(writer)
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.as_ref().serialized_size()
+    }
+
+    #[inline]
+    fn serialize_without_metadata<W: Write>(
+        &self,
+        writer: W,
+    ) -> Result<(), SerializationError> {
+        self.as_ref().serialize_without_metadata(writer)
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.as_ref().serialize_uncompressed(writer)
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.as_ref().uncompressed_size()
     }
 }
 

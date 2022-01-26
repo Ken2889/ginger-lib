@@ -133,7 +133,7 @@ impl<SpongeF, P, SB> AlgebraicSponge<SpongeF> for PoseidonSponge<SpongeF, P, SB>
         self.mode = mode;
     }
 
-    fn absorb<F: PrimeField, A: ToConstraintField<F>>(&mut self, to_absorb: &A)
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: &A)
     {
         // Get F field elements
         let fes = to_absorb.to_field_elements().unwrap();

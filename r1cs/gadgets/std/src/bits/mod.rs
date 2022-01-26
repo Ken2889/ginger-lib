@@ -124,19 +124,19 @@ pub trait ToCompressedBitsGadget<ConstraintF: Field> {
     ) -> Result<Vec<Boolean>, SynthesisError>;
 }
 
-impl<ConstraintF: Field> ToBytesGadget<ConstraintF> for [UInt8] {
+impl<ConstraintF: Field> ToBytesGadget<ConstraintF> for UInt8 {
     fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         _cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
-        Ok(self.to_vec())
+        Ok(vec![self.clone()])
     }
 
     fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
-        cs: CS,
+        _cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
-        self.to_bytes(cs)
+        Ok(vec![self.clone()])
     }
 }
 
@@ -158,18 +158,62 @@ impl<'a, ConstraintF: Field, T: 'a + ToBytesGadget<ConstraintF>> ToBytesGadget<C
     }
 }
 
-impl<'a, ConstraintF: Field> ToBytesGadget<ConstraintF> for &'a [UInt8] {
+impl<'a, ConstraintF: Field, T: 'a + ToBytesGadget<ConstraintF>> ToBytesGadget<ConstraintF>
+    for &'a [T]
+{
     fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
-        _cs: CS,
+        mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
-        Ok(self.to_vec())
+        let mut bytes = Vec::new();
+        for (i, elem) in self.iter().enumerate() {
+            bytes.append(&mut elem.to_bytes(cs.ns(|| format!("elem {} to bytes", i)))?);
+        }
+        Ok(bytes)
+    }
+
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<UInt8>, SynthesisError> {
+        let mut bytes = Vec::new();
+        for (i, elem) in self.iter().enumerate() {
+            bytes.append(&mut elem.to_bytes_strict(cs.ns(|| format!("elem {} to bytes strict", i)))?);
+        }
+        Ok(bytes)
+    }
+}
+
+impl<ConstraintF: Field> ToBytesGadget<ConstraintF> for [UInt8] {
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<UInt8>, SynthesisError> {
+        (&self).to_bytes(cs)
     }
 
     fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
-        self.to_bytes(cs)
+        (&self).to_bytes_strict(cs)
+    }
+}
+
+impl<ConstraintF: Field, T: ToBytesGadget<ConstraintF>> ToBytesGadget<ConstraintF>
+    for Vec<T>
+{
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<UInt8>, SynthesisError> {
+        self.as_slice().to_bytes(cs)
+    }
+
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<UInt8>, SynthesisError> {
+        self.as_slice().to_bytes_strict(cs)
     }
 }
