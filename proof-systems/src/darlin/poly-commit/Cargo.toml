@@ -23,8 +23,10 @@ edition = "2018"
 [dependencies]
 algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive"] }
 bench-utils = {  path = "../../../../bench-utils" }
+primitives = { path = "../../../../primitives" }
 r1cs-core = { path = "../../../../r1cs/core"}
 r1cs-std = { path = "../../../../r1cs/gadgets/std"}
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto"}
 
 rand = { version = "0.8.4", default-features = false }
 rand_chacha = { version = "0.3.1", default-features = false }

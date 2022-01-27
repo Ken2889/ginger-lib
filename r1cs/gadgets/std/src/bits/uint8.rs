@@ -85,11 +85,18 @@ impl UInt8 {
         let modulus = ConstraintF::Params::MODULUS_BITS as usize;
         let num_bits = values.len() * 8;
         let num_fes = (num_bits + capacity - 1)/capacity; // ceil(num_bits/capacity)
-        let bits_to_consider_in_last_elem = num_bits % capacity;
 
         // Create vector of skip amounts
-        let mut to_skip =  vec![modulus - capacity; num_fes - 1];
-        to_skip.push(modulus - bits_to_consider_in_last_elem);
+        let mut to_skip =  vec![modulus - capacity; num_fes];
+
+        // Compute number of bits to consider for the last field element
+        let bits_to_consider_in_last_elem = num_bits % capacity;
+
+        // If number of bits is exactly multiple of the capacity, we don't need to
+        // enforce a separate treatment for the last field element
+        if bits_to_consider_in_last_elem != 0 {
+            to_skip[num_fes - 1] = modulus - bits_to_consider_in_last_elem;
+        }
 
         let mut allocated_bits = Vec::new();
         let fes: Vec<ConstraintF> = ToConstraintField::<ConstraintF>::to_field_elements(values)
