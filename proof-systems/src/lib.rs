@@ -17,9 +17,6 @@
     clippy::assertions_on_constants
 )]
 
-#[macro_use]
-extern crate bench_utils;
-
 #[cfg(feature = "darlin")]
 #[macro_use]
 extern crate derivative;

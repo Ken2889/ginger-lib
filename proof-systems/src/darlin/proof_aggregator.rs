@@ -8,6 +8,7 @@ use crate::darlin::{
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
 };
 use algebra::{Curve, Group, ToConstraintField};
+use bench_utils::*;
 use digest::Digest;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{

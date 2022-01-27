@@ -7,6 +7,7 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
 };
 use algebra::{serialize::*, Curve, SemanticallyValid};
+use bench_utils::*;
 use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{

@@ -9,6 +9,7 @@ use crate::darlin::{
     FinalDarlin, FinalDarlinVerifierKey,
 };
 use algebra::{Curve, Group, ToConstraintField};
+use bench_utils::*;
 use digest::Digest;
 use poly_commit::{
     fiat_shamir::FiatShamirRng,

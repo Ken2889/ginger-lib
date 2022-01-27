@@ -9,6 +9,7 @@ use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
     serialize::*, Curve, Field, Group, GroupVec, SemanticallyValid, UniformRand,
 };
+use bench_utils::*;
 use digest::Digest;
 use poly_commit::{
     fiat_shamir::{FiatShamirRng, FiatShamirRngSeed},
