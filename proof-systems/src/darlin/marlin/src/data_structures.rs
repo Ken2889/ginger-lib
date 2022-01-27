@@ -5,7 +5,7 @@
 use crate::iop::indexer::*;
 use crate::{Vec, IOP};
 use algebra::serialize::*;
-use algebra::{Curve, Group, ToBytes};
+use algebra::{Curve, Group};
 use derivative::Derivative;
 use poly_commit::{LabeledRandomness, PolynomialCommitment};
 
@@ -189,14 +189,6 @@ impl<G: Curve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof
 /*
     Serialization and Deserialization utilities.
 */
-
-impl<G: Curve, PC: PolynomialCommitment<G>> ToBytes for VerifierKey<G, PC> {
-    #[inline]
-    fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        self.serialize_without_metadata(writer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))
-    }
-}
 
 impl<G: Curve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {

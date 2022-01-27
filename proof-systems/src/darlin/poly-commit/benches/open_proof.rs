@@ -70,7 +70,7 @@ fn bench_open_proof<G: Curve, D: Digest>(c: &mut Criterion, bench_name: &str, co
                     let mut fs_rng_seed_builder =
                         <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
                     fs_rng_seed_builder.add_bytes(b"BENCH_SEED").unwrap();
-                    let fs_rng_seed = fs_rng_seed_builder.finalize();
+                    let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
                     let fs_rng =
                         <InnerProductArgPC::<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed);
 

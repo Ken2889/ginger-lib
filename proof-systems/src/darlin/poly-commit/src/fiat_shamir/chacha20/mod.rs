@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Vec;
-use algebra::{to_bytes, PrimeField, FromBytes, ToBytes, ToConstraintField};
+use algebra::{PrimeField, ToConstraintField, serialize_no_metadata};
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
@@ -38,8 +38,7 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
         }
 
         // Get elem bytes and check that they are not over the maximum allowed elem len
-        let mut elem_bytes = Vec::with_capacity(elem.serialized_size()); 
-        elem.serialize_without_metadata(&mut elem_bytes).map_err(|_| {
+        let mut elem_bytes = serialize_no_metadata!(elem).map_err(|_| {
             Error::BadFiatShamirInitialization("Unable to convert elem to bytes".to_owned())
         })?;
         let elem_bytes_len: u64 = elem_bytes.len().try_into().map_err(|_| {
@@ -57,19 +56,15 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
     }
 
     fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Self::Error> {
-        let fe_bytes = to_bytes!(elem).map_err(|_| {
-            Error::BadFiatShamirInitialization("Unable to convert fe to bytes".to_owned())
-        })?;
-
-        self.add_bytes(&fe_bytes)
+        self.add_bytes(elem)
     }
 
-    fn finalize(mut self) -> Self::FinalizedSeed {
-        let mut final_seed = Vec::new();
-        final_seed.append(&mut to_bytes!(self.num_elements).unwrap());
-        final_seed.append(&mut to_bytes!(self.elements_len).unwrap());
-        final_seed.append(&mut self.seed_bytes);
-        final_seed
+    fn finalize(self) -> Result<Self::FinalizedSeed, Self::Error> 
+    {
+        serialize_no_metadata![self.num_elements, self.elements_len, self.seed_bytes]
+            .map_err(|e| {
+                Error::BadFiatShamirInitialization(format!("Unable to finalize seed: {:?}", e))
+            })
     }
 }
 
@@ -86,7 +81,7 @@ impl<D: Digest> Default for FiatShamirChaChaRng<D> {
     /// WARNING: Not intended for normal usage. FiatShamir must be initialized with proper,
     /// protocol-binded values. Use `from_seed` function instead.
     fn default() -> Self {
-        Self::from_seed(FiatShamirChaChaRngSeed::default().finalize())
+        Self::from_seed(FiatShamirChaChaRngSeed::default().finalize().unwrap())
     }
 }
 
@@ -125,7 +120,7 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
         to_absorb.serialize_without_metadata(&mut bytes).expect("failed to convert to bytes");
         bytes.extend_from_slice(&self.seed);
         self.seed = D::digest(&bytes);
-        let seed: [u8; 32] = FromBytes::read(self.seed.as_ref()).expect("failed to get [u32; 8]");
+        let seed: [u8; 32] = self.seed.as_ref().try_into().expect("failed to get [u32; 8]");
         self.r = ChaChaRng::from_seed(seed);
         Ok(self)
     }
@@ -137,7 +132,7 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
         // Hash the seed and use it as actual seed of the rng
         let seed = D::digest(&seed);
-        let r_seed: [u8; 32] = FromBytes::read(seed.as_ref()).unwrap();
+        let r_seed: [u8; 32] = seed.as_ref().try_into().unwrap();
         let r = ChaChaRng::from_seed(r_seed);
 
         Self {

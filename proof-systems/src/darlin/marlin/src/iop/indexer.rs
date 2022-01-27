@@ -5,7 +5,7 @@ use crate::iop::{Error, IOP};
 use crate::{ToString, Vec};
 use algebra::{
     get_best_evaluation_domain, serialize::*, EvaluationDomain, Evaluations as EvaluationsOnDomain,
-    PrimeField, SemanticallyValid, ToBytes,
+    PrimeField, SemanticallyValid,
 };
 use derivative::Derivative;
 use poly_commit::LabeledPolynomial;
@@ -41,25 +41,6 @@ pub struct IndexInfo<F> {
 
     #[doc(hidden)]
     pub f: PhantomData<F>,
-}
-
-impl<F> ToBytes for IndexInfo<F> {
-    #[inline]
-    fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
-        self.num_witness
-            .serialize_without_metadata(&mut writer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
-        self.num_inputs
-            .serialize_without_metadata(&mut writer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
-        self.num_constraints
-            .serialize_without_metadata(&mut writer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
-        self.num_non_zero
-            .serialize_without_metadata(&mut writer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
-        Ok(())
-    }
 }
 
 impl<F: PrimeField> IndexInfo<F> {

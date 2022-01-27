@@ -111,6 +111,50 @@ pub trait CanonicalDeserialize: Sized {
     }
 }
 
+#[macro_export]
+macro_rules! serialize {
+    ($($x:expr),*) => ({
+        use std::io::Cursor;
+        let mut buf = Cursor::new(vec![]);
+        {$crate::serialize_to_vec!(buf, $($x),*)}.map(|_| buf.into_inner())
+    });
+}
+
+#[macro_export]
+macro_rules! serialize_to_vec {
+    ($buf:expr, $y:expr, $($x:expr),*) => ({
+        {
+            CanonicalSerialize::serialize(&$y, &mut $buf)
+        }.and({$crate::serialize_to_vec!($buf, $($x),*)})
+    });
+
+    ($buf:expr, $x:expr) => ({
+        CanonicalSerialize::serialize(&$x, &mut $buf)
+    })
+}
+
+#[macro_export]
+macro_rules! serialize_no_metadata {
+    ($($x:expr),*) => ({
+        use std::io::Cursor;
+        let mut buf = Cursor::new(vec![]);
+        {$crate::serialize_to_vec_no_metadata!(buf, $($x),*)}.map(|_| buf.into_inner())
+    });
+}
+
+#[macro_export]
+macro_rules! serialize_to_vec_no_metadata {
+    ($buf:expr, $y:expr, $($x:expr),*) => ({
+        {
+            CanonicalSerialize::serialize_without_metadata(&$y, &mut $buf)
+        }.and({$crate::serialize_to_vec_no_metadata!($buf, $($x),*)})
+    });
+
+    ($buf:expr, $x:expr) => ({
+        CanonicalSerialize::serialize_without_metadata(&$x, &mut $buf)
+    })
+}
+
 // Macro for implementing serialize for u8, u16, u32, u64
 macro_rules! impl_uint {
     ($ty: ident) => {

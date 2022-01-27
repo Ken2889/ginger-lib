@@ -36,7 +36,7 @@ hex = "=0.4.3"
 [features]
 llvm_asm = ["algebra/llvm_asm"]
 
-full = [ "tweedle", "secp256k1" ]
+full = [ "tweedle", "secp256k1", "ed25519" ]
 
 tweedle = [ "algebra/tweedle" ]
 secp256k1 = ["algebra/secp256k1"]

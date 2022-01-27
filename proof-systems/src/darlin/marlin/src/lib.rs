@@ -176,7 +176,9 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
                 .add_bytes(&public_input)
                 .map_err(Error::from_pc_err)?;
 
-            seed_builder.finalize()
+            seed_builder
+                .finalize()
+                .map_err(Error::from_pc_err)?
         };
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
 
@@ -426,7 +428,10 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             seed_builder
                 .add_bytes(&public_input)
                 .map_err(Error::from_pc_err)?;
-            seed_builder.finalize()
+            
+            seed_builder
+                .finalize()
+                .map_err(Error::from_pc_err)?
         };
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
 

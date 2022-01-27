@@ -11,7 +11,7 @@ where
 {
     let mut fs_rng_seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
     fs_rng_seed_builder.add_bytes(b"TEST_SEED").unwrap();
-    let fs_rng_seed = fs_rng_seed_builder.finalize();
+    let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
     PC::RandomOracle::from_seed(fs_rng_seed)
 }
 

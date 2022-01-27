@@ -11,6 +11,9 @@ pub mod chacha20;
 /// An implementation using Poseidon Sponge.
 //pub mod poseidon;
 
+/// Traits definition for circuitizing FiatShamirRng. 
+pub mod constraints;
+
 /// A trait for serialization of [`FiatShamirRng`] seed material.
 pub trait FiatShamirRngSeed {
     /// Output type of the seed, to be consistent with the seed type accepted
@@ -30,7 +33,7 @@ pub trait FiatShamirRngSeed {
     fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Self::Error>;
 
     /// Finalize this seed to the type needed by the corresponding FiatShamirRng impl
-    fn finalize(self) -> Self::FinalizedSeed;
+    fn finalize(self) -> Result<Self::FinalizedSeed, Self::Error>;
 }
 
 /// General trait for Fiat-Shamir transform, designed as a Sponge-based construction.

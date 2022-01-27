@@ -13,7 +13,7 @@ use crate::tests::TestUtils;
 use crate::{
     DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PolynomialCommitment,
 };
-use algebra::{curves::tweedle::dee::DeeJacobian, to_bytes, Curve, ToBytes};
+use algebra::{curves::tweedle::dee::DeeJacobian, Curve, CanonicalSerialize, serialize_no_metadata};
 use blake2::Blake2s;
 use digest::Digest;
 use rand::thread_rng;
@@ -237,7 +237,7 @@ fn key_hash_test() {
     assert!(!PC_DEE::check_key(&ck, supported_degree));
     assert!(ck.get_hash() == pp.get_hash());
 
-    let h = Blake2s::digest(&to_bytes![&ck.comm_key, &ck.h, &ck.s, ck.max_degree as u32].unwrap())
+    let h = Blake2s::digest(&serialize_no_metadata![&ck.comm_key, &ck.h, &ck.s, ck.max_degree as u32].unwrap())
         .to_vec();
     assert_ne!(h.as_slice(), ck.get_hash());
 }
@@ -250,7 +250,7 @@ fn fiat_shamir_rng_test() {
     // Empty test
     {
         let mut rng1 = FiatShamirChaChaRng::<Blake2s>::from_seed(
-            FiatShamirChaChaRngSeed::default().finalize(),
+            FiatShamirChaChaRngSeed::default().finalize().unwrap(),
         );
         let mut rng2 = FiatShamirChaChaRng::<Blake2s>::default();
 
@@ -279,14 +279,14 @@ fn fiat_shamir_rng_test() {
         let fs_rng_seed = {
             let mut seed_builder = FiatShamirChaChaRngSeed::new();
             seed_builder.add_bytes(b"TEST_SEED").unwrap();
-            seed_builder.finalize()
+            seed_builder.finalize().unwrap()
         };
 
         let malicious_fs_rng_seed = {
             let mut seed_builder = FiatShamirChaChaRngSeed::new();
             seed_builder.add_bytes(b"TEST_").unwrap();
             seed_builder.add_bytes(b"SEED").unwrap();
-            seed_builder.finalize()
+            seed_builder.finalize().unwrap()
         };
 
         let mut fs_rng = FiatShamirChaChaRng::<Blake2s>::from_seed(fs_rng_seed);
@@ -317,7 +317,7 @@ fn fiat_shamir_rng_test() {
         let fs_rng_seed = {
             let mut seed_builder = FiatShamirChaChaRngSeed::new();
             seed_builder.add_bytes(b"TEST_SEED").unwrap();
-            seed_builder.finalize()
+            seed_builder.finalize().unwrap()
         };
         let mut fs_rng = FiatShamirChaChaRng::<Blake2s>::from_seed(fs_rng_seed);
 

@@ -85,7 +85,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
             // As we use constant length encoding of field elements, we may use add_bytes()
             // without producing collisions in the serialization procedure.
             seed_builder.add_bytes(&previous_accumulators)?;
-            seed_builder.finalize()
+            seed_builder.finalize()?
         };
         let mut fs_rng =
             <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(
@@ -265,7 +265,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             seed_builder.add_bytes(&ck.hash)?;
             // TODO: Shall we decompose this further when passing it to the seed builder ?
             seed_builder.add_bytes(&accumulators)?;
-            seed_builder.finalize()
+            seed_builder.finalize()?
         };
         let mut fs_rng =
             <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(
@@ -486,7 +486,7 @@ mod test {
     ) -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle {
         let mut seed_builder = <<DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
-        let fs_rng_seed = seed_builder.finalize();
+        let fs_rng_seed = seed_builder.finalize().unwrap();
         <DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<
             G,
         >>::RandomOracle::from_seed(fs_rng_seed)

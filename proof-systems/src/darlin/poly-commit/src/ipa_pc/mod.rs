@@ -10,7 +10,7 @@ use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    to_bytes, BitIterator, Curve, Field, Group, PrimeField, SemanticallyValid, ToBytes, UniformRand,
+    BitIterator, Curve, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -180,11 +180,11 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
             .into_par_iter()
             .map(|i| {
                 let i = i as u64;
-                let mut hash = D::digest(&to_bytes![seed, i].unwrap());
+                let mut hash = D::digest(&serialize_no_metadata![seed, i].unwrap());
                 let mut g = G::from_random_bytes(&hash);
                 let mut j = 0u64;
                 while g.is_none() {
-                    hash = D::digest(&to_bytes![seed, i, j].unwrap());
+                    hash = D::digest(&serialize_no_metadata![seed, i, j].unwrap());
                     g = G::from_random_bytes(&hash);
                     j += 1;
                 }
@@ -228,7 +228,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         let generators = Self::sample_generators(max_degree + 3, seed);
         end_timer!(setup_time);
 
-        let hash = D::digest(&to_bytes![&generators, max_degree as u32].unwrap()).to_vec();
+        let hash = D::digest(&serialize_no_metadata![&generators, max_degree as u32].unwrap()).to_vec();
 
         let h = generators[0].clone();
         let s = generators[1].clone();
