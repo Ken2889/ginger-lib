@@ -1,4 +1,4 @@
-use algebra::{Curve, ToConstraintField};
+use algebra::{Curve, ToConstraintField, Group};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -11,7 +11,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: Curve, G2: Curve, D: Digest>(
+fn bench_verify<G1: Curve, G2: Curve, D: 'static + Digest>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -80,7 +80,7 @@ fn bench_verify<G1: Curve, G2: Curve, D: Digest>(
     group.finish();
 }
 
-fn bench_accumulate<G1: Curve, G2: Curve, D: Digest>(
+fn bench_accumulate<G1: Curve, G2: Curve, D: 'static + Digest>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -139,7 +139,7 @@ fn bench_accumulate<G1: Curve, G2: Curve, D: Digest>(
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_verify_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
+    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
     bench_verify::<TweedleDee, TweedleDum, Blake2s>(
         c,
@@ -164,7 +164,7 @@ fn bench_verify_tweedle(c: &mut Criterion) {
 }
 
 fn bench_accumulate_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
+    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
     bench_accumulate::<TweedleDee, TweedleDum, Blake2s>(
         c,

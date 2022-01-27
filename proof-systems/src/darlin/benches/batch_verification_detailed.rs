@@ -5,17 +5,15 @@ use digest::Digest;
 use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
-use proof_systems::darlin::pcd::{DualPCDVerifierKey, GeneralPCD};
+use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
-use proof_systems::darlin::{
-    pcd::PCD,
-    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
+use proof_systems::darlin::tests::{
+    final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys
 };
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
-use rayon::prelude::*;
 
 fn bench_succinct_part_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,

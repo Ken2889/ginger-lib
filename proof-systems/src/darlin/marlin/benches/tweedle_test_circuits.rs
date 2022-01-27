@@ -155,7 +155,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit1b<F> {
             self.a.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let mut b_k_minus_2 = FpGadget::<F>::alloc_input(cs.ns(|| "alloc b0"), || {
+        let b_k_minus_2 = FpGadget::<F>::alloc_input(cs.ns(|| "alloc b0"), || {
             self.b.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
@@ -203,7 +203,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit1b<F> {
             )?;
 
             a_k_minus_2 = a_k_minus_1;
-            b_k_minus_2 = b_k_minus_1;
+            //b_k_minus_2 = b_k_minus_1;
             a_k_minus_1 = a_k;
             b_k_minus_1 = b_k;
         }

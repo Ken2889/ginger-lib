@@ -146,7 +146,12 @@ where
         })?;
 
         // Absorb evaluations and sample new challenge
-        fs_rng.absorb(&self.proof.evaluations);
+        fs_rng
+            .absorb(self.proof.evaluations.clone())
+            .map_err(|e| {
+                end_timer!(succinct_time);
+                PCDError::FailedSuccinctVerification(format!("{:?}", e))
+            })?;
 
         // Succinct verify DLOG proof
         let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::succinct_multi_point_multi_poly_verify(

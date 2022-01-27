@@ -7,7 +7,7 @@
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, to_bytes, Curve, Field, Group, GroupVec, SemanticallyValid, ToBytes, UniformRand,
+    serialize::*, Curve, Field, Group, GroupVec, SemanticallyValid, UniformRand,
 };
 use digest::Digest;
 use poly_commit::{
@@ -20,88 +20,13 @@ use rayon::prelude::*;
 use std::marker::PhantomData;
 
 /// This implements the public aggregator for the IPA/DLOG commitment scheme.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DLogItem<G: Curve> {
     /// Final committer key after the DLOG reduction.
     pub(crate) g_final: G,
 
     /// Challenges of the DLOG reduction.
     pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
-}
-
-impl<G: Curve> CanonicalSerialize for DLogItem<G> {
-    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize(&self.xi_s, &mut writer)
-    }
-
-    fn serialized_size(&self) -> usize {
-        self.g_final.serialized_size() + self.xi_s.serialized_size()
-    }
-
-    fn serialize_without_metadata<W: Write>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), SerializationError> {
-        CanonicalSerialize::serialize_without_metadata(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize_without_metadata(&self.xi_s, &mut writer)
-    }
-
-    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize_uncompressed(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize_uncompressed(&self.xi_s, &mut writer)
-    }
-
-    fn uncompressed_size(&self) -> usize {
-        self.g_final.uncompressed_size() + self.xi_s.uncompressed_size()
-    }
-}
-
-impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    #[inline]
-    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    #[inline]
-    fn deserialize_uncompressed_unchecked<R: Read>(
-        mut reader: R,
-    ) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
 }
 
 impl<G: Curve> SemanticallyValid for DLogItem<G> {
@@ -116,15 +41,6 @@ impl<G: Curve> Default for DLogItem<G> {
             g_final: G::default(),
             xi_s: SuccinctCheckPolynomial(vec![]),
         }
-    }
-}
-
-impl<G: Curve> ToBytes for DLogItem<G> {
-    fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        use std::io::{Error, ErrorKind};
-
-        self.serialize_without_metadata(writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
@@ -216,7 +132,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
 
-        fs_rng.absorb(&values);
+        fs_rng.absorb(values.clone())?;
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
@@ -434,25 +350,12 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
 
 /// A composite dlog accumulator/item, comprised of several single dlog items
 /// from both groups of the EC cycle.
-#[derive(Debug)]
+#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DualDLogItem<G1: Curve, G2: Curve>(
     pub(crate) Vec<DLogItem<G1>>,
     pub(crate) Vec<DLogItem<G2>>,
 );
 
-impl<G1: Curve, G2: Curve> ToBytes for DualDLogItem<G1, G2> {
-    fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
-        use std::io::{Error, ErrorKind};
-
-        self.0
-            .serialize_without_metadata(&mut writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))?;
-
-        self.1
-            .serialize_without_metadata(writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
-    }
-}
 
 pub struct DualDLogItemAccumulator<'a, G1: Curve, G2: Curve, D: Digest> {
     _lifetime: PhantomData<&'a ()>,

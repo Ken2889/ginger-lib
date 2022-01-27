@@ -102,7 +102,12 @@ where
         end_timer!(ahp_verify_time);
 
         // Absorb evaluations and sample new challenge
-        fs_rng.absorb(&self.final_darlin_proof.proof.evaluations);
+        fs_rng
+            .absorb(self.final_darlin_proof.proof.evaluations.clone())
+            .map_err(|e| {
+                end_timer!(succinct_time);
+                PCDError::FailedSuccinctVerification(format!("{:?}", e))
+            })?;
 
         let pc_verify_time = start_timer!(|| "PC succinct verify");
 
