@@ -59,6 +59,18 @@ where
 
         Ok(())
     }
+
+    pub fn get_leaf_index<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<FpGadget<ConstraintF>, SynthesisError> {
+        let leaf_index = FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "Binary merkle tree leaf index from bits"),
+            self.path.iter().rev().map(|(_, b)| *b).collect::<Vec<Boolean>>().as_slice(),
+        )?;
+
+        Ok(leaf_index)
+    }
 }
 
 impl<P, HGadget, ConstraintF>
@@ -495,6 +507,17 @@ mod test {
             cw.enforce_leaf_index(
                 &mut cs.ns(|| format!("enforce_leaf_index_{}", i)),
                 &fe_index_g,
+            )
+            .unwrap();
+
+            // Test get_leaf_index()
+            let leaf_index_g = cw.get_leaf_index(cs.ns(|| format!("get leaf index {}", i))).unwrap();
+
+            fe_index_g.enforce_equal(cs.ns(|| format!("enforce_leaf_index_{} by calling get_leaf_index() [part 1 of 2]", i)), &leaf_index_g).unwrap();
+
+            cw.enforce_leaf_index(
+                &mut cs.ns(|| format!("enforce_leaf_index_{} by calling get_leaf_index() [part 2 of 2]", i)),
+                &leaf_index_g,
             )
             .unwrap();
 
