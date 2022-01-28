@@ -513,13 +513,7 @@ mod test {
             // Test get_leaf_index()
             let leaf_index_g = cw.get_leaf_index(cs.ns(|| format!("get leaf index {}", i))).unwrap();
 
-            fe_index_g.enforce_equal(cs.ns(|| format!("enforce_leaf_index_{} by calling get_leaf_index() [part 1 of 2]", i)), &leaf_index_g).unwrap();
-
-            cw.enforce_leaf_index(
-                &mut cs.ns(|| format!("enforce_leaf_index_{} by calling get_leaf_index() [part 2 of 2]", i)),
-                &leaf_index_g,
-            )
-            .unwrap();
+            fe_index_g.enforce_equal(cs.ns(|| format!("enforce_leaf_index_{} by calling get_leaf_index()", i)), &leaf_index_g).unwrap();
 
             if !cs.is_satisfied() {
                 satisfied = false;
