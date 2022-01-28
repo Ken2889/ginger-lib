@@ -6,7 +6,7 @@ use crate::darlin::{
     },
     pcd::{error::PCDError, PCD},
 };
-use algebra::{serialize::*, Curve, SemanticallyValid};
+use algebra::{serialize::*, EndoMulCurve, SemanticallyValid};
 use bench_utils::*;
 use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
@@ -26,11 +26,11 @@ use std::ops::{Deref, DerefMut};
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct MarlinProof<G: Curve, D: Digest + 'static>(
+pub struct MarlinProof<G: EndoMulCurve, D: Digest + 'static>(
     pub Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
 );
 
-impl<G: Curve, D: Digest> Deref for MarlinProof<G, D> {
+impl<G: EndoMulCurve, D: Digest> Deref for MarlinProof<G, D> {
     type Target = Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>;
 
     fn deref(&self) -> &Self::Target {
@@ -38,13 +38,13 @@ impl<G: Curve, D: Digest> Deref for MarlinProof<G, D> {
     }
 }
 
-impl<G: Curve, D: Digest> DerefMut for MarlinProof<G, D> {
+impl<G: EndoMulCurve, D: Digest> DerefMut for MarlinProof<G, D> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<G: Curve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
+impl<G: EndoMulCurve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
@@ -77,7 +77,7 @@ impl<G: Curve, D: Digest> SemanticallyValid for MarlinProof<G, D> {
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: Curve, D: Digest + 'static> {
+pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, D: Digest + 'static> {
     pub proof: MarlinProof<G, D>,
     pub usr_ins: Vec<G::ScalarField>,
     _lifetime: PhantomData<&'a ()>,
@@ -86,7 +86,7 @@ pub struct SimpleMarlinPCD<'a, G: Curve, D: Digest + 'static> {
 /// As every PCD, the `SimpleMarlinPCD` comes as a proof plus "statement".
 impl<'a, G, D> SimpleMarlinPCD<'a, G, D>
 where
-    G: Curve,
+    G: EndoMulCurve,
     D: Digest + 'a,
 {
     pub fn new(
@@ -105,12 +105,12 @@ where
 
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
-pub struct SimpleMarlinPCDVerifierKey<'a, G: Curve, D: Digest + 'static>(
+pub struct SimpleMarlinPCDVerifierKey<'a, G: EndoMulCurve, D: Digest + 'static>(
     pub &'a MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: Curve, D: Digest> AsRef<DLogVerifierKey<G>> for SimpleMarlinPCDVerifierKey<'a, G, D> {
+impl<'a, G: EndoMulCurve, D: Digest> AsRef<DLogVerifierKey<G>> for SimpleMarlinPCDVerifierKey<'a, G, D> {
     fn as_ref(&self) -> &DLogVerifierKey<G> {
         &self.1
     }
@@ -118,7 +118,7 @@ impl<'a, G: Curve, D: Digest> AsRef<DLogVerifierKey<G>> for SimpleMarlinPCDVerif
 
 impl<'a, G, D> PCD for SimpleMarlinPCD<'a, G, D>
 where
-    G: Curve,
+    G: EndoMulCurve,
     D: Digest + 'static,
 {
     type PCDAccumulator = DLogItemAccumulator<G, D>;

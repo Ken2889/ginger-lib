@@ -15,11 +15,11 @@ pub fn check_field_equals<F1: Field, F2: Field>() -> bool {
     Debug(bound = "")
 )]
 pub struct PoseidonSponge<SpongeF: PrimeField, P: PoseidonParameters<Fr = SpongeF>, SB: SBox<Field = SpongeF, Parameters = P>> {
-    pub(crate) mode:    SpongeMode,
-    pub(crate) state:   Vec<SpongeF>,
-    pub(crate) pending: Vec<SpongeF>,
-    _parameters:        PhantomData<P>,
-    _sbox:              PhantomData<SB>
+    pub mode: SpongeMode,
+    pub state: Vec<SpongeF>,
+    pub pending: Vec<SpongeF>,
+    _parameters: PhantomData<P>,
+    _sbox: PhantomData<SB>
 }
 
 impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
@@ -32,7 +32,7 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
         Self { mode, state, pending, _parameters: PhantomData, _sbox: PhantomData }
     }
 
-    fn apply_permutation(&mut self) {
+    pub fn apply_permutation(&mut self) {
         for (input, state) in self.pending.iter().zip(self.state.iter_mut()) {
             *state += input;
         }
@@ -68,8 +68,8 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
         // serialize them and return their bits.
 
         // Smallest number of field elements to squeeze to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
-        // TODO: Can we use up to MODULUS bits instead ? I guess we squeeze CAPACITY to avoid
-        //       doing range proofs inside the circuit ?
+        // This is done to achieve uniform distribution over the output space, and it also
+        // comes handy as in the circuit we don't need to enforce range proofs for them.
         let usable_bits = SpongeF::Params::CAPACITY as usize; 
         let num_elements = (num_bits + usable_bits - 1) / usable_bits;
         let src_elements = self.squeeze(num_elements);
@@ -77,10 +77,9 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
         // Serialize field elements into bits and return them
         let mut dest_bits: Vec<bool> = Vec::with_capacity(usable_bits * num_elements);
     
-        // TODO: We skip also eventual leading zeros. Is this ok from a security point of view ?
+        // discard leading zeros + 1 bit below modulus bits
         let skip = (SpongeF::Params::REPR_SHAVE_BITS + 1) as usize;
         for elem in src_elements.iter() {
-            // discard the highest bit
             let elem_bits = elem.into_repr().to_bits();
             dest_bits.extend_from_slice(&elem_bits[skip..]);
         }
@@ -90,6 +89,17 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
 
     pub fn get_pending(&self) -> &[SpongeF] {
         &self.pending
+    }
+}
+
+impl<SpongeF, P, SB> Default for PoseidonSponge<SpongeF, P, SB>
+    where
+        SpongeF: PrimeField,
+        P: PoseidonParameters<Fr = SpongeF>,
+        SB: SBox<Field = SpongeF, Parameters = P>,
+{
+    fn default() -> Self {
+        Self::init()
     }
 }
 

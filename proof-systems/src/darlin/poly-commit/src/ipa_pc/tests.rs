@@ -13,7 +13,7 @@ use crate::tests::TestUtils;
 use crate::{
     DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PolynomialCommitment,
 };
-use algebra::{curves::tweedle::dee::DeeJacobian, Curve, CanonicalSerialize, serialize_no_metadata};
+use algebra::{curves::tweedle::dee::DeeJacobian, EndoMulCurve, CanonicalSerialize, serialize_no_metadata};
 use blake2::Blake2s;
 use digest::Digest;
 use rand::thread_rng;
@@ -24,7 +24,7 @@ type PC_DEE = PC<DeeJacobian, Blake2s>;
 // its domain extended variant
 type PC_DEE_DE = DomainExtendedPolynomialCommitment<DeeJacobian, PC_DEE>;
 
-impl<G: Curve> TestUtils for CommitterKey<G> {
+impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
     fn randomize(&mut self) {
         let mut rng = thread_rng();
         self.comm_key = self
@@ -245,6 +245,7 @@ fn key_hash_test() {
 #[test]
 fn fiat_shamir_rng_test() {
     use algebra::fields::tweedle::fr::Fr;
+    use algebra::curves::tweedle::dee::DeeJacobian as TweedleDee;
     use algebra::UniformRand;
 
     // Empty test
@@ -267,8 +268,8 @@ fn fiat_shamir_rng_test() {
 
         assert_eq!(rng1.get_state(), rng2.get_state());
 
-        let a: Fr = rng1.squeeze_128_bits_challenge();
-        let b: Fr = rng2.squeeze_128_bits_challenge();
+        let a: Fr = rng1.squeeze_128_bits_challenge::<TweedleDee>();
+        let b: Fr = rng2.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_eq!(a, b);
         assert_eq!(rng1.get_state(), rng2.get_state());
@@ -305,8 +306,8 @@ fn fiat_shamir_rng_test() {
 
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
-        let a: Fr = fs_rng.squeeze_128_bits_challenge();
-        let b: Fr = malicious_fs_rng.squeeze_128_bits_challenge();
+        let a: Fr = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+        let b: Fr = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_ne!(a, b);
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
@@ -331,8 +332,8 @@ fn fiat_shamir_rng_test() {
 
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
 
-        let a: Fr = fs_rng.squeeze_128_bits_challenge();
-        let b: Fr = fs_rng_copy.squeeze_128_bits_challenge();
+        let a: Fr = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+        let b: Fr = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_eq!(a, b);
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());

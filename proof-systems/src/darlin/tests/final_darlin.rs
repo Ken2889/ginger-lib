@@ -7,7 +7,7 @@ use crate::darlin::{
     pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
-use algebra::{Curve, Group, ToConstraintField, UniformRand};
+use algebra::{Group, ToConstraintField, UniformRand, EndoMulCurve};
 use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey, InnerProductArgPC, Parameters},
@@ -64,16 +64,16 @@ impl AsRef<()> for TestPCDVk {
 
 /// For testing purposes, TestPrevPCD already serves correct sys_ins and usr_ins
 /// to the our test PCDCircuit.
-pub struct TestPrevPCD<G1: Curve, G2: Curve> {
+pub struct TestPrevPCD<G1: EndoMulCurve, G2: EndoMulCurve> {
     sys_ins: FinalDarlinDeferredData<G1, G2>,
     usr_ins: (G1::ScalarField, G1::ScalarField),
 }
 
 impl<G1, G2> PCD for TestPrevPCD<G1, G2>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     type PCDAccumulator = TestAcc;
@@ -90,7 +90,7 @@ where
 
 /// The parameters for our test circuit
 #[derive(Clone)]
-pub struct CircuitInfo<G1: Curve, G2: Curve> {
+pub struct CircuitInfo<G1: EndoMulCurve, G2: EndoMulCurve> {
     pub num_constraints: usize,
     pub num_variables: usize,
     /// just used to deduce the number of field elements to allocate on the
@@ -110,7 +110,7 @@ pub struct CircuitInfo<G1: Curve, G2: Curve> {
 /// are repeated accordingly. To acchieve the give `num_variables`, a corresponding number of
 /// dummy witness variables are allocated.
 #[derive(Clone, Default)]
-pub struct TestCircuit<G1: Curve, G2: Curve> {
+pub struct TestCircuit<G1: EndoMulCurve, G2: EndoMulCurve> {
     /// Incremental data (to be allocated as witnesses)
     pub a: Option<G1::ScalarField>,
     pub b: Option<G1::ScalarField>,
@@ -133,9 +133,9 @@ pub struct TestCircuit<G1: Curve, G2: Curve> {
 
 impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     fn generate_constraints<CS: ConstraintSystemAbstract<G1::ScalarField>>(
@@ -229,9 +229,9 @@ where
 
 impl<G1, G2> PCDCircuit<G1> for TestCircuit<G1, G2>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     type SetupData = CircuitInfo<G1, G2>;
@@ -297,7 +297,7 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a, R: RngCore>(
     pc_ck_g1: &CommitterKey<G1>,
     final_darlin_pk: &FinalDarlinProverKey<
         G1,
@@ -308,9 +308,9 @@ pub fn generate_test_pcd<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
     rng: &mut R,
 ) -> FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let prev_pcd = TestPrevPCD::<G1, G2> {
@@ -340,7 +340,7 @@ where
 /// Generates `num_proofs` random instances of FinalDarlinPCDs for TestCircuit1 at given
 /// `num_constraints`, using `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
+pub fn generate_test_data<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
     params_g1: &Parameters<G1>,
@@ -357,9 +357,9 @@ pub fn generate_test_data<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
     >,
 )
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // Trim committer key and verifier key

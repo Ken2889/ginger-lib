@@ -144,8 +144,8 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
     /// Get `self.seed`.
     #[inline]
-    fn get_state(&self) -> &Self::State {
-        &self.seed
+    fn get_state(&self) -> Self::State {
+        self.seed.clone()
     }
 
     /// Set `self.seed` to the specified value
@@ -162,7 +162,7 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     }
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
-    fn squeeze_128_bits_challenge<F: PrimeField>(&mut self) -> F {
+    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField {
         self.gen_range(1u128..=u128::MAX).into()
     }
 }

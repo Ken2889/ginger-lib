@@ -19,6 +19,30 @@ pub trait FromCompressedBits: Sized {
     fn decompress(compressed: Vec<bool>) -> Result<Self, Error>;
 }
 
+impl ToBits for u8 {
+    fn write_bits(&self) -> Vec<bool> {
+        vec![
+            self & 128 != 0,
+            self & 64 != 0,
+            self & 32 != 0,
+            self & 16 != 0,
+            self & 8 != 0,
+            self & 4 != 0,
+            self & 2 != 0,
+            self & 1 != 0,
+        ]
+    }
+}
+
+impl ToBits for [u8] {
+    fn write_bits(&self) -> Vec<bool> {
+        self
+            .iter()
+            .flat_map(u8::write_bits)
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub enum BitSerializationError {
     InvalidFieldElement(String),

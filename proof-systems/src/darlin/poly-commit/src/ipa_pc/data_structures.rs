@@ -8,7 +8,7 @@
 //! [BCMS20]: https://eprint.iacr.org/2020/499
 use crate::*;
 use crate::{PCCommitterKey, PCVerifierKey, Vec};
-use algebra::{Curve, PrimeField};
+use algebra::{EndoMulCurve, PrimeField};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -27,7 +27,7 @@ use std::{
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct Parameters<G: Curve> {
+pub struct Parameters<G: EndoMulCurve> {
     /// The key used to commit to polynomials.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -42,7 +42,7 @@ pub struct Parameters<G: Curve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: Curve> PCParameters<G> for Parameters<G> {
+impl<G: EndoMulCurve> PCParameters<G> for Parameters<G> {
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
     type Error = Error;
@@ -102,7 +102,7 @@ impl<G: Curve> PCParameters<G> for Parameters<G> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct CommitterKey<G: Curve> {
+pub struct CommitterKey<G: EndoMulCurve> {
     /// The base point vector used for the coefficients of the polynomial.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -122,7 +122,7 @@ pub struct CommitterKey<G: Curve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: Curve> SemanticallyValid for CommitterKey<G> {
+impl<G: EndoMulCurve> SemanticallyValid for CommitterKey<G> {
     // Technically this function is redundant, since the keys are generated
     // through a deterministic procedure starting from a public string.
     fn is_valid(&self) -> bool {
@@ -133,7 +133,7 @@ impl<G: Curve> SemanticallyValid for CommitterKey<G> {
     }
 }
 
-impl<G: Curve> PCCommitterKey for CommitterKey<G> {
+impl<G: EndoMulCurve> PCCommitterKey for CommitterKey<G> {
     fn max_degree(&self) -> usize {
         self.max_degree
     }
@@ -154,7 +154,7 @@ impl<G: Curve> PCCommitterKey for CommitterKey<G> {
 /// `VerifierKey` is used to check evaluation proofs for a given commitment.
 pub type VerifierKey<G> = CommitterKey<G>;
 
-impl<G: Curve> PCVerifierKey for VerifierKey<G> {
+impl<G: EndoMulCurve> PCVerifierKey for VerifierKey<G> {
     fn max_degree(&self) -> usize {
         self.max_degree
     }
@@ -178,7 +178,7 @@ impl<G: Curve> PCVerifierKey for VerifierKey<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: Curve> {
+pub struct Proof<G: EndoMulCurve> {
     /// Vector of left elements for each of the log_d iterations in `open`
     pub l_vec: Vec<G>,
 
@@ -199,13 +199,13 @@ pub struct Proof<G: Curve> {
     pub rand: Option<G::ScalarField>,
 }
 
-impl<G: Curve> PCProof for Proof<G> {
+impl<G: EndoMulCurve> PCProof for Proof<G> {
     fn get_key_len(&self) -> usize {
         1 << self.l_vec.len()
     }
 }
 
-impl<G: Curve> SemanticallyValid for Proof<G> {
+impl<G: EndoMulCurve> SemanticallyValid for Proof<G> {
     fn is_valid(&self) -> bool {
         self.l_vec.is_valid() &&
             self.r_vec.is_valid() &&
@@ -230,7 +230,7 @@ impl<G: Curve> SemanticallyValid for Proof<G> {
     }
 }
 
-impl<G: Curve> CanonicalSerialize for Proof<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for Proof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // l_vec
         // More than enough for practical applications
@@ -345,7 +345,7 @@ impl<G: Curve> CanonicalSerialize for Proof<G> {
     }
 }
 
-impl<G: Curve> CanonicalDeserialize for Proof<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for Proof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read l_vec
         let l_vec_len: u8 = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -501,7 +501,7 @@ impl<G: Curve> CanonicalDeserialize for Proof<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct MultiPointProof<G: Curve> {
+pub struct MultiPointProof<G: EndoMulCurve> {
     /// This is a "classical" single-point multi-poly proof which involves all commitments:
     /// commitments from the initial claim and the new "h_comm"
     pub proof: Proof<G>,
@@ -510,7 +510,7 @@ pub struct MultiPointProof<G: Curve> {
     pub h_commitment: G,
 }
 
-impl<G: Curve> PCMultiPointProof<G> for MultiPointProof<G> {
+impl<G: EndoMulCurve> PCMultiPointProof<G> for MultiPointProof<G> {
     type Commitment = G;
     type Proof = Proof<G>;
 
@@ -533,13 +533,13 @@ impl<G: Curve> PCMultiPointProof<G> for MultiPointProof<G> {
     }
 }
 
-impl<G: Curve> SemanticallyValid for MultiPointProof<G> {
+impl<G: EndoMulCurve> SemanticallyValid for MultiPointProof<G> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.h_commitment.is_valid()
     }
 }
 
-impl<G: Curve> CanonicalSerialize for MultiPointProof<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
         CanonicalSerialize::serialize(&self.proof, &mut writer)?;
@@ -586,7 +586,7 @@ impl<G: Curve> CanonicalSerialize for MultiPointProof<G> {
     }
 }
 
-impl<G: Curve> CanonicalDeserialize for MultiPointProof<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for MultiPointProof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read proof
         let proof: Proof<G> = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -735,11 +735,11 @@ impl<F: PrimeField> CanonicalDeserialize for SuccinctCheckPolynomial<F> {
 
 /// The succinct part of the verifier returns a succinct-check polynomial and final comm key
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifierState<G: Curve> {
+pub struct VerifierState<G: EndoMulCurve> {
     /// check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
     pub check_poly: SuccinctCheckPolynomial<G::ScalarField>,
     /// final comm key
     pub final_comm_key: G,
 }
 
-impl<G: Curve> PCVerifierState for VerifierState<G> {}
+impl<G: EndoMulCurve> PCVerifierState for VerifierState<G> {}

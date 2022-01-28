@@ -10,7 +10,7 @@ use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    BitIterator, Curve, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata
+    BitIterator, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata, EndoMulCurve
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -30,12 +30,12 @@ mod tests;
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: Curve, D: Digest> {
+pub struct InnerProductArgPC<G: EndoMulCurve, D: Digest> {
     _projective: PhantomData<G>,
     _digest: PhantomData<D>,
 }
 
-impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
+impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -134,7 +134,7 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
         fs_rng.absorb(values)?;
 
         // Sample new batching challenge
-        let random_scalar: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let random_scalar: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -198,7 +198,7 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
+impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
     type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
@@ -316,7 +316,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             // the deterministically derived combined_commitment and its combined_v.
             fs_rng.absorb(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
 
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
@@ -334,7 +334,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -390,7 +390,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             // no need to absorb it
             fs_rng.absorb([lr[0], lr[1]])?;
 
-            round_challenge = fs_rng.squeeze_128_bits_challenge();
+            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
             // round_challenge is guaranteed to be non-zero by squeeze function
             let round_challenge_inv = round_challenge.inverse().unwrap();
 
@@ -468,7 +468,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             let rand = proof.rand.unwrap();
 
             fs_rng.absorb(hiding_comm)?;
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
             fs_rng.absorb(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
@@ -477,7 +477,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
 
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -488,7 +488,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
 
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.absorb([*l, *r])?;
-            round_challenge = fs_rng.squeeze_128_bits_challenge();
+            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
 
             round_challenges.push(round_challenge);
 

@@ -1,5 +1,5 @@
 //! Test suite for PCD post processing (batch-verification, aggregation)
-use algebra::Curve;
+use algebra::EndoMulCurve;
 use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
@@ -11,7 +11,7 @@ pub mod simple_marlin;
 
 #[allow(dead_code)]
 /// Extract DLogCommitterKey and DLogVerifierKey from Parameters struct
-pub fn get_keys<G1: Curve, G2: Curve, D: Digest>(
+pub fn get_keys<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest>(
     params_g1: &Parameters<G1>,
     params_g2: &Parameters<G2>,
 ) -> (
@@ -39,6 +39,7 @@ mod test {
             simple_marlin::generate_test_data as generate_simple_marlin_test_data,
         },
     };
+    use algebra::EndoMulCurve;
     use algebra::{
         curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
         serialize::test_canonical_serialize_deserialize,
@@ -68,7 +69,7 @@ mod test {
     }
 
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
-    fn test_accumulation<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
+    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
         vks: &mut [MarlinVerifierKey<
             G1,
@@ -87,9 +88,9 @@ mod test {
         >,
         rng: &mut R,
     ) where
-        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
             + ToConstraintField<<G2 as Group>::ScalarField>,
-        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
             + ToConstraintField<<G1 as Group>::ScalarField>,
     {
         // Accumulate PCDs
@@ -225,7 +226,7 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: Curve, G2: Curve, D: Digest, R: RngCore>(
+    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, D>],
         vks: &mut [MarlinVerifierKey<
             G1,
@@ -242,9 +243,9 @@ mod test {
         >,
         rng: &mut R,
     ) where
-        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
             + ToConstraintField<<G2 as Group>::ScalarField>,
-        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
             + ToConstraintField<<G1 as Group>::ScalarField>,
     {
         // Batch Verify

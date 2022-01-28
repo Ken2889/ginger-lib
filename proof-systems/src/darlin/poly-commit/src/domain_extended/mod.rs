@@ -3,6 +3,7 @@
 //! maximum degree supported by it. 
 
 mod data_structures;
+use algebra::EndoMulCurve;
 pub use data_structures::*;
 
 use crate::{Error, LinearCombination, Polynomial, PolynomialCommitment};
@@ -10,7 +11,6 @@ use crate::{PCProof, PCCommitterKey};
 use algebra::{
     groups::{Group, GroupVec},
     fields::Field,
-    curves::Curve,
 };
 use std::marker::PhantomData;
 use rand_core::RngCore;
@@ -18,7 +18,7 @@ use rand_core::RngCore;
 /// The domain extension of a given homomorphic commitment scheme `PC`.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct DomainExtendedPolynomialCommitment<G: Curve, PC: PolynomialCommitment<G, Commitment = G>> {
+pub struct DomainExtendedPolynomialCommitment<G: EndoMulCurve, PC: PolynomialCommitment<G, Commitment = G>> {
     _projective: PhantomData<G>,
     _pc: PhantomData<PC>,
 }
@@ -30,7 +30,7 @@ pub struct DomainExtendedPolynomialCommitment<G: Curve, PC: PolynomialCommitment
 // degree of the scheme. The commitment of p(X) is the vector of the commitments of its
 // segment polynomials, and evaluation claims on p(X) are reduced to that of a query-point
 // dependent linear combination of the p_i(X).
-impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G> for DomainExtendedPolynomialCommitment<G, PC>
+impl<G: EndoMulCurve, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G> for DomainExtendedPolynomialCommitment<G, PC>
 {
     type Parameters = PC::Parameters;
     type CommitterKey = PC::CommitterKey;

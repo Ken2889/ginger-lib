@@ -31,7 +31,7 @@
 #[macro_use]
 extern crate bench_utils;
 
-use algebra::Curve;
+use algebra::EndoMulCurve;
 use digest::Digest;
 use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
@@ -67,13 +67,13 @@ mod test;
 /// Coboundary Marlin is an argument for satifiability of an R1CS over a prime
 /// field `F` and uses a polynomial commitment scheme `PC` for
 /// polynomials over that field and a digest `D` for the Fiat-Shamir transform.
-pub struct Marlin<G: Curve, PC: PolynomialCommitment<G>, D: Digest>(
+pub struct Marlin<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(
     #[doc(hidden)] PhantomData<G>,
     #[doc(hidden)] PhantomData<PC>,
     #[doc(hidden)] PhantomData<D>,
 );
 
-impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
+impl<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"COBOUNDARY-MARLIN-2021";
@@ -205,7 +205,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         ).map_err(Error::from_pc_err)?;
 
         let (verifier_first_msg, verifier_state) =
-            IOP::verifier_first_round(index_pk.index_vk.index_info, &mut fs_rng)?;
+            IOP::verifier_first_round::<_, G>(index_pk.index_vk.index_info, &mut fs_rng)?;
 
         /*  Second round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -232,7 +232,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         ).map_err(Error::from_pc_err)?;
 
         let (verifier_second_msg, verifier_state) =
-            IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
+            IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
 
         /*  Third round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -259,7 +259,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         /* Preparations before entering the batch evaluation proof
          */
 
-        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng);
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_pk
@@ -440,7 +440,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let first_comms = &proof.commitments[0];
         fs_rng.absorb(first_comms.clone()).map_err(Error::from_pc_err)?;
 
-        let (_, verifier_state) = IOP::verifier_first_round(index_vk.index_info, &mut fs_rng)?;
+        let (_, verifier_state) = IOP::verifier_first_round::<_, G>(index_vk.index_info, &mut fs_rng)?;
 
         /*  Second round of the compiled and Fiat-Shamir transformed oracle proof-
         The verification of the outer sumcheck equation is postponed to below
@@ -448,7 +448,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let second_comms = &proof.commitments[1];
         fs_rng.absorb(second_comms.clone()).map_err(Error::from_pc_err)?;
 
-        let (_, verifier_state) = IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
+        let (_, verifier_state) = IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
 
         /*  Third round of the compiled and Fiat-Shamir transformed oracle proof
         The verification of the inner sumcheck equation is postponed to below
@@ -457,7 +457,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let third_comms = &proof.commitments[2];
         fs_rng.absorb(third_comms.clone()).map_err(Error::from_pc_err)?;
 
-        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng);
 
         // Gather commitments in one vector.
         let commitments: Vec<_> = index_vk

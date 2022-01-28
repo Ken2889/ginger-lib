@@ -1,6 +1,6 @@
 //! A sponge-like random oracle for Fiat-Shamir transform usage.
 
-use algebra::{PrimeField, ToConstraintField, CanonicalSerialize, Field};
+use algebra::{PrimeField, ToConstraintField, CanonicalSerialize, Field, EndoMulCurve};
 use crate::error::Error;
 use std::fmt::Debug;
 
@@ -9,13 +9,14 @@ use std::fmt::Debug;
 pub mod chacha20;
 
 /// An implementation using Poseidon Sponge.
-//pub mod poseidon;
+pub mod poseidon;
 
 /// Traits definition for circuitizing FiatShamirRng. 
 pub mod constraints;
 
 /// A trait for serialization of [`FiatShamirRng`] seed material.
-pub trait FiatShamirRngSeed {
+pub trait FiatShamirRngSeed
+{
     /// Output type of the seed, to be consistent with the seed type accepted
     /// by the `from_seed` function of FiatShamirRng.
     type FinalizedSeed: Sized + Clone;
@@ -30,7 +31,7 @@ pub trait FiatShamirRngSeed {
     fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error>;
 
     /// Update this seed with a new field element
-    fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Self::Error>;
+    fn add_field<F: PrimeField>(&mut self, elem: &F) -> Result<&mut Self, Self::Error>;
 
     /// Finalize this seed to the type needed by the corresponding FiatShamirRng impl
     fn finalize(self) -> Result<Self::FinalizedSeed, Self::Error>;
@@ -57,10 +58,10 @@ pub trait FiatShamirRng: Sized + Default {
     fn squeeze<F: PrimeField>(&mut self) -> F;
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
-    fn squeeze_128_bits_challenge<F: PrimeField>(&mut self) -> F;
+    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField;
 
     /// Get the internal state in the form of an instance of `Self::Seed`.
-    fn get_state(&self) -> &Self::State;
+    fn get_state(&self) -> Self::State;
 
     /// Set interal state according to the specified `new_seed`
     fn set_state(&mut self, new_state: Self::State);

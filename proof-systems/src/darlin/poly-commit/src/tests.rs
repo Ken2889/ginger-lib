@@ -6,7 +6,7 @@ use rand::{distributions::Distribution, thread_rng};
 
 fn setup_test_fs_rng<G, PC>() -> PC::RandomOracle
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
 {
     let mut fs_rng_seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
@@ -61,7 +61,7 @@ impl<G: Group> TestUtils for LabeledCommitment<G> {
 /// of size `max_num_queries`, and verifies MultiPointProofs for these.
 fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -252,7 +252,7 @@ pub(crate) fn constant_poly_test<G, PC>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -271,7 +271,7 @@ where
 
 pub(crate) fn single_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -292,7 +292,7 @@ pub(crate) fn two_poly_four_points_test<G, PC>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -313,7 +313,7 @@ pub(crate) fn full_end_to_end_test<G, PC>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -332,7 +332,7 @@ where
 
 pub(crate) fn segmented_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,

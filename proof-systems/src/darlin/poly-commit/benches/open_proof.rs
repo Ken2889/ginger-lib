@@ -1,4 +1,4 @@
-use algebra::{Curve, DensePolynomial as Polynomial, UniformRand};
+use algebra::{DensePolynomial as Polynomial, UniformRand, EndoMulCurve};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -14,7 +14,7 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: Curve, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -33,7 +33,7 @@ fn generate_ck<G: Curve, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKe
     ck
 }
 
-fn bench_open_proof<G: Curve, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
+fn bench_open_proof<G: EndoMulCurve, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
     let mut group = c.benchmark_group(bench_name);
 
     let max_degree = coeffs - 1;

@@ -14,7 +14,7 @@ use crate::{error::*, Rc, String};
 pub use algebra::DensePolynomial as Polynomial;
 use algebra::{
     serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError},
-    Curve, Field, Group, SemanticallyValid,
+    EndoMulCurve, Field, Group, SemanticallyValid,
 };
 use std::{
     fmt::Debug,
@@ -61,7 +61,7 @@ pub trait PCVerifierKey:
 
 /// Defines the minimal interface for public params for any polynomial
 /// commitment scheme.
-pub trait PCParameters<G: Curve>:
+pub trait PCParameters<G: EndoMulCurve>:
     Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize
 {
     /// The committer key for the scheme; used to commit to a polynomial and then

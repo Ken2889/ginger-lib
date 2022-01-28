@@ -57,7 +57,7 @@ mod marlin {
     use crate::error::Error as MarlinError;
     use crate::iop::Error as IOPError;
     use algebra::{
-        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, Curve,
+        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, EndoMulCurve,
         SemanticallyValid, UniformRand,
     };
     use blake2::Blake2s;
@@ -78,7 +78,7 @@ mod marlin {
         fn copy_params(&mut self, other: &Self);
     }
 
-    impl<G: Curve> TestUtils for IPAParameters<G> {
+    impl<G: EndoMulCurve> TestUtils for IPAParameters<G> {
         fn copy_params(&mut self, other: &Self) {
             self.s = other.s.clone();
             self.h = other.h.clone();
@@ -86,7 +86,7 @@ mod marlin {
         }
     }
 
-    fn test_circuit<G: Curve, PC: PolynomialCommitment<G>, D: Digest>(
+    fn test_circuit<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,

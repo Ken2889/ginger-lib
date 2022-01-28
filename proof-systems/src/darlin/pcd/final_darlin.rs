@@ -8,7 +8,7 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::{Curve, Group, ToConstraintField};
+use algebra::{Group, ToConstraintField, EndoMulCurve};
 use bench_utils::*;
 use digest::Digest;
 use poly_commit::{
@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, D>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -31,9 +31,9 @@ pub struct FinalDarlinPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
 
 impl<'a, G1, G2, D> FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'a,
 {
@@ -51,7 +51,7 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct FinalDarlinPCDVerifierKey<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static> {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
         DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
@@ -59,7 +59,7 @@ pub struct FinalDarlinPCDVerifierKey<'a, G1: Curve, G2: Curve, D: Digest + 'stat
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: Curve, G2: Curve, D: Digest> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
+impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, D>
 {
     fn as_ref(&self) -> &(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>) {
@@ -69,9 +69,9 @@ impl<'a, G1: Curve, G2: Curve, D: Digest> AsRef<(&'a DLogVerifierKey<G1>, &'a DL
 
 impl<'a, G1, G2, D> PCD for FinalDarlinPCD<'a, G1, G2, D>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {

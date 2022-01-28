@@ -18,7 +18,6 @@
 #![deny(unused_imports)]
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
-#![forbid(unsafe_code)]
 #![allow(
     clippy::upper_case_acronyms,
     clippy::too_many_arguments,
@@ -41,7 +40,7 @@ mod tests;
 use crate::fiat_shamir::FiatShamirRng;
 pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, Curve, Field, Group, LinearCombination, SemanticallyValid, ToConstraintField,
+    serialize::*, EndoMulCurve, Field, Group, LinearCombination, SemanticallyValid, ToConstraintField,
 };
 use rand_core::RngCore;
 use std::{
@@ -52,8 +51,6 @@ use std::{
     string::{String, ToString},
     vec::Vec,
 };
-
-// use rayon::prelude::*;
 
 /// A sponge-like random oracle for Fiat-Shamir transform usage.
 pub mod fiat_shamir;
@@ -102,7 +99,7 @@ pub type Evaluations<'a, F> = BTreeMap<(String, F), F>;
 /// properties.
 /// The interface comes with the additional feature of splitting the verifier into a
 /// `succinct` part and `non-succinct` part.   
-pub trait PolynomialCommitment<G: Curve>: Sized {
+pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     /// The polynomial commitment parameters for the commitment scheme.
     type Parameters: PCParameters<
         G,
@@ -563,7 +560,7 @@ pub trait PolynomialCommitment<G: Curve>: Sized {
 
         // as the statement/assertion of the opening proof is already bound to the interal state
         // of the fr_rng, we simply squeeze the challenge scalar for the random linear combination
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         // compute the random linear combination using the powers of lambda
@@ -650,7 +647,7 @@ pub trait PolynomialCommitment<G: Curve>: Sized {
 
         // as the statement of the opening proof is already bound to the interal state of the fs_rng,
         // we simply squeeze the challenge scalar for the random linear combination
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         let mut has_hiding = false;
@@ -749,7 +746,7 @@ pub trait PolynomialCommitment<G: Curve>: Sized {
         // Except the `batch_commitment`, all other commitments are already bound
         // to the internal state of the Fiat-Shamir
         fs_rng.absorb(h_commitment.clone())?;
-        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Assert x_point != x_1, ..., x_m
         // This is needed as we use a slightly optimized LC, which costs one
@@ -825,7 +822,7 @@ pub trait PolynomialCommitment<G: Curve>: Sized {
         let mut combined_commitment = Self::Commitment::zero();
         let mut combined_value = G::ScalarField::zero();
 
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         let labeled_commitments_iter = labeled_commitments.into_iter();
@@ -874,13 +871,13 @@ pub trait PolynomialCommitment<G: Curve>: Sized {
             .collect();
 
         // lambda
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
         fs_rng.absorb(multi_point_proof.get_h_commitment().clone())?;
-        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
-
+        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
         let mut lc_commitment = Self::Commitment::zero();
 

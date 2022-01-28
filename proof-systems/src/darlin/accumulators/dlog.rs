@@ -7,7 +7,7 @@
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, Curve, Field, Group, GroupVec, SemanticallyValid, UniformRand,
+    serialize::*, Field, Group, GroupVec, SemanticallyValid, UniformRand, EndoMulCurve,
 };
 use bench_utils::*;
 use digest::Digest;
@@ -22,7 +22,7 @@ use std::marker::PhantomData;
 
 /// This implements the public aggregator for the IPA/DLOG commitment scheme.
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DLogItem<G: Curve> {
+pub struct DLogItem<G: EndoMulCurve> {
     /// Final committer key after the DLOG reduction.
     pub(crate) g_final: G,
 
@@ -30,13 +30,13 @@ pub struct DLogItem<G: Curve> {
     pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
 }
 
-impl<G: Curve> SemanticallyValid for DLogItem<G> {
+impl<G: EndoMulCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
         self.g_final.is_valid() && self.xi_s.0.is_valid()
     }
 }
 
-impl<G: Curve> Default for DLogItem<G> {
+impl<G: EndoMulCurve> Default for DLogItem<G> {
     fn default() -> Self {
         Self {
             g_final: G::default(),
@@ -45,12 +45,12 @@ impl<G: Curve> Default for DLogItem<G> {
     }
 }
 
-pub struct DLogItemAccumulator<G: Curve, D: Digest + 'static> {
+pub struct DLogItemAccumulator<G: EndoMulCurve, D: Digest + 'static> {
     _digest: PhantomData<D>,
     _group: PhantomData<G>,
 }
 
-impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
+impl<G: EndoMulCurve, D: Digest + 'static> DLogItemAccumulator<G, D> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
@@ -94,7 +94,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
             );
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
+        let z = fs_rng.squeeze_128_bits_challenge::<G>();
 
         let comms_values = previous_accumulators
             .into_par_iter()
@@ -160,7 +160,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
     }
 }
 
-impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D> {
+impl<G: EndoMulCurve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D> {
     type AccumulatorProverKey = CommitterKey<G>;
     type AccumulatorVerifierKey = VerifierKey<G>;
     type AccumulationProof = AccumulationProof<G>;
@@ -274,7 +274,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             );
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
+        let z = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Collect xi_s from the accumulators
         let xi_s = accumulators
@@ -352,13 +352,13 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
 /// A composite dlog accumulator/item, comprised of several single dlog items
 /// from both groups of the EC cycle.
 #[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualDLogItem<G1: Curve, G2: Curve>(
+pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
     pub(crate) Vec<DLogItem<G1>>,
     pub(crate) Vec<DLogItem<G2>>,
 );
 
 
-pub struct DualDLogItemAccumulator<'a, G1: Curve, G2: Curve, D: Digest> {
+pub struct DualDLogItemAccumulator<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest> {
     _lifetime: PhantomData<&'a ()>,
     _group_1: PhantomData<G1>,
     _group_2: PhantomData<G2>,
@@ -368,8 +368,8 @@ pub struct DualDLogItemAccumulator<'a, G1: Curve, G2: Curve, D: Digest> {
 // Straight-forward generalization of the dlog item aggregation to DualDLogItem.
 impl<'a, G1, G2, D> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, D>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>,
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
@@ -483,7 +483,7 @@ mod test {
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
 
-    fn get_test_fs_rng<G: Curve, D: Digest + 'static>(
+    fn get_test_fs_rng<G: EndoMulCurve, D: Digest + 'static>(
     ) -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle {
         let mut seed_builder = <<DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
@@ -505,7 +505,7 @@ mod test {
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
-    struct VerifierData<'a, G: Curve> {
+    struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
         query_set: QuerySet<'a, G::ScalarField>,
@@ -524,7 +524,7 @@ mod test {
         pp: Option<Parameters<G>>,
     ) -> Result<VerifierData<'a, G>, Error>
     where
-        G: Curve,
+        G: EndoMulCurve,
         D: Digest + 'static,
     {
         let TestInfo {
@@ -648,7 +648,7 @@ mod test {
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
     fn accumulation_test<G, D>() -> Result<(), Error>
     where
-        G: Curve,
+        G: EndoMulCurve,
         D: Digest + 'static,
     {
         let rng = &mut thread_rng();
@@ -753,7 +753,7 @@ mod test {
     // and batch verify their dlog items.
     fn batch_verification_test<G, D>() -> Result<(), Error>
     where
-        G: Curve,
+        G: EndoMulCurve,
         D: Digest + 'static,
     {
         let rng = &mut thread_rng();

@@ -1,4 +1,4 @@
-use algebra::{Curve, ToConstraintField, Group};
+use algebra::{EndoMulCurve, ToConstraintField, Group};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -11,15 +11,15 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: Curve, G2: Curve, D: 'static + Digest>(
+fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
@@ -80,15 +80,15 @@ fn bench_verify<G1: Curve, G2: Curve, D: 'static + Digest>(
     group.finish();
 }
 
-fn bench_accumulate<G1: Curve, G2: Curve, D: 'static + Digest>(
+fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);

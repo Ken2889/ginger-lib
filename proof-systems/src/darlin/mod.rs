@@ -29,7 +29,7 @@ use crate::darlin::{
         PCDCircuit, PCD,
     },
 };
-use algebra::{Curve, Group, GroupVec, ToConstraintField};
+use algebra::{EndoMulCurve, Group, GroupVec, ToConstraintField};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
@@ -49,7 +49,7 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: Curve, G2: Curve, D: Digest + 'static>(
+pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<D>,
@@ -58,9 +58,9 @@ pub struct FinalDarlin<'a, G1: Curve, G2: Curve, D: Digest + 'static>(
 
 impl<'a, G1, G2, D> FinalDarlin<'a, G1, G2, D>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
 {

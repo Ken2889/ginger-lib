@@ -8,7 +8,7 @@ use crate::{
         short_weierstrass_jacobian::Jacobian,
         short_weierstrass_projective::Projective,
         twisted_edwards_extended::TEExtended,
-    },
+    }, ToBits,
 };
 
 type Error = Box<dyn std::error::Error>;
@@ -100,20 +100,9 @@ where
 impl<ConstraintF: Field> ToConstraintField<ConstraintF> for [u8] {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let mut bits = Vec::<bool>::new();
-        for elem in self.iter() {
-            bits.append(&mut vec![
-                elem & 128 != 0,
-                elem & 64 != 0,
-                elem & 32 != 0,
-                elem & 16 != 0,
-                elem & 8 != 0,
-                elem & 4 != 0,
-                elem & 2 != 0,
-                elem & 1 != 0,
-            ]);
-        }
-        bits.to_field_elements()
+        self
+            .write_bits()
+            .to_field_elements()
     }
 }
 
