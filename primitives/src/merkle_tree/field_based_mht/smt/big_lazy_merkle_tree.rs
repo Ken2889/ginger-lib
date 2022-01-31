@@ -368,7 +368,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedMerkleTree for FieldBased
             height += 1; // go up one level
             node_idx = self.width + (node_idx / T::MERKLE_ARITY as u32); // compute the index of the parent
         }
-        debug_assert!(self.nodes.get(&node_idx).unwrap() == &self.root.0);
+        debug_assert!(self.get_node_at_height_and_idx(height, node_idx).0 == self.root.0);
 
         Some(FieldBasedBinaryMHTPath::<T>::new(path))
     }
@@ -711,6 +711,13 @@ mod test {
             let root = smt.root().unwrap();
             assert_eq!(root, T::ZERO_NODE_CST.unwrap().nodes[TEST_HEIGHT as usize]);
 
+            // Get merkle path on an empty tree should work
+            for i in 0..smt.width {
+                let leaf = smt.get_node_at_height_and_idx(0, i).0;
+                let path = smt.get_merkle_path(i).unwrap();
+                assert!(path.verify(smt.height as usize, &leaf, &root).unwrap());
+            }
+
             // Generate tree with only 1 leaf and attempt to get the root
             assert!(smt.update_leaves(set![dummy_leaf]).is_ok());
             smt.finalize_in_place().unwrap();
@@ -725,6 +732,13 @@ mod test {
             let mut smt = FieldBasedSparseMHT::<T>::init(1);
             let mut root = smt.root().unwrap();
             assert_eq!(root, T::ZERO_NODE_CST.unwrap().nodes[1]);
+
+            // Get merkle path on an empty tree should work
+            for i in 0..smt.width {
+                let leaf = smt.get_node_at_height_and_idx(0, i).0;
+                let path = smt.get_merkle_path(i).unwrap();
+                assert!(path.verify(smt.height as usize, &leaf, &root).unwrap());
+            }
 
             // Generate tree with only 1 leaf and attempt to get the root
             assert!(smt.update_leaves(set![dummy_leaf]).is_ok());
@@ -751,6 +765,13 @@ mod test {
             let mut smt = FieldBasedSparseMHT::<T>::init(0);
             let root = smt.root().unwrap();
             assert_eq!(root, T::ZERO_NODE_CST.unwrap().nodes[0]);
+
+            // Get merkle path on an empty tree should work
+            for i in 0..smt.width {
+                let leaf = smt.get_node_at_height_and_idx(0, i).0;
+                let path = smt.get_merkle_path(i).unwrap();
+                assert!(path.verify(smt.height as usize, &leaf, &root).unwrap());
+            }
 
             // Generate tree with only 1 leaf and assert error
             assert!(smt.update_leaves(set![dummy_leaf]).unwrap_err().to_string().contains("Reached maximum number of leaves for a tree of height 0"));
@@ -783,15 +804,18 @@ mod test {
         let root = smt.root().unwrap();
         assert_eq!(root, optimized_root);
 
-        for (&i, leaf) in get_non_empty_leaves(&smt).iter() {
+        // Check paths also for empty leaves
+        for i in 0..smt.width {
+            // Get leaf at that idx if existing
+            let leaf = smt.get_node_at_height_and_idx(0, i).0;
 
             // Create and verify a FieldBasedMHTPath
             let path = smt.get_merkle_path(i).unwrap();
-            assert!(path.verify(smt.height as usize, leaf, &root).unwrap());
+            assert!(path.verify(smt.height as usize, &leaf, &root).unwrap());
 
             // Create and verify a path from FieldBasedAppendOnlyMHT
             let optimized_path = optimized.get_merkle_path(i as usize).unwrap();
-            assert!(optimized_path.verify(optimized.height(), leaf, &optimized_root).unwrap());
+            assert!(optimized_path.verify(optimized.height(), &leaf, &optimized_root).unwrap());
 
             // Assert the two paths are equal
             let optimized_path: FieldBasedBinaryMHTPath<T> = optimized_path.try_into().unwrap();
