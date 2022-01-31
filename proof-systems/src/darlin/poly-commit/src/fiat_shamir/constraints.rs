@@ -17,14 +17,14 @@ pub trait FiatShamirRngGadget<ConstraintF: PrimeField>:
     ) -> Result<Self, SynthesisError>;
 
     /// take in field elements
-    fn enforce_absorb<CS, T>(
+    fn enforce_absorb<CS, AG>(
         &mut self,
         cs: CS,
-        elems: &[T]
+        elems: &AG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
-        T: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
+        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
            + ToBytesGadget<ConstraintF>;
 
     /// Output field elements

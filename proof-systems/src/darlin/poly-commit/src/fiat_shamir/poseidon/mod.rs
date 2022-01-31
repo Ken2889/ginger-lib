@@ -3,6 +3,9 @@ use primitives::{PoseidonSponge, PoseidonParameters, SBox, check_field_equals, A
 use super::{FiatShamirRngSeed, FiatShamirRng, Error};
 use std::convert::TryInto;
 
+/// Circuit implementation of this RNG
+pub mod constraints;
+
 #[derive(Default)]
 /// Encoding of seed material as discussed in [issue/22](https://github.com/HorizenLabs/poly-commit/issues/22).
 /// Output type of the seed is a vector of field elements
