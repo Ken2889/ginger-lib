@@ -163,9 +163,6 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
     fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField {
-        let bits = (0..128).map(|_| self.gen()).collect::<Vec<bool>>();
-        
-        // Return an endo scalar out of them
-        G::endo_rep_to_scalar(bits).expect("Should be able to get endo scalar")
+        self.gen_range(1u128..=u128::MAX).into()
     }
 }

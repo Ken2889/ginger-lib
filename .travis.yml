@@ -40,7 +40,5 @@ jobs:
       env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='017,018'
     - name: bionic_rust-1.51.0_latest-TEST_NONNATIVE
       env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='019'
-    - name: bionic_rust-1.51.0_latest-TEST_DARLIN
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='021, 022, 023'
     - name: bionic_rust-nightly-2021-04-25_latest-CHECK
       env: IMAGE_TAG=bionic_rust-nightly-2021-04-25_latest TESTS='002,004,007,010' CARGOARGS='+nightly-2021-04-25'

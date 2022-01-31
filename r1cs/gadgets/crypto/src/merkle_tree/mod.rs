@@ -394,6 +394,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn bad_root_test() {
         //Test #leaves << 2^HEIGHT
         let mut leaves = Vec::new();

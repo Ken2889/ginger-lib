@@ -58,6 +58,12 @@ pub trait FiatShamirRng: Sized + Default {
     fn squeeze<F: PrimeField>(&mut self) -> F;
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
+    /// NOTE: We require the G: EndoMulCurve generic for backward compatibility reasons: we don't
+    ///       want to duplicate code or filling it with ifs to discriminate among circuit-friendly
+    ///       and non circuit-friendly Darlin primitive implementation. This generic will allow us to
+    ///       squeeze a endo scalar in case of circuit friendly implementation and it will be simply
+    ///       ignored by a non circuit friendly implementation.
+    /// TODO: Can we do better ?
     fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField;
 
     /// Get the internal state in the form of an instance of `Self::Seed`.
