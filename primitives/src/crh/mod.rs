@@ -1,5 +1,4 @@
-use algebra::ToConstraintField;
-use algebra::{bytes::ToBytes, Field};
+use algebra::{bytes::ToBytes, Field, PrimeField, FpParameters, ToConstraintField};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
@@ -163,7 +162,7 @@ pub enum SpongeMode {
 }
 
 /// The trait for an algebraic sponge
-pub trait AlgebraicSponge<SpongeF: Field>: Clone
+pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
 {
     /// The internal state of the Sponge
     type State: Clone + Eq + PartialEq + std::fmt::Debug;
@@ -188,6 +187,31 @@ pub trait AlgebraicSponge<SpongeF: Field>: Clone
 
     /// Squeeze field elements belonging to SpongeF.
     fn squeeze(&mut self, num: usize) -> Vec<SpongeF>;
+
+    /// Squeeze 'num_bits' from this sponge
+    fn squeeze_bits(&mut self, num_bits: usize) -> Vec<bool> {
+        // We return a certain amount of bits by squeezing field elements instead,
+        // serialize them and return their bits.
+
+        // Smallest number of field elements to squeeze to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
+        // This is done to achieve uniform distribution over the output space, and it also
+        // comes handy as in the circuit we don't need to enforce range proofs for them.
+        let usable_bits = SpongeF::Params::CAPACITY as usize; 
+        let num_elements = (num_bits + usable_bits - 1) / usable_bits;
+        let src_elements = self.squeeze(num_elements);
+
+        // Serialize field elements into bits and return them
+        let mut dest_bits: Vec<bool> = Vec::with_capacity(num_bits);
+    
+        // discard leading zeros + 1 bit below modulus bits
+        let skip = SpongeF::Params::MODULUS_BITS as usize - usable_bits; 
+        for elem in src_elements.iter() {
+            let elem_bits = elem.write_bits();
+            println!("Primitive elem bits: {:?}", elem_bits);
+            dest_bits.extend_from_slice(&elem_bits[skip..]);
+        }
+        dest_bits[..num_bits].to_vec()
+    }
 
     /// Reset the sponge to its initial state
     fn reset(&mut self) {
@@ -297,7 +321,7 @@ mod test {
         }
     }
 
-    pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: Field, F2: Field, R: RngCore>(rng: &mut R, expected_output: F1)
+    pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: PrimeField, F2: PrimeField, R: RngCore>(rng: &mut R, expected_output: F1)
     {
         let mut sponge = H::init();
 
@@ -338,6 +362,24 @@ mod test {
             // that all the elements output by the sponge are different, we assert insert()
             // returning always true
             outs.into_iter().for_each(|f| assert!(set.insert(f)));
+        }
+
+        // Check squeeze_bits() outputs the correct number of bits
+        for i in 0..=10 {
+            let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+            sponge.absorb(&random_fes);
+
+            // Native squeeze bits test
+            let out_bits: Vec<bool> = sponge.squeeze_bits(i * 10);
+            assert_eq!(i * 10, out_bits.len());
+
+            if i > 0 {
+                // Bits shouldn't be all 0 with overwhelming probabiltiy
+                assert!(!out_bits.iter().all(|bit| !bit));
+
+                // Bits shouldn't be all 1 with overwhelming probabiltiy
+                assert!(!out_bits.into_iter().all(|bit| bit));
+            }
         }
 
         //Test edge cases. Assumption: R = 2

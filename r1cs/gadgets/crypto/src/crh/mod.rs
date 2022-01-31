@@ -1,5 +1,4 @@
-use algebra::Field;
-use algebra::PrimeField;
+use algebra::{Field, PrimeField, FpParameters};
 use primitives::AlgebraicSponge;
 use primitives::SpongeMode;
 use r1cs_std::fields::fp::FpGadget;
@@ -95,6 +94,41 @@ pub trait AlgebraicSpongeGadget<ConstraintF: PrimeField, H: AlgebraicSponge<Cons
         cs: CS,
         num: usize
     ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError>;
+
+    fn enforce_squeeze_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        num_bits: usize
+    ) -> Result<Vec<Boolean>, SynthesisError> 
+    {
+        // We return a certain amount of bits by squeezing field elements instead,
+        // serialize them and return their bits.
+
+        // Smallest number of field elements to squeeze to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
+        // This is done to achieve uniform distribution over the output space, and it also
+        // comes handy as in the circuit we don't need to enforce range proofs for them.
+        let usable_bits = ConstraintF::Params::CAPACITY as usize; 
+        let num_elements = (num_bits + usable_bits - 1) / usable_bits;
+        let src_elements = self.enforce_squeeze(
+            cs.ns(|| "squeeze fes to be serialized"),
+            num_elements
+        )?;
+
+        // Serialize field elements into bits and return them
+        let mut dest_bits: Vec<Boolean> = Vec::with_capacity(usable_bits * num_elements);
+    
+        // discard modulus - capacity bits
+        let to_skip =  ConstraintF::Params::MODULUS_BITS as usize - usable_bits; 
+        for (i, elem) in src_elements.into_iter().enumerate() {
+            let mut elem_bits = elem.to_bits_with_length_restriction(
+                cs.ns(|| format!("elem {} to bits", i)),
+                to_skip
+            )?;
+            println!("Circuit elem bits: {:?}", elem_bits.iter().map(|b|b.get_value().unwrap()).collect::<Vec<bool>>());
+            dest_bits.append(&mut elem_bits);
+        }
+        Ok(dest_bits[..num_bits].to_vec())
+    }
 }
 
 #[cfg(test)]
@@ -199,10 +233,19 @@ mod test {
         // Enforce squeeze
         for i in 0..num_inputs {
             let output_gadgets = sponge_gadget.enforce_squeeze(
-                cs.ns(|| format!("squeeze {} field elements",  i + 1)),
-                i + 1
+                cs.ns(|| format!("test 1: squeeze {} field elements",  i)),
+                i
             ).unwrap().iter().map(|fe_gadget| fe_gadget.get_value().unwrap()).collect::<Vec<_>>();
-            assert_eq!(output_gadgets, primitive_sponge.squeeze(i + 1));
+            assert_eq!(output_gadgets, primitive_sponge.squeeze(i));
+        }
+
+        // Enforce squeeze bits
+        for i in 0..num_inputs {
+            let output_gadgets = sponge_gadget.enforce_squeeze_bits(
+                cs.ns(|| format!("test 1: squeeze {} bits",  i * 10)),
+                i * 10
+            ).unwrap().iter().map(|bit_g| bit_g.get_value().unwrap()).collect::<Vec<_>>();
+            assert_eq!(output_gadgets, primitive_sponge.squeeze_bits(i * 10));
         }
 
         // Check squeeze() outputs the correct number of field elements
@@ -211,7 +254,7 @@ mod test {
         for i in 0..=10 {
 
             let outs = sponge_gadget.enforce_squeeze(
-                cs.ns(|| format!("test squeeze {} field elements",  i)),
+                cs.ns(|| format!("test 2: squeeze {} field elements",  i)),
                 i
             ).unwrap();
             assert_eq!(i, outs.len());
@@ -222,6 +265,27 @@ mod test {
             outs.into_iter().for_each(|f| assert!(set.insert(f.get_value().unwrap())));
         }
 
-        assert!(cs.is_satisfied());
+        // Check squeeze_bits() outputs the correct number of bits
+        for i in 0..=10 {
+
+            let outs = sponge_gadget.enforce_squeeze_bits(
+                cs.ns(|| format!("test 2: squeeze {} bits",  i * 10)),
+                i * 10
+            ).unwrap();
+            assert_eq!(i * 10, outs.len());
+
+            if i > 0 {
+                // Bits should all be different with overwhelming probability
+                assert!(!(
+                    outs.iter().all(|bit_g| bit_g.get_value().unwrap())
+                    ||
+                    outs.into_iter().all(|bit_g| !bit_g.get_value().unwrap())
+                ));
+            }
+        }
+
+        let is_satisfied = cs.which_is_unsatisfied();
+        println!("{:?}", is_satisfied);
+        assert!(is_satisfied.is_none());
     }
 }

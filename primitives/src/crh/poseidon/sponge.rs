@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use algebra::{Field, PrimeField, FpParameters, ToConstraintField, BigInteger};
+use algebra::{Field, PrimeField, ToConstraintField};
 
 use crate::{PoseidonParameters, SBox, SpongeMode, AlgebraicSponge, PoseidonHash};
 
@@ -60,31 +60,6 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
                 }
             }
         }
-    }
-
-    /// Squeeze 'num_bits' from this sponge
-    pub fn squeeze_bits(&mut self, num_bits: usize) -> Vec<bool> {
-        // We return a certain amount of bits by squeezing field elements instead,
-        // serialize them and return their bits.
-
-        // Smallest number of field elements to squeeze to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
-        // This is done to achieve uniform distribution over the output space, and it also
-        // comes handy as in the circuit we don't need to enforce range proofs for them.
-        let usable_bits = SpongeF::Params::CAPACITY as usize; 
-        let num_elements = (num_bits + usable_bits - 1) / usable_bits;
-        let src_elements = self.squeeze(num_elements);
-
-        // Serialize field elements into bits and return them
-        let mut dest_bits: Vec<bool> = Vec::with_capacity(usable_bits * num_elements);
-    
-        // discard leading zeros + 1 bit below modulus bits
-        let skip = (SpongeF::Params::REPR_SHAVE_BITS + 1) as usize;
-        for elem in src_elements.iter() {
-            let elem_bits = elem.into_repr().to_bits();
-            dest_bits.extend_from_slice(&elem_bits[skip..]);
-        }
-    
-        dest_bits
     }
 
     pub fn get_pending(&self) -> &[SpongeF] {
