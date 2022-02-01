@@ -14,6 +14,7 @@ use algebra::{
 };
 use std::marker::PhantomData;
 use rand_core::RngCore;
+use digest::Digest;
 
 /// The domain extension of a given homomorphic commitment scheme `PC`.
 #[derive(Derivative)]
@@ -45,19 +46,19 @@ impl<G: EndoMulCurve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Pol
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup(
+    fn setup<D: Digest>(
         max_degree: usize,
     ) -> Result<Self::Parameters, Self::Error> {
-        PC::setup(max_degree)
+        PC::setup::<D>(max_degree)
     }
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed(
+    fn setup_from_seed<D: Digest>(
         max_degree: usize,
         seed: &[u8],
     ) -> Result<Self::Parameters, Self::Error> {
-        PC::setup_from_seed(max_degree, seed)
+        PC::setup_from_seed::<D>(max_degree, seed)
     }
 
     fn commit(

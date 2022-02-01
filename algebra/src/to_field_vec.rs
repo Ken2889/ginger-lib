@@ -65,11 +65,21 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?;
-        let mut x_fe = affine.x.to_field_elements()?;
-        let y_fe = affine.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
+        // If self is not infinity, convert to affine and return the coordinates
+        if let Ok(affine) = self.into_affine() {
+            let mut x_fe = affine.x.to_field_elements()?;
+            let y_fe = affine.y.to_field_elements()?;
+            x_fe.extend_from_slice(&y_fe);
+            Ok(x_fe)
+        } else {
+            // Otherwise, return the coordinates of the infinity representation in Jacobian
+            let mut x_fe = self.x.to_field_elements()?;
+            let y_fe = self.y.to_field_elements()?;
+            x_fe.extend_from_slice(&y_fe);
+            let z_fe = self.z.to_field_elements()?;
+            x_fe.extend_from_slice(&z_fe);
+            Ok(x_fe)
+        }
     }
 }
 
@@ -79,11 +89,21 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?; // Affine coordinates are defined even if `self` is the neutral elements
-        let mut x_fe = affine.x.to_field_elements()?;
-        let y_fe = affine.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
+        // If self is not infinity, convert to affine and return the coordinates
+        if let Ok(affine) = self.into_affine() {
+            let mut x_fe = affine.x.to_field_elements()?;
+            let y_fe = affine.y.to_field_elements()?;
+            x_fe.extend_from_slice(&y_fe);
+            Ok(x_fe)
+        } else {
+            // Otherwise, return the coordinates of the infinity representation in Projective
+            let mut x_fe = self.x.to_field_elements()?;
+            let y_fe = self.y.to_field_elements()?;
+            x_fe.extend_from_slice(&y_fe);
+            let z_fe = self.z.to_field_elements()?;
+            x_fe.extend_from_slice(&z_fe);
+            Ok(x_fe)
+        }
     }
 }
 
@@ -93,7 +113,7 @@ where
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?;
+        let affine = self.into_affine().unwrap(); // Cannot fail
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);

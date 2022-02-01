@@ -14,7 +14,7 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: EndoMulCurve, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng<Error = poly_commit::Error>, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -22,7 +22,7 @@ fn generate_ck<G: EndoMulCurve, D: Digest, R: RngCore>(info: &BenchInfo) -> Comm
     } = info.clone();
 
     // Generate random params
-    let pp = InnerProductArgPC::<G, D>::setup(max_degree).unwrap();
+    let pp = InnerProductArgPC::<G, FS>::setup::<D>(max_degree).unwrap();
     let (ck, _) = pp.trim(supported_degree).unwrap();
 
     assert!(
@@ -33,7 +33,7 @@ fn generate_ck<G: EndoMulCurve, D: Digest, R: RngCore>(info: &BenchInfo) -> Comm
     ck
 }
 
-fn bench_open_proof<G: EndoMulCurve, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
+fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng<Error = poly_commit::Error>, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
     let mut group = c.benchmark_group(bench_name);
 
     let max_degree = coeffs - 1;
@@ -42,7 +42,7 @@ fn bench_open_proof<G: EndoMulCurve, D: Digest>(c: &mut Criterion, bench_name: &
         max_degree,
         supported_degree: max_degree,
     };
-    let ck = generate_ck::<G, D, XorShiftRng>(&info);
+    let ck = generate_ck::<G, FS, D, XorShiftRng>(&info);
 
     group.bench_with_input(
         BenchmarkId::from_parameter(max_degree),
@@ -62,23 +62,23 @@ fn bench_open_proof<G: EndoMulCurve, D: Digest>(c: &mut Criterion, bench_name: &
                     ));
 
                     let (comms, rands) =
-                        InnerProductArgPC::<G, D>::commit_vec(&ck, &polynomials, Some(rng))
+                        InnerProductArgPC::<G, FS>::commit_vec(&ck, &polynomials, Some(rng))
                             .unwrap();
 
                     let point = G::ScalarField::rand(rng);
 
                     let mut fs_rng_seed_builder =
-                        <<InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
+                        <<InnerProductArgPC<G, FS> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
                     fs_rng_seed_builder.add_bytes(b"BENCH_SEED").unwrap();
                     let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
                     let fs_rng =
-                        <InnerProductArgPC::<G, D> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed);
+                        <InnerProductArgPC::<G, FS> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed);
 
                     (polynomials, comms, point, fs_rng, rands)
                 },
                 |(polynomials, comms, point, mut fs_rng, rands)| {
                     let rng = &mut thread_rng();
-                    InnerProductArgPC::<G, D>::single_point_multi_poly_open(
+                    InnerProductArgPC::<G, FS>::single_point_multi_poly_open(
                         &ck,
                         &polynomials,
                         &comms,
@@ -97,23 +97,38 @@ fn bench_open_proof<G: EndoMulCurve, D: Digest>(c: &mut Criterion, bench_name: &
 }
 
 use algebra::curves::tweedle::{dee::DeeJacobian, dum::DumJacobian};
+use primitives::{TweedleFqPoseidonSponge, TweedleFrPoseidonSponge};
+use poly_commit::fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
+fn bench_open_proof_tweedle_dee_chacha_fs(c: &mut Criterion) {
     for n in 16..22 {
-        bench_open_proof::<DeeJacobian, Blake2s>(c, "open proof in tweedle-dee, coeffs", 1 << n);
+        bench_open_proof::<DeeJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(c, "open proof in tweedle-dee, coeffs", 1 << n);
     }
 }
 
-fn bench_open_proof_tweedle_dum(c: &mut Criterion) {
+fn bench_open_proof_tweedle_dum_chacha_fs(c: &mut Criterion) {
     for n in 16..22 {
-        bench_open_proof::<DumJacobian, Blake2s>(c, "open proof in tweedle-dum, coeffs", 1 << n);
+        bench_open_proof::<DumJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(c, "open proof in tweedle-dum, coeffs", 1 << n);
+    }
+}
+
+fn bench_open_proof_tweedle_dee_poseidon_fs(c: &mut Criterion) {
+    for n in 16..22 {
+        bench_open_proof::<DeeJacobian, TweedleFqPoseidonSponge, Blake2s>(c, "open proof in tweedle-dee, coeffs", 1 << n);
+    }
+}
+
+fn bench_open_proof_tweedle_dum_poseidon_fs(c: &mut Criterion) {
+    for n in 16..22 {
+        bench_open_proof::<DumJacobian, TweedleFrPoseidonSponge, Blake2s>(c, "open proof in tweedle-dum, coeffs", 1 << n);
     }
 }
 
 criterion_group!(
 name = tweedle_open_proof;
 config = Criterion::default().sample_size(10);
-targets = bench_open_proof_tweedle_dee, bench_open_proof_tweedle_dum
+targets = bench_open_proof_tweedle_dee_chacha_fs, bench_open_proof_tweedle_dum_chacha_fs,
+          bench_open_proof_tweedle_dee_poseidon_fs, bench_open_proof_tweedle_dum_poseidon_fs     
 );
 
 criterion_main!(tweedle_open_proof);

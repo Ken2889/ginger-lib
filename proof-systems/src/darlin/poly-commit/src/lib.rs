@@ -42,6 +42,7 @@ pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
     serialize::*, EndoMulCurve, Field, Group, LinearCombination, SemanticallyValid, ToConstraintField,
 };
+use digest::Digest;
 use rand_core::RngCore;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -129,11 +130,11 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
     /// Constructs public parameters when given as input the maximum degree `degree`
     /// for the polynomial commitment scheme.
-    fn setup(max_degree: usize) -> Result<Self::Parameters, Self::Error>;
+    fn setup<D: Digest>(max_degree: usize) -> Result<Self::Parameters, Self::Error>;
 
     /// Constructs public parameters when given as input the maximum degree `degree`
     /// for the polynomial commitment scheme from given seed
-    fn setup_from_seed(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error>;
+    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error>;
 
     /// Computes the commitment of a single polynomial
     fn commit(

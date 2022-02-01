@@ -21,7 +21,7 @@ pub use data_structures::*;
 
 use rayon::prelude::*;
 
-use crate::fiat_shamir::{chacha20::FiatShamirChaChaRng, FiatShamirRng};
+use crate::fiat_shamir::FiatShamirRng;
 use digest::Digest;
 
 #[cfg(test)]
@@ -30,12 +30,12 @@ mod tests;
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: EndoMulCurve, D: Digest> {
+pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> {
     _projective: PhantomData<G>,
-    _digest: PhantomData<D>,
+    _fs: PhantomData<FS>,
 }
 
-impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
+impl<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -70,8 +70,8 @@ impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
 
     /// Complete semantic checks on `ck`.
     #[inline]
-    pub fn check_key(ck: &CommitterKey<G>, max_degree: usize) -> bool {
-        let pp = <Self as PolynomialCommitment<G>>::setup(max_degree).unwrap();
+    pub fn check_key<D: Digest>(ck: &CommitterKey<G>, max_degree: usize) -> bool {
+        let pp = <Self as PolynomialCommitment<G>>::setup::<D>(max_degree).unwrap();
         ck.is_valid() && &pp.hash == &ck.hash
     }
 
@@ -112,7 +112,7 @@ impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
-        fs_rng: &mut FiatShamirChaChaRng<D>,
+        fs_rng: &mut FS,
     ) -> Result<Proof<G>, Error> {
         let mut key_len = ck.comm_key.len();
         if ck.comm_key.len().next_power_of_two() != key_len {
@@ -134,7 +134,7 @@ impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
         fs_rng.absorb(values)?;
 
         // Sample new batching challenge
-        let random_scalar: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let random_scalar = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -175,7 +175,7 @@ impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
 
     /// Computing the base point vector of the commmitment scheme in a
     /// deterministic manner, given the PROTOCOL_NAME.
-    fn sample_generators(num_generators: usize, seed: &[u8]) -> Vec<G> {
+    fn sample_generators<D: Digest>(num_generators: usize, seed: &[u8]) -> Vec<G> {
         let generators: Vec<_> = (0..num_generators)
             .into_par_iter()
             .map(|i| {
@@ -198,7 +198,7 @@ impl<G: EndoMulCurve, D: Digest> InnerProductArgPC<G, D> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
+impl<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
@@ -210,22 +210,22 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
     type Proof = Proof<G>;
     type MultiPointProof = MultiPointProof<G>;
     type Error = Error;
-    type RandomOracle = FiatShamirChaChaRng<D>;
+    type RandomOracle = FS;
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
-        Self::setup_from_seed(max_degree, &Self::PROTOCOL_NAME)
+    fn setup<D: Digest>(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
+        Self::setup_from_seed::<D>(max_degree, &Self::PROTOCOL_NAME)
     }
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
+    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
         // Ensure that max_degree + 1 is a power of 2
         let max_degree = (max_degree + 1).next_power_of_two() - 1;
 
         let setup_time = start_timer!(|| format!("Sampling {} generators", max_degree + 3));
-        let generators = Self::sample_generators(max_degree + 3, seed);
+        let generators = Self::sample_generators::<D>(max_degree + 3, seed);
         end_timer!(setup_time);
 
         let hash = D::digest(&serialize_no_metadata![&generators, max_degree as u32].unwrap()).to_vec();
@@ -435,7 +435,7 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
         point: G::ScalarField,
         value: G::ScalarField,
         proof: &Proof<G>,
-        fs_rng: &mut FiatShamirChaChaRng<D>,
+        fs_rng: &mut FS,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
         let succinct_verify_time = start_timer!(|| "Succinct verify");
 

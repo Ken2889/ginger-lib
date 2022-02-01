@@ -37,6 +37,7 @@ derivative = { version = "2" }
 either = "1.6"
 
 [dev-dependencies]
+paste = "=1.0.6"
 criterion = "0.3"
 rand_xorshift = "0.3.0"
 blake2 = { version = "0.8.1", default-features = false }

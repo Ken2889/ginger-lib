@@ -59,9 +59,10 @@ impl<G: Group> TestUtils for LabeledCommitment<G> {
 /// A test function that  sets up `PC` for `supported_degree` (random, if not given)
 /// samples `num_polynomials` polynomials of random degree and a symmetric query set
 /// of size `max_num_queries`, and verifies MultiPointProofs for these.
-fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
+fn test_template<G, PC, D>(info: TestInfo) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -83,7 +84,7 @@ where
             max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng));
         // setup the scheme for max_degree.
         // Later it is trimmed down to `supported_degree`.
-        let pp = PC::setup(max_degree)?;
+        let pp = PC::setup::<D>(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -193,6 +194,9 @@ where
         println!("Generated query set");
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
+
+        println!("FS RNG initialized");
+        
         let proof = PC::multi_point_multi_poly_open(
             &ck,
             &polynomials,
@@ -231,7 +235,7 @@ where
 
         // Assert success using a bigger key
         let bigger_degree = max_degree * 2;
-        let pp = PC::setup(bigger_degree)?;
+        let pp = PC::setup::<D>(bigger_degree)?;
         let (_, vk) = pp.trim(bigger_degree)?;
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
@@ -248,11 +252,12 @@ where
 }
 
 // TODO: what is the difference to `single_poly_test()`?
-pub(crate) fn constant_poly_test<G, PC>(
+pub(crate) fn constant_poly_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -266,12 +271,13 @@ where
         negative_type,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn single_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
+pub(crate) fn single_poly_test<G, PC, D>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -285,14 +291,15 @@ where
         negative_type,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn two_poly_four_points_test<G, PC>(
+pub(crate) fn two_poly_four_points_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -306,14 +313,15 @@ where
         negative_type,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn full_end_to_end_test<G, PC>(
+pub(crate) fn full_end_to_end_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -327,12 +335,13 @@ where
         negative_type,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn segmented_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
+pub(crate) fn segmented_test<G, PC, D>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -347,5 +356,5 @@ where
         negative_type,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }

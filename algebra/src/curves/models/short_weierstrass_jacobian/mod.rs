@@ -543,7 +543,7 @@ impl<P: Parameters> TryFrom<Jacobian<P>> for AffineRep<P> {
     #[inline]
     fn try_from(p: Jacobian<P>) -> Result<AffineRep<P>, Error> {
         if p.is_zero() {
-            Err("Zero projective cannot be convrted to affine".to_owned())?
+            Err("Zero projective cannot be converted to affine".to_owned())?
         } else if p.z.is_one() {
             // If Z is one, the point is already normalized.
             Ok(AffineRep::new(p.x, p.y))
