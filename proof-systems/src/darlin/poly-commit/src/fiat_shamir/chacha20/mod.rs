@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Vec;
-use algebra::{PrimeField, ToConstraintField, serialize_no_metadata};
+use algebra::{ToConstraintField, serialize_no_metadata};
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
@@ -77,11 +77,31 @@ pub struct FiatShamirChaChaRng<D: Digest> {
     digest: PhantomData<D>,
 }
 
+impl<D: Digest> FiatShamirChaChaRng<D> {
+
+    /// Create a new `Self` by initializing with a fresh seed.
+    #[inline]
+    fn _from_seed(seed: Vec<u8>) -> Self {
+        assert_eq!(D::output_size(), 32);
+
+        // Hash the seed and use it as actual seed of the rng
+        let seed = D::digest(&seed);
+        let r_seed: [u8; 32] = seed.as_ref().try_into().unwrap();
+        let r = ChaChaRng::from_seed(r_seed);
+
+        Self {
+            r,
+            seed,
+            digest: PhantomData,
+        }
+    }
+}
+
 impl<D: Digest> Default for FiatShamirChaChaRng<D> {
     /// WARNING: Not intended for normal usage. FiatShamir must be initialized with proper,
     /// protocol-binded values. Use `from_seed` function instead.
     fn default() -> Self {
-        Self::from_seed(FiatShamirChaChaRngSeed::default().finalize().unwrap())
+        Self::_from_seed(FiatShamirChaChaRngSeed::default().finalize().unwrap())
     }
 }
 
@@ -109,7 +129,7 @@ impl<D: Digest> RngCore for FiatShamirChaChaRng<D> {
 }
 
 impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
-    type State = GenericArray<u8, D::OutputSize>;
+    type State = Vec<u8>;
     type Seed = FiatShamirChaChaRngSeed;
     type Error = Error;
 
@@ -128,31 +148,20 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     /// Create a new `Self` by initializing with a fresh seed.
     #[inline]
     fn from_seed(seed: <Self::Seed as FiatShamirRngSeed>::FinalizedSeed) -> Self {
-        assert_eq!(D::output_size(), 32);
-
-        // Hash the seed and use it as actual seed of the rng
-        let seed = D::digest(&seed);
-        let r_seed: [u8; 32] = seed.as_ref().try_into().unwrap();
-        let r = ChaChaRng::from_seed(r_seed);
-
-        Self {
-            r,
-            seed,
-            digest: PhantomData,
-        }
+        Self::_from_seed(seed)
     }
 
     /// Get `self.seed`.
     #[inline]
     fn get_state(&self) -> Self::State {
-        self.seed.clone()
+        self.seed.to_vec()
     }
 
     /// Set `self.seed` to the specified value
     #[inline]
     fn set_state(&mut self, new_state: Self::State) {
-        self.seed = new_state.clone();
-        let r_seed: [u8; 32] = new_state.as_ref().try_into().unwrap(); // Cannot fail at run-time
+        self.seed = GenericArray::<u8, D::OutputSize>::clone_from_slice(new_state.as_slice());
+        let r_seed: [u8; 32] = new_state.try_into().unwrap(); // Cannot fail at run-time
         self.r = ChaChaRng::from_seed(r_seed);
     }
 

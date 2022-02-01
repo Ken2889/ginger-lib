@@ -155,7 +155,7 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
 
         // Absorb seed elements into the sponge
         seed
-            .iter()
+            .into_iter()
             .for_each(|fe| <Self as AlgebraicSponge<SpongeF>>::absorb(&mut sponge, fe));
 
         // If there are pending elements, add them to the state and apply a permutation
@@ -168,7 +168,7 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
     }
 
     fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Self::Error> {
-        <Self as AlgebraicSponge<SpongeF>>::absorb(self, &to_absorb);
+        <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb);
 
         Ok(self)
     }

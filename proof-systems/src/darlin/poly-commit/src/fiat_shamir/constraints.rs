@@ -1,6 +1,6 @@
 use algebra::PrimeField;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
-use r1cs_std::{to_field_gadget_vec::ToConstraintFieldGadget, fields::fp::FpGadget, ToBytesGadget, boolean::Boolean};
+use r1cs_std::{to_field_gadget_vec::ToConstraintFieldGadget, fields::fp::FpGadget, boolean::Boolean};
 
 /// the trait for Fiat-Shamir RNG Gadget
 pub trait FiatShamirRngGadget<ConstraintF: PrimeField>:
@@ -20,12 +20,11 @@ pub trait FiatShamirRngGadget<ConstraintF: PrimeField>:
     fn enforce_absorb<CS, AG>(
         &mut self,
         cs: CS,
-        elems: &AG
+        elems: AG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
-        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-           + ToBytesGadget<ConstraintF>;
+        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>;
 
     /// Output field elements
     fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(

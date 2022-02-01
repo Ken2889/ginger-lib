@@ -81,13 +81,11 @@ pub trait AlgebraicSpongeGadget<ConstraintF: PrimeField, H: AlgebraicSponge<Cons
     fn enforce_absorb<CS, AG>(
         &mut self,
         cs: CS,
-        to_absorb: &AG
+        to_absorb: AG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
-        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-            + ToBytesGadget<ConstraintF>
-    ;
+        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>;
 
     fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
@@ -124,7 +122,6 @@ pub trait AlgebraicSpongeGadget<ConstraintF: PrimeField, H: AlgebraicSponge<Cons
                 cs.ns(|| format!("elem {} to bits", i)),
                 to_skip
             )?;
-            println!("Circuit elem bits: {:?}", elem_bits.iter().map(|b|b.get_value().unwrap()).collect::<Vec<bool>>());
             dest_bits.append(&mut elem_bits);
         }
         Ok(dest_bits[..num_bits].to_vec())
@@ -141,9 +138,9 @@ mod test {
     };
     use r1cs_std::{
         alloc::AllocGadget,
-        fields::{FieldGadget, fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget},
+        fields::{FieldGadget, fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget}, prelude::UInt8,
     };
-    use rand::RngCore;
+    use rand::{RngCore, Rng};
 
     pub(crate) fn constant_length_field_based_hash_gadget_native_test<
         F: PrimeField,
@@ -197,38 +194,51 @@ mod test {
         // Generate inputs
         let native_inputs = (0..num_inputs).map(|_| ConstraintF::rand(rng)).collect::<Vec<_>>();
         let nonnative_inputs = (0..num_inputs).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let byte_inputs = (0..num_inputs * 10).map(|_| rng.gen()).collect::<Vec<u8>>();
 
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
-        // Check equality between primitive and gadget result
-        let mut primitive_sponge = H::init();
-        primitive_sponge.absorb(&native_inputs);
-        primitive_sponge.absorb(&nonnative_inputs);
-
         // Allocate native
         let mut native_input_gadgets = Vec::with_capacity(num_inputs);
-        native_inputs.into_iter().enumerate().for_each(|(i, elem)|{
+        native_inputs.iter().enumerate().for_each(|(i, elem)|{
             let elem_gadget = FpGadget::<ConstraintF>::alloc(
                 cs.ns(|| format!("alloc native input {}", i)),
-                || Ok(elem.clone())
+                || Ok(elem)
             ).unwrap();
             native_input_gadgets.push(elem_gadget);
         });
 
         // Allocate nonnative
         let mut nonnative_input_gadgets = Vec::with_capacity(num_inputs);
-        nonnative_inputs.into_iter().enumerate().for_each(|(i, elem)|{
+        nonnative_inputs.iter().enumerate().for_each(|(i, elem)|{
             let elem_gadget = NonNativeFieldGadget::<F, ConstraintF>::alloc(
                 cs.ns(|| format!("alloc nonnative input {}", i)),
-                || Ok(elem.clone())
+                || Ok(elem)
             ).unwrap();
             nonnative_input_gadgets.push(elem_gadget);
         });
 
+        // Allocate bytes
+        let mut byte_input_gadgets = Vec::with_capacity(num_inputs * 10);
+        byte_inputs.iter().enumerate().for_each(|(i, elem)|{
+            let elem_gadget = UInt8::alloc(
+                cs.ns(|| format!("alloc byte input {}", i)),
+                || Ok(elem)
+            ).unwrap();
+            byte_input_gadgets.push(elem_gadget);
+        });
+
+        // Check equality between primitive and gadget result
+        let mut primitive_sponge = H::init();
+        primitive_sponge.absorb(native_inputs);
+        primitive_sponge.absorb(nonnative_inputs);
+        primitive_sponge.absorb::<ConstraintF, _>(byte_inputs.as_slice());
+
         // Enforce absorption
         let mut sponge_gadget = HG::new(cs.ns(|| "new poseidon sponge")).unwrap();
-        sponge_gadget.enforce_absorb(cs.ns(|| "absorb native inputs"), &native_input_gadgets).unwrap();
-        sponge_gadget.enforce_absorb(cs.ns(|| "absorb nonnative inputs"), &nonnative_input_gadgets).unwrap();
+        sponge_gadget.enforce_absorb(cs.ns(|| "absorb native inputs"), native_input_gadgets).unwrap();
+        sponge_gadget.enforce_absorb(cs.ns(|| "absorb nonnative inputs"), nonnative_input_gadgets.as_slice()).unwrap();
+        sponge_gadget.enforce_absorb(cs.ns(|| "absorb byte inputs"), byte_input_gadgets.as_slice()).unwrap();
 
         // Enforce squeeze
         for i in 0..num_inputs {

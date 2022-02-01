@@ -36,7 +36,7 @@ pub use dee::*;
 pub mod dum;
 pub use dum::*;
 
-pub trait DensityOptimizedPoseidonQuinticSBoxParameters<F: Field, P: PoseidonParameters> {
+pub trait DensityOptimizedPoseidonQuinticSBoxParameters<F: Field, P: PoseidonParameters>: Clone {
     const MULTIPLE_PARTIAL_ROUNDS_LEN: i32; // For compatibility reasons. TODO: Make it usize
     const A: &'static [F; 5];
     const B: &'static [F; 5];

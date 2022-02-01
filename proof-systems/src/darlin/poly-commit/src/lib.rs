@@ -647,7 +647,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
         // as the statement of the opening proof is already bound to the interal state of the fs_rng,
         // we simply squeeze the challenge scalar for the random linear combination
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         let mut has_hiding = false;
@@ -746,7 +746,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         // Except the `batch_commitment`, all other commitments are already bound
         // to the internal state of the Fiat-Shamir
         fs_rng.absorb(h_commitment.clone())?;
-        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Assert x_point != x_1, ..., x_m
         // This is needed as we use a slightly optimized LC, which costs one
@@ -822,7 +822,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let mut combined_commitment = Self::Commitment::zero();
         let mut combined_value = G::ScalarField::zero();
 
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         let labeled_commitments_iter = labeled_commitments.into_iter();
@@ -871,12 +871,12 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             .collect();
 
         // lambda
-        let lambda: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
         fs_rng.absorb(multi_point_proof.get_h_commitment().clone())?;
-        let x_point: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
         
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
         let mut lc_commitment = Self::Commitment::zero();

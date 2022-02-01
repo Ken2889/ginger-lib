@@ -118,7 +118,7 @@ impl<SpongeF, P, SB> AlgebraicSponge<SpongeF> for PoseidonSponge<SpongeF, P, SB>
         self.mode = mode;
     }
 
-    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: &A)
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A)
     {
         // Get F field elements
         let fes = to_absorb.to_field_elements().unwrap();
@@ -203,7 +203,7 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         algebraic_sponge_consistency_test::<TweedleFrPoseidonSponge, TweedleFr, TweedleFq, _>(
             rng,
-            TweedleFr::new(BigInteger256([15025527542916641753, 11179691109613937013, 13666861152051537266, 3622624103826351422]))
+            TweedleFr::new(BigInteger256([17557730391780768820, 833391141355621901, 9784327965554015212, 4565399072776154451]))
         );
     }
 
@@ -218,7 +218,7 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         algebraic_sponge_consistency_test::<TweedleFqPoseidonSponge, TweedleFq, TweedleFr, _>(
             rng,
-            TweedleFq::new(BigInteger256([7804364686596089774, 13418158964487916491, 4784552261685790545, 2394971355270751164]))
+            TweedleFq::new(BigInteger256([15066118701042310099, 6292950449475163714, 12227215585442390780, 2897043864867774388]))
         );
     }
 }

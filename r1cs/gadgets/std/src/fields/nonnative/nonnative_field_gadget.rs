@@ -1715,29 +1715,8 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> ThreeBitCondNegLookupGadg
     }
 }
 
-impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF>
-for NonNativeFieldGadget<SimulationF, ConstraintF>
-{
-    type FieldGadget = FpGadget<ConstraintF>;
-
-    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Vec<Self::FieldGadget>, SynthesisError> {
-        // Range proof
-        let bits = self.to_bits_strict(cs.ns(|| "to bits strict"))?;
-
-        // Efficient packing
-        bits
-            .chunks(ConstraintF::Params::CAPACITY as usize)
-            .into_iter()
-            .enumerate()
-            .map(|(i, bits)| FpGadget::<ConstraintF>::from_bits(
-                cs.ns(|| format!("bit chunk {} to field", i)),
-                bits
-            )).collect::<Result<Vec<_>, _>>()
-    }
-}
-
-impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF>
-for Vec<NonNativeFieldGadget<SimulationF, ConstraintF>>
+impl<'a, SimulationF: PrimeField, ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF>
+for &'a [NonNativeFieldGadget<SimulationF, ConstraintF>]
 {
     type FieldGadget = FpGadget<ConstraintF>;
 

@@ -268,8 +268,8 @@ fn fiat_shamir_rng_test() {
 
         assert_eq!(rng1.get_state(), rng2.get_state());
 
-        let a: Fr = rng1.squeeze_128_bits_challenge::<TweedleDee>();
-        let b: Fr = rng2.squeeze_128_bits_challenge::<TweedleDee>();
+        let a = rng1.squeeze_128_bits_challenge::<TweedleDee>();
+        let b = rng2.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_eq!(a, b);
         assert_eq!(rng1.get_state(), rng2.get_state());
@@ -306,8 +306,8 @@ fn fiat_shamir_rng_test() {
 
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
-        let a: Fr = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
-        let b: Fr = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+        let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+        let b = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_ne!(a, b);
         assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
@@ -332,8 +332,8 @@ fn fiat_shamir_rng_test() {
 
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
 
-        let a: Fr = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
-        let b: Fr = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>();
+        let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+        let b = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>();
 
         assert_eq!(a, b);
         assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());

@@ -7,7 +7,7 @@ use r1cs_core::{ConstraintSystemAbstract, ConstraintVar, LinearCombination, Synt
 use r1cs_std::{
     alloc::{AllocGadget, ConstantGadget},
     fields::{fp::FpGadget, FieldGadget},
-    Assignment, to_field_gadget_vec::ToConstraintFieldGadget, ToBytesGadget,
+    Assignment, to_field_gadget_vec::ToConstraintFieldGadget,
 };
 
 pub mod constants;
@@ -528,11 +528,12 @@ where
 //        providing default implementation.
 
 // Type aliases for sake of readability
-type S<ConstraintF, P> = PoseidonSponge<ConstraintF, P, QSB<ConstraintF, P>>;
+pub type S<ConstraintF, P> = PoseidonSponge<ConstraintF, P, QSB<ConstraintF, P>>;
 
 /// Poseidon Sponge implementation optimized for densities, in this
 /// very particular use case (e.g. SBox = x^5, R_F = 8 and R_P = 56).
 /// TODO: Generalize this in terms of number of rounds.
+#[derive(Clone)]
 pub struct DensityOptimizedPoseidonQuinticSboxSpongeGadget<
     ConstraintF: PrimeField,
     P: PoseidonParameters<Fr = ConstraintF>,
@@ -635,13 +636,12 @@ where
     fn enforce_absorb<CS, AG>(
         &mut self,
         mut cs: CS,
-        to_absorb: &AG
+        to_absorb: AG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
         AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-            + ToBytesGadget<ConstraintF>
-    {
+{
         let elems = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
         if elems.len() > 0 {
             match self.mode {
@@ -654,7 +654,7 @@ where
 
                 SpongeMode::Squeezing => {
                     self.mode = SpongeMode::Absorbing;
-                    self.enforce_absorb(cs, &elems)?;
+                    self.enforce_absorb(cs, elems)?;
                 }
             }
         }

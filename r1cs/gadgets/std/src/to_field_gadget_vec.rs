@@ -35,26 +35,6 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for FpGadget<
     }
 }
 
-impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for Vec<FpGadget<ConstraintF>> {
-    type FieldGadget = FpGadget<ConstraintF>;
-
-    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(&self, _cs: CS) -> Result<Vec<Self::FieldGadget>, Error> {
-        Ok(self.clone())
-    }
-}
-
-impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [FpGadget<ConstraintF>] {
-    type FieldGadget = FpGadget<ConstraintF>;
-
-    #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &self,
-        _cs: CS,
-    ) -> Result<Vec<Self::FieldGadget>, Error> {
-        Ok(self.to_vec())
-    }
-}
-
 impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
     type FieldGadget = FpGadget<ConstraintF>;
 
@@ -64,6 +44,34 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
         Ok(Vec::new())
+    }
+}
+
+impl<ConstraintF: PrimeField, T: ToConstraintFieldGadget<ConstraintF> + Clone, const N: usize> ToConstraintFieldGadget<ConstraintF> for [T; N] {
+    type FieldGadget = T::FieldGadget;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error> {
+        self.to_vec().to_field_gadget_elements(cs)
+    }
+}
+
+impl<ConstraintF: PrimeField, T: ToConstraintFieldGadget<ConstraintF>> ToConstraintFieldGadget<ConstraintF> for Vec<T> {
+    type FieldGadget = T::FieldGadget;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error> {
+        let mut fes = Vec::with_capacity(self.len());
+        for (i, elem) in self.iter().enumerate() {
+            fes.append(&mut elem.to_field_gadget_elements(cs.ns(|| format!("elem {} to field gadget elements", i)))?);
+        }
+        Ok(fes)
     }
 }
 
@@ -157,6 +165,19 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [UInt8] {
         }
 
         Ok(native_fe_gadgets)
+    }
+}
+
+impl<'a, ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for &'a [UInt8] {
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error>
+    {
+        (*self).to_field_gadget_elements(cs)
     }
 }
 

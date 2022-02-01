@@ -316,7 +316,7 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
             // the deterministically derived combined_commitment and its combined_v.
             fs_rng.absorb(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
 
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
@@ -334,7 +334,7 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -468,7 +468,7 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
             let rand = proof.rand.unwrap();
 
             fs_rng.absorb(hiding_comm)?;
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
             fs_rng.absorb(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
@@ -477,7 +477,7 @@ impl<G: EndoMulCurve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge::<G>();
+        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
 
         let h_prime = vk.h.mul(&round_challenge);
 

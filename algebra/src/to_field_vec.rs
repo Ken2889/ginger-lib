@@ -13,6 +13,16 @@ use crate::{
 
 type Error = Box<dyn std::error::Error>;
 
+macro_rules! slice_to_constraint_field {
+    ($base: ident) => {
+        impl<'a, F: Field> ToConstraintField<F> for &'a [$base] {
+            fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+                ToConstraintField::<F>::to_field_elements(*self)
+            }
+        }
+    };
+}
+
 /// Types that can be converted to a vector of `F` elements. Useful for specifying
 /// how public inputs to a constraint system should be represented inside
 /// that constraint system.
@@ -20,7 +30,13 @@ pub trait ToConstraintField<F: Field> {
     fn to_field_elements(&self) -> Result<Vec<F>, Error>;
 }
 
-impl<'a, F: Field, T: ToConstraintField<F>> ToConstraintField<F> for &'a [T] {
+impl<F: Field, T: ToConstraintField<F> + Clone, const N: usize> ToConstraintField<F> for [T; N] {
+    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+        self.to_vec().to_field_elements()
+    }
+}
+
+impl<F: Field, T: ToConstraintField<F>> ToConstraintField<F> for Vec<T> {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
         let mut fes = Vec::with_capacity(self.len());
         for elem in self.iter() {
@@ -33,18 +49,6 @@ impl<'a, F: Field, T: ToConstraintField<F>> ToConstraintField<F> for &'a [T] {
 impl<F: Field> ToConstraintField<F> for F {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
         Ok(vec![*self])
-    }
-}
-
-impl<F: Field, T: ToConstraintField<F>, const N: usize> ToConstraintField<F> for [T; N] {
-    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        self.as_ref().to_field_elements()
-    }
-}
-
-impl<F: Field, T: ToConstraintField<F>> ToConstraintField<F> for Vec<T> {
-    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        self.as_slice().to_field_elements()
     }
 }
 
@@ -106,6 +110,8 @@ impl<ConstraintF: Field> ToConstraintField<ConstraintF> for [u8] {
     }
 }
 
+slice_to_constraint_field!(u8);
+
 impl<'a, ConstraintF: Field> ToConstraintField<ConstraintF> for &'a str {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
@@ -124,3 +130,5 @@ impl<ConstraintF: Field> ToConstraintField<ConstraintF> for [bool] {
         Ok(fes)
     }
 }
+
+slice_to_constraint_field!(bool);

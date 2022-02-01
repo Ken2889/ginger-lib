@@ -183,7 +183,7 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
     fn set_mode(&mut self, mode: SpongeMode);
 
     /// Absorb field elements belonging to F.
-    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: &A);
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A);
 
     /// Squeeze field elements belonging to SpongeF.
     fn squeeze(&mut self, num: usize) -> Vec<SpongeF>;
@@ -207,7 +207,6 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
         let skip = SpongeF::Params::MODULUS_BITS as usize - usable_bits; 
         for elem in src_elements.iter() {
             let elem_bits = elem.write_bits();
-            println!("Primitive elem bits: {:?}", elem_bits);
             dest_bits.extend_from_slice(&elem_bits[skip..]);
         }
         dest_bits[..num_bits].to_vec()
@@ -327,11 +326,15 @@ mod test {
 
         // Absorb random native field elements
         let to_absorb = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(&to_absorb);
+        sponge.absorb(to_absorb);
 
         // Absorb random non native field elements
         let to_absorb = (0..10).map(|_| F2::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(&to_absorb);
+        sponge.absorb(to_absorb);
+
+        // Absorb random bytes
+        let to_absorb = (0..100).map(|_| rng.gen()).collect::<Vec<u8>>();
+        sponge.absorb::<F1, _>(to_absorb.as_slice());
 
         let out: F1 = sponge.squeeze(1)[0];
         assert_eq!(out, expected_output);
@@ -351,7 +354,7 @@ mod test {
         for i in 0..=10 {
             let mut set = std::collections::HashSet::new();
             let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-            sponge.absorb(&random_fes);
+            sponge.absorb(random_fes);
 
             // Native squeeze test
             let outs: Vec<F1> = sponge.squeeze(i);
@@ -367,7 +370,7 @@ mod test {
         // Check squeeze_bits() outputs the correct number of bits
         for i in 0..=10 {
             let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-            sponge.absorb(&random_fes);
+            sponge.absorb(random_fes);
 
             // Native squeeze bits test
             let out_bits: Vec<bool> = sponge.squeeze_bits(i * 10);
@@ -387,7 +390,7 @@ mod test {
 
         // Absorb nothing. Check that the internal state is not changed.
         let prev_state = sponge.get_state();
-        sponge.absorb(&Vec::<F1>::new());
+        sponge.absorb(Vec::<F1>::new());
         assert_eq!(prev_state, sponge.get_state());
 
         // Squeeze nothing. Check that the internal state is not changed.
@@ -398,7 +401,7 @@ mod test {
         // Absorb up to rate elements and trigger a permutation. Assert that calling squeeze()
         // afterwards won't trigger another permutation.
         let fes = (0..2).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(&fes);
+        sponge.absorb(fes);
         let prev_state = sponge.get_state();
         sponge.squeeze(1);
         let curr_state = sponge.get_state();

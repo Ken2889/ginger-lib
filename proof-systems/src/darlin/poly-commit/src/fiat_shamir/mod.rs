@@ -43,7 +43,7 @@ pub trait FiatShamirRng: Sized + Default {
     type State: Clone + Debug;
 
     /// Seed from which initializing this Rng
-    type Seed: FiatShamirRngSeed<Error = Self::Error>;
+    type Seed: FiatShamirRngSeed<FinalizedSeed = Self::State, Error = Self::Error>;
 
     /// Error type
     type Error: std::error::Error + From<Error>;

@@ -2,6 +2,7 @@ use algebra::{field_new, fields::tweedle::Fq as TweedleFq, BigInteger256 as BigI
 use primitives::crh::TweedleFqPoseidonParameters;
 use crate::DensityOptimizedPoseidonQuinticSBoxParameters;
 
+#[derive(Clone)]
 pub struct TweedleFqDensityOptimizedPoseidonParameters {}
 
 impl DensityOptimizedPoseidonQuinticSBoxParameters<TweedleFq, TweedleFqPoseidonParameters> for TweedleFqDensityOptimizedPoseidonParameters {

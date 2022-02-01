@@ -114,12 +114,11 @@ for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
     fn enforce_absorb<CS, AG>(
         &mut self,
         mut cs: CS,
-        to_absorb: &AG
+        to_absorb: AG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
         AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-            + ToBytesGadget<ConstraintF>
     {
         let elems = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
         if elems.len() > 0 {
@@ -133,7 +132,7 @@ for PoseidonSpongeGadget<ConstraintF, P, SB, SBG>
 
                 SpongeMode::Squeezing => {
                     self.mode = SpongeMode::Absorbing;
-                    self.enforce_absorb(cs, &elems)?;
+                    self.enforce_absorb(cs, elems)?;
                 }
             }
         }
