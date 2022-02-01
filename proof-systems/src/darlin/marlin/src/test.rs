@@ -50,6 +50,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
     }
 }
 
+
 mod marlin {
     use super::*;
     use crate::Marlin;
@@ -60,18 +61,23 @@ mod marlin {
         curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, EndoMulCurve,
         SemanticallyValid, UniformRand,
     };
+    
     use blake2::Blake2s;
     use digest::Digest;
     use poly_commit::{
         ipa_pc::{InnerProductArgPC, Parameters as IPAParameters},
         DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PCVerifierKey,
-        PolynomialCommitment,
+        PolynomialCommitment, chacha20::FiatShamirChaChaRng,
     };
+    use primitives::TweedleFrPoseidonSponge;
     use rand::thread_rng;
     use std::ops::MulAssign;
 
-    type MultiPC =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
+    type MultiPCChaCha =
+        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
+
+    type MultiPCPoseidon =
+        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, TweedleFrPoseidonSponge>>;
 
     trait TestUtils {
         /// Copy other instance params into this
@@ -96,14 +102,14 @@ mod marlin {
     {
         let rng = &mut thread_rng();
 
-        let universal_srs = PC::setup(num_constraints - 1).unwrap();
+        let universal_srs = PC::setup::<D>(num_constraints - 1).unwrap();
         let (pc_pk, pc_vk) = universal_srs.trim((num_constraints - 1) / 2).unwrap();
         assert_eq!(pc_pk.get_hash(), universal_srs.get_hash());
         assert_eq!(pc_vk.get_hash(), universal_srs.get_hash());
 
         // Fake parameters for opening proof fail test
         let mut universal_srs_fake =
-            PC::setup_from_seed(num_constraints - 1, b"FAKE PROTOCOL").unwrap();
+            PC::setup_from_seed::<D>(num_constraints - 1, b"FAKE PROTOCOL").unwrap();
 
         universal_srs_fake.copy_params(&universal_srs);
         let (pc_pk_fake, _) = universal_srs_fake.trim((num_constraints - 1) / 2).unwrap();
@@ -165,14 +171,14 @@ mod marlin {
             assert!(Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
-            let universal_srs = PC::setup((num_constraints - 1) * 2).unwrap();
+            let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
             assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a vk of the same size of the original one, but derived from bigger universal params
             // and check that verification fails (absorbed hash won't be the same)
-            let universal_srs = PC::setup((num_constraints - 1) * 2).unwrap();
+            let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
             assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
@@ -239,11 +245,17 @@ mod marlin {
         let num_constraints = 100;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 
     #[test]
@@ -251,11 +263,17 @@ mod marlin {
         let num_constraints = 26;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 
     #[test]
@@ -263,11 +281,17 @@ mod marlin {
         let num_constraints = 25;
         let num_variables = 100;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 
     #[test]
@@ -275,11 +299,17 @@ mod marlin {
         let num_constraints = 25;
         let num_variables = 26;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 
     #[test]
@@ -287,11 +317,17 @@ mod marlin {
         let num_constraints = 25;
         let num_variables = 25;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        // test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        // println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 
     #[test]
@@ -300,10 +336,16 @@ mod marlin {
         let num_constraints = 1 << 6;
         let num_variables = 1 << 4;
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin No ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Chacha No ZK passed");
 
-        test_circuit::<DumJacobian, MultiPC, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Chacha ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
+        println!("Marlin Poseidon No ZK passed");
+
+        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
+        println!("Marlin Poseidon ZK passed");
     }
 }

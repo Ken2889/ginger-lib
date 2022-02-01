@@ -95,7 +95,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         )
         });
 
-        let srs = PC::setup(max_degree).map_err(Error::from_pc_err);
+        let srs = PC::setup::<D>(max_degree).map_err(Error::from_pc_err);
         end_timer!(setup_time);
         srs
     }

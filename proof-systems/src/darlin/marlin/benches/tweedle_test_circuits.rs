@@ -1,9 +1,12 @@
-use algebra::{curves::tweedle::dee::DeeJacobian, fields::tweedle::Fr, UniformRand};
-use blake2::Blake2s;
+use algebra::{curves::tweedle::dee::DeeJacobian, UniformRand};
+use blake2::{Blake2s, Digest};
 use marlin::*;
+use poly_commit::PolynomialCommitment;
+use poly_commit::chacha20::FiatShamirChaChaRng;
 use poly_commit::{ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCParameters};
 
-use algebra::PrimeField;
+use algebra::{PrimeField, EndoMulCurve};
+use primitives::TweedleFqPoseidonSponge;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 
 use criterion::Criterion;
@@ -24,9 +27,10 @@ extern crate criterion;
 #[macro_use]
 extern crate bench_utils;
 
-type IPAPC =
-    DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
-type MarlinInst = Marlin<DeeJacobian, IPAPC, Blake2s>;
+type IPAPCChaCha =
+    DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>>;
+type IPAPCPoseidon =
+    DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, TweedleFqPoseidonSponge>>;
 
 /// TestCircuit1a has (almost) full rank R1CS matrices A,B,C such that
 ///     d = max_{A,B,C} density = 1,
@@ -516,25 +520,23 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit2c<F> {
     }
 }
 
-fn bench_prover_circuit1a(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 1a-variable constraints-segment_size=num_constraints",
-    );
+fn _bench_prover_circuit1a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
-        let c = TestCircuit1a::<Fr> {
+        let c = TestCircuit1a::<G::ScalarField> {
             num_constraints,
             a: None,
             b: None,
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -554,8 +556,8 @@ fn bench_prover_circuit1a(c: &mut Criterion) {
                 bn.iter_batched(
                     || {
                         let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
                         (a, b)
                     },
                     |(a, b)| {
@@ -565,7 +567,79 @@ fn bench_prover_circuit1a(c: &mut Criterion) {
                             b: Some(b),
                         };
 
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                    },
+                    BatchSize::PerIteration,
+                );
+            },
+        );
+        add_to_trace!(
+            || format!("****************{}*******************", num_constraints),
+            || format!(
+                "--->END TIMESTAMP: {:?}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            )
+        );
+    }
+    group.finish();
+}
+
+fn bench_prover_circuit1a(c: &mut Criterion) {
+    _bench_prover_circuit1a::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 1a-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit1a::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 1a-variable constraints-segment_size=num_constraints");
+}
+
+fn _bench_prover_circuit1b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
+
+    let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
+
+    for &num_constraints in num_constraints.iter() {
+        let universal_srs =
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+                .unwrap();
+        let c = TestCircuit1b::<G::ScalarField> {
+            num_constraints,
+            a: None,
+            b: None,
+        };
+
+        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+
+        add_to_trace!(
+            || format!("****************{}*******************", num_constraints),
+            || format!(
+                "--->START TIMESTAMP: {:?}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            )
+        );
+
+        group.bench_with_input(
+            BenchmarkId::from_parameter(num_constraints),
+            &num_constraints,
+            |bn, _constraints| {
+                bn.iter_batched(
+                    || {
+                        let mut rng = OsRng::default();
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
+                        (a, b)
+                    },
+                    |(a, b)| {
+                        let c = TestCircuit1b {
+                            num_constraints,
+                            a: Some(a),
+                            b: Some(b),
+                        };
+
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -586,24 +660,27 @@ fn bench_prover_circuit1a(c: &mut Criterion) {
 }
 
 fn bench_prover_circuit1b(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 1b-variable constraints-segment_size=num_constraints",
-    );
+    _bench_prover_circuit1b::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 1b-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit1b::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 1b-variable constraints-segment_size=num_constraints");
+}
+
+fn _bench_prover_circuit1c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
-        let c = TestCircuit1b::<Fr> {
+        let c = TestCircuit1c::<G::ScalarField> {
             num_constraints,
             a: None,
             b: None,
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -623,18 +700,18 @@ fn bench_prover_circuit1b(c: &mut Criterion) {
                 bn.iter_batched(
                     || {
                         let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
                         (a, b)
                     },
                     |(a, b)| {
-                        let c = TestCircuit1b {
+                        let c = TestCircuit1c {
                             num_constraints,
                             a: Some(a),
                             b: Some(b),
                         };
 
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -655,24 +732,27 @@ fn bench_prover_circuit1b(c: &mut Criterion) {
 }
 
 fn bench_prover_circuit1c(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 1c-variable constraints-segment_size=num_constraints",
-    );
+    _bench_prover_circuit1c::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 1c-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit1c::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 1c-variable constraints-segment_size=num_constraints");
+}
+
+fn _bench_prover_circuit2a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
-        let c = TestCircuit1c::<Fr> {
+        let c = TestCircuit2a::<G::ScalarField> {
             num_constraints,
             a: None,
             b: None,
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -692,18 +772,18 @@ fn bench_prover_circuit1c(c: &mut Criterion) {
                 bn.iter_batched(
                     || {
                         let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
                         (a, b)
                     },
                     |(a, b)| {
-                        let c = TestCircuit1c {
+                        let c = TestCircuit2a {
                             num_constraints,
                             a: Some(a),
                             b: Some(b),
                         };
 
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -724,24 +804,27 @@ fn bench_prover_circuit1c(c: &mut Criterion) {
 }
 
 fn bench_prover_circuit2a(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 2a-variable constraints-segment_size=num_constraints",
-    );
+    _bench_prover_circuit2a::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 2a-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit2a::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 2a-variable constraints-segment_size=num_constraints");
+}
+
+fn _bench_prover_circuit2b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
-        let c = TestCircuit2a::<Fr> {
+        let c = TestCircuit2b::<G::ScalarField> {
             num_constraints,
             a: None,
             b: None,
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -761,18 +844,18 @@ fn bench_prover_circuit2a(c: &mut Criterion) {
                 bn.iter_batched(
                     || {
                         let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
                         (a, b)
                     },
                     |(a, b)| {
-                        let c = TestCircuit2a {
+                        let c = TestCircuit2b {
                             num_constraints,
                             a: Some(a),
                             b: Some(b),
                         };
 
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -793,24 +876,27 @@ fn bench_prover_circuit2a(c: &mut Criterion) {
 }
 
 fn bench_prover_circuit2b(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 2b-variable constraints-segment_size=num_constraints",
-    );
+    _bench_prover_circuit2b::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 2b-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit2b::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 2b-variable constraints-segment_size=num_constraints");
+}
+
+fn _bench_prover_circuit2c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, group_name: &str) {
+    let mut group = c.benchmark_group(group_name);
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
-        let c = TestCircuit2b::<Fr> {
+        let c = TestCircuit2c::<G::ScalarField> {
             num_constraints,
             a: None,
             b: None,
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -830,18 +916,18 @@ fn bench_prover_circuit2b(c: &mut Criterion) {
                 bn.iter_batched(
                     || {
                         let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
+                        let a = G::ScalarField::rand(&mut rng);
+                        let b = G::ScalarField::rand(&mut rng);
                         (a, b)
                     },
                     |(a, b)| {
-                        let c = TestCircuit2b {
+                        let c = TestCircuit2c {
                             num_constraints,
                             a: Some(a),
                             b: Some(b),
                         };
 
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -862,72 +948,8 @@ fn bench_prover_circuit2b(c: &mut Criterion) {
 }
 
 fn bench_prover_circuit2c(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "marlin-tweedle_dee-test circuit 2c-variable constraints-segment_size=num_constraints",
-    );
-
-    let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        let universal_srs =
-            MarlinInst::universal_setup(num_constraints, num_constraints, num_constraints, false)
-                .unwrap();
-        let c = TestCircuit2c::<Fr> {
-            num_constraints,
-            a: None,
-            b: None,
-        };
-
-        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = MarlinInst::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
-
-        add_to_trace!(
-            || format!("****************{}*******************", num_constraints),
-            || format!(
-                "--->START TIMESTAMP: {:?}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-            )
-        );
-
-        group.bench_with_input(
-            BenchmarkId::from_parameter(num_constraints),
-            &num_constraints,
-            |bn, _constraints| {
-                bn.iter_batched(
-                    || {
-                        let mut rng = OsRng::default();
-                        let a = Fr::rand(&mut rng);
-                        let b = Fr::rand(&mut rng);
-                        (a, b)
-                    },
-                    |(a, b)| {
-                        let c = TestCircuit2c {
-                            num_constraints,
-                            a: Some(a),
-                            b: Some(b),
-                        };
-
-                        MarlinInst::prove(&index_pk, &pc_pk, c, false, None).unwrap();
-                    },
-                    BatchSize::PerIteration,
-                );
-            },
-        );
-        add_to_trace!(
-            || format!("****************{}*******************", num_constraints),
-            || format!(
-                "--->END TIMESTAMP: {:?}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-            )
-        );
-    }
-    group.finish();
+    _bench_prover_circuit2c::<DeeJacobian, IPAPCChaCha, Blake2s>(c, "marlin-tweedle_dee_chacha_fs-test circuit 2c-variable constraints-segment_size=num_constraints");
+    _bench_prover_circuit2c::<DeeJacobian, IPAPCPoseidon, Blake2s>(c, "marlin-tweedle_dee_poseidon_fs-test circuit 2c-variable constraints-segment_size=num_constraints");
 }
 
 criterion_group!(
