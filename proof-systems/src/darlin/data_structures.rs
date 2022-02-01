@@ -5,10 +5,9 @@ use algebra::{
     serialize::*, EndoMulCurve, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
     UniformRand,
 };
-use digest::Digest;
-use poly_commit::ipa_pc::{
+use poly_commit::{ipa_pc::{
     CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
-};
+}, fiat_shamir::FiatShamirRng, error::Error as PCError};
 use rand::RngCore;
 
 /// The `FinalDarlinDeferredData`, assuming that the final node is in G1.
@@ -38,7 +37,7 @@ where
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
-    pub fn generate_random<R: RngCore, D: Digest>(
+    pub fn generate_random<R: RngCore, FS: FiatShamirRng<Error = PCError>>(
         rng: &mut R,
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
@@ -50,7 +49,7 @@ where
                 .map(|_| u128::rand(rng).into())
                 .collect(),
         );
-        let g_final_g1 = InnerProductArgPC::<G1, D>::inner_commit(
+        let g_final_g1 = InnerProductArgPC::<G1, FS>::inner_commit(
             committer_key_g1.comm_key.as_slice(),
             random_xi_s_g1.compute_coeffs().as_slice(),
             None,
@@ -71,7 +70,7 @@ where
                 .collect(),
         );
 
-        let g_final_g2 = InnerProductArgPC::<G2, D>::inner_commit(
+        let g_final_g2 = InnerProductArgPC::<G2, FS>::inner_commit(
             committer_key_g2.comm_key.as_slice(),
             random_xi_s_g2.compute_coeffs().as_slice(),
             None,
@@ -175,14 +174,14 @@ where
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// A FinalDarlinProof has two dlog accumulators, one from the previous, and on from the
 /// pre-previous node of the conversion chain.
-pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static> {
+pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
     /// Full Marlin proof without deferred arithmetics in G1.
-    pub proof: MarlinProof<G1, D>,
+    pub proof: MarlinProof<G1, FS>,
     /// Deferred accumulators
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest> SemanticallyValid for FinalDarlinProof<G1, G2, D> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> SemanticallyValid for FinalDarlinProof<G1, G2, FS> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }

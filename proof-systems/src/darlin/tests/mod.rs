@@ -48,8 +48,11 @@ mod test {
     };
     use blake2::Blake2s;
     use marlin::VerifierKey as MarlinVerifierKey;
+    use poly_commit::chacha20::FiatShamirChaChaRng;
+    use poly_commit::fiat_shamir::FiatShamirRng;
     use poly_commit::{
         ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PolynomialCommitment,
+        error::Error as PCError,
     };
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
@@ -69,21 +72,21 @@ mod test {
     }
 
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
-    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, R: RngCore>(
-        pcds: &mut [GeneralPCD<'a, G1, G2, D>],
+    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+        pcds: &mut [GeneralPCD<'a, G1, G2, D, FS>],
         vks: &mut [MarlinVerifierKey<
             G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
         >],
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
-        fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
+        fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D, FS>]>,
         fake_vks: Option<
             &[MarlinVerifierKey<
                 G1,
-                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
             >],
         >,
         rng: &mut R,
@@ -95,10 +98,10 @@ mod test {
     {
         // Accumulate PCDs
         let (proof_g1, proof_g2) =
-            accumulate_proofs::<G1, G2, D>(pcds, vks, committer_key_g1, committer_key_g2).unwrap();
+            accumulate_proofs::<G1, G2, D, FS>(pcds, vks, committer_key_g1, committer_key_g2).unwrap();
 
         // Verify accumulation
-        assert!(verify_aggregated_proofs::<G1, G2, D, R>(
+        assert!(verify_aggregated_proofs::<G1, G2, D, FS, R>(
             pcds,
             vks,
             &proof_g1,
@@ -113,7 +116,7 @@ mod test {
         // Change one element in proof_g1
         let mut wrong_proof_g1 = proof_g1.clone().unwrap();
         wrong_proof_g1.pc_proof.c = G1::ScalarField::rand(rng);
-        assert!(!verify_aggregated_proofs::<G1, G2, D, R>(
+        assert!(!verify_aggregated_proofs::<G1, G2, D, FS, R>(
             pcds,
             vks,
             &Some(wrong_proof_g1),
@@ -137,7 +140,7 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        let result = verify_aggregated_proofs::<G1, G2, D, R>(
+        let result = verify_aggregated_proofs::<G1, G2, D, FS, R>(
             pcds,
             vks,
             &proof_g1,
@@ -172,7 +175,7 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        let result = verify_aggregated_proofs::<G1, G2, D, R>(
+        let result = verify_aggregated_proofs::<G1, G2, D, FS, R>(
             pcds,
             vks,
             &proof_g1,
@@ -201,7 +204,7 @@ mod test {
             pcds[idx] = fake_pcds.unwrap()[idx].clone();
             vks[idx] = fake_vks.unwrap()[idx].clone();
 
-            let result = verify_aggregated_proofs::<G1, G2, D, R>(
+            let result = verify_aggregated_proofs::<G1, G2, D, FS, R>(
                 pcds,
                 vks,
                 &proof_g1,
@@ -226,19 +229,19 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, R: RngCore>(
-        pcds: &mut [GeneralPCD<'a, G1, G2, D>],
+    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+        pcds: &mut [GeneralPCD<'a, G1, G2, D, FS>],
         vks: &mut [MarlinVerifierKey<
             G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
         >],
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
-        fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D>]>,
+        fake_pcds: Option<&[GeneralPCD<'a, G1, G2, D, FS>]>,
         fake_vks: Option<
             &[MarlinVerifierKey<
                 G1,
-                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
             >],
         >,
         rng: &mut R,
@@ -249,7 +252,7 @@ mod test {
             + ToConstraintField<<G1 as Group>::ScalarField>,
     {
         // Batch Verify
-        assert!(batch_verify_proofs::<G1, G2, D, R>(
+        assert!(batch_verify_proofs::<G1, G2, D, FS, R>(
             pcds,
             vks,
             verifier_key_g1,
@@ -272,7 +275,7 @@ mod test {
             .collect::<Vec<_>>();
 
         let result =
-            batch_verify_proofs::<G1, G2, D, R>(pcds, vks, verifier_key_g1, verifier_key_g2, rng);
+            batch_verify_proofs::<G1, G2, D, FS, R>(pcds, vks, verifier_key_g1, verifier_key_g2, rng);
 
         // Check AHP failed
         assert!(result.is_err());
@@ -300,7 +303,7 @@ mod test {
             .collect::<Vec<_>>();
 
         let result =
-            batch_verify_proofs::<G1, G2, D, R>(pcds, vks, verifier_key_g1, verifier_key_g2, rng);
+            batch_verify_proofs::<G1, G2, D, FS, R>(pcds, vks, verifier_key_g1, verifier_key_g2, rng);
 
         // Check AHP failed
         assert!(result.is_err());
@@ -321,7 +324,7 @@ mod test {
             pcds[idx] = fake_pcds.unwrap()[idx].clone();
             vks[idx] = fake_vks.unwrap()[idx].clone();
 
-            let result = batch_verify_proofs::<G1, G2, D, R>(
+            let result = batch_verify_proofs::<G1, G2, D, FS, R>(
                 pcds,
                 vks,
                 verifier_key_g1,
@@ -344,9 +347,9 @@ mod test {
     }
 
     type TestIPAPCDee =
-        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, Blake2s>>;
+        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>>;
     type TestIPAPCDum =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, Blake2s>>;
+        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
 
     #[test]
     fn test_simple_marlin_proof_aggregator() {
@@ -358,15 +361,15 @@ mod test {
         let segment_size = 1 << max_pow;
 
         //Generate keys
-        let params_g1 = TestIPAPCDee::setup(segment_size - 1).unwrap();
-        let params_g2 = TestIPAPCDum::setup(segment_size - 1).unwrap();
+        let params_g1 = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let params_g2 = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         let (committer_key_g1, verifier_key_g1, committer_key_g2, verifier_key_g2) =
             get_keys::<_, _, Blake2s>(&params_g1, &params_g2);
 
         //Generate fake params
         let mut params_g1_fake =
-            TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+            TestIPAPCDee::setup_from_seed::<Blake2s>(segment_size - 1, b"FAKE PROTOCOL").unwrap();
         params_g1_fake.s = params_g1.s.clone();
         params_g1_fake.h = params_g1.h.clone();
         params_g1_fake.hash = params_g1.hash.clone();
@@ -424,7 +427,7 @@ mod test {
         let mut simple_marlin_pcds = pcds
             .into_iter()
             .map(|simple_marlin_pcd| {
-                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, Blake2s>(simple_marlin_pcd)
+                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>>(simple_marlin_pcd)
             })
             .collect::<Vec<_>>();
 
@@ -434,7 +437,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             simple_marlin_pcds.clone().as_mut_slice(),
             simple_marlin_vks.clone().as_mut_slice(),
             &committer_key_g1,
@@ -447,7 +450,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             simple_marlin_pcds.as_mut_slice(),
             simple_marlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -468,21 +471,21 @@ mod test {
         let segment_size = 1 << max_pow;
 
         //Generate keys
-        let params_g1 = TestIPAPCDee::setup(segment_size - 1).unwrap();
-        let params_g2 = TestIPAPCDum::setup(segment_size - 1).unwrap();
+        let params_g1 = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let params_g2 = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         let (committer_key_g1, verifier_key_g1, committer_key_g2, verifier_key_g2) =
             get_keys::<_, _, Blake2s>(&params_g1, &params_g2);
 
         //Generate fake params
         let mut params_g1_fake =
-            TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+            TestIPAPCDee::setup_from_seed::<Blake2s>(segment_size - 1, b"FAKE PROTOCOL").unwrap();
         params_g1_fake.s = params_g1.s.clone();
         params_g1_fake.h = params_g1.h.clone();
         params_g1_fake.hash = params_g1.hash.clone();
 
         let mut params_g2_fake =
-            TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+            TestIPAPCDum::setup_from_seed::<Blake2s>(segment_size - 1, b"FAKE PROTOCOL").unwrap();
         params_g2_fake.s = params_g2.s.clone();
         params_g2_fake.h = params_g2.h.clone();
         params_g2_fake.hash = params_g2.hash.clone();
@@ -549,7 +552,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             final_darlin_pcds.clone().as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &committer_key_g1,
@@ -562,7 +565,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             final_darlin_pcds.as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -583,20 +586,20 @@ mod test {
         let segment_size = 1 << max_pow;
 
         //Generate keys
-        let params_g1 = TestIPAPCDee::setup(segment_size - 1).unwrap();
-        let params_g2 = TestIPAPCDum::setup(segment_size - 1).unwrap();
+        let params_g1 = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let params_g2 = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         let (committer_key_g1, verifier_key_g1, committer_key_g2, verifier_key_g2) =
             get_keys::<_, _, Blake2s>(&params_g1, &params_g2);
 
         //Generate fake params
         let mut params_g1_fake =
-            TestIPAPCDee::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+            TestIPAPCDee::setup_from_seed::<Blake2s>(segment_size - 1, b"FAKE PROTOCOL").unwrap();
         params_g1_fake.s = params_g1.s.clone();
         params_g1_fake.h = params_g1.h.clone();
         params_g1_fake.hash = params_g1.hash.clone();
         let mut params_g2_fake =
-            TestIPAPCDum::setup_from_seed(segment_size - 1, b"FAKE PROTOCOL").unwrap();
+            TestIPAPCDum::setup_from_seed::<Blake2s>(segment_size - 1, b"FAKE PROTOCOL").unwrap();
         params_g2_fake.s = params_g2.s.clone();
         params_g2_fake.h = params_g2.h.clone();
         params_g2_fake.hash = params_g2.hash.clone();
@@ -704,7 +707,7 @@ mod test {
         }
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             pcds.clone().as_mut_slice(),
             vks.as_mut_slice(),
             &committer_key_g1,
@@ -717,7 +720,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
             pcds.as_mut_slice(),
             vks.as_mut_slice(),
             &verifier_key_g1,
@@ -736,8 +739,8 @@ mod test {
         let segment_size = 1 << 17;
 
         //Generate keys
-        let params_g1 = TestIPAPCDee::setup(segment_size - 1).unwrap();
-        let params_g2 = TestIPAPCDum::setup(segment_size - 1).unwrap();
+        let params_g1 = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let params_g2 = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         let generation_rng = &mut thread_rng();
 
@@ -748,7 +751,7 @@ mod test {
             let fs = File::open(file_path).unwrap();
             proof = FinalDarlinProof::deserialize(fs).unwrap();
         } else {
-            let (iteration_pcds, _) = generate_final_darlin_test_data::<_, _, Blake2s, _>(
+            let (iteration_pcds, _) = generate_final_darlin_test_data::<_, _, Blake2s, FiatShamirChaChaRng<Blake2s>, _>(
                 num_constraints - 1,
                 segment_size,
                 &params_g1,

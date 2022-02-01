@@ -13,7 +13,7 @@ use digest::Digest;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, VerifierKey as DLogVerifierKey},
-    DomainExtendedPolynomialCommitment,
+    DomainExtendedPolynomialCommitment, fiat_shamir::FiatShamirRng, error::Error as PCError,
 };
 use rand::RngCore;
 use rayon::prelude::*;
@@ -24,11 +24,11 @@ use rayon::prelude::*;
 /// In case of failure, return the indices of the proofs that have caused the failure (if it's possible
 /// to establish it).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey `g1_ck` and `g2_ck`.
-pub fn get_accumulators<G1, G2, D: Digest>(
-    pcds: &[GeneralPCD<G1, G2, D>],
+pub fn get_accumulators<G1, G2, D: Digest, FS: FiatShamirRng<Error = PCError>>(
+    pcds: &[GeneralPCD<G1, G2, D, FS>],
     vks: &[MarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
     >],
     g1_ck: &DLogCommitterKey<G1>,
     g2_ck: &DLogCommitterKey<G2>,
@@ -53,7 +53,7 @@ where
         .map(|(i, (pcd, vk))| {
             // recall that we use FinalDarlinVerifierKeys to handle
             // polymorphic verification of final Darlin/simpleM arlin PCDs
-            let vk = DualPCDVerifierKey::<G1, G2, D> {
+            let vk = DualPCDVerifierKey::<G1, G2, FS> {
                 final_darlin_vk: vk,
                 dlog_vks: (g1_ck, g2_ck),
             };
@@ -93,11 +93,11 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn accumulate_proofs<G1, G2, D: Digest>(
-    pcds: &[GeneralPCD<G1, G2, D>],
+pub fn accumulate_proofs<G1, G2, D: Digest, FS: FiatShamirRng<Error = PCError>>(
+    pcds: &[GeneralPCD<G1, G2, D, FS>],
     vks: &[MarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
     >],
     g1_ck: &DLogCommitterKey<G1>,
     g2_ck: &DLogCommitterKey<G2>,
@@ -112,7 +112,7 @@ where
 
     // Get accumulators from pcds
     let (accs_g1, accs_g2) =
-        get_accumulators::<G1, G2, D>(pcds, vks, g1_ck, g2_ck).map_err(|e| {
+        get_accumulators::<G1, G2, D, FS>(pcds, vks, g1_ck, g2_ck).map_err(|e| {
             end_timer!(accumulation_time);
             e
         })?;
@@ -122,7 +122,7 @@ where
         None
     } else {
         Some(
-            DLogItemAccumulator::<G1, D>::accumulate_items(g1_ck, accs_g1)
+            DLogItemAccumulator::<G1, FS>::accumulate_items(g1_ck, accs_g1)
                 .map_err(|_| {
                     end_timer!(accumulation_time);
                     None
@@ -135,7 +135,7 @@ where
         None
     } else {
         Some(
-            DLogItemAccumulator::<G2, D>::accumulate_items(g2_ck, accs_g2)
+            DLogItemAccumulator::<G2, FS>::accumulate_items(g2_ck, accs_g2)
                 .map_err(|_| {
                     end_timer!(accumulation_time);
                     None
@@ -155,11 +155,11 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn verify_aggregated_proofs<G1, G2, D: Digest, R: RngCore>(
-    pcds: &[GeneralPCD<G1, G2, D>],
+pub fn verify_aggregated_proofs<G1, G2, D: Digest, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+    pcds: &[GeneralPCD<G1, G2, D, FS>],
     vks: &[MarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
     >],
     accumulation_proof_g1: &Option<AccumulationProof<G1>>,
     accumulation_proof_g2: &Option<AccumulationProof<G2>>,
@@ -177,7 +177,7 @@ where
 
     // Do the succinct verification of the PCDs and get their accumulators
     let (accs_g1, accs_g2) =
-        get_accumulators::<G1, G2, D>(pcds, vks, g1_vk, g2_vk).map_err(|e| {
+        get_accumulators::<G1, G2, D, FS>(pcds, vks, g1_vk, g2_vk).map_err(|e| {
             end_timer!(verification_time);
             e
         })?;
@@ -185,7 +185,7 @@ where
     // fully verify the dlog aggregation proof in G1, if present.
     let result_accumulate_g1 = if accumulation_proof_g1.is_some() {
         let dummy_g1 = DLogItem::<G1>::default();
-        DLogItemAccumulator::<G1, D>::verify_accumulated_items::<R>(
+        DLogItemAccumulator::<G1, FS>::verify_accumulated_items::<R>(
             &dummy_g1,
             g1_vk,
             accs_g1,
@@ -203,7 +203,7 @@ where
     // fully verify the dlog aggregation proof in G2, if present.
     let result_accumulate_g2 = if accumulation_proof_g2.is_some() {
         let dummy_g2 = DLogItem::<G2>::default();
-        DLogItemAccumulator::<G2, D>::verify_accumulated_items::<R>(
+        DLogItemAccumulator::<G2, FS>::verify_accumulated_items::<R>(
             &dummy_g2,
             g2_vk,
             accs_g2,
@@ -229,11 +229,11 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn batch_verify_proofs<G1, G2, D: Digest, R: RngCore>(
-    pcds: &[GeneralPCD<G1, G2, D>],
+pub fn batch_verify_proofs<G1, G2, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static, R: RngCore>(
+    pcds: &[GeneralPCD<G1, G2, D, FS>],
     vks: &[MarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
     >],
     g1_vk: &DLogVerifierKey<G1>,
     g2_vk: &DLogVerifierKey<G2>,
@@ -249,7 +249,7 @@ where
 
     // Do the succinct verification of the PCDs and get their accumulators
     let (accs_g1, accs_g2) =
-        get_accumulators::<G1, G2, D>(pcds, vks, g1_vk, g2_vk).map_err(|e| {
+        get_accumulators::<G1, G2, D, FS>(pcds, vks, g1_vk, g2_vk).map_err(|e| {
             end_timer!(verification_time);
             e
         })?;
@@ -258,7 +258,7 @@ where
     let result_g1 = if accs_g1.is_empty() {
         true
     } else {
-        DLogItemAccumulator::<G1, D>::check_items::<R>(g1_vk, &accs_g1, rng).map_err(|_| {
+        DLogItemAccumulator::<G1, FS>::check_items::<R>(g1_vk, &accs_g1, rng).map_err(|_| {
             end_timer!(verification_time);
             None
         })?
@@ -267,7 +267,7 @@ where
     let result_g2 = if accs_g2.is_empty() {
         true
     } else {
-        DLogItemAccumulator::<G2, D>::check_items::<R>(g2_vk, &accs_g2, rng).map_err(|_| {
+        DLogItemAccumulator::<G2, FS>::check_items::<R>(g2_vk, &accs_g2, rng).map_err(|_| {
             end_timer!(verification_time);
             None
         })?

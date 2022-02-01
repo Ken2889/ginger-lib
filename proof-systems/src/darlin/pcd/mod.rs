@@ -19,7 +19,7 @@ use algebra::{Group, ToConstraintField, UniformRand, EndoMulCurve};
 use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
-    Error as PCError, PCParameters,
+    Error as PCError, PCParameters, fiat_shamir::FiatShamirRng,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
@@ -139,19 +139,20 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static> {
-    SimpleMarlin(SimpleMarlinPCD<'a, G1, D>),
-    FinalDarlin(FinalDarlinPCD<'a, G1, G2, D>),
+pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static> {
+    SimpleMarlin(SimpleMarlinPCD<'a, G1, D, FS>),
+    FinalDarlin(FinalDarlinPCD<'a, G1, G2, D, FS>),
 }
 
 // Testing functions
-impl<'a, G1, G2, D> GeneralPCD<'a, G1, G2, D>
+impl<'a, G1, G2, D, FS> GeneralPCD<'a, G1, G2, D, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest,
+    FS: FiatShamirRng<Error = PCError>
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
         match self {
@@ -181,7 +182,7 @@ where
             }
             Self::FinalDarlin(final_darlin) => {
                 final_darlin.final_darlin_proof.deferred =
-                    FinalDarlinDeferredData::<G1, G2>::generate_random::<R, D>(rng, ck_g1, ck_g2);
+                    FinalDarlinDeferredData::<G1, G2>::generate_random::<R, FS>(rng, ck_g1, ck_g2);
             }
         }
     }
@@ -190,18 +191,19 @@ where
 /// We can re-use the FinalDarlinPCDVerifierKey for GeneralPCD as it contains both
 /// committer keys, and a CoboundaryMarlin and FinalDarlinProof are both verifiable
 /// with a standard Marlin Verifier key. Let's introduce a new type just to be clean.
-pub type DualPCDVerifierKey<'a, G1, G2, D> = FinalDarlinPCDVerifierKey<'a, G1, G2, D>;
+pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;
 
-impl<'a, G1, G2, D> PCD for GeneralPCD<'a, G1, G2, D>
+impl<'a, G1, G2, D, FS> PCD for GeneralPCD<'a, G1, G2, D, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     D: Digest + 'static,
+    FS: FiatShamirRng<Error = PCError> + 'static
 {
-    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;
-    type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, D>;
+    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
+    type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, FS>;
 
     fn succinct_verify(
         &self,
