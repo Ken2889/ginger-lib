@@ -2,7 +2,8 @@ use algebra::{EndoMulCurve, ToConstraintField, Group};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+use poly_commit::chacha20::FiatShamirChaChaRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, fiat_shamir::FiatShamirRng, error::Error as PCError, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::{accumulate_proofs, verify_aggregated_proofs},
@@ -11,7 +12,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
+fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -27,13 +28,13 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     let (committer_key_g1, verifier_key_g1, committer_key_g2, verifier_key_g2) =
         get_keys::<_, _, D>(&params_g1, &params_g2);
 
-    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
         num_constraints - 1,
         segment_size,
         &params_g1,
@@ -49,7 +50,7 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
         let vks = vec![index_vk[0].clone(); num_proofs];
 
         // Accumulate PCDs
-        let (proof_g1, proof_g2) = accumulate_proofs::<G1, G2, D>(
+        let (proof_g1, proof_g2) = accumulate_proofs::<G1, G2, FS>(
             pcds.as_slice(),
             vks.as_slice(),
             &committer_key_g1,
@@ -63,7 +64,7 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
             |bn, _num_proofs| {
                 bn.iter(|| {
                     // Verify accumulation
-                    assert!(verify_aggregated_proofs::<G1, G2, D, _>(
+                    assert!(verify_aggregated_proofs::<G1, G2, FS, _>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &proof_g1,
@@ -80,7 +81,7 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
     group.finish();
 }
 
-fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
+fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -96,12 +97,12 @@ fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     let (committer_key_g1, _, committer_key_g2, _) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
-    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
         num_constraints - 1,
         segment_size,
         &params_g1,
@@ -121,7 +122,7 @@ fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
             &num_proofs,
             |bn, _num_proofs| {
                 bn.iter(|| {
-                    accumulate_proofs::<G1, G2, D>(
+                    accumulate_proofs::<G1, G2, FS>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &committer_key_g1,
@@ -141,21 +142,21 @@ fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest>(
 fn bench_verify_tweedle(c: &mut Criterion) {
     use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
-    bench_verify::<TweedleDee, TweedleDum, Blake2s>(
+    bench_verify::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = segment_size = 1 << 19, proofs",
         1 << 19,
         vec![10, 50, 100, 200],
     );
 
-    bench_verify::<TweedleDee, TweedleDum, Blake2s>(
+    bench_verify::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/2, proofs",
         1 << 18,
         vec![10, 50, 100, 200],
     );
 
-    bench_verify::<TweedleDee, TweedleDum, Blake2s>(
+    bench_verify::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/4, proofs",
         1 << 17,
@@ -166,21 +167,21 @@ fn bench_verify_tweedle(c: &mut Criterion) {
 fn bench_accumulate_tweedle(c: &mut Criterion) {
     use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
-    bench_accumulate::<TweedleDee, TweedleDum, Blake2s>(
+    bench_accumulate::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = segment_size = 1 << 19, proofs",
         1 << 19,
         vec![10, 50, 100, 200],
     );
 
-    bench_accumulate::<TweedleDee, TweedleDum, Blake2s>(
+    bench_accumulate::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/2, proofs",
         1 << 18,
         vec![10, 50, 100, 200],
     );
 
-    bench_accumulate::<TweedleDee, TweedleDum, Blake2s>(
+    bench_accumulate::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/4, proofs",
         1 << 17,

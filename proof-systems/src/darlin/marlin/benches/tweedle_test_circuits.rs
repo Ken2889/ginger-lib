@@ -527,7 +527,7 @@ fn _bench_prover_circuit1a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit1a::<G::ScalarField> {
             num_constraints,
@@ -536,7 +536,7 @@ fn _bench_prover_circuit1a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -567,7 +567,7 @@ fn _bench_prover_circuit1a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -599,7 +599,7 @@ fn _bench_prover_circuit1b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit1b::<G::ScalarField> {
             num_constraints,
@@ -608,7 +608,7 @@ fn _bench_prover_circuit1b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -639,7 +639,7 @@ fn _bench_prover_circuit1b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -671,7 +671,7 @@ fn _bench_prover_circuit1c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit1c::<G::ScalarField> {
             num_constraints,
@@ -680,7 +680,7 @@ fn _bench_prover_circuit1c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -711,7 +711,7 @@ fn _bench_prover_circuit1c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -743,7 +743,7 @@ fn _bench_prover_circuit2a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit2a::<G::ScalarField> {
             num_constraints,
@@ -752,7 +752,7 @@ fn _bench_prover_circuit2a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -783,7 +783,7 @@ fn _bench_prover_circuit2a<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -815,7 +815,7 @@ fn _bench_prover_circuit2b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit2b::<G::ScalarField> {
             num_constraints,
@@ -824,7 +824,7 @@ fn _bench_prover_circuit2b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -855,7 +855,7 @@ fn _bench_prover_circuit2b<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );
@@ -887,7 +887,7 @@ fn _bench_prover_circuit2c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
 
     for &num_constraints in num_constraints.iter() {
         let universal_srs =
-            Marlin::<G, PC, D>::universal_setup(num_constraints, num_constraints, num_constraints, false)
+            Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit2c::<G::ScalarField> {
             num_constraints,
@@ -896,7 +896,7 @@ fn _bench_prover_circuit2c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
         };
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),
@@ -927,7 +927,7 @@ fn _bench_prover_circuit2c<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Dige
                             b: Some(b),
                         };
 
-                        Marlin::<G, PC, D>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
+                        Marlin::<G, PC>::prove(&index_pk, &pc_pk, c, false, None).unwrap();
                     },
                     BatchSize::PerIteration,
                 );

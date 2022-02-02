@@ -139,19 +139,18 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static> {
-    SimpleMarlin(SimpleMarlinPCD<'a, G1, D, FS>),
-    FinalDarlin(FinalDarlinPCD<'a, G1, G2, D, FS>),
+pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+    SimpleMarlin(SimpleMarlinPCD<'a, G1, FS>),
+    FinalDarlin(FinalDarlinPCD<'a, G1, G2, FS>),
 }
 
 // Testing functions
-impl<'a, G1, G2, D, FS> GeneralPCD<'a, G1, G2, D, FS>
+impl<'a, G1, G2, FS> GeneralPCD<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest,
     FS: FiatShamirRng<Error = PCError>
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
@@ -193,13 +192,12 @@ where
 /// with a standard Marlin Verifier key. Let's introduce a new type just to be clean.
 pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;
 
-impl<'a, G1, G2, D, FS> PCD for GeneralPCD<'a, G1, G2, D, FS>
+impl<'a, G1, G2, FS> PCD for GeneralPCD<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
     FS: FiatShamirRng<Error = PCError> + 'static
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;

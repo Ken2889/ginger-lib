@@ -1,8 +1,8 @@
 use algebra::{Group, EndoMulCurve, ToConstraintField};
-use blake2::Blake2s;
+use blake2::{Blake2s, Digest};
 use criterion::*;
-use digest::Digest;
-use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+use poly_commit::chacha20::FiatShamirChaChaRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, fiat_shamir::FiatShamirRng, error::Error as PCError, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
@@ -11,7 +11,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static>(
+fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -27,12 +27,12 @@ fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'sta
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
 
-    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
         num_constraints - 1,
         segment_size,
         &params_g1,
@@ -52,7 +52,7 @@ fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'sta
             &num_proofs,
             |bn, _num_proofs| {
                 bn.iter(|| {
-                    assert!(batch_verify_proofs::<G1, G2, D, _>(
+                    assert!(batch_verify_proofs::<G1, G2, FS, _>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &verifier_key_g1,
@@ -73,21 +73,21 @@ fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'sta
 fn bench_batch_verification_tweedle(c: &mut Criterion) {
     use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = segment_size = 1 << 19, proofs",
         1 << 19,
         vec![10, 50, 100, 200],
     );
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/2, proofs",
         1 << 18,
         vec![10, 50, 100, 200],
     );
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/4, proofs",
         1 << 17,

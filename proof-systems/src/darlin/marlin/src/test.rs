@@ -131,7 +131,7 @@ mod marlin {
                 num_variables,
             };
             let (index_pk, index_vk) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
+                Marlin::<G, PC>::circuit_specific_setup(&pc_pk, circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
@@ -141,7 +141,7 @@ mod marlin {
             test_canonical_serialize_deserialize(true, &index_pk);
             test_canonical_serialize_deserialize(true, &index_vk);
 
-            let proof = Marlin::<G, PC, D>::prove(
+            let proof = Marlin::<G, PC>::prove(
                 &index_pk,
                 &pc_pk,
                 circ,
@@ -160,34 +160,34 @@ mod marlin {
             test_canonical_serialize_deserialize(true, &proof);
 
             // Success verification
-            assert!(Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Fail verification
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
+            assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
 
             // Use a bigger vk derived from the same universal params and check verification is successful
             let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
             assert_eq!(pc_vk.get_hash(), universal_srs.get_hash());
-            assert!(Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
             let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Use a vk of the same size of the original one, but derived from bigger universal params
             // and check that verification fails (absorbed hash won't be the same)
             let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
             let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
             assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
-            assert!(!Marlin::<G, PC, D>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
+            assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
             // Fake indexes to pass the IOP part
             let (index_pk_fake, index_vk_fake) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk_fake, circ).unwrap();
+                Marlin::<G, PC>::circuit_specific_setup(&pc_pk_fake, circ).unwrap();
 
-            let proof_fake = Marlin::<G, PC, D>::prove(
+            let proof_fake = Marlin::<G, PC>::prove(
                 &index_pk_fake,
                 &pc_pk_fake,
                 circ,
@@ -199,7 +199,7 @@ mod marlin {
             // Fail verification using fake proof at the level of opening proof
             println!("\nShould not verify");
             assert!(
-                !Marlin::<G, PC, D>::verify(&index_vk_fake, &pc_vk, &[c, d], &proof_fake).unwrap()
+                !Marlin::<G, PC>::verify(&index_vk_fake, &pc_vk, &[c, d], &proof_fake).unwrap()
             );
 
             // Check correct error assertion for the case when
@@ -216,14 +216,14 @@ mod marlin {
                 num_variables,
             };
             let (index_pk, index_vk) =
-                Marlin::<G, PC, D>::circuit_specific_setup(&pc_pk, circ).unwrap();
+                Marlin::<G, PC>::circuit_specific_setup(&pc_pk, circ).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
 
             println!("Called index");
 
-            let proof = Marlin::<G, PC, D>::prove(
+            let proof = Marlin::<G, PC>::prove(
                 &index_pk,
                 &pc_pk,
                 circ,

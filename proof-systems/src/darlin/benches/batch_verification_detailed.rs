@@ -2,7 +2,8 @@ use algebra::{serialize::*, Group, EndoMulCurve, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+use poly_commit::chacha20::FiatShamirChaChaRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, error::Error as PCError, fiat_shamir::FiatShamirRng, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
 use proof_systems::darlin::pcd::GeneralPCD;
@@ -15,7 +16,7 @@ use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static>(
+fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -31,8 +32,8 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
@@ -40,7 +41,7 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
@@ -64,7 +65,7 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
             &num_constraints,
             |bn, _num_constraints| {
                 bn.iter(|| {
-                    let _ = get_accumulators::<G1, G2, D>(
+                    let _ = get_accumulators::<G1, G2, FS>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &verifier_key_g1,
@@ -78,7 +79,7 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
     group.finish();
 }
 
-fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static>(
+fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -94,8 +95,8 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
@@ -103,7 +104,7 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
@@ -124,7 +125,7 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
 
         // Get accumulators from pcds
         let (accs_g1, accs_g2) =
-            get_accumulators::<G1, G2, D>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2).unwrap();
+            get_accumulators::<G1, G2, FS>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2).unwrap();
 
         group.bench_with_input(
             BenchmarkId::from_parameter(num_constraints),
@@ -133,9 +134,9 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
                 bn.iter(|| {
                     // Verify accumulators (hard part)
                     assert!(
-                        DLogItemAccumulator::<G1, D>::check_items(&verifier_key_g1, &accs_g1, rng)
+                        DLogItemAccumulator::<G1, FS>::check_items(&verifier_key_g1, &accs_g1, rng)
                             .unwrap()
-                            && DLogItemAccumulator::<G2, D>::check_items(
+                            && DLogItemAccumulator::<G2, FS>::check_items(
                                 &verifier_key_g2,
                                 &accs_g2,
                                 rng
@@ -149,7 +150,7 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
     group.finish();
 }
 
-fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static>(
+fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -165,8 +166,8 @@ fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Dige
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
     println!("Key G1 size: {}", params_g1.comm_key.len());
     println!("Key G2 size: {}", params_g2.comm_key.len());
 
@@ -174,7 +175,7 @@ fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Dige
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
-        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+        let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
             &params_g1,
@@ -198,7 +199,7 @@ fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Dige
             &num_constraints,
             |bn, _num_constraints| {
                 bn.iter(|| {
-                    assert!(batch_verify_proofs::<G1, G2, D, _>(
+                    assert!(batch_verify_proofs::<G1, G2, FS, _>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &verifier_key_g1,
@@ -225,7 +226,7 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_batch_verification_complete::<TweedleDee, TweedleDum, Blake2s>(
+        bench_batch_verification_complete::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
             c,
             format!(
                 "tweedle-dee, segment_size = 1 << {}, num_constraints",
@@ -251,7 +252,7 @@ fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_succinct_part_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+        bench_succinct_part_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
             c,
             format!(
                 "succinct_part, tweedle-dee, segment_size = 1 << {}, num_constraints",
@@ -277,7 +278,7 @@ fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_hard_part_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+        bench_hard_part_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
             c,
             format!(
                 "hard_part, tweedle-dee, segment_size = 1 << {}, num_constraints",

@@ -67,20 +67,19 @@ mod test;
 /// Coboundary Marlin is an argument for satifiability of an R1CS over a prime
 /// field `F` and uses a polynomial commitment scheme `PC` for
 /// polynomials over that field and a digest `D` for the Fiat-Shamir transform.
-pub struct Marlin<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(
+pub struct Marlin<G: EndoMulCurve, PC: PolynomialCommitment<G>>(
     #[doc(hidden)] PhantomData<G>,
     #[doc(hidden)] PhantomData<PC>,
-    #[doc(hidden)] PhantomData<D>,
 );
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
+impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"COBOUNDARY-MARLIN-2021";
 
     /// Generate the universal prover and verifier keys for the
     /// argument system.
-    pub fn universal_setup(
+    pub fn universal_setup<D: Digest>(
         num_constraints: usize,
         num_variables: usize,
         num_non_zero: usize,

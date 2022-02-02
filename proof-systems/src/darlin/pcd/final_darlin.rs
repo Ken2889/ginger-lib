@@ -10,7 +10,6 @@ use crate::darlin::{
 };
 use algebra::{Group, ToConstraintField, EndoMulCurve};
 use bench_utils::*;
-use digest::Digest;
 use poly_commit::{
     fiat_shamir::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
@@ -22,22 +21,20 @@ use std::marker::PhantomData;
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> +'static> {
+pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> +'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
     pub usr_ins: Vec<G1::ScalarField>,
-    _digest:   PhantomData<D>,
     _lifetime: PhantomData<&'a ()>,
 }
 
-impl<'a, G1, G2, D, FS> FinalDarlinPCD<'a, G1, G2, D, FS>
+impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
     FS: FiatShamirRng<Error = PCError> +'static
 {
     pub fn new(
@@ -47,7 +44,6 @@ where
         Self {
             final_darlin_proof,
             usr_ins,
-            _digest:   PhantomData,
             _lifetime: PhantomData,
         }
     }
@@ -71,13 +67,12 @@ impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> 
     }
 }
 
-impl<'a, G1, G2, D, FS> PCD for FinalDarlinPCD<'a, G1, G2, D, FS>
+impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
     FS: FiatShamirRng<Error = PCError> +'static
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
@@ -93,7 +88,7 @@ where
 
         // Verify sumchecks
         let (query_set, evaluations, labeled_comms, mut fs_rng) =
-            FinalDarlin::<G1, G2, FS, D>::verify_ahp(
+            FinalDarlin::<G1, G2, FS>::verify_ahp(
                 vk.dlog_vks.0,
                 vk.final_darlin_vk,
                 self.usr_ins.as_slice(),

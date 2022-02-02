@@ -8,7 +8,6 @@ use crate::darlin::{
 };
 use algebra::{serialize::*, EndoMulCurve, SemanticallyValid};
 use bench_utils::*;
-use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
     fiat_shamir::FiatShamirRng,
@@ -78,18 +77,16 @@ impl<G: EndoMulCurve, FS: FiatShamirRng<Error = PCError>> SemanticallyValid for 
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
     pub proof: MarlinProof<G, FS>,
     pub usr_ins: Vec<G::ScalarField>,
-    _digest:   PhantomData<D>,
     _lifetime: PhantomData<&'a ()>,
 }
 
 /// As every PCD, the `SimpleMarlinPCD` comes as a proof plus "statement".
-impl<'a, G, D, FS> SimpleMarlinPCD<'a, G, D, FS>
+impl<'a, G, FS> SimpleMarlinPCD<'a, G, FS>
 where
     G: EndoMulCurve,
-    D: Digest + 'a,
     FS: FiatShamirRng<Error = PCError> + 'a,
 {
     pub fn new(
@@ -101,7 +98,6 @@ where
         Self {
             proof,
             usr_ins,
-            _digest: PhantomData,
             _lifetime: PhantomData,
         }
     }
@@ -120,10 +116,9 @@ impl<'a, G: EndoMulCurve, FS: FiatShamirRng<Error = PCError>> AsRef<DLogVerifier
     }
 }
 
-impl<'a, G, D, FS> PCD for SimpleMarlinPCD<'a, G, D, FS>
+impl<'a, G, FS> PCD for SimpleMarlinPCD<'a, G, FS>
 where
     G: EndoMulCurve,
-    D: Digest + 'static,
     FS: FiatShamirRng<Error = PCError> + 'static,
 {
     type PCDAccumulator = DLogItemAccumulator<G, FS>;
@@ -139,7 +134,6 @@ where
         let (query_set, evaluations, labeled_comms, mut fs_rng) = Marlin::<
             G,
             DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>,
-            D,
         >::verify_iop(
             &vk.1,
             &vk.0,

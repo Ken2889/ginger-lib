@@ -297,7 +297,7 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
     pc_ck_g1: &CommitterKey<G1>,
     final_darlin_pk: &FinalDarlinProverKey<
         G1,
@@ -306,7 +306,7 @@ pub fn generate_test_pcd<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a,
     info: CircuitInfo<G1, G2>,
     zk: bool,
     rng: &mut R,
-) -> FinalDarlinPCD<'a, G1, G2, D, FS>
+) -> FinalDarlinPCD<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
@@ -324,7 +324,7 @@ where
     let a = G1::ScalarField::rand(rng);
     let b = G1::ScalarField::rand(rng);
 
-    FinalDarlin::<G1, G2, FS, D>::prove::<TestCircuit<G1, G2>>(
+    FinalDarlin::<G1, G2, FS>::prove::<TestCircuit<G1, G2>>(
         final_darlin_pk,
         pc_ck_g1,
         info,
@@ -340,7 +340,7 @@ where
 /// Generates `num_proofs` random instances of FinalDarlinPCDs for TestCircuit1 at given
 /// `num_constraints`, using `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
+pub fn generate_test_data<'a, D: Digest, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
     params_g1: &Parameters<G1>,
@@ -348,7 +348,7 @@ pub fn generate_test_data<'a, G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'a
     num_proofs: usize,
     rng: &mut R,
 ) -> (
-    Vec<FinalDarlinPCD<'a, G1, G2, D, FS>>,
+    Vec<FinalDarlinPCD<'a, G1, G2, FS>>,
     Vec<
         FinalDarlinVerifierKey<
             G1,
@@ -381,12 +381,12 @@ where
     };
 
     let (index_pk, index_vk) =
-        FinalDarlin::<G1, G2, FS, D>::index::<TestCircuit<G1, G2>>(&committer_key_g1, info.clone())
+        FinalDarlin::<G1, G2, FS>::index::<TestCircuit<G1, G2>>(&committer_key_g1, info.clone())
             .unwrap();
 
     // Generate Final Darlin PCDs
     let final_darlin_pcd =
-        generate_test_pcd::<G1, G2, D, FS, R>(&committer_key_g1, &index_pk, info, rng.gen(), rng);
+        generate_test_pcd::<G1, G2, FS, R>(&committer_key_g1, &index_pk, info, rng.gen(), rng);
 
     (
         vec![final_darlin_pcd; num_proofs],

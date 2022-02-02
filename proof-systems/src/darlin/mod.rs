@@ -49,25 +49,23 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static, D: Digest + 'static>(
+pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<FS>,
-    #[doc(hidden)] PhantomData<D>,
     #[doc(hidden)] PhantomData<&'a ()>,
 );
 
-impl<'a, G1, G2, FS, D> FinalDarlin<'a, G1, G2, FS, D>
+impl<'a, G1, G2, FS> FinalDarlin<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng<Error = PCError> + 'static,
-    D: Digest + 'static,
 {
     /// Generate the universal prover and verifier keys for Marlin.
-    pub fn universal_setup(
+    pub fn universal_setup<D: Digest>(
         num_constraints: usize,
         num_variables: usize,
         num_non_zero: usize,
@@ -76,14 +74,12 @@ where
         let srs_g1 = Marlin::<
             G1,
             DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
-            D,
-        >::universal_setup(num_constraints, num_variables, num_non_zero, zk)?;
+        >::universal_setup::<D>(num_constraints, num_variables, num_non_zero, zk)?;
 
         let srs_g2 = Marlin::<
             G2,
             DomainExtendedPolynomialCommitment<G2, InnerProductArgPC<G2, FS>>,
-            D,
-        >::universal_setup(num_constraints, num_variables, num_non_zero, zk)?;
+        >::universal_setup::<D>(num_constraints, num_variables, num_non_zero, zk)?;
 
         Ok((srs_g1, srs_g2))
     }
@@ -108,7 +104,7 @@ where
         FinalDarlinError,
     > {
         let c = C::init(config);
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>, D>::circuit_specific_setup(committer_key, c)?;
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::circuit_specific_setup(committer_key, c)?;
 
         Ok(res)
     }
@@ -128,7 +124,7 @@ where
         additional_data: C::AdditionalData,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
-    ) -> Result<FinalDarlinPCD<'a, G1, G2, D, FS>, FinalDarlinError>
+    ) -> Result<FinalDarlinPCD<'a, G1, G2, FS>, FinalDarlinError>
     where
         C: PCDCircuit<G1, SystemInputs = FinalDarlinDeferredData<G1, G2>>,
     {
@@ -144,7 +140,6 @@ where
         let proof = Marlin::<
             G1,
             DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
-            D,
         >::prove(index_pk, pc_pk, c, zk, zk_rng)?;
 
         let proof = FinalDarlinProof::<G1, G2, FS> {
@@ -155,7 +150,7 @@ where
             FinalDarlinError::Other("Failed to convert usr ins to field elements".to_owned())
         })?;
 
-        Ok(FinalDarlinPCD::<G1, G2, D, FS>::new(proof, usr_ins))
+        Ok(FinalDarlinPCD::<G1, G2, FS>::new(proof, usr_ins))
     }
 
     /// Fully verify a `FinalDarlinProof` from the PCDCircuit `C`, using the PCD implementation for
@@ -171,7 +166,7 @@ where
         proof: &FinalDarlinProof<G1, G2, FS>,
         rng: &mut R,
     ) -> Result<bool, FinalDarlinError> {
-        let final_darlin_pcd = FinalDarlinPCD::<G1, G2, D, FS>::new(proof.clone(), usr_ins.to_vec());
+        let final_darlin_pcd = FinalDarlinPCD::<G1, G2, FS>::new(proof.clone(), usr_ins.to_vec());
 
         let final_darlin_pcd_vk = FinalDarlinPCDVerifierKey::<G1, G2, FS> {
             final_darlin_vk: index_vk,
@@ -208,7 +203,7 @@ where
         public_inputs.extend_from_slice(usr_ins);
 
         // Verify AHP
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>, D>::verify_iop(
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::verify_iop(
             pc_vk, index_vk, public_inputs.as_slice(), &proof.proof
         )?;
 
@@ -225,7 +220,7 @@ where
         evaluations: Evaluations<'a, G1::ScalarField>,
         fs_rng: &mut FS,
     ) -> Result<bool, FinalDarlinError> {
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>, D>::verify_opening(
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::verify_opening(
             pc_vk, &proof.proof, labeled_comms, query_set, evaluations, fs_rng
         )?;
 
