@@ -2,13 +2,10 @@
 //! our conversion/exiting chain.
 use crate::darlin::{accumulators::dlog::DLogItem, pcd::simple_marlin::MarlinProof};
 use algebra::{
-    serialize::*, Group, GroupVec, Curve, PrimeField, SemanticallyValid, ToBits,
-    ToConstraintField, UniformRand,
+    serialize::*, Curve, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
 };
 use digest::Digest;
-use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial},
-};
+use poly_commit::ipa_pc::CommitterKey as DLogCommitterKey;
 use rand::RngCore;
 
 /// The `FinalDarlinDeferredData`, assuming that the final node is in G1.
@@ -43,51 +40,9 @@ where
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
     ) -> Self {
-        // Generate valid accumulator over G1 starting from random xi_s
-        let log_key_len_g1 = algebra::log2(committer_key_g1.comm_key.len());
-        let random_xi_s_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
-            (0..log_key_len_g1 as usize)
-                .map(|_| u128::rand(rng).into())
-                .collect(),
-        );
-        let g_final_g1 = InnerProductArgPC::<G1, D>::inner_commit(
-            committer_key_g1.comm_key.as_slice(),
-            random_xi_s_g1.compute_coeffs().as_slice(),
-            None,
-            None,
-        )
-        .unwrap();
-
-        let acc_g1 = DLogItem::<G1> {
-            g_final: GroupVec::new(vec![g_final_g1]),
-            xi_s: random_xi_s_g1,
-        };
-
-        // Generate valid accumulator over G2 starting from random xi_s
-        let log_key_len_g2 = algebra::log2(committer_key_g2.comm_key.len());
-        let random_xi_s_g2 = SuccinctCheckPolynomial::<G2::ScalarField>(
-            (0..log_key_len_g2 as usize)
-                .map(|_| u128::rand(rng).into())
-                .collect(),
-        );
-
-        let g_final_g2 = InnerProductArgPC::<G2, D>::inner_commit(
-            committer_key_g2.comm_key.as_slice(),
-            random_xi_s_g2.compute_coeffs().as_slice(),
-            None,
-            None,
-        )
-        .unwrap();
-
-        let acc_g2 = DLogItem::<G2> {
-            g_final: GroupVec::new(vec![g_final_g2]),
-            xi_s: random_xi_s_g2,
-        };
-
-        // Return accumulators in deferred struct
         Self {
-            previous_acc: acc_g2,
-            pre_previous_acc: acc_g1,
+            previous_acc: DLogItem::generate_random::<_, D>(rng, committer_key_g2),
+            pre_previous_acc: DLogItem::generate_random::<_, D>(rng, committer_key_g1),
         }
     }
 }
@@ -186,9 +141,7 @@ pub struct FinalDarlinProof<G1: Curve, G2: Curve, D: Digest + 'static> {
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> SemanticallyValid
-    for FinalDarlinProof<G1, G2, D>
-{
+impl<G1: Curve, G2: Curve, D: Digest> SemanticallyValid for FinalDarlinProof<G1, G2, D> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }

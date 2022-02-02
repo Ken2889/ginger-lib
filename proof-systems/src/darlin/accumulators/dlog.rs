@@ -7,16 +7,13 @@
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    Group, GroupVec, Field, Curve,
-    serialize::*, to_bytes, SemanticallyValid, ToBytes,
-    UniformRand,
+    serialize::*, to_bytes, Curve, Field, Group, GroupVec, SemanticallyValid, ToBytes, UniformRand,
 };
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed},
     ipa_pc::{CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
-    DomainExtendedPolynomialCommitment, Error, LabeledCommitment,
-    PolynomialCommitment,
+    DomainExtendedPolynomialCommitment, Error, LabeledCommitment, PolynomialCommitment,
 };
 use rand::RngCore;
 use rayon::prelude::*;
@@ -30,6 +27,44 @@ pub struct DLogItem<G: Curve> {
 
     /// Challenges of the DLOG reduction.
     pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
+}
+
+impl<G: Curve> DLogItem<G> {
+    /// Generate a random (but valid) instance of `DLogItem`, for test purposes only.
+    pub fn generate_random<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key: &CommitterKey<G>,
+    ) -> Self {
+        // Generate valid accumulator over G1 starting from random xi_s
+        let log_key_len = algebra::log2(committer_key.comm_key.len());
+        let random_xi_s = SuccinctCheckPolynomial::<G::ScalarField>(
+            (0..log_key_len as usize)
+                .map(|_| u128::rand(rng).into())
+                .collect(),
+        );
+        let g_final = InnerProductArgPC::<G, D>::inner_commit(
+            committer_key.comm_key.as_slice(),
+            random_xi_s.compute_coeffs().as_slice(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        Self {
+            g_final: GroupVec::new(vec![g_final]),
+            xi_s: random_xi_s,
+        }
+    }
+
+    /// Generate the trivial `DLogItem`.
+    pub fn generate_trivial(committer_key: &CommitterKey<G>) -> Self {
+        // We define a trivial DLogItem as having all `xi_s` equal to zero.
+        // This corresponds to a degree-0 bullet polynomial identically equal to one, which in turn
+        // implies that the `g_final` is equal to the first element of the committer key.
+        let xi_s = SuccinctCheckPolynomial(Vec::new());
+        let g_final = GroupVec::new(vec![G::from_affine(&committer_key.comm_key[0])]);
+        Self { g_final, xi_s }
+    }
 }
 
 impl<G: Curve> CanonicalSerialize for DLogItem<G> {
@@ -68,8 +103,7 @@ impl<G: Curve> CanonicalSerialize for DLogItem<G> {
 impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize(&mut reader)?]);
+        let g_final = GroupVec::new(vec![CanonicalDeserialize::deserialize(&mut reader)?]);
 
         let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -78,10 +112,9 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize_unchecked(
-                &mut reader,
-            )?]);
+        let g_final = GroupVec::new(vec![CanonicalDeserialize::deserialize_unchecked(
+            &mut reader,
+        )?]);
 
         let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
@@ -91,10 +124,9 @@ impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
     #[inline]
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
-        let g_final =
-            GroupVec::new(vec![CanonicalDeserialize::deserialize_uncompressed(
-                &mut reader,
-            )?]);
+        let g_final = GroupVec::new(vec![CanonicalDeserialize::deserialize_uncompressed(
+            &mut reader,
+        )?]);
 
         let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
@@ -321,7 +353,13 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             // The vk might be oversized, but the VariableBaseMSM function, will "trim"
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
-            &[G::batch_normalization_into_affine(final_comm_keys).unwrap().as_slice(), vk.comm_key.as_slice()].concat(),
+            &[
+                G::batch_normalization_into_affine(final_comm_keys)
+                    .unwrap()
+                    .as_slice(),
+                vk.comm_key.as_slice(),
+            ]
+            .concat(),
             &[
                 batching_chal_pows.as_slice(),
                 combined_check_poly.coeffs.as_slice(),
@@ -450,6 +488,31 @@ pub struct DualDLogItem<G1: Curve, G2: Curve>(
     pub(crate) Vec<DLogItem<G1>>,
     pub(crate) Vec<DLogItem<G2>>,
 );
+
+impl<G1: Curve, G2: Curve> DualDLogItem<G1, G2> {
+    /// Generate a random (but valid)  instance of `DualDLogItem`, for test purposes only.
+    pub fn generate_random<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key_g1: &CommitterKey<G1>,
+        committer_key_g2: &CommitterKey<G2>,
+    ) -> Self {
+        Self(
+            vec![DLogItem::generate_random::<R, D>(rng, committer_key_g1)],
+            vec![DLogItem::generate_random::<R, D>(rng, committer_key_g2)],
+        )
+    }
+
+    /// Generate the trivial `DualDLogItem`.
+    pub fn generate_trivial<D: Digest>(
+        committer_key_g1: &CommitterKey<G1>,
+        committer_key_g2: &CommitterKey<G2>,
+    ) -> Self {
+        Self(
+            vec![DLogItem::<G1>::generate_trivial(committer_key_g1)],
+            vec![DLogItem::<G2>::generate_trivial(committer_key_g2)],
+        )
+    }
+}
 
 impl<G1: Curve, G2: Curve> ToBytes for DualDLogItem<G1, G2> {
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
@@ -827,7 +890,7 @@ mod test {
                 .map(|verifier_state| {
                     let acc = DLogItem::<G> {
                         g_final: GroupVec::new(vec![verifier_state.final_comm_key]),
-                        xi_s: verifier_state.check_poly.clone()
+                        xi_s: verifier_state.check_poly.clone(),
                     };
                     test_canonical_serialize_deserialize(true, &acc);
                     acc
@@ -948,7 +1011,59 @@ mod test {
         Ok(())
     }
 
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    fn random_accumulator_test<G, D>() -> Result<(), Error>
+    where
+        G: Curve,
+        D: Digest + 'static,
+    {
+        let rng = &mut thread_rng();
+
+        let max_degree = rand::distributions::Uniform::from(2..=128);
+        let num_samples = 10;
+
+        for _ in 0..num_samples {
+            let max_degree = rng.sample(max_degree);
+            let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(
+                max_degree,
+            )?;
+            let (ck, vk) = pp.trim(max_degree)?;
+            let dlog_item = DLogItem::generate_random::<_, D>(rng, &ck);
+            let res = DLogItemAccumulator::<_, D>::check_items(&vk, &[dlog_item], rng)?;
+
+            assert!(res);
+        }
+
+        Ok(())
+    }
+
+    fn trivial_accumulator_test<G, D>() -> Result<(), Error>
+    where
+        G: Curve,
+        D: Digest + 'static,
+    {
+        let rng = &mut thread_rng();
+
+        let max_degree = rand::distributions::Uniform::from(2..=128);
+        let num_samples = 10;
+
+        for _ in 0..num_samples {
+            let max_degree = rng.sample(max_degree);
+            let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(
+                max_degree,
+            )?;
+            let (ck, vk) = pp.trim(max_degree)?;
+            let dlog_item = DLogItem::generate_trivial(&ck);
+            let res = DLogItemAccumulator::<_, D>::check_items(&vk, &[dlog_item], rng)?;
+
+            assert!(res);
+        }
+
+        Ok(())
+    }
+
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     #[test]
     fn test_tweedle_accumulate_verify() {
@@ -960,5 +1075,17 @@ mod test {
     fn test_tweedle_batch_verify() {
         batch_verification_test::<TweedleDee, Blake2s>().unwrap();
         batch_verification_test::<TweedleDum, Blake2s>().unwrap();
+    }
+
+    #[test]
+    fn test_tweedle_random_accumulator() {
+        random_accumulator_test::<TweedleDee, Blake2s>().unwrap();
+        random_accumulator_test::<TweedleDum, Blake2s>().unwrap();
+    }
+
+    #[test]
+    fn test_tweedle_trivial_accumulator() {
+        trivial_accumulator_test::<TweedleDee, Blake2s>().unwrap();
+        trivial_accumulator_test::<TweedleDum, Blake2s>().unwrap();
     }
 }
