@@ -45,6 +45,7 @@ blake2 = { version = "0.8.1", default-features = false }
 [features]
 asm = [ "algebra/llvm_asm" ]
 print-trace = [ "bench-utils/print-trace" ]
+circuit-friendly = []
 
 [[bench]]
 name = "tweedle_open_proof"

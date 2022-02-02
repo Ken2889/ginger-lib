@@ -837,17 +837,40 @@ mod test {
     use algebra::curves::tweedle::{
         dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
     };
-    use poly_commit::fiat_shamir::chacha20::FiatShamirChaChaRng;
+    #[cfg(not(feature = "circuit-friendly"))]
+    mod chacha_fs {
+        use super::*;
+        use poly_commit::chacha20::FiatShamirChaChaRng;
 
-    #[test]
-    fn test_tweedle_accumulate_verify() {
-        accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-        accumulation_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+        
+        #[test]
+        fn test_tweedle_accumulate_verify() {
+            accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+            accumulation_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+        }
+    
+        #[test]
+        fn test_tweedle_batch_verify() {
+            batch_verification_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+            batch_verification_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+        }
     }
 
-    #[test]
-    fn test_tweedle_batch_verify() {
-        batch_verification_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-        batch_verification_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+    #[cfg(feature = "circuit-friendly")]
+    mod poseidon_fs {
+        use super::*;
+        use primitives::TweedleFqPoseidonSponge;
+        
+        #[test]
+        fn test_tweedle_accumulate_verify() {
+            accumulation_test::<TweedleDee, Blake2s, TweedleFqPoseidonSponge>().unwrap();
+            accumulation_test::<TweedleDum, Blake2s, TweedleFqPoseidonSponge>().unwrap();
+        }
+    
+        #[test]
+        fn test_tweedle_batch_verify() {
+            batch_verification_test::<TweedleDee, Blake2s, TweedleFqPoseidonSponge>().unwrap();
+            batch_verification_test::<TweedleDum, Blake2s, TweedleFqPoseidonSponge>().unwrap();
+        }
     }
 }

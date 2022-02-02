@@ -37,6 +37,7 @@ derivative = { version = "2", features = ["use_core"] }
 [dev-dependencies]
 algebra = { path = "../../../../algebra", features = ["tweedle", "derive"]}
 r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"]}
+paste = "=1.0.6"
 
 blake2 = { version = "0.8.1", default-features = false }
 criterion = "0.3"
@@ -45,6 +46,7 @@ rand_xorshift = "0.3.0"
 [features]
 print-trace = [ "bench-utils/print-trace", "poly-commit/print-trace" ]
 asm = [ "poly-commit/asm", "algebra/llvm_asm" ]
+circuit-friendly = []
 
 [[bench]]
 name = "tweedle_test_circuits"

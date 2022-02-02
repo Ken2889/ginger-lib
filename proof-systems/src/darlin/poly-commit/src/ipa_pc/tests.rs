@@ -6,13 +6,11 @@ use algebra::{
     Curve, Field, UniformRand, EndoMulCurve, CanonicalSerialize, serialize_no_metadata};
 use blake2::Blake2s;
 use digest::Digest;
-use primitives::TweedleFqPoseidonSponge;
 
 use super::InnerProductArgPC;
 use crate::Error;
 use crate::fiat_shamir::{
     FiatShamirRng, FiatShamirRngSeed,
-    chacha20::FiatShamirChaChaRng,
 };
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
@@ -291,18 +289,31 @@ macro_rules! generate_pc_tests {
 
 type PC<G, FS> = InnerProductArgPC<G, FS>;
 
-type CHACHA_BLAKE2S_FS_RNG = FiatShamirChaChaRng<Blake2s>;
-// The ipa_pc over the Tweedle Dee using a Chacha-Blake2s based Fiat-Shamir rng.
-type PC_DEE_CHACHA_BLAKE2S = InnerProductArgPC<TweedleDee, FiatShamirChaChaRng<Blake2s>>;
-// its domain extended variant
-type PC_DEE_CHACHA_DE_BLAKE2S = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_CHACHA_BLAKE2S>;
+#[cfg(not(feature = "circuit-friendly"))]
+mod chacha_fs {
+    use super::*;
+    use crate::fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-generate_pc_tests!(pc_dee_chacha, PC_DEE_CHACHA_BLAKE2S, PC_DEE_CHACHA_DE_BLAKE2S, Blake2s, CHACHA_BLAKE2S_FS_RNG);
+    type CHACHA_BLAKE2S_FS_RNG = FiatShamirChaChaRng<Blake2s>;
+    // The ipa_pc over the Tweedle Dee using a Chacha-Blake2s based Fiat-Shamir rng.
+    type PC_DEE_CHACHA_BLAKE2S = PC<TweedleDee, FiatShamirChaChaRng<Blake2s>>;
+    // its domain extended variant
+    type PC_DEE_CHACHA_DE_BLAKE2S = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_CHACHA_BLAKE2S>;
+    
+    generate_pc_tests!(pc_dee, PC_DEE_CHACHA_BLAKE2S, PC_DEE_CHACHA_DE_BLAKE2S, Blake2s, CHACHA_BLAKE2S_FS_RNG);
+}
 
+#[cfg(feature = "circuit-friendly")]
+mod poseidon_fs {
+    use super::*;
+    use primitives::TweedleFqPoseidonSponge;
+
+    type POSEIDON_TWEEDLE_FQ_FS_RNG = TweedleFqPoseidonSponge;
+    type PC_DEE_POSEIDON = PC<TweedleDee, TweedleFqPoseidonSponge>;
+    // its domain extended variant
+    type PC_DEE_POSEIDON_DE = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_POSEIDON>;
+    
+    generate_pc_tests!(pc_dee, PC_DEE_POSEIDON, PC_DEE_POSEIDON_DE, Blake2s, POSEIDON_TWEEDLE_FQ_FS_RNG);
+}
 // The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
-type POSEIDON_TWEEDLE_FQ_FS_RNG = TweedleFqPoseidonSponge;
-type PC_DEE_POSEIDON = PC<TweedleDee, TweedleFqPoseidonSponge>;
-// its domain extended variant
-type PC_DEE_POSEIDON_DE = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_POSEIDON>;
 
-generate_pc_tests!(pc_dee_poseidon, PC_DEE_POSEIDON, PC_DEE_POSEIDON_DE, Blake2s, POSEIDON_TWEEDLE_FQ_FS_RNG);

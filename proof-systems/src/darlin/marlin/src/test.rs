@@ -67,17 +67,11 @@ mod marlin {
     use poly_commit::{
         ipa_pc::{InnerProductArgPC, Parameters as IPAParameters},
         DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PCVerifierKey,
-        PolynomialCommitment, chacha20::FiatShamirChaChaRng,
+        PolynomialCommitment,
     };
-    use primitives::TweedleFrPoseidonSponge;
     use rand::thread_rng;
     use std::ops::MulAssign;
 
-    type MultiPCChaCha =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
-
-    type MultiPCPoseidon =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, TweedleFrPoseidonSponge>>;
 
     trait TestUtils {
         /// Copy other instance params into this
@@ -240,112 +234,85 @@ mod marlin {
         }
     }
 
-    #[test]
-    fn prove_and_verify_with_tall_matrix_big() {
-        let num_constraints = 100;
-        let num_variables = 25;
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
+    macro_rules! generate_tests {
+        ($pc_inst_name: ident, $curve: ty, $pc_inst: ty, $digest: ty) => {
+            paste::item! {
+                #[test]
+                fn [<prove_and_verify_with_tall_matrix_big_ $pc_inst_name>]() {
+                    let num_constraints = 100;
+                    let num_variables = 25;
+            
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            
+                #[test]
+                fn [<prove_and_verify_with_tall_matrix_small_ $pc_inst_name>]() {
+                    let num_constraints = 26;
+                    let num_variables = 25;
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            
+                #[test]
+                fn [<prove_and_verify_with_squat_matrix_big_ $pc_inst_name>]() {
+                    let num_constraints = 25;
+                    let num_variables = 100;
+            
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            
+                #[test]
+                fn [<prove_and_verify_with_squat_matrix_small_ $pc_inst_name>]() {
+                    let num_constraints = 25;
+                    let num_variables = 26;
+            
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            
+                #[test]
+                fn [<prove_and_verify_with_square_matrix_ $pc_inst_name>]() {
+                    let num_constraints = 25;
+                    let num_variables = 25;
+            
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            
+                #[test]
+                // See https://github.com/HorizenLabs/marlin/issues/3 for the rationale behind this test
+                fn [<prove_and_verify_with_trivial_index_polynomials_ $pc_inst_name>]() {
+                    let num_constraints = 1 << 6;
+                    let num_variables = 1 << 4;
+            
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
+                    test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
+                }
+            }
+        };
     }
 
-    #[test]
-    fn prove_and_verify_with_tall_matrix_small() {
-        let num_constraints = 26;
-        let num_variables = 25;
+    #[cfg(not(feature = "circuit-friendly"))]
+    mod chacha_fs {
+        use super::*;
+        use poly_commit::fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
+        type MultiPCChaCha =
+        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
 
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
+        generate_tests!(dum_blake2s, DumJacobian, MultiPCChaCha, Blake2s);
     }
 
-    #[test]
-    fn prove_and_verify_with_squat_matrix_big() {
-        let num_constraints = 25;
-        let num_variables = 100;
+    #[cfg(feature = "circuit-friendly")]
+    mod poseidon_fs {
+        use super::*;
+        use primitives::TweedleFrPoseidonSponge;
 
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
+        type MultiPCPoseidon =
+            DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, TweedleFrPoseidonSponge>>;
 
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
-    }
-
-    #[test]
-    fn prove_and_verify_with_squat_matrix_small() {
-        let num_constraints = 25;
-        let num_variables = 26;
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
-    }
-
-    #[test]
-    fn prove_and_verify_with_square_matrix() {
-        let num_constraints = 25;
-        let num_variables = 25;
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
-    }
-
-    #[test]
-    // See https://github.com/HorizenLabs/marlin/issues/3 for the rationale behind this test
-    fn prove_and_verify_with_trivial_index_polynomials() {
-        let num_constraints = 1 << 6;
-        let num_variables = 1 << 4;
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Chacha No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCChaCha, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Chacha ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, false);
-        println!("Marlin Poseidon No ZK passed");
-
-        test_circuit::<DumJacobian, MultiPCPoseidon, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin Poseidon ZK passed");
+        generate_tests!(dum_poseidon, DumJacobian, MultiPCPoseidon, Blake2s);
     }
 }
