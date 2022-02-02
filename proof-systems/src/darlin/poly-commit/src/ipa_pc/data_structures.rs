@@ -8,7 +8,7 @@
 //! [BCMS20]: https://eprint.iacr.org/2020/499
 use crate::*;
 use crate::{PCCommitterKey, PCVerifierKey, Vec};
-use algebra::{Curve, PrimeField};
+use algebra::{Curve, DensePolynomial, PrimeField};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -743,3 +743,12 @@ pub struct VerifierState<G: Curve> {
 }
 
 impl<G: Curve> PCVerifierState for VerifierState<G> {}
+
+/// The hard part of the verifier returns the bullet polynomial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifierOutput<G: Curve> {
+    /// the bullet_poly in coefficient form
+    pub bullet_poly: DensePolynomial<G::ScalarField>,
+}
+
+impl<G: Curve> PCVerifierOutput for VerifierOutput<G> {}

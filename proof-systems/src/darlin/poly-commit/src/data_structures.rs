@@ -92,6 +92,12 @@ pub trait PCParameters<G: Curve>:
 /// that is needed to complete verification.
 pub trait PCVerifierState: Clone + Debug + Eq + PartialEq {}
 
+/// Defines the minimal interface of the verifier output from hard
+/// verify part.
+/// It can be used to output some intermediate calculation results which can
+/// be useful for later postprocessing.
+pub trait PCVerifierOutput: Clone + Debug + Eq + PartialEq {}
+
 /// Defines the minimal interface for opening proofs for a polynomial commitment
 pub trait PCProof:
     Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid

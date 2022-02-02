@@ -10,7 +10,8 @@ use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    to_bytes, BitIterator, Curve, Field, Group, PrimeField, SemanticallyValid, ToBytes, UniformRand,
+    to_bytes, BitIterator, Curve, DensePolynomial, Field, Group, PrimeField, SemanticallyValid,
+    ToBytes, UniformRand,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -210,6 +211,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
     // The succinct part of the verifier returns the dlog reduction challenges that
     // define the succinct check polynomial.
     type VerifierState = VerifierState<G>;
+    type VerifierOutput = VerifierOutput<G>;
     type Commitment = G;
     type Randomness = G::ScalarField;
     type Proof = Proof<G>;
@@ -531,7 +533,11 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
 
     /// The "hard", or non-succinct part of the verifier for a proof produced by `open()`.
     /// Does the remaining check of the "final committer key".
-    fn hard_verify(vk: &Self::VerifierKey, vs: &Self::VerifierState) -> Result<bool, Self::Error> {
+    /// If successful, returns the bullet polynomial.
+    fn hard_verify(
+        vk: &Self::VerifierKey,
+        vs: &Self::VerifierState,
+    ) -> Result<Option<Self::VerifierOutput>, Self::Error> {
         let check_poly_time = start_timer!(|| "Compute check poly");
         let check_poly_coeffs = vs.check_poly.compute_coeffs();
         end_timer!(check_poly_time);
@@ -546,9 +552,11 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         end_timer!(hard_time);
 
         if !G::is_zero(&(final_key - &vs.final_comm_key)) {
-            return Ok(false);
+            return Ok(None);
         }
 
-        Ok(true)
+        Ok(Some(Self::VerifierOutput {
+            bullet_poly: DensePolynomial::from_coefficients_vec(check_poly_coeffs),
+        }))
     }
 }

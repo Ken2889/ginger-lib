@@ -538,7 +538,7 @@ where
         let check_g2 =
             <PC<G2, D> as PolynomialCommitment<G2>>::hard_verify(pc_vk_g2, verifier_state_g2)
                 .map_err(Error::from_pc_err)?;
-        Ok(check_g1 && check_g2)
+        Ok(check_g1.is_some() && check_g2.is_some())
     }
 
     /// Perform the full verification of a proof as produced by `fn prove()`.

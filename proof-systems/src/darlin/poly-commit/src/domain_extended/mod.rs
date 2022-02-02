@@ -36,6 +36,7 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
     type CommitterKey = PC::CommitterKey;
     type VerifierKey = PC::VerifierKey;
     type VerifierState = PC::VerifierState;
+    type VerifierOutput = PC::VerifierOutput;
     type Commitment = GroupVec<PC::Commitment>;
     type Randomness = GroupVec<PC::Randomness>;
     type Proof = PC::Proof;
@@ -195,11 +196,7 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
     fn hard_verify(
         vk: &Self::VerifierKey,
         vs: &Self::VerifierState,
-    ) -> Result<bool, Self::Error>
-    {
-        PC::hard_verify(
-            vk,
-            vs,
-        )
+    ) -> Result<Option<Self::VerifierOutput>, Self::Error> {
+        PC::hard_verify(vk, vs)
     }
 }
