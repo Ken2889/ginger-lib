@@ -12,8 +12,8 @@ use std::{
 };
 use core::slice::Iter;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
-pub struct GroupVec<G: Group> (Vec<G>);
+#[derive(Clone, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
+pub struct GroupVec<G: Group>(Vec<G>);
 
 impl<G: Group> GroupVec<G> {
 
@@ -208,6 +208,31 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
     }
 }
 
+// The trait PartialEq cannot be simply derived, because this would cause wrong results when
+// comparing different representations of the zero element of GroupVec<G> (which can be represented
+// both as an empty vector and as a vector of zero elements of the underlying group G).
+impl<G: Group> PartialEq<Self> for GroupVec<G> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_zero() {
+            return other.is_zero();
+        }
+        if other.is_zero() {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        for (el_self, el_other) in self.0.iter().zip(other.0.iter()) {
+            if el_self != el_other {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<G: Group> Eq for GroupVec<G> {}
+
 impl<G: Group> Group for GroupVec<G> {
     type ScalarField = G::ScalarField;
 
@@ -215,8 +240,20 @@ impl<G: Group> Group for GroupVec<G> {
         GroupVec(vec![])
     }
 
+    // We allow multiple representations of the zero element of the `GroupVec`:
+    // - as an empty vector
+    // - as a vector whose elements are all equal to the zero element of the underlying group G
     fn is_zero(&self) -> bool {
-        self.0.len() == 0
+        if self.0.is_empty() {
+            return true;
+        } else {
+            for el in self.0.iter() {
+                if !el.is_zero() {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn double_in_place(&mut self) -> &mut Self {
