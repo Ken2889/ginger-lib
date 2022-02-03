@@ -297,7 +297,7 @@ mod marlin {
     #[cfg(not(feature = "circuit-friendly"))]
     mod chacha_fs {
         use super::*;
-        use poly_commit::fiat_shamir::chacha20::FiatShamirChaChaRng;
+        use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
         type MultiPCChaCha =
         DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
