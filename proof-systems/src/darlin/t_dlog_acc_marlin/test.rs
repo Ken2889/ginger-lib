@@ -54,7 +54,6 @@ mod t_dlog_acc_marlin {
     use super::*;
 
     use crate::darlin::accumulators::dlog::DualDLogItem;
-    use crate::darlin::data_structures::FinalDarlinDeferredData;
     use crate::darlin::t_dlog_acc_marlin::data_structures::{DualSumcheckItem, PC};
     use crate::darlin::t_dlog_acc_marlin::Marlin;
     use algebra::{
@@ -184,46 +183,33 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &index_pk_g2);
             test_canonical_serialize_deserialize(true, &index_vk_g2);
 
-            let starting_dlog_acc = DualDLogItem::generate_random(rng, &pc_pk_g1, &pc_pk_g2);
-            let starting_inner_sumcheck_acc = DualSumcheckItem::<G1, G2>::generate_random::<D>(
+            let starting_dlog_acc =
+                DualDLogItem::generate_random::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
+            let starting_inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<D>(
                 rng,
-                &index_pk_g1.index_vk.index,
                 &index_pk_g2.index_vk.index,
-                &pc_pk_g1,
+                &index_pk_g1.index_vk.index,
                 &pc_pk_g2,
+                &pc_pk_g1,
             );
 
-            let (verification_g1, verification_g2) = Marlin::<G1, G2, D>::hard_verify(
-                &pc_vk_g1,
+            let (_verification_g2, verification_g1) = Marlin::<G2, G1, D>::hard_verify(
                 &pc_vk_g2,
-                &index_vk_g1,
+                &pc_vk_g1,
                 &index_vk_g2,
+                &index_vk_g1,
                 &starting_inner_sumcheck_acc,
                 &starting_dlog_acc,
             )
             .unwrap()
             .unwrap();
 
-            let proof = Marlin::<G2, G1, D>::prove(
-                &index_pk_g2,
-                &pc_pk_g2,
-                circ_g2,
-                &starting_inner_sumcheck_acc,
-                &starting_dlog_acc,
-                &verification_g2.t_acc_poly,
-                &verification_g2.bullet_poly,
-                zk,
-                if zk { Some(rng) } else { None },
-            );
-
-            let (_, previous_inner_sumcheck_acc, previous_dlog_acc) = proof.unwrap();
-
             let proof = Marlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
-                &previous_inner_sumcheck_acc,
-                &previous_dlog_acc,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
                 &verification_g1.t_acc_poly,
                 &verification_g1.bullet_poly,
                 zk,
@@ -232,7 +218,7 @@ mod t_dlog_acc_marlin {
 
             assert!(proof.is_ok());
 
-            let (proof, new_inner_sumcheck_acc, new_dlog_acc) = proof.unwrap();
+            let proof = proof.unwrap();
 
             assert!(proof.is_valid());
 
@@ -247,10 +233,8 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &pc_vk_g2,
                 &[c, d],
-                &previous_inner_sumcheck_acc,
-                &previous_dlog_acc,
-                &new_inner_sumcheck_acc,
-                &new_dlog_acc,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
                 &proof
             )
             .unwrap());
@@ -262,10 +246,8 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &pc_vk_g2,
                 &[a, a],
-                &previous_inner_sumcheck_acc,
-                &previous_dlog_acc,
-                &new_inner_sumcheck_acc,
-                &new_dlog_acc,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
                 &proof
             )
             .unwrap());
@@ -295,8 +277,8 @@ mod t_dlog_acc_marlin {
                 &index_pk,
                 &pc_pk_g1,
                 circ,
-                &previous_inner_sumcheck_acc,
-                &previous_dlog_acc,
+                &starting_inner_sumcheck_acc,
+                &starting_dlog_acc,
                 &verification_g1.t_acc_poly,
                 &verification_g1.bullet_poly,
                 zk,

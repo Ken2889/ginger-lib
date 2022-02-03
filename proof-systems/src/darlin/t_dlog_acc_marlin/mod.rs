@@ -14,8 +14,8 @@ use marlin::Error;
 use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::optional_rng::OptionalRng;
 use poly_commit::{
-    evaluate_query_set, evaluate_query_set_to_vec, Evaluations, LabeledCommitment,
-    LabeledPolynomial, LabeledRandomness, PCVerifierKey, PolynomialCommitment,
+    evaluate_query_set_to_vec, Evaluations, LabeledCommitment, LabeledPolynomial,
+    LabeledRandomness, PCVerifierKey, PolynomialCommitment,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
@@ -167,14 +167,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         previous_bullet_poly: &DensePolynomial<G1::ScalarField>,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
-    ) -> Result<
-        (
-            Proof<G1, G2, D>,
-            DualSumcheckItem<G1, G2>,
-            DualDLogItem<G1, G2>,
-        ),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
-    > {
+    ) -> Result<Proof<G1, G2, D>, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
         if zk_rng.is_some() && !zk || zk_rng.is_none() && zk {
             return Err(Error::Other("If ZK is enabled, a RNG must be passed (and viceversa); conversely, if ZK is disabled, a RNG must NOT be passed (and viceversa)".to_owned()));
         }
@@ -393,13 +386,9 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         // absorb the evalution claims.
         fs_rng.absorb(&evaluations);
 
-        // Saving the rng state for later recomputing the challenges
-        let fs_rng_state = fs_rng.get_state().clone();
-
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
         */
-
         let opening_time = start_timer!(|| "Compute opening proof");
         let pc_proof = PC::multi_point_multi_poly_open(
             pc_pk,
@@ -413,52 +402,17 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         .map_err(Error::from_pc_err)?;
         end_timer!(opening_time);
 
-        let accumulated_sumcheck_acc = SumcheckItem {
-            alpha: verifier_third_msg.gamma,
-            eta: verifier_first_msg
-                .eta
-                .iter()
-                .zip(previous_inner_sumcheck_acc.1.eta.iter())
-                .map(|(&eta, &eta_prime)| eta + verifier_third_msg.lambda * eta_prime)
-                .collect(),
-            c: fourth_comms[0].commitment().clone(),
-        };
-        let new_inner_sumcheck_acc = DualSumcheckItem(
-            accumulated_sumcheck_acc,
-            previous_inner_sumcheck_acc.0.clone(),
-        );
-
-        let succinct_verifier_state = PC::<G1, D>::batch_succinct_verify(
-            pc_pk,
-            vec![labeled_comms.as_slice()],
-            vec![&query_set],
-            // TODO: we evaluate polynomials a further (third...) time. Can we do
-            //       better by reusing evaluations?
-            vec![&evaluate_query_set(polynomials.clone(), &query_set)],
-            vec![&pc_proof],
-            vec![&fs_rng_state],
-        )
-        .map_err(Error::from_pc_err)?;
-
-        let accumulated_dlog_acc = DLogItem {
-            g_final: GroupVec::new(vec![succinct_verifier_state[0].final_comm_key]),
-            xi_s: succinct_verifier_state[0].check_poly.clone(),
-        };
-
-        let new_dlog_acc =
-            DualDLogItem::<G1, G2>(vec![accumulated_dlog_acc], previous_dlog_acc.0.clone());
-
         let proof = Proof::new(commitments, evaluations, pc_proof);
 
         end_timer!(prover_time);
 
         proof.print_size_info();
-        Ok((proof, new_inner_sumcheck_acc, new_dlog_acc))
+        Ok(proof)
     }
 
     /// Fully verify a proof as produced by `fn prove()`.
     /// Besides the proof itself the function needs as input the previous accumulators in order to
-    /// initialize the Fiat-Shamir rng, and the current accumulators in order to check them.
+    /// initialize the Fiat-Shamir rng.
     pub fn verify(
         index_vk_g1: &VerifierKey<G1, G2, D>,
         index_vk_g2: &VerifierKey<G2, G1, D>,
@@ -467,8 +421,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         public_input: &[G1::ScalarField],
         prev_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         prev_dlog_acc: &DualDLogItem<G2, G1>,
-        curr_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
-        curr_dlog_acc: &DualDLogItem<G1, G2>,
         proof: &Proof<G1, G2, D>,
     ) -> Result<bool, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
         let verifier_time = start_timer!(|| "Marlin Verifier");
@@ -478,8 +430,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             public_input,
             prev_inner_sumcheck_acc,
             prev_dlog_acc,
-            curr_inner_sumcheck_acc,
-            curr_dlog_acc,
             proof,
         );
         if succinct_check.is_err() {
@@ -488,13 +438,15 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             return Ok(false);
         }
 
+        let (curr_inner_sumcheck_acc, curr_dlog_acc) = succinct_check.unwrap();
+
         let hard_check = Self::hard_verify(
             pc_vk_g1,
             pc_vk_g2,
             index_vk_g1,
             index_vk_g2,
-            curr_inner_sumcheck_acc,
-            curr_dlog_acc,
+            &curr_inner_sumcheck_acc,
+            &curr_dlog_acc,
         );
         if hard_check.is_err() {
             end_timer!(verifier_time);
@@ -516,10 +468,11 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         public_input: &[G1::ScalarField],
         prev_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         prev_dlog_acc: &DualDLogItem<G2, G1>,
-        curr_inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
-        curr_dlog_acc: &DualDLogItem<G1, G2>,
         proof: &Proof<G1, G2, D>,
-    ) -> Result<(), Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
+    ) -> Result<
+        (DualSumcheckItem<G1, G2>, DualDLogItem<G1, G2>),
+        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+    > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
         let public_input = public_input.to_vec();
@@ -654,35 +607,31 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
 
         let dlog_verifier_state = opening_result.unwrap();
 
-        if curr_dlog_acc.1 != prev_dlog_acc.0
-            || curr_dlog_acc.0[0].xi_s != dlog_verifier_state.check_poly
-            || curr_dlog_acc.0[0].g_final[0] != dlog_verifier_state.final_comm_key
-        {
-            end_timer!(iop_verification_time);
-            return Err(Error::IOPError(VerificationEquationFailed(
-                "New dlog accumulator is not valid".to_owned(),
-            )));
-        }
+        let new_dlog_acc = DualDLogItem(
+            vec![DLogItem {
+                g_final: GroupVec::new(vec![dlog_verifier_state.final_comm_key]),
+                xi_s: dlog_verifier_state.check_poly,
+            }],
+            prev_dlog_acc.0.clone(),
+        );
 
         let mut eta = verifier_state.first_round_msg.unwrap().eta;
         for (eta, eta_prime) in eta.iter_mut().zip(prev_inner_sumcheck_acc.1.eta.iter()) {
             *eta += verifier_state.third_round_msg.unwrap().lambda * eta_prime;
         }
 
-        if curr_inner_sumcheck_acc.1 != prev_inner_sumcheck_acc.0
-            || curr_inner_sumcheck_acc.0.alpha != verifier_state.third_round_msg.unwrap().gamma
-            || curr_inner_sumcheck_acc.0.eta != eta
-            || curr_inner_sumcheck_acc.0.c != fourth_comms[0]
-        {
-            end_timer!(iop_verification_time);
-            return Err(Error::IOPError(VerificationEquationFailed(
-                "New inner sumcheck accumulator is not valid".to_owned(),
-            )));
-        }
+        let new_inner_sumcheck_acc = DualSumcheckItem(
+            SumcheckItem {
+                alpha: verifier_state.third_round_msg.unwrap().gamma,
+                eta,
+                c: fourth_comms[0].clone(),
+            },
+            prev_inner_sumcheck_acc.0.clone(),
+        );
 
         end_timer!(iop_verification_time);
 
-        Ok(())
+        Ok((new_inner_sumcheck_acc, new_dlog_acc))
     }
 
     /// Perform the full check of both the inner-sumcheck and dlog accumulators.
