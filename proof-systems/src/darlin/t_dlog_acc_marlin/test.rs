@@ -174,21 +174,17 @@ mod t_dlog_acc_marlin {
 
             assert!(index_pk_g1.is_valid());
             assert!(index_vk_g1.is_valid());
+            assert!(index_pk_g2.is_valid());
+            assert!(index_vk_g2.is_valid());
 
             println!("Called index");
 
             test_canonical_serialize_deserialize(true, &index_pk_g1);
             test_canonical_serialize_deserialize(true, &index_vk_g1);
+            test_canonical_serialize_deserialize(true, &index_pk_g2);
+            test_canonical_serialize_deserialize(true, &index_vk_g2);
 
-            let deferred_darlin = FinalDarlinDeferredData::<G1, G2>::generate_random::<_, D>(
-                rng, &pc_pk_g1, &pc_pk_g2,
-            );
-
-            let starting_dlog_acc = DualDLogItem(
-                vec![deferred_darlin.pre_previous_acc],
-                vec![deferred_darlin.previous_acc],
-            );
-
+            let starting_dlog_acc = DualDLogItem::generate_random(rng, &pc_pk_g1, &pc_pk_g2);
             let starting_inner_sumcheck_acc = DualSumcheckItem::<G1, G2>::generate_random::<D>(
                 rng,
                 &index_pk_g1.index_vk.index,
@@ -274,77 +270,6 @@ mod t_dlog_acc_marlin {
             )
             .unwrap());
 
-            // // Use a bigger vk derived from the same universal params and check verification is successful
-            // let (_, pc_vk) = universal_srs_g1.trim(num_constraints - 1).unwrap();
-            // assert_eq!(PCVerifierKey::get_hash(&pc_vk), universal_srs_g1.get_hash());
-            // assert!(Marlin::<G1, G2, D>::verify(
-            //     &index_vk,
-            //     &pc_vk,
-            //     &[c, d],
-            //     &previous_inner_sumcheck_acc,
-            //     &new_inner_sumcheck_acc,
-            //     &proof
-            // )
-            // .unwrap());
-            //
-            // // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
-            // let universal_srs =
-            //     <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
-            // let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
-            // assert_ne!(PCVerifierKey::get_hash(&pc_pk_g1), universal_srs.get_hash());
-            // assert!(!Marlin::<G1, G2, D>::verify(
-            //     &index_vk,
-            //     &pc_vk,
-            //     &[c, d],
-            //     &previous_inner_sumcheck_acc,
-            //     &new_inner_sumcheck_acc,
-            //     &proof
-            // )
-            // .unwrap());
-            //
-            // // Use a vk of the same size of the original one, but derived from bigger universal params
-            // // and check that verification fails (absorbed hash won't be the same)
-            // let universal_srs =
-            //     <PC<G1, D> as PolynomialCommitment<G1>>::setup((num_constraints - 1) * 2).unwrap();
-            // let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
-            // assert_ne!(PCVerifierKey::get_hash(&pc_pk_g1), universal_srs.get_hash());
-            // assert!(!Marlin::<G1, G2, D>::verify(
-            //     &index_vk,
-            //     &pc_vk,
-            //     &[c, d],
-            //     &previous_inner_sumcheck_acc,
-            //     &new_inner_sumcheck_acc,
-            //     &proof
-            // )
-            // .unwrap());
-            //
-            // // Fake indexes to pass the IOP part
-            // let (index_pk_fake, index_vk_fake) =
-            //     Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ).unwrap();
-            //
-            // let (proof_fake, new_inner_sumcheck_acc, new_dlog_acc) = Marlin::<G1, G2, D>::prove(
-            //     &index_pk_fake,
-            //     &pc_pk_fake,
-            //     circ,
-            //     &previous_inner_sumcheck_acc,
-            //     &previous_dlog_acc,
-            //     zk,
-            //     if zk { Some(rng) } else { None },
-            // )
-            // .unwrap();
-            //
-            // // Fail verification using fake proof at the level of opening proof
-            // println!("\nShould not verify");
-            // assert!(!Marlin::<G1, G2, D>::verify(
-            //     &index_vk_fake,
-            //     &pc_vk,
-            //     &[c, d],
-            //     &previous_inner_sumcheck_acc,
-            //     &new_inner_sumcheck_acc,
-            //     &proof_fake
-            // )
-            // .unwrap());
-            //
             // Check correct error assertion for the case when
             // witness assignment doesn't satisfy the circuit
             let c = G1::ScalarField::rand(rng);

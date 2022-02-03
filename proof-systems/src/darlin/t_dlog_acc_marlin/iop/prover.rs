@@ -7,8 +7,8 @@ use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
 };
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use algebra::{
-    get_best_evaluation_domain, Curve, EvaluationDomain,
-    Evaluations as EvaluationsOnDomain, Field, Group,
+    get_best_evaluation_domain, Curve, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
+    Group,
 };
 use marlin::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
 use marlin::iop::{BoundaryPolynomial, Error, LagrangeKernel};
@@ -59,21 +59,6 @@ impl<'a, G1: Curve, G2: Curve> ProverState<'a, G1, G2> {
         let mut witness_assignment = self.witness_assignment.clone();
         padded_public_input.append(&mut witness_assignment);
         padded_public_input
-    }
-}
-
-/// The recomputed polynomials represented by the accumulators.
-pub struct ProverAccumulatorOracles<F: Field> {
-    /// The inner sumcheck accumulator polynomial.
-    pub prev_t_acc_poly: LabeledPolynomial<F>,
-    /// The bullet polynomial of the previous dlog accumulator.
-    pub prev_bullet_poly: LabeledPolynomial<F>,
-}
-
-impl<F: Field> ProverAccumulatorOracles<F> {
-    /// Iterate over the accumulator polynomials.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.prev_t_acc_poly, &self.prev_bullet_poly].into_iter()
     }
 }
 
@@ -138,6 +123,21 @@ impl<F: Field> ProverFourthOracles<F> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
         vec![&self.curr_t_acc_poly].into_iter()
+    }
+}
+
+/// The polynomials associated to the accumulators.
+pub struct ProverAccumulatorOracles<F: Field> {
+    /// The inner sumcheck accumulator polynomial.
+    pub prev_t_acc_poly: LabeledPolynomial<F>,
+    /// The bullet polynomial of the previous dlog accumulator.
+    pub prev_bullet_poly: LabeledPolynomial<F>,
+}
+
+impl<F: Field> ProverAccumulatorOracles<F> {
+    /// Iterate over the accumulator polynomials.
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+        vec![&self.prev_t_acc_poly, &self.prev_bullet_poly].into_iter()
     }
 }
 
