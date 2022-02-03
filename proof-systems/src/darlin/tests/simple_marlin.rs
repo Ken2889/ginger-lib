@@ -7,8 +7,9 @@ use crate::darlin::pcd::{
 use algebra::{EndoMulCurve, Field, UniformRand};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
-use poly_commit::{ipa_pc::{CommitterKey, InnerProductArgPC, Parameters}, fiat_shamir::FiatShamirRng, error::Error as PCError};
+use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
 use poly_commit::DomainExtendedPolynomialCommitment;
+use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;
@@ -85,7 +86,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 /// Generates a SimpleMarlinPCD from `Circuit`, by sampling the internal
 /// witnesses a,b at random.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
     marlin_pk: &MarlinProverKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>,
     num_constraints: usize,
@@ -122,7 +123,7 @@ pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng<Error = PCError>
 /// Generates `num_proofs` random instances of SimpleMarlinPCDs for `Circuit` with
 /// `num_constraints`, using the given `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, D: Digest, G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'a, R: RngCore>(
+pub fn generate_test_data<'a, D: Digest, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
     params: &Parameters<G>,

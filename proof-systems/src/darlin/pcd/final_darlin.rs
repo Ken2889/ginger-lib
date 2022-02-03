@@ -11,17 +11,16 @@ use crate::darlin::{
 use algebra::{Group, ToConstraintField, EndoMulCurve};
 use bench_utils::*;
 use poly_commit::{
-    fiat_shamir::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
-    error::Error as PCError,
 };
+use fiat_shamir::FiatShamirRng;
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> +'static> {
+pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng +'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -35,7 +34,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError> +'static
+    FS: FiatShamirRng +'static
 {
     pub fn new(
         final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
@@ -51,7 +50,7 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub struct FinalDarlinPCDVerifierKey<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
         DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
@@ -59,7 +58,7 @@ pub struct FinalDarlinPCDVerifierKey<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS:
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> +'static> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
+impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng +'static> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, FS>
 {
     fn as_ref(&self) -> &(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>) {
@@ -73,7 +72,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError> +'static
+    FS: FiatShamirRng +'static
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
     type PCDVerifierKey = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;

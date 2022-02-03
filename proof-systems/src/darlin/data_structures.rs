@@ -5,9 +5,10 @@ use algebra::{
     serialize::*, EndoMulCurve, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
     UniformRand,
 };
-use poly_commit::{ipa_pc::{
+use fiat_shamir::FiatShamirRng;
+use poly_commit::ipa_pc::{
     CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
-}, fiat_shamir::FiatShamirRng, error::Error as PCError};
+};
 use rand::RngCore;
 
 /// The `FinalDarlinDeferredData`, assuming that the final node is in G1.
@@ -37,7 +38,7 @@ where
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
-    pub fn generate_random<R: RngCore, FS: FiatShamirRng<Error = PCError>>(
+    pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
         rng: &mut R,
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
@@ -174,14 +175,14 @@ where
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// A FinalDarlinProof has two dlog accumulators, one from the previous, and on from the
 /// pre-previous node of the conversion chain.
-pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// Full Marlin proof without deferred arithmetics in G1.
     pub proof: MarlinProof<G1, FS>,
     /// Deferred accumulators
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> SemanticallyValid for FinalDarlinProof<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid for FinalDarlinProof<G1, G2, FS> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }

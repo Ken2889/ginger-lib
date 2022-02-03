@@ -29,6 +29,7 @@ bench-utils = { path = "../bench-utils" }
 
 marlin = { path = "./src/darlin/marlin", optional = true }
 poly-commit = { path = "./src/darlin/poly-commit", optional = true }
+fiat-shamir = { path = "./src/darlin/fiat-shamir", optional = true }
 
 r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
 
@@ -52,7 +53,7 @@ r1cs-crypto = { path = "../r1cs/gadgets/crypto" }
 
 [features]
 print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
-darlin = ["marlin", "poly-commit", "digest", "derivative", "r1cs-std"]
+darlin = ["marlin", "poly-commit", "fiat-shamir", "digest", "derivative", "r1cs-std"]
 llvm_asm = ["algebra/llvm_asm", "marlin/asm", "poly-commit/asm"]
 
 [[bench]]

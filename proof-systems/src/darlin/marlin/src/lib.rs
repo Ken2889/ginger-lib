@@ -47,7 +47,7 @@ use std::{
     vec::Vec,
 };
 
-use poly_commit::fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 
 mod error;
 pub use error::*;
@@ -156,29 +156,19 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let prover_init_state = IOP::prover_init(&index_pk.index, c)?;
         let public_input = prover_init_state.public_input();
 
-        // initialise the Fiat-Shamir rng.
+        // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
             let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&pc_pk.get_hash())
-                .map_err(Error::from_pc_err)?;
-
-            // NOTE: As both vk and public input use constant length encoding of field elements,
-            // we can simply apply add_bytes to achieve a one-to-one serialization.
-            seed_builder
-                .add_bytes(&index_pk.index_vk)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-
-            seed_builder
-                .finalize()
-                .map_err(Error::from_pc_err)?
+                .add_bytes(&Self::PROTOCOL_NAME)?
+                .add_bytes(&pc_pk.get_hash())?
+                // NOTE: As both vk and public input use constant length encoding of field elements,
+                // we can simply apply add_bytes to achieve a one-to-one serialization.
+                .add_bytes(&index_pk.index_vk)?
+                .add_bytes(&public_input)?;
+            seed_builder.finalize()?
         };
+
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
@@ -201,7 +191,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
-        ).map_err(Error::from_pc_err)?;
+        )?;
 
         let (verifier_first_msg, verifier_state) =
             IOP::verifier_first_round::<_, G>(index_pk.index_vk.index_info, &mut fs_rng)?;
@@ -228,7 +218,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
-        ).map_err(Error::from_pc_err)?;
+        )?;
 
         let (verifier_second_msg, verifier_state) =
             IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
@@ -253,7 +243,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
-        ).map_err(Error::from_pc_err)?;
+        )?;
 
         /* Preparations before entering the batch evaluation proof
          */
@@ -313,7 +303,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         end_timer!(eval_time);
 
         // absorb the evalution claims.
-        fs_rng.absorb(evaluations.clone()).map_err(Error::from_pc_err)?;
+        fs_rng.absorb(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
@@ -414,30 +404,18 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let fs_rng_init_seed = {
             let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&pc_vk.get_hash())
-                .map_err(Error::from_pc_err)?;
-            // TODO: Shall we decompose this further when passing it to the seed builder ?
-            seed_builder
-                .add_bytes(&index_vk)
-                .map_err(Error::from_pc_err)?;
-            // TODO: Shall we decompose this further when passing it to the seed builder ?
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-            
-            seed_builder
-                .finalize()
-                .map_err(Error::from_pc_err)?
+                .add_bytes(&Self::PROTOCOL_NAME)?
+                .add_bytes(&pc_vk.get_hash())?
+                .add_bytes(&index_vk)?
+                .add_bytes(&public_input)?;
+            seed_builder.finalize()?
         };
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let first_comms = &proof.commitments[0];
-        fs_rng.absorb(first_comms.clone()).map_err(Error::from_pc_err)?;
+        fs_rng.absorb(first_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_first_round::<_, G>(index_vk.index_info, &mut fs_rng)?;
 
@@ -445,7 +423,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         The verification of the outer sumcheck equation is postponed to below
         */
         let second_comms = &proof.commitments[1];
-        fs_rng.absorb(second_comms.clone()).map_err(Error::from_pc_err)?;
+        fs_rng.absorb(second_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
 
@@ -454,7 +432,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         */
 
         let third_comms = &proof.commitments[2];
-        fs_rng.absorb(third_comms.clone()).map_err(Error::from_pc_err)?;
+        fs_rng.absorb(third_comms.clone())?;
 
         let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng);
 
@@ -506,7 +484,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");
 
-        fs_rng.absorb(proof.evaluations.clone()).map_err(Error::from_pc_err)?;
+        fs_rng.absorb(proof.evaluations.clone())?;
 
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,

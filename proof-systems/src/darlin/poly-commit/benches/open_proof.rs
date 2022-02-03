@@ -2,7 +2,7 @@ use algebra::{DensePolynomial as Polynomial, UniformRand, EndoMulCurve};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC};
 use poly_commit::{LabeledPolynomial, PCParameters, PolynomialCommitment};
 use rand::{thread_rng, RngCore};
@@ -14,7 +14,7 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng<Error = poly_commit::Error>, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -33,7 +33,7 @@ fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng<Error = poly_commit::Error>, D
     ck
 }
 
-fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng<Error = poly_commit::Error>, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
+fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
     let mut group = c.benchmark_group(bench_name);
 
     let max_degree = coeffs - 1;

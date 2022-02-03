@@ -12,8 +12,9 @@ use bench_utils::*;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, VerifierKey as DLogVerifierKey},
-    DomainExtendedPolynomialCommitment, fiat_shamir::FiatShamirRng, error::Error as PCError,
+    DomainExtendedPolynomialCommitment
 };
+use fiat_shamir::FiatShamirRng;
 use rand::RngCore;
 use rayon::prelude::*;
 
@@ -23,7 +24,7 @@ use rayon::prelude::*;
 /// In case of failure, return the indices of the proofs that have caused the failure (if it's possible
 /// to establish it).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey `g1_ck` and `g2_ck`.
-pub fn get_accumulators<G1, G2, FS: FiatShamirRng<Error = PCError>>(
+pub fn get_accumulators<G1, G2, FS: FiatShamirRng>(
     pcds: &[GeneralPCD<G1, G2, FS>],
     vks: &[MarlinVerifierKey<
         G1,
@@ -92,7 +93,7 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn accumulate_proofs<G1, G2, FS: FiatShamirRng<Error = PCError>>(
+pub fn accumulate_proofs<G1, G2, FS: FiatShamirRng>(
     pcds: &[GeneralPCD<G1, G2, FS>],
     vks: &[MarlinVerifierKey<
         G1,
@@ -154,7 +155,7 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn verify_aggregated_proofs<G1, G2, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+pub fn verify_aggregated_proofs<G1, G2, FS: FiatShamirRng, R: RngCore>(
     pcds: &[GeneralPCD<G1, G2, FS>],
     vks: &[MarlinVerifierKey<
         G1,
@@ -228,7 +229,7 @@ where
 /// In case of failure, returns the indices of the proofs which caused it (if possible).
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey
 /// `g1_ck` and `g2_ck`.
-pub fn batch_verify_proofs<G1, G2, FS: FiatShamirRng<Error = PCError> + 'static, R: RngCore>(
+pub fn batch_verify_proofs<G1, G2, FS: FiatShamirRng + 'static, R: RngCore>(
     pcds: &[GeneralPCD<G1, G2, FS>],
     vks: &[MarlinVerifierKey<
         G1,

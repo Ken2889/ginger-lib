@@ -38,8 +38,9 @@ use poly_commit::{
         VerifierKey as DLogVerifierKey,
     },
     DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
-    QuerySet, fiat_shamir::FiatShamirRng, error::Error as PCError,
+    QuerySet,
 };
+use fiat_shamir::FiatShamirRng;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -49,7 +50,7 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static>(
+pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<FS>,
@@ -62,7 +63,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError> + 'static,
+    FS: FiatShamirRng + 'static,
 {
     /// Generate the universal prover and verifier keys for Marlin.
     pub fn universal_setup<D: Digest>(

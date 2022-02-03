@@ -10,8 +10,8 @@ use algebra::{
     serialize::*, Field, Group, GroupVec, SemanticallyValid, UniformRand, EndoMulCurve,
 };
 use bench_utils::*;
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::{
-    fiat_shamir::{FiatShamirRng, FiatShamirRngSeed},
     ipa_pc::{CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
     DomainExtendedPolynomialCommitment, Error as PCError, LabeledCommitment, PolynomialCommitment,
 };
@@ -44,12 +44,12 @@ impl<G: EndoMulCurve> Default for DLogItem<G> {
     }
 }
 
-pub struct DLogItemAccumulator<G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub struct DLogItemAccumulator<G: EndoMulCurve, FS: FiatShamirRng + 'static> {
     _fs_rng: PhantomData<FS>,
     _group: PhantomData<G>,
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
@@ -156,7 +156,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> DLogItemAccu
     }
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
     type AccumulatorProverKey = CommitterKey<G>;
     type AccumulatorVerifierKey = VerifierKey<G>;
     type AccumulationProof = AccumulationProof<G>;
@@ -351,7 +351,7 @@ pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
 );
 
 
-pub struct DualDLogItemAccumulator<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub struct DualDLogItemAccumulator<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     _lifetime: PhantomData<&'a ()>,
     _group_1: PhantomData<G1>,
     _group_2: PhantomData<G2>,
@@ -363,7 +363,7 @@ impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError> + 'static
+    FS: FiatShamirRng + 'static
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
     type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
@@ -516,7 +516,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng<Error = PCError> + 'static
+        FS: FiatShamirRng + 'static
     {
         let TestInfo {
             max_degree,       // maximum degree supported by the dlog commitment scheme
@@ -641,7 +641,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng<Error = PCError> + 'static
+        FS: FiatShamirRng + 'static
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -747,7 +747,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng<Error = PCError> + 'static
+        FS: FiatShamirRng + 'static
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -837,7 +837,7 @@ mod test {
     use algebra::curves::tweedle::{
         dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
     };
-    use poly_commit::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
     
     #[test]

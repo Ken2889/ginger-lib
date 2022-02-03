@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::Vec;
 use algebra::{ToConstraintField, serialize_no_metadata};
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
@@ -22,13 +21,12 @@ pub struct FiatShamirChaChaRngSeed {
 
 impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
     type FinalizedSeed = Vec<u8>;
-    type Error = Error;
 
     fn new() -> Self {
         Self::default()
     }
 
-    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error> {
+    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Error> {
         // Check we have not reached the maximum allowed seed size
         if self.num_elements == u64::MAX {
             return Err(Error::BadFiatShamirInitialization(format!(
@@ -55,11 +53,11 @@ impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
         Ok(self)
     }
 
-    fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Self::Error> {
+    fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Error> {
         self.add_bytes(elem)
     }
 
-    fn finalize(self) -> Result<Self::FinalizedSeed, Self::Error> 
+    fn finalize(self) -> Result<Self::FinalizedSeed, Error> 
     {
         serialize_no_metadata![self.num_elements, self.elements_len, self.seed_bytes]
             .map_err(|e| {
@@ -131,11 +129,10 @@ impl<D: Digest> RngCore for FiatShamirChaChaRng<D> {
 impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     type State = Vec<u8>;
     type Seed = FiatShamirChaChaRngSeed;
-    type Error = Error;
 
     /// Refresh `self.seed` with new material. Achieved by setting
     /// `self.seed = H(self.seed || new_seed)`.
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Self::Error> {
+    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
         let mut bytes = Vec::new();
         to_absorb.serialize_without_metadata(&mut bytes).expect("failed to convert to bytes");
         bytes.extend_from_slice(&self.seed);

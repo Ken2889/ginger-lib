@@ -19,8 +19,9 @@ use algebra::{Group, ToConstraintField, UniformRand, EndoMulCurve};
 use digest::Digest;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
-    Error as PCError, PCParameters, fiat_shamir::FiatShamirRng,
+    Error as PCError, PCParameters,
 };
+use fiat_shamir::FiatShamirRng;
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
@@ -139,7 +140,7 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError> + 'static> {
+pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     SimpleMarlin(SimpleMarlinPCD<'a, G1, FS>),
     FinalDarlin(FinalDarlinPCD<'a, G1, G2, FS>),
 }
@@ -151,7 +152,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError>
+    FS: FiatShamirRng
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
         match self {
@@ -198,7 +199,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng<Error = PCError> + 'static
+    FS: FiatShamirRng + 'static
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
     type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, FS>;

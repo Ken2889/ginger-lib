@@ -1,4 +1,5 @@
 use crate::String;
+use fiat_shamir::error::Error as FSError;
 
 /// The error type for `PolynomialCommitment`.
 #[derive(Debug)]
@@ -122,8 +123,8 @@ pub enum Error {
     /// Incorrect proof
     IncorrectProof,
 
-    /// FiatShamirRNG was initialized passing uncorrect data
-    BadFiatShamirInitialization(String),
+    /// FiatShamir transform error
+    FiatShamirTransformError(FSError),
 
     /// Other errors
     Other(String),
@@ -230,9 +231,15 @@ impl std::fmt::Display for Error {
             Error::MalformedCommitment(err) => write!(f, "{}", err),
             Error::FailedSuccinctCheck => write!(f, "Failed succinct check"),
             Error::IncorrectProof => write!(f, "Incorrect proof"),
-            Error::BadFiatShamirInitialization(e) => write!(f, "{}", e),
+            Error::FiatShamirTransformError(e) => write!(f, "{}", e),
             Error::Other(message) => write!(f, "{}", message),
         }
+    }
+}
+
+impl From<fiat_shamir::error::Error> for Error {
+    fn from(e: FSError) -> Self {
+        Self::FiatShamirTransformError(e)
     }
 }
 

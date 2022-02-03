@@ -85,7 +85,8 @@ mod test {
     use r1cs_std::{fields::{fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget}, alloc::AllocGadget, prelude::UInt8};
     use rand::{RngCore, Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
-    use crate::fiat_shamir::FiatShamirRng;
+    use crate::FiatShamirRng;
+
     use super::FiatShamirRngGadget;
 
     fn test_native_result<

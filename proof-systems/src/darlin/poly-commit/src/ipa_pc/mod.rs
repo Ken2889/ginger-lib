@@ -21,7 +21,7 @@ pub use data_structures::*;
 
 use rayon::prelude::*;
 
-use crate::fiat_shamir::FiatShamirRng;
+use fiat_shamir::FiatShamirRng;
 use digest::Digest;
 
 #[cfg(test)]
@@ -30,12 +30,12 @@ mod tests;
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> {
+pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng> {
     _projective: PhantomData<G>,
     _fs: PhantomData<FS>,
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> InnerProductArgPC<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -198,7 +198,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> InnerProductArgPC<G, FS>
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: EndoMulCurve, FS: FiatShamirRng<Error = Error>> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;

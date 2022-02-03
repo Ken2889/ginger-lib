@@ -2,8 +2,9 @@ use algebra::{EndoMulCurve, ToConstraintField, Group};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::chacha20::FiatShamirChaChaRng;
-use poly_commit::{ipa_pc::InnerProductArgPC, fiat_shamir::FiatShamirRng, error::Error as PCError, PolynomialCommitment};
+use fiat_shamir::chacha20::FiatShamirChaChaRng;
+use fiat_shamir::FiatShamirRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::{accumulate_proofs, verify_aggregated_proofs},
@@ -12,7 +13,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -81,7 +82,7 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: Fia
     group.finish();
 }
 
-fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,

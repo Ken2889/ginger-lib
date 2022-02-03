@@ -37,7 +37,7 @@ extern crate bench_utils;
 #[cfg(test)]
 mod tests;
 
-use crate::fiat_shamir::FiatShamirRng;
+use fiat_shamir::FiatShamirRng;
 pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
     serialize::*, EndoMulCurve, Field, Group, LinearCombination, SemanticallyValid, ToConstraintField,
@@ -52,10 +52,6 @@ use std::{
     string::{String, ToString},
     vec::Vec,
 };
-
-/// A sponge-like random oracle for Fiat-Shamir transform usage.
-pub mod fiat_shamir;
-pub use fiat_shamir::*;
 
 /// Data structures for linear polynomial commitment schemes.
 pub mod data_structures;
@@ -126,7 +122,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     /// The error type for the scheme.
     type Error: std::error::Error + From<Error>;
     /// The stateful Fiat-Shamir random number generator.
-    type RandomOracle: FiatShamirRng<Error = Self::Error>;
+    type RandomOracle: FiatShamirRng;
 
     /// Constructs public parameters when given as input the maximum degree `degree`
     /// for the polynomial commitment scheme.
@@ -746,7 +742,9 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         // Fresh random challenge x for multi-point to single-point reduction.
         // Except the `batch_commitment`, all other commitments are already bound
         // to the internal state of the Fiat-Shamir
-        fs_rng.absorb(h_commitment.clone())?;
+        fs_rng
+            .absorb(h_commitment.clone())
+            .map_err(Error::FiatShamirTransformError)?;
         let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
 
         // Assert x_point != x_1, ..., x_m
@@ -876,7 +874,10 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
-        fs_rng.absorb(multi_point_proof.get_h_commitment().clone())?;
+        fs_rng
+            .absorb(multi_point_proof.get_h_commitment().clone())
+            .map_err(Error::FiatShamirTransformError)?;
+            
         let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
         
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))

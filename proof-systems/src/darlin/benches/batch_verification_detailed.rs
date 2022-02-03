@@ -2,8 +2,9 @@ use algebra::{serialize::*, Group, EndoMulCurve, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
-use poly_commit::chacha20::FiatShamirChaChaRng;
-use poly_commit::{ipa_pc::InnerProductArgPC, error::Error as PCError, fiat_shamir::FiatShamirRng, PolynomialCommitment};
+use fiat_shamir::chacha20::FiatShamirChaChaRng;
+use fiat_shamir::FiatShamirRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
 use proof_systems::darlin::pcd::GeneralPCD;
@@ -16,7 +17,7 @@ use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -79,7 +80,7 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
     group.finish();
 }
 
-fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -150,7 +151,7 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
     group.finish();
 }
 
-fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,

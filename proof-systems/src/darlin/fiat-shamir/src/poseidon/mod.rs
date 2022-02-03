@@ -43,13 +43,12 @@ impl<ConstraintF: PrimeField> FiatShamirPoseidonSeed<ConstraintF> {
 
 impl<ConstraintF: PrimeField> FiatShamirRngSeed for FiatShamirPoseidonSeed<ConstraintF> {
     type FinalizedSeed = Vec<ConstraintF>;
-    type Error = Error;
 
     fn new() -> Self {
         Self::default()
     }
 
-    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error> {
+    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Error> {
         // Check that we can add this input to the seed
         let input_len = self.check_seed_input(elem.serialized_size() * 8)?;
         
@@ -67,7 +66,7 @@ impl<ConstraintF: PrimeField> FiatShamirRngSeed for FiatShamirPoseidonSeed<Const
         Ok(self)
     }
 
-    fn add_field<F: PrimeField>(&mut self, elem: &F) -> Result<&mut Self, Self::Error> {
+    fn add_field<F: PrimeField>(&mut self, elem: &F) -> Result<&mut Self, Error> {
         // Check that we can add this input to the seed
         let input_len = self.check_seed_input(F::Params::MODULUS_BITS as usize)?;
 
@@ -90,7 +89,7 @@ impl<ConstraintF: PrimeField> FiatShamirRngSeed for FiatShamirPoseidonSeed<Const
         Ok(self)
     }
 
-    fn finalize(mut self) -> Result<Self::FinalizedSeed, Self::Error> {
+    fn finalize(mut self) -> Result<Self::FinalizedSeed, Error> {
 
         // Convert a u64 to its LE bits (doesn't really matter the endianness)
         let u64_to_bit_vec = |mut val: u64| -> Vec<bool> {
@@ -147,7 +146,6 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
 {
     type State = Vec<SpongeF>;
     type Seed = FiatShamirPoseidonSeed<SpongeF>;
-    type Error = Error;
 
     fn from_seed(seed: <FiatShamirPoseidonSeed<SpongeF> as FiatShamirRngSeed>::FinalizedSeed) -> Self {
         // Initialize Poseidon sponge
@@ -167,7 +165,7 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
         sponge
     }
 
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Self::Error> {
+    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
         <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb);
 
         Ok(self)

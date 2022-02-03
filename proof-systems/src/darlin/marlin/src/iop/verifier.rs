@@ -5,7 +5,7 @@ use crate::iop::*;
 
 use algebra::{PrimeField, EndoMulCurve};
 use algebra::{get_best_evaluation_domain, EvaluationDomain};
-use poly_commit::fiat_shamir::FiatShamirRng;
+use fiat_shamir::FiatShamirRng;
 use poly_commit::QuerySet;
 
 /// State of the IOP verifier

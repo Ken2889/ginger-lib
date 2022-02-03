@@ -9,7 +9,7 @@ use digest::Digest;
 
 use super::InnerProductArgPC;
 use crate::Error;
-use crate::fiat_shamir::{
+use fiat_shamir::{
     FiatShamirRng, FiatShamirRngSeed,
 };
 use crate::ipa_pc::CommitterKey;
@@ -292,7 +292,7 @@ type PC<G, FS> = InnerProductArgPC<G, FS>;
 #[cfg(not(feature = "circuit-friendly"))]
 mod chacha_fs {
     use super::*;
-    use crate::fiat_shamir::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
     type CHACHA_BLAKE2S_FS_RNG = FiatShamirChaChaRng<Blake2s>;
     // The ipa_pc over the Tweedle Dee using a Chacha-Blake2s based Fiat-Shamir rng.

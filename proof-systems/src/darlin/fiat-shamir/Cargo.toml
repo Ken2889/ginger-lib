@@ -1,0 +1,25 @@
+[package]
+name = "fiat-shamir"
+version = "0.1.0"
+authors = [
+  "Daniele Di Benedetto <daniele@horizenlabs.io>",
+]
+description = "A library for constructing polynomial commitment schemes for use in zkSNARKs"
+include = ["Cargo.toml", "src", "LICENSE-APACHE", "LICENSE-MIT"]
+license = "MIT/Apache-2.0"
+edition = "2018"
+
+[dependencies]
+algebra = { path = "../../../../algebra", features = ["parallel", "derive", "tweedle"] }
+primitives = { path = "../../../../primitives" }
+r1cs-core = { path = "../../../../r1cs/core"}
+r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["nonnative"]}
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto", features = ["tweedle"]}
+
+digest = { version = "=0.8.1" }
+rand = { version = "=0.8.4", default-features = false }
+rand_chacha = { version = "=0.3.1", default-features = false }
+rand_core = { version = "=0.6.3", default-features = false }
+
+[dev-dependencies]
+rand_xorshift = "0.3.0"

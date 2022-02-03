@@ -48,11 +48,10 @@ mod test {
     };
     use blake2::Blake2s;
     use marlin::VerifierKey as MarlinVerifierKey;
-    use poly_commit::chacha20::FiatShamirChaChaRng;
-    use poly_commit::fiat_shamir::FiatShamirRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::FiatShamirRng;
     use poly_commit::{
         ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PolynomialCommitment,
-        error::Error as PCError,
     };
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
@@ -72,7 +71,7 @@ mod test {
     }
 
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
-    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
         vks: &mut [MarlinVerifierKey<
             G1,
@@ -229,7 +228,7 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng<Error = PCError>, R: RngCore>(
+    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
         vks: &mut [MarlinVerifierKey<
             G1,

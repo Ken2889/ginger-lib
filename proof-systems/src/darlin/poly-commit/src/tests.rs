@@ -1,5 +1,5 @@
 //! Unit tests for linear polynomial commitment schemes and their domain extension.
-use crate::fiat_shamir::FiatShamirRngSeed;
+use fiat_shamir::FiatShamirRngSeed;
 use crate::*;
 use algebra::{serialize::test_canonical_serialize_deserialize, SemanticallyValid, UniformRand};
 use rand::{distributions::Distribution, thread_rng};

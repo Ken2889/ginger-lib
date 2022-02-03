@@ -14,6 +14,9 @@ pub mod poseidon;
 /// Traits definition for circuitizing FiatShamirRng. 
 pub mod constraints;
 
+/// Error types for FiatShamir
+pub mod error;
+
 /// A trait for serialization of [`FiatShamirRng`] seed material.
 pub trait FiatShamirRngSeed
 {
@@ -21,20 +24,17 @@ pub trait FiatShamirRngSeed
     /// by the `from_seed` function of FiatShamirRng.
     type FinalizedSeed: Sized + Clone;
 
-    /// Error type
-    type Error: std::error::Error + From<Error>;
-
     /// Initialize this seed
     fn new() -> Self;
 
     /// Update this seed with a new element interpreted as a sequence of byte
-    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Self::Error>;
+    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Error>;
 
     /// Update this seed with a new field element
-    fn add_field<F: PrimeField>(&mut self, elem: &F) -> Result<&mut Self, Self::Error>;
+    fn add_field<F: PrimeField>(&mut self, elem: &F) -> Result<&mut Self, Error>;
 
     /// Finalize this seed to the type needed by the corresponding FiatShamirRng impl
-    fn finalize(self) -> Result<Self::FinalizedSeed, Self::Error>;
+    fn finalize(self) -> Result<Self::FinalizedSeed, Error>;
 }
 
 /// General trait for Fiat-Shamir transform, designed as a Sponge-based construction.
@@ -43,16 +43,13 @@ pub trait FiatShamirRng: Sized + Default {
     type State: Clone + Debug;
 
     /// Seed from which initializing this Rng
-    type Seed: FiatShamirRngSeed<FinalizedSeed = Self::State, Error = Self::Error>;
-
-    /// Error type
-    type Error: std::error::Error + From<Error>;
+    type Seed: FiatShamirRngSeed<FinalizedSeed = Self::State>;
 
     /// Create a new `Self` by initializing its internal state with a fresh `seed`.
     fn from_seed(seed: <Self::Seed as FiatShamirRngSeed>::FinalizedSeed) -> Self;
 
     /// Refresh the internal state with new material
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Self::Error>;
+    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
 
     /// Squeeze a new random field element, changing the internal state.
     fn squeeze<F: PrimeField>(&mut self) -> F;

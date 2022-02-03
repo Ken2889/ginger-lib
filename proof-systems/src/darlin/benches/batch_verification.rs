@@ -1,8 +1,9 @@
 use algebra::{Group, EndoMulCurve, ToConstraintField};
 use blake2::{Blake2s, Digest};
 use criterion::*;
-use poly_commit::chacha20::FiatShamirChaChaRng;
-use poly_commit::{ipa_pc::InnerProductArgPC, fiat_shamir::FiatShamirRng, error::Error as PCError, PolynomialCommitment};
+use fiat_shamir::chacha20::FiatShamirChaChaRng;
+use fiat_shamir::FiatShamirRng;
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
@@ -11,7 +12,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng<Error = PCError> + 'static>(
+fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
