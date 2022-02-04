@@ -1,5 +1,5 @@
-//! A module for simulating non-native field arithmetics using the techniques of [[Kosba et al]]. 
-//! Ported from [[arkworks/nonnative]]. 
+//! A module for simulating non-native field arithmetics using the techniques of [[Kosba et al]].
+//! Ported from [[arkworks/nonnative]].
 //! The following types are defined/supported:
 //! - `NonNativeFieldParams` specifies the constraint prime field (called `ConstraintF`),
 //!     the simulated prime field (called `SimulationF`), and internal parameters.
@@ -8,10 +8,10 @@
 //! - `NonNativeFieldMulResultGadget` is an intermediate representations of the
 //!     result of multiplication, which is hidden from the `FieldGadget` interface
 //!     and is left for advanced users who want better performance.
-//! DISCLAIMER: THIS LIBRARY IS EXPERIMENTAL AND NEEDS TO UNDERGO A MORE IN-DEPTH REVIEW
-//! 
+//!
 //! [Kosba et al]: https://ieeexplore.ieee.org/document/8418647
 //! [arkworks]: https://github.com/arkworks-rs/nonnative
+use algebra::{FpParameters, PrimeField};
 use std::fmt::Debug;
 
 pub mod params;
@@ -25,6 +25,14 @@ pub mod nonnative_field_gadget;
 /// The intermediate non-normalized representation resulting from products.
 pub mod nonnative_field_mul_result_gadget;
 
+/// checks if the simulation field is a prime field with pseudo-mersenne modulus
+fn is_pseudo_mersenne<SimulationF: PrimeField>() -> bool {
+    match SimulationF::Params::DIFFERENCE_WITH_HIGHER_POWER_OF_TWO {
+        Some(_) => true,
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -33,27 +41,23 @@ mod tests;
 #[macro_export]
 macro_rules! ceil_log_2 {
     ($x:expr) => {{
-        // Let `len` be the number of bits, and let `z` be the number 
+        // Let `len` be the number of bits, and let `z` be the number
         // of leading zeros. Then
         // ``
         //             z        len - z
         //      ------------- -----------
         //      0    ....   0 1 ** .... *
         // ``
-        // Hence `ceil_log_2(x) = len - z` if `x` is not a pure power 
-        // of two. Otherwise `ceil_log_2(x) = len - z - 1`.                   
+        // Hence `ceil_log_2(x) = len - z` if `x` is not a pure power
+        // of two. Otherwise `ceil_log_2(x) = len - z - 1`.
         use num_bigint::BigUint;
         let num: BigUint = $x;
         // big endian bit rep, might have leading zeros.
-        let num_bits = num.to_radix_be(2u32).into_iter()
-            .map(|byte| {
-                if byte == 1u8 {
-                    true
-                } else {
-                    false
-                }
-            })
-            .collect::<Vec<bool>>(); 
+        let num_bits = num
+            .to_radix_be(2u32)
+            .into_iter()
+            .map(|byte| if byte == 1u8 { true } else { false })
+            .collect::<Vec<bool>>();
 
         let mut skipped_bits = 0;
         for b in num_bits.iter() {
@@ -72,9 +76,9 @@ macro_rules! ceil_log_2 {
         }
 
         if is_power_of_2 {
-            num_bits.len() - skipped_bits - 1 
+            num_bits.len() - skipped_bits - 1
         } else {
-            num_bits.len() - skipped_bits 
+            num_bits.len() - skipped_bits
         }
     }};
 }

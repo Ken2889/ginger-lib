@@ -312,6 +312,10 @@ pub trait FpParameters: 'static + Send + Sync + Sized {
 
     // generator^((modulus-1) / (2^s * small_subgroup_base^small_subgroup_power))
     const FULL_ROOT_OF_UNITY: Option<Self::BigInt> = None;
+
+    // Set for prime fields where the prime p is Pseudo-Mersenne, that is p = 2^n - c
+    // for a "small" c. This constant is equal to the "small" c.
+    const DIFFERENCE_WITH_HIGHER_POWER_OF_TWO: Option<u64> = None;
 }
 
 /// The interface for a prime field.

@@ -12,16 +12,10 @@ use algebra::fields::tweedle::Fr as TweedleFr;
 use algebra::fields::bn_382::fr::Fr as BN382Fr;
 
 #[cfg(feature = "ed25519")]
-use algebra::{
-    curves::ed25519::Ed25519Parameters,
-    fields::ed25519::fq::Fq as ed25519Fq,
-};
+use algebra::{curves::ed25519::Ed25519Parameters, fields::ed25519::fq::Fq as ed25519Fq};
 
 #[cfg(feature = "secp256k1")]
-use algebra::{
-    curves::secp256k1::Secp256k1Parameters,
-    fields::secp256k1::fq::Fq as secp256k1Fq,
-};
+use algebra::{curves::secp256k1::Secp256k1Parameters, fields::secp256k1::fq::Fq as secp256k1Fq};
 
 macro_rules! nonnative_test_individual {
     ($test_method:ident, $test_name:ident, $num_samples:expr, $group_params:ty, $test_constraint_field:ty, $test_simulation_field:ty) => {
@@ -95,4 +89,13 @@ nonnative_group_test_unsafe_add!(
     Ed25519Parameters,
     TweedleFr,
     ed25519Fq
+);
+
+#[cfg(all(feature = "tweedle", feature = "secp256k1"))]
+nonnative_group_test_unsafe_add!(
+    TweedleFrsecp256k1Fq,
+    1,
+    Secp256k1Parameters,
+    TweedleFr,
+    secp256k1Fq
 );

@@ -183,7 +183,6 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
 }
 
 pub trait EndoMulCurveGadget<G: Group, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
-
     fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,

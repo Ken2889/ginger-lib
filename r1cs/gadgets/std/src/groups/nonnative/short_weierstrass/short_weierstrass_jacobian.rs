@@ -807,7 +807,7 @@ where
         let x3_plus_x1_plus_x2 = x_3
             .add(cs.ns(|| "x3 + x1"), &self.x)?
             .add(cs.ns(|| "x3 + x1 + x2"), &other.x)?;
-        // TODO: the default implementation for mul_equals() calls mul() and 
+        // TODO: the default implementation for mul_equals() calls mul() and
         // then enforce_equal(). Both do reduction. Let us improve here.
         lambda.mul_equals(cs.ns(|| "check x3"), &lambda, &x3_plus_x1_plus_x2)?;
 
