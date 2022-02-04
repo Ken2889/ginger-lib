@@ -1,5 +1,5 @@
 use crate::error::Error;
-use algebra::{ToConstraintField, serialize_no_metadata};
+use algebra::serialize_no_metadata;
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
@@ -132,7 +132,7 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
     /// Refresh `self.seed` with new material. Achieved by setting
     /// `self.seed = H(self.seed || new_seed)`.
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
+    fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
         let mut bytes = Vec::new();
         to_absorb.serialize_without_metadata(&mut bytes).expect("failed to convert to bytes");
         bytes.extend_from_slice(&self.seed);

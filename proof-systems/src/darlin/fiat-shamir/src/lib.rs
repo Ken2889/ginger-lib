@@ -37,6 +37,11 @@ pub trait FiatShamirRngSeed
     fn finalize(self) -> Result<Self::FinalizedSeed, Error>;
 }
 
+/// Thin wrapper around a type which is ToConstraintField + CanonicalSerialize
+pub trait Absorbable<F: Field>: ToConstraintField<F> + CanonicalSerialize {}
+
+impl<F: Field, T: ToConstraintField<F> + CanonicalSerialize> Absorbable<F> for T {}
+
 /// General trait for Fiat-Shamir transform, designed as a Sponge-based construction.
 pub trait FiatShamirRng: Sized + Default {
     /// Internal State
@@ -49,7 +54,7 @@ pub trait FiatShamirRng: Sized + Default {
     fn from_seed(seed: <Self::Seed as FiatShamirRngSeed>::FinalizedSeed) -> Self;
 
     /// Refresh the internal state with new material
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
+    fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
 
     /// Squeeze a new random field element, changing the internal state.
     fn squeeze<F: PrimeField>(&mut self) -> F;

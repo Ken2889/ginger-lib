@@ -1,5 +1,7 @@
 use algebra::{PrimeField, FpParameters, CanonicalSerialize, serialize_no_metadata, ToBits, ToConstraintField, Field, EndoMulCurve};
 use primitives::{PoseidonSponge, PoseidonParameters, SBox, check_field_equals, AlgebraicSponge};
+use crate::Absorbable;
+
 use super::{FiatShamirRngSeed, FiatShamirRng, Error};
 use std::convert::TryInto;
 
@@ -165,7 +167,7 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
         sponge
     }
 
-    fn absorb<F: Field, A: ToConstraintField<F> + CanonicalSerialize>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
+    fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
         <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb);
 
         Ok(self)
