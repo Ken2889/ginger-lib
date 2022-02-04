@@ -6,7 +6,9 @@ use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::EvaluationsOnDomain;
 use crate::darlin::t_dlog_acc_marlin::IOP;
 use algebra::serialize::*;
-use algebra::{get_best_evaluation_domain, Curve, Group, GroupVec, ToBytes, UniformRand};
+use algebra::{
+    get_best_evaluation_domain, Curve, DensePolynomial, Group, GroupVec, ToBytes, UniformRand,
+};
 use derivative::Derivative;
 use digest::Digest;
 use marlin::iop::LagrangeKernel;
@@ -104,7 +106,7 @@ impl<G: Curve> ToBytes for SumcheckItem<G> {
 }
 
 impl<G: Curve> SumcheckItem<G> {
-    /// Generate a random (but valid) inner sumcheck accumulator item
+    /// Generate a random (but valid) inner sumcheck accumulator item.
     pub fn generate_random<G2: Curve, D: Digest + 'static>(
         rng: &mut dyn RngCore,
         index: &Index<G, G2>,
@@ -143,6 +145,20 @@ impl<G: Curve> SumcheckItem<G> {
 
         Self { alpha, eta, c }
     }
+
+    /// Generate a random invalid inner sumcheck accumulator item.
+    pub fn generate_invalid<G2: Curve, D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index: &Index<G, G2>,
+        pc_pk: &<PC<G, D> as PolynomialCommitment<G>>::CommitterKey,
+    ) -> Self {
+        let mut result = Self::generate_random::<_, D>(rng, index, pc_pk);
+        for el in result.c.iter_mut() {
+            *el = G::rand(rng);
+        }
+        result
+    }
+
     /// Generate the trivial inner sumcheck accumulator item
     pub fn generate_trivial() -> Self {
         Self {
@@ -150,6 +166,36 @@ impl<G: Curve> SumcheckItem<G> {
             eta: vec![G::ScalarField::zero(); 3],
             c: GroupVec::<G>::zero(),
         }
+    }
+
+    /// Compute the polynomial associated to the accumulator.
+    pub fn compute_poly<G2: Curve>(&self, index: &Index<G, G2>) -> DensePolynomial<G::ScalarField> {
+        let num_inputs = index.index_info.num_inputs;
+        let num_witness = index.index_info.num_witness;
+        let num_constraints = index.index_info.num_constraints;
+
+        let domain_x = get_best_evaluation_domain::<G::ScalarField>(num_inputs).unwrap();
+        let domain_h = get_best_evaluation_domain::<G::ScalarField>(std::cmp::max(
+            num_constraints,
+            num_inputs + num_witness,
+        ))
+        .unwrap();
+
+        let alpha = self.alpha;
+        let l_x_alpha_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha).unwrap();
+
+        let t_evals_on_h = IOP::<G, G2>::calculate_t(
+            vec![&index.a, &index.b, &index.c].into_iter(),
+            &self.eta,
+            &domain_x,
+            domain_h.clone(),
+            &l_x_alpha_evals_on_h,
+        )
+        .unwrap();
+        let t_poly =
+            EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), domain_h.clone())
+                .interpolate();
+        t_poly
     }
 }
 
@@ -171,12 +217,70 @@ impl<G1: Curve, G2: Curve> DualSumcheckItem<G1, G2> {
             SumcheckItem::generate_random::<G1, D>(rng, index_g2, pc_pk_g2),
         )
     }
+
+    /// Generate a random invalid instance of `DualSumcheckItem`, for test purposes only.
+    /// The "left" accumulator (`self.0`) is invalid, while the "right" one (`self.1`) is valid.
+    pub fn generate_invalid_left<D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index_g1: &Index<G1, G2>,
+        index_g2: &Index<G2, G1>,
+        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+    ) -> Self {
+        Self(
+            SumcheckItem::generate_invalid::<G2, D>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_random::<G1, D>(rng, index_g2, pc_pk_g2),
+        )
+    }
+
+    /// Generate a random invalid instance of `DualSumcheckItem`, for test purposes only.
+    /// The "left" accumulator (`self.0`) is valid, while the "right" one (`self.1`) is invalid.
+    pub fn generate_invalid_right<D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index_g1: &Index<G1, G2>,
+        index_g2: &Index<G2, G1>,
+        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+    ) -> Self {
+        Self(
+            SumcheckItem::generate_random::<G2, D>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_invalid::<G1, D>(rng, index_g2, pc_pk_g2),
+        )
+    }
+
+    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
+    /// Both accumulators are invalid.
+    pub fn generate_invalid<D: Digest + 'static>(
+        rng: &mut dyn RngCore,
+        index_g1: &Index<G1, G2>,
+        index_g2: &Index<G2, G1>,
+        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+    ) -> Self {
+        Self(
+            SumcheckItem::generate_invalid::<G2, D>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_invalid::<G1, D>(rng, index_g2, pc_pk_g2),
+        )
+    }
+
     /// Generate the trivial dual inner sumcheck accumulator
     pub fn generate_trivial() -> Self {
         Self(
             SumcheckItem::generate_trivial(),
             SumcheckItem::generate_trivial(),
         )
+    }
+
+    /// Compute the polynomials associated to the dual accumulator.
+    pub fn compute_poly(
+        &self,
+        index_g1: &Index<G1, G2>,
+        index_g2: &Index<G2, G1>,
+    ) -> (
+        DensePolynomial<G1::ScalarField>,
+        DensePolynomial<G2::ScalarField>,
+    ) {
+        (self.0.compute_poly(index_g1), self.1.compute_poly(index_g2))
     }
 }
 

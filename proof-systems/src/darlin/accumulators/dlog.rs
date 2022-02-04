@@ -7,7 +7,8 @@
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, to_bytes, Curve, Field, Group, GroupVec, SemanticallyValid, ToBytes, UniformRand,
+    serialize::*, to_bytes, Curve, DensePolynomial, Field, Group, GroupVec, SemanticallyValid,
+    ToBytes, UniformRand,
 };
 use digest::Digest;
 use poly_commit::{
@@ -56,6 +57,18 @@ impl<G: Curve> DLogItem<G> {
         }
     }
 
+    /// Generate a random invalid instance of `DLogItem`, for test purposes only.
+    pub fn generate_invalid<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key: &CommitterKey<G>,
+    ) -> Self {
+        let mut result = Self::generate_random::<_, D>(rng, committer_key);
+        for el in result.g_final.iter_mut() {
+            *el = G::rand(rng);
+        }
+        result
+    }
+
     /// Generate the trivial `DLogItem`.
     pub fn generate_trivial(committer_key: &CommitterKey<G>) -> Self {
         // We define a trivial DLogItem as having all `xi_s` equal to zero.
@@ -64,6 +77,12 @@ impl<G: Curve> DLogItem<G> {
         let xi_s = SuccinctCheckPolynomial(Vec::new());
         let g_final = GroupVec::new(vec![G::from_affine(&committer_key.comm_key[0])]);
         Self { g_final, xi_s }
+    }
+
+    /// Compute the polynomial associated to the accumulator.
+    pub fn compute_poly(&self) -> DensePolynomial<G::ScalarField> {
+        let coeffs = self.xi_s.compute_coeffs();
+        DensePolynomial::from_coefficients_vec(coeffs)
     }
 }
 
@@ -502,6 +521,45 @@ impl<G1: Curve, G2: Curve> DualDLogItem<G1, G2> {
         )
     }
 
+    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
+    /// The "left" accumulator (`self.0`) is invalid, while the "right" one (`self.1`) is valid.
+    pub fn generate_invalid_left<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key_g1: &CommitterKey<G1>,
+        committer_key_g2: &CommitterKey<G2>,
+    ) -> Self {
+        Self(
+            vec![DLogItem::generate_invalid::<R, D>(rng, committer_key_g1)],
+            vec![DLogItem::generate_random::<R, D>(rng, committer_key_g2)],
+        )
+    }
+
+    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
+    /// The "left" accumulator (`self.0`) is valid, while the "right" one (`self.1`) is invalid.
+    pub fn generate_invalid_right<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key_g1: &CommitterKey<G1>,
+        committer_key_g2: &CommitterKey<G2>,
+    ) -> Self {
+        Self(
+            vec![DLogItem::generate_random::<R, D>(rng, committer_key_g1)],
+            vec![DLogItem::generate_invalid::<R, D>(rng, committer_key_g2)],
+        )
+    }
+
+    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
+    /// Both accumulators are invalid.
+    pub fn generate_invalid<R: RngCore, D: Digest>(
+        rng: &mut R,
+        committer_key_g1: &CommitterKey<G1>,
+        committer_key_g2: &CommitterKey<G2>,
+    ) -> Self {
+        Self(
+            vec![DLogItem::generate_invalid::<R, D>(rng, committer_key_g1)],
+            vec![DLogItem::generate_invalid::<R, D>(rng, committer_key_g2)],
+        )
+    }
+
     /// Generate the trivial `DualDLogItem`.
     pub fn generate_trivial<D: Digest>(
         committer_key_g1: &CommitterKey<G1>,
@@ -510,6 +568,25 @@ impl<G1: Curve, G2: Curve> DualDLogItem<G1, G2> {
         Self(
             vec![DLogItem::<G1>::generate_trivial(committer_key_g1)],
             vec![DLogItem::<G2>::generate_trivial(committer_key_g2)],
+        )
+    }
+
+    /// Compute the polynomial associated to the accumulator.
+    pub fn compute_poly(
+        &self,
+    ) -> (
+        Vec<DensePolynomial<G1::ScalarField>>,
+        Vec<DensePolynomial<G2::ScalarField>>,
+    ) {
+        (
+            self.0
+                .iter()
+                .map(|el| DensePolynomial::from_coefficients_vec(el.xi_s.compute_coeffs()))
+                .collect(),
+            self.1
+                .iter()
+                .map(|el| DensePolynomial::from_coefficients_vec(el.xi_s.compute_coeffs()))
+                .collect(),
         )
     }
 }

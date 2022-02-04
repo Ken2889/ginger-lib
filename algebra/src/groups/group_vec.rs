@@ -10,7 +10,7 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     vec::IntoIter,
 };
-use core::slice::Iter;
+use core::slice::{Iter, IterMut};
 
 #[derive(Clone, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GroupVec<G: Group>(Vec<G>);
@@ -35,6 +35,10 @@ impl<G: Group> GroupVec<G> {
 
     pub fn iter(&self) -> Iter<'_, G> {
         self.0.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<'_, G> {
+        self.0.iter_mut()
     }
 
     pub fn into_iter(&self) -> IntoIter<G> {
