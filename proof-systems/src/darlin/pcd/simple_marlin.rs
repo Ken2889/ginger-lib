@@ -6,7 +6,7 @@ use crate::darlin::{
     },
     pcd::{error::PCDError, PCD},
 };
-use algebra::{serialize::*, Curve, GroupVec, SemanticallyValid};
+use algebra::{serialize::*, Curve, SemanticallyValid};
 use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
@@ -172,7 +172,7 @@ where
 
         // Successfull verification: return current accumulator
         let acc = DLogItem::<G> {
-            g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
+            g_final: verifier_state.final_comm_key.clone(),
             xi_s: verifier_state.check_poly.clone(),
         };
 

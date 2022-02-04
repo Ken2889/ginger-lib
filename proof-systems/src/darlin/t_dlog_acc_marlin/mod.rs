@@ -309,7 +309,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
             ),
             LabeledCommitment::new(
                 "prev_bullet_poly".to_string(),
-                previous_dlog_acc.1[0].g_final.clone(),
+                GroupVec::new(vec![previous_dlog_acc.1[0].g_final.clone()]),
             ),
         ];
         let accumulator_comm_rands = vec![
@@ -518,7 +518,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
 
         let accumulator_comms = &vec![
             prev_inner_sumcheck_acc.1.c.clone(),
-            prev_dlog_acc.1[0].g_final.clone(),
+            GroupVec::new(vec![prev_dlog_acc.1[0].g_final.clone()]),
         ];
 
         // Gather commitments in one vector.
@@ -609,7 +609,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
 
         let new_dlog_acc = DualDLogItem(
             vec![DLogItem {
-                g_final: GroupVec::new(vec![dlog_verifier_state.final_comm_key]),
+                g_final: dlog_verifier_state.final_comm_key,
                 xi_s: dlog_verifier_state.check_poly,
             }],
             prev_dlog_acc.0.clone(),
@@ -685,12 +685,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> Marlin<G1, G2, D> {
         let time = start_timer!(|| "Checking dlog accumulator item");
         let verifier_state = poly_commit::ipa_pc::VerifierState {
             check_poly: dlog_item.xi_s.clone(),
-            final_comm_key: dlog_item
-                .g_final
-                .get_vec()
-                .get(0)
-                .unwrap_or(&G::zero())
-                .clone(),
+            final_comm_key: dlog_item.g_final.clone(),
         };
         let res = <PC<G, D> as PolynomialCommitment<G>>::hard_verify(pc_vk, &verifier_state)
             .map_err(Error::from_pc_err)?

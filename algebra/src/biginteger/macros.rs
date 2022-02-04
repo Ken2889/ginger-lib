@@ -8,6 +8,16 @@ macro_rules! bigint_impl {
             pub fn new(value: [u64; $num_limbs]) -> Self {
                 $name(value)
             }
+
+            #[inline]
+            fn to_bytes_le(&self) -> Vec<u8> {
+                let array_map = self.0.iter().map(|limb| limb.to_le_bytes());
+                let mut res = Vec::<u8>::with_capacity($num_limbs * 8);
+                for limb in array_map {
+                    res.extend_from_slice(&limb);
+                }
+                res
+            }
         }
 
         impl BigInteger for $name {
@@ -296,6 +306,44 @@ macro_rules! bigint_impl {
                 let mut repr = Self::default();
                 repr.0[0] = val;
                 repr
+            }
+        }
+
+        impl TryFrom<BigUint> for $name {
+            type Error = Box<dyn std::error::Error>;
+
+            #[inline]
+            fn try_from(val: BigUint) -> Result<$name, Self::Error> {
+                let bytes = val.to_bytes_le();
+
+                if bytes.len() > $num_limbs * 8 {
+                    Err(format!(
+                        "A BigUint of {} bytes cannot fit into a BigInt of {} bytes.",
+                        bytes.len(),
+                        $num_limbs * 8
+                    ))?
+                } else {
+                    let mut limbs = [0u64; $num_limbs];
+
+                    bytes
+                        .chunks(8)
+                        .into_iter()
+                        .enumerate()
+                        .for_each(|(i, chunk)| {
+                            let mut chunk_padded = [0u8; 8];
+                            chunk_padded[..chunk.len()].copy_from_slice(chunk);
+                            limbs[i] = u64::from_le_bytes(chunk_padded)
+                        });
+
+                    Ok(Self(limbs))
+                }
+            }
+        }
+
+        impl From<$name> for BigUint {
+            #[inline]
+            fn from(val: $name) -> BigUint {
+                BigUint::from_bytes_le(&val.to_bytes_le())
             }
         }
     };

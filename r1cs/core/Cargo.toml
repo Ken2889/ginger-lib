@@ -1,6 +1,6 @@
 [package]
 name = "r1cs-core"
-version = "0.3.0"
+version = "0.3.1"
 authors = [
     "Sean Bowe",
     "Alessandro Chiesa",
@@ -22,6 +22,9 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 algebra = { path = "../../algebra" }
-smallvec = { version = "1.6.1" }
-radix_trie = { version = "0.2.1" }
-rand = { version = "0.8.4" }
+smallvec = { version = "=1.7.0" }
+radix_trie = { version = "=0.2.1" }
+rand = { version = "=0.8.4" }
+
+[dev-dependencies]
+algebra = { path = "../../algebra", features = ["tweedle"] }

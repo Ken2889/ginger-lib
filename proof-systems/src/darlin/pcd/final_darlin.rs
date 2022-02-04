@@ -8,7 +8,7 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::{GroupVec, Group, Curve, ToConstraintField};
+use algebra::{Curve, Group, ToConstraintField};
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
@@ -58,8 +58,7 @@ pub struct FinalDarlinPCDVerifierKey<'a, G1: Curve, G2: Curve, D: Digest + 'stat
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: Curve, G2: Curve, D: Digest>
-    AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
+impl<'a, G1: Curve, G2: Curve, D: Digest> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, D>
 {
     fn as_ref(&self) -> &(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>) {
@@ -84,7 +83,7 @@ where
     ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
         let succinct_time = start_timer!(|| "Finalized Darlin succinct verifier");
 
-        // let ahp_verify_time = start_timer!(|| "AHP verify");
+        let ahp_verify_time = start_timer!(|| "AHP verify");
 
         // Verify sumchecks
         let (query_set, evaluations, labeled_comms, mut fs_rng) =
@@ -95,17 +94,17 @@ where
                 &self.final_darlin_proof,
             )
             .map_err(|e| {
-                // end_timer!(ahp_verify_time);
+                end_timer!(ahp_verify_time);
                 end_timer!(succinct_time);
                 PCDError::FailedSuccinctVerification(format!("{:?}", e))
             })?;
 
-        // end_timer!(ahp_verify_time);
+        end_timer!(ahp_verify_time);
 
         // Absorb evaluations and sample new challenge
         fs_rng.absorb(&self.final_darlin_proof.proof.evaluations);
 
-        // let pc_verify_time = start_timer!(|| "PC succinct verify");
+        let pc_verify_time = start_timer!(|| "PC succinct verify");
 
         // Succinct verify DLOG proof
         let verifier_state = DomainExtendedPolynomialCommitment::<G1, InnerProductArgPC::<G1, D>>::succinct_multi_point_multi_poly_verify(
@@ -116,12 +115,12 @@ where
             &self.final_darlin_proof.proof.pc_proof,
             &mut fs_rng,
         ).map_err(|e| {
-            // end_timer!(pc_verify_time);
+            end_timer!(pc_verify_time);
             end_timer!(succinct_time);
             PCDError::FailedSuccinctVerification(e.to_string())
         })?;
 
-        // end_timer!(pc_verify_time);
+        end_timer!(pc_verify_time);
 
         if verifier_state.is_none() {
             end_timer!(succinct_time);
@@ -134,7 +133,7 @@ where
 
         // Verification successfull: return new accumulator
         let acc = DLogItem::<G1> {
-            g_final: GroupVec::new(vec![verifier_state.final_comm_key.clone()]),
+            g_final: verifier_state.final_comm_key.clone(),
             xi_s: verifier_state.check_poly.clone(),
         };
 

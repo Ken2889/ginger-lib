@@ -1,11 +1,18 @@
+#![allow(unused_imports, unused_macros)]
+
 use crate::groups::{
     nonnative::short_weierstrass_jacobian::GroupAffineNonNativeGadget,
     test::{group_test_with_incomplete_add, mul_bits_native_test},
 };
-use algebra::{
-    curves::ed25519::Ed25519Parameters,
-    fields::{ed25519::fq::Fq as ed25519Fq, tweedle::Fr as TweedleFr},
-};
+
+#[cfg(feature = "tweedle")]
+use algebra::fields::tweedle::Fr as TweedleFr;
+
+#[cfg(feature = "ed25519")]
+use algebra::{curves::ed25519::Ed25519Parameters, fields::ed25519::fq::Fq as ed25519Fq};
+
+#[cfg(feature = "secp256k1")]
+use algebra::{curves::secp256k1::Secp256k1Parameters, fields::secp256k1::fq::Fq as secp256k1Fq};
 
 macro_rules! nonnative_test_individual {
     ($test_method:ident, $test_name:ident, $num_samples:expr, $group_params:ty, $test_constraint_field:ty, $test_simulation_field:ty) => {
@@ -62,16 +69,8 @@ macro_rules! nonnative_group_test_unsafe_add {
         );
     };
 }
-/*nonnative_group_test_unsafe_add!(
-    Bn382Frsecp256k1Fq,
-    1,
-    Secp256k1Parameters,
-    TweedleFr,
-    secp256k1Fq
-);*/
 
-//TODO: Doesn't work if "density-optimized" feature is not enabled. Discover why.
-#[cfg(feature = "density-optimized")]
+#[cfg(all(feature = "tweedle", feature = "ed25519"))]
 nonnative_group_test_unsafe_add!(
     TweedleFred25519Fq,
     1,

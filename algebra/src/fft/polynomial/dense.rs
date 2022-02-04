@@ -1,12 +1,14 @@
 //! A polynomial represented in coefficient form.
 
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
-use crate::{serialize::*, Field, Group, FromBytes, FromBytesChecked, SemanticallyValid, PrimeField, ToBytes};
+use crate::{
+    serialize::*, Field, FromBytes, FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBytes,
+};
 use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
-use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::io::{Read, Result as IoResult, Write};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// Stores a polynomial in coefficient form.
 #[derive(Clone, PartialEq, Eq, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
@@ -384,6 +386,25 @@ impl<'a, 'b, F: Field> Div<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
 }
 
 /// Performs O(nlogn) multiplication of polynomials if F is smooth.
+impl<'a, F: PrimeField> MulAssign<&'a DensePolynomial<F>> for DensePolynomial<F> {
+    #[inline]
+    fn mul_assign(&mut self, other: &'a DensePolynomial<F>) {
+        if !self.is_zero() {
+            if other.is_zero() {
+                *self = DensePolynomial::zero();
+            } else {
+                let domain = get_best_evaluation_domain(self.coeffs.len() + other.coeffs.len())
+                    .expect("Field is not smooth enough to construct domain");
+                let mut self_evals = self.evaluate_over_domain_by_ref(domain.clone());
+                let other_evals = other.evaluate_over_domain_by_ref(domain);
+                self_evals *= &other_evals;
+                *self = self_evals.interpolate();
+            }
+        }
+    }
+}
+
+/// Performs O(nlogn) multiplication of polynomials if F is smooth.
 impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
@@ -402,6 +423,15 @@ impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<
     }
 }
 
+impl<'a, F: PrimeField> MulAssign<&'a F> for DensePolynomial<F> {
+    fn mul_assign(&mut self, other: &'a F) {
+        <DensePolynomial<F> as MulAssign<&DensePolynomial<F>>>::mul_assign(
+            self,
+            &DensePolynomial::from_coefficients_slice(&[*other]),
+        );
+    }
+}
+
 impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
@@ -410,13 +440,6 @@ impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
             &self,
             &DensePolynomial::from_coefficients_slice(&[*other]),
         )
-    }
-}
-
-impl<'a, F: PrimeField> MulAssign<&'a F> for DensePolynomial<F> {
-
-    fn mul_assign(&mut self, other: &'a F) {
-        *self = self.clone() * other
     }
 }
 
@@ -457,7 +480,6 @@ impl<F: PrimeField> FromBytesChecked for DensePolynomial<F> {
         Self::read(&mut reader)
     }
 }
-
 
 impl<F: PrimeField> SemanticallyValid for DensePolynomial<F> {
     fn is_valid(&self) -> bool {

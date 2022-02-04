@@ -218,7 +218,7 @@ mod test {
 
         impl PedersenWindow for Window {
             const WINDOW_SIZE: usize = 4;
-            const NUM_WINDOWS: usize = 8;
+            const NUM_WINDOWS: usize = 128;
         }
 
         let input = [1u8; 4];

@@ -721,7 +721,6 @@ mod test {
         is_cs_satisfied
     }
 
-    #[ignore]
     #[test]
     fn tweedle_dum_schnorr_gadget_test() {
         //Sign a random field element f and get the signature and the public key
@@ -755,7 +754,6 @@ mod test {
         ));
     }
 
-    #[ignore]
     #[test]
     fn random_schnorr_gadget_test() {
         let rng = &mut thread_rng();

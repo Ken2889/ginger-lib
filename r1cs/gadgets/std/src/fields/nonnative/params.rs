@@ -1,99 +1,99 @@
 use crate::fields::nonnative::NonNativeFieldParams;
 
+/// The surfeit used for finding the optimal parameters
+pub(crate) const SURFEIT:u32 = 10; 
+
 /// Obtain the parameters from a `ConstraintSystem`'s cache or generate a new one
 #[must_use]
 pub const fn get_params(target_field_size: usize, base_field_size: usize) -> NonNativeFieldParams {
-    let optimization_type = if cfg!(feature = "density-optimized") {
-        OptimizationType::Density
-    } else {
-        OptimizationType::Constraints
-    };
-
-    let (num_of_limbs, limb_size) =
-        find_parameters(base_field_size, target_field_size, optimization_type);
+    let (num_of_limbs, limb_size, _) =
+        find_parameters(base_field_size, target_field_size);
     NonNativeFieldParams {
         num_limbs: num_of_limbs,
         bits_per_limb: limb_size,
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-/// The type of optimization target for the parameters searching
-pub enum OptimizationType {
-    /// Optimized for constraints
-    Constraints,
-    /// Optimized for density
-    Density,
-}
-
-/// A function to search for parameters for nonnative field gadgets
-pub const fn find_parameters(
+/// Finding parameters which minimize the number of constraints of a `single mul_without_prereduce()`
+/// and a subsequent `reduce()` on operand which have `surfeit = 10`, assuming that for both operands
+/// ``
+///     num_adds + 1 = 2^10 - 1.
+/// `` 
+// TODO: Let us reconsider the treatment of parameters, by introducing separate 
+// NonNativeParameters, and modifying the optimum finder to use the constraint counts
+// from the synthesizer. 
+pub(crate) const fn find_parameters(
     base_field_prime_length: usize,
-    target_field_prime_bit_length: usize,
-    optimization_type: OptimizationType,
-) -> (usize, usize) {
-    let mut found = false;
+    target_field_prime_length: usize,
+) -> (usize, usize, usize) {
+
+    let mut first = true;
     let mut min_cost = 0usize;
     let mut min_cost_limb_size = 0usize;
     let mut min_cost_num_of_limbs = 0usize;
 
-    let surfeit = 10;
+    // NOTE: with our choice of `surfeit` the following computations do 
+    // not cause overflows when using `usize`. 
+    let num_adds_plus_one = 2usize.pow(SURFEIT) - 1;
+    let capacity = base_field_prime_length  - 1;
+    let mut bits_per_limb = 1usize;
 
-    let mut max_limb_size = (base_field_prime_length - 1 - surfeit - 1) / 2 - 1;
-    if max_limb_size > target_field_prime_bit_length {
-        max_limb_size = target_field_prime_bit_length;
-    }
-    let mut limb_size = 1;
+    while bits_per_limb <= target_field_prime_length - 1  {
+        // we compute the number of constraints for a `single mul_without_prereduce()`
+        // and a subsequent `reduce()`
+        let num_limbs = (target_field_prime_length  + bits_per_limb - 1)/ bits_per_limb; 
 
-    while limb_size <= max_limb_size {
-        let num_of_limbs = (target_field_prime_bit_length + limb_size - 1) / limb_size;
+        // computing the product representation
+        let mut constraints = num_limbs * num_limbs;
+        // num adds over product normal form for the product
+        let num_add_prod = num_limbs 
+            * num_adds_plus_one
+            * num_adds_plus_one
+            - 1;
+        // compute the ceil_log_2 of `num_add_prod + 1`
+        let mut surfeit_prod = std::mem::size_of::<u128>() * 8 - 
+           ((num_add_prod + 1) as u128).leading_zeros() as usize;
+        if num_add_prod + 1 == 2usize.pow((surfeit_prod - 1) as u32) {surfeit_prod -= 1}; 
+        // alloc k and r 
+        constraints += 2*target_field_prime_length + surfeit_prod + 1;
+        // computing k*p + r
+        constraints += num_limbs * num_limbs;
 
-        let group_size =
-            (base_field_prime_length - 1 - surfeit - 1 - 1 - limb_size + limb_size - 1) / limb_size;
-        let num_of_groups = (2 * num_of_limbs - 1 + group_size - 1) / group_size;
-
-        let mut this_cost = 0;
-
-        match optimization_type {
-            OptimizationType::Constraints => {
-                this_cost += 2 * num_of_limbs - 1;
-            }
-            OptimizationType::Density => {
-                this_cost += 6 * num_of_limbs * num_of_limbs;
-            }
-        };
-
-        match optimization_type {
-            OptimizationType::Constraints => {
-                this_cost += target_field_prime_bit_length; // allocation of k
-                this_cost += target_field_prime_bit_length + num_of_limbs; // allocation of r
-                                                                           //this_cost += 2 * num_of_limbs - 1; // compute kp
-                this_cost += num_of_groups + (num_of_groups - 1) * (limb_size * 2 + surfeit) + 1;
-                // equality check
-            }
-            OptimizationType::Density => {
-                this_cost += target_field_prime_bit_length * 3 + target_field_prime_bit_length; // allocation of k
-                this_cost += target_field_prime_bit_length * 3
-                    + target_field_prime_bit_length
-                    + num_of_limbs; // allocation of r
-                this_cost += num_of_limbs * num_of_limbs + 2 * (2 * num_of_limbs - 1); // compute kp
-                this_cost += num_of_limbs
-                    + num_of_groups
-                    + 6 * num_of_groups
-                    + (num_of_groups - 1) * (2 * limb_size + surfeit) * 4
-                    + 2; // equality check
-            }
-        };
-
-        if !found || this_cost < min_cost {
-            found = true;
-            min_cost = this_cost;
-            min_cost_limb_size = limb_size;
-            min_cost_num_of_limbs = num_of_limbs;
+        // The surfeit caused by (k*p + r)
+        let num_add_kp_r = num_limbs  + 2 * num_add_prod + 1;  
+        // compute the ceil_log_2 of `num_add_kp_r + 1`
+        let mut surfeit_kp_r = std::mem::size_of::<u128>() * 8 - 
+           ((num_add_kp_r + 1) as u128).leading_zeros() as usize;
+        if num_add_kp_r + 1 == 2usize.pow((surfeit_kp_r - 1) as u32) {surfeit_kp_r -= 1}; 
+        
+        // check if the security assumption holds, if not continue 
+        // jump to the start of the loop
+        if 2 * bits_per_limb + surfeit_kp_r > capacity - 2 {
+            bits_per_limb += 1;
+            continue;
         }
-
-        limb_size += 1;
+        // The number of limbs per group.
+        // ``
+        //    S - 1 = Floor[
+        //          (ConstraintF::CAPACITY - 2 - (2*bits_per_limb + surfeit')) / bits_per_limb
+        //          ].
+        // ``
+        let s =  (capacity - 2 - (2 * bits_per_limb + surfeit_kp_r))/bits_per_limb  + 1;
+        // num_groups = Ceil[(2*num_limbs)/ S]
+        let num_groups = (2*num_limbs + s - 1)/s;
+        // ``
+        //      (num_groups - 1) * (1 + 2*bits_per_limb + surfeit_kp_r + 2 - bits_per_limb) + 2
+        // ``
+        constraints += (num_groups - 1) * (3 + bits_per_limb + surfeit_kp_r) + 2;
+                
+        if first || constraints < min_cost {
+            first = false;
+            min_cost = constraints;
+            min_cost_limb_size = bits_per_limb;
+            min_cost_num_of_limbs = num_limbs;
+        }
+        bits_per_limb += 1;
     }
 
-    (min_cost_num_of_limbs, min_cost_limb_size)
+    (min_cost_num_of_limbs, min_cost_limb_size, min_cost)
 }

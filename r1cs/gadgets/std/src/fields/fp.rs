@@ -30,6 +30,14 @@ impl<F: PrimeField> FpGadget<F> {
         Ok(bits[bits.len() - 1])
     }
 
+    /// Allocates a vector `[b[0],b[1],...]` of `L = len(p) - skip_leading_bits` 
+    /// many Booleans, and enforces
+    /// ``
+    ///     self = Sum_{i=0..} b[i] * 2^{(L-1)-i}  (mod p).
+    /// ``
+    /// If `skip_leading_bits > 0` the result `b` is the (big endian) bit 
+    /// representation of `self`. Otherwise `b` might correspond either to
+    /// `self` or `p + self`.
     #[inline]
     pub fn to_bits_with_length_restriction<CS: ConstraintSystemAbstract<F>>(
         &self,
@@ -469,19 +477,19 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
 }
 
 impl<F: PrimeField> ToBitsGadget<F> for FpGadget<F> {
-    /// Outputs the binary representation of the value in `self` in *big-endian*
-    /// form.
-    fn to_bits<CS: ConstraintSystemAbstract<F>>(
-        &self,
-        mut cs: CS,
-    ) -> Result<Vec<Boolean>, SynthesisError> {
+    /// Outputs a vector of Boolean which is the big endian bit representation
+    /// of either `&self` or `&self + p`.
+    fn to_bits<CS: ConstraintSystemAbstract<F>>(&self, mut cs: CS) -> Result<Vec<Boolean>, SynthesisError> {
         self.to_bits_with_length_restriction(&mut cs, 0)
     }
 
+    /// Returns a vector of Boolean that is the big endian bit representation of `&self`
     fn to_bits_strict<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
+        // TODO: this can be optimized, by using the zcash approach which 
+        // merges the boolean allocation constraints with the range proof.
         let bits = self.to_bits(&mut cs)?;
         Boolean::enforce_in_field::<_, _, F>(&mut cs, &bits)?;
 

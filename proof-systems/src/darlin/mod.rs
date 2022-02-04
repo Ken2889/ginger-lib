@@ -14,7 +14,6 @@
 //!     verification and aggregation of their dlog hard parts.
 pub mod accumulators;
 pub mod data_structures;
-pub mod dlog_acc_marlin;
 pub mod error;
 pub mod pcd;
 pub mod proof_aggregator;

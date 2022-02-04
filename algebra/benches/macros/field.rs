@@ -5,15 +5,6 @@ macro_rules! f_bench {
         sqrt!($f, $f_type, $field_ident);
         field_base!($f, $f_type, $f_repr, $f_repr_type, $field_ident);
     };
-    // use this for intermediate fields
-    (1, $f:ident, $f_type:ty, $field_ident:ident) => {
-        field_common!($f, $f_type, $field_ident);
-        sqrt!($f, $f_type, $field_ident);
-    };
-    // Use this for the full extension field Fqk
-    (2, $f:ident, $f_type:ty, $field_ident:ident) => {
-        field_common!($f, $f_type, $field_ident);
-    };
 }
 
 macro_rules! field_common {
