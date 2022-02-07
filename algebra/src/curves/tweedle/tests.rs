@@ -1,8 +1,7 @@
 use crate::{
-    biginteger::BigInteger,
     curves::{models::SWModelParameters, tests::curve_tests, tweedle::*, Curve, EndoMulCurve},
-    fields::{tweedle::*, Field, PrimeField, SquareRootField},
-    groups::{tests::group_test, Group},
+    fields::{tweedle::*, Field, SquareRootField},
+    groups::{tests::group_test, Group}, ToBits,
 };
 use std::ops::{AddAssign, Mul, MulAssign};
 use std::str::FromStr;
@@ -212,7 +211,12 @@ fn test_dee_endo_mul() {
         let p = dee::DeeJacobian::rand(&mut thread_rng());
 
         let scalar: Fq = u128::rand(&mut thread_rng()).into();
-        let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
+        let mut bits = scalar.write_bits();
+        bits.reverse();
+        bits = bits.as_slice()[..128].to_vec();
+
+        assert!(bits.len() == 128);
+        assert!(!bits.iter().all(|b| !b));
 
         let p_mul = p.mul(&dee::DeeJacobian::endo_rep_to_scalar(bits.clone()).unwrap());
         let pe_mul = p.endo_mul(bits.clone()).unwrap();
@@ -227,9 +231,12 @@ fn test_dum_endo_mul() {
         let p = dum::DumJacobian::rand(&mut thread_rng());
 
         let scalar: Fq = u128::rand(&mut thread_rng()).into();
-        let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
-
-        println!("{}", bits.len());
+        let mut bits = scalar.write_bits();
+        bits.reverse();
+        bits = bits.as_slice()[..128].to_vec();
+        
+        assert!(bits.len() == 128);
+        assert!(!bits.iter().all(|b| !b));
 
         let p_mul = p.mul(&dum::DumJacobian::endo_rep_to_scalar(bits.clone()).unwrap());
         let pe_mul = p.endo_mul(bits.clone()).unwrap();

@@ -1,5 +1,5 @@
-use crate::prelude::*;
-use algebra::{BigInteger, Field, FpParameters, Group, PrimeField};
+use crate::{prelude::*, Assignment};
+use algebra::{BigInteger, Field, FpParameters, Group, PrimeField, EndoMulCurve, ToBits};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use std::{borrow::Borrow, fmt::Debug};
@@ -180,11 +180,66 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
     fn cost_of_double() -> usize;
 }
 
-pub trait EndoMulCurveGadget<G: Group, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
+pub trait EndoMulCurveGadget<G: EndoMulCurve, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
     fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
     ) -> Result<Self, SynthesisError>;
+
+    /// Enforce conversion of a bit sequence used in `endo_mul()` into its equivalent
+    /// scalar (bits) and return them in little-endian form.
+    /// We assume 'bits' being in little-endian form too.
+    fn endo_rep_to_scalar_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        bits: Vec<Boolean>
+    ) -> Result<Vec<Boolean>, SynthesisError> 
+    {
+        // Let's use non-determinism and let the prover allocate the endo scalar
+        // obtained by transforming 'bits'. We enforce this being indeed the endo
+        // representation of bits by enforcing that fbSM(G, endo_scalar_bits) == endoMul(G, bits).
+        let endo_scalar_bits = Vec::<Boolean>::alloc(
+            cs.ns(|| "alloc endo scalar bits"),
+            || {
+                let native_bits = bits
+                    .iter()
+                    .map(|b| b.get_value().get())
+                    .collect::<Result<Vec<bool>, _>>()?;
+
+                let mut endo_scalar_bits = G::endo_rep_to_scalar(native_bits)?.write_bits();
+                endo_scalar_bits.reverse();
+
+                Ok(endo_scalar_bits)
+            }
+        )?;
+
+        // Hardcode generator
+        let generator = G::prime_subgroup_generator();
+        let generator_g = Self::from_value(
+            cs.ns(|| "hardcode generator"),
+            &generator
+        );
+
+        // Enforce fbSM(G, endo_scalar_bits)
+        let endo_scalar_bits_times_g = Self::mul_bits_fixed_base(
+            &generator,
+            cs.ns(|| "fbSM(G, endo_scalar_bits)"),
+            endo_scalar_bits.as_slice()
+        )?;
+
+        // Enforce endoMul(G, bits)
+        let endo_mul_bits = generator_g.endo_mul(
+            cs.ns(|| "endoMul(G, bits)"),
+            bits.as_slice()
+        )?;
+
+        // Enforce fbSM(G, endo_scalar_bits) == endoMul(G, bits)
+        endo_scalar_bits_times_g.enforce_equal(
+            cs.ns(|| "fbSM(G, endo_scalar_bits) == endoMul(G, bits)"),
+            &endo_mul_bits
+        )?;
+                
+        Ok(endo_scalar_bits)
+    }
 
     fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
@@ -801,27 +856,50 @@ pub(crate) mod test {
         ConstraintF: Field,
         G: EndoMulCurve,
         GG: EndoMulCurveGadget<G, ConstraintF, Value = G>,
-    >() {
-        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+    >() 
+    {
+        for _ in 0..10 {
+            let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
-        let a_native = G::rand(&mut thread_rng());
-        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
-
-        let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
-
-        let b_native = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
-        let b = b_native
-            .iter()
-            .map(|&bit| Boolean::constant(bit))
-            .collect::<Vec<_>>();
-
-        let r_native = a_native.endo_mul(b_native).unwrap();
-        let r = a
-            .endo_mul(cs.ns(|| "endo mul"), &b)
-            .unwrap()
-            .get_value()
-            .unwrap();
-
-        assert_eq!(r_native, r);
+            let a_native = G::rand(&mut thread_rng());
+            let a_g = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
+    
+            let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
+            let mut scalar_bits_native = scalar.write_bits();
+            scalar_bits_native.reverse();
+            scalar_bits_native = scalar_bits_native.as_slice()[..128].to_vec();
+            
+            assert!(scalar_bits_native.len() == 128);
+            assert!(!scalar_bits_native.iter().all(|b| !b));
+    
+            let scalar_bits_g = Vec::<Boolean>::alloc(
+                cs.ns(|| "alloc scalar bits"),
+                || Ok(scalar_bits_native.clone())
+            ).unwrap();
+    
+            let r_native_endo = a_native.endo_mul(scalar_bits_native).unwrap();
+            let r_endo = a_g
+                .endo_mul(cs.ns(|| "endo mul"), &scalar_bits_g)
+                .unwrap()
+                .get_value()
+                .unwrap();
+    
+            // Native test
+            assert_eq!(r_native_endo, r_endo);
+    
+            // Endo rep test
+            let scalar_to_endo_scalar_bits = GG::endo_rep_to_scalar_bits(
+                cs.ns(|| "scalar bits to endo scalar bits"),
+                scalar_bits_g
+            ).unwrap();
+    
+            let r_normal_mul = a_g.mul_bits(
+                cs.ns(|| "a ^ endo_scalar_bits"),
+                scalar_to_endo_scalar_bits.iter()
+            ).unwrap();
+    
+            println!("{:?}", cs.which_is_unsatisfied());
+            assert_eq!(r_normal_mul.get_value().unwrap(), r_endo);
+        }
     }
 }
