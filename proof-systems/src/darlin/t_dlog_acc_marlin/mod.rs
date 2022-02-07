@@ -134,10 +134,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             seed_builder.add_bytes(&PCVerifierKey::get_hash(pc_vk))?;
             seed_builder.add_bytes(inner_sumcheck_acc)?;
             seed_builder.add_bytes(dlog_acc)?;
-
-            // NOTE: As both vk and public input use constant length encoding of field elements,
-            // we can simply apply add_bytes to achieve a one-to-one serialization.
-            seed_builder.add_bytes(index_vk)?;
+            seed_builder.add_bytes(&index_vk.index_comms)?;
             seed_builder.add_bytes(public_input)?;
 
             seed_builder.finalize()
