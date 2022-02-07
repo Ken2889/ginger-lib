@@ -55,7 +55,7 @@ mod t_dlog_acc_marlin {
 
     use crate::darlin::accumulators::dlog::DualDLogItem;
     use crate::darlin::t_dlog_acc_marlin::data_structures::{DualSumcheckItem, PC};
-    use crate::darlin::t_dlog_acc_marlin::Marlin;
+    use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
     use algebra::{
         curves::tweedle::dee::DeeJacobian, curves::tweedle::dum::DumJacobian,
         serialize::test_canonical_serialize_deserialize, Curve, Group, SemanticallyValid,
@@ -155,9 +155,9 @@ mod t_dlog_acc_marlin {
             };
 
             let (index_pk_g1, index_vk_g1) =
-                Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ_g1).unwrap();
+                TDLogAccMarlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ_g1).unwrap();
             let (index_pk_g2, index_vk_g2) =
-                Marlin::<G2, G1, D>::circuit_specific_setup(&pc_pk_g2, circ_g2).unwrap();
+                TDLogAccMarlin::<G2, G1, D>::circuit_specific_setup(&pc_pk_g2, circ_g2).unwrap();
 
             assert!(index_pk_g1.is_valid());
             assert!(index_vk_g1.is_valid());
@@ -183,7 +183,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = Marlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -206,7 +206,7 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &proof);
 
             // Success verification
-            assert!(Marlin::<G1, G2, D>::verify(
+            assert!(TDLogAccMarlin::<G1, G2, D>::verify(
                 &index_vk_g1,
                 &index_vk_g2,
                 &pc_vk_g1,
@@ -216,10 +216,10 @@ mod t_dlog_acc_marlin {
                 &dlog_acc,
                 &proof
             )
-            .unwrap());
+            .is_ok());
 
             // Fail verification (wrong public input)
-            assert!(!Marlin::<G1, G2, D>::verify(
+            assert!(!TDLogAccMarlin::<G1, G2, D>::verify(
                 &index_vk_g1,
                 &index_vk_g2,
                 &pc_vk_g1,
@@ -229,7 +229,7 @@ mod t_dlog_acc_marlin {
                 &dlog_acc,
                 &proof
             )
-            .unwrap());
+            .is_ok());
 
             /*
             Generate a dual dlog accumulator which is invalid in its native part and check that
@@ -247,7 +247,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = Marlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -260,7 +260,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(Marlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -286,7 +286,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = Marlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -299,7 +299,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(Marlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -326,7 +326,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = Marlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -339,7 +339,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(Marlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -366,7 +366,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = Marlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -379,7 +379,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(Marlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],

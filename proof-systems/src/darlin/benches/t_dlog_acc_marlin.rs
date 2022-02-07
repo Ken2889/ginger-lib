@@ -24,7 +24,7 @@ use proof_systems::darlin::accumulators::dlog::DualDLogItem;
 use proof_systems::darlin::t_dlog_acc_marlin::data_structures::{
     DualSumcheckItem, ProverKey, VerifierKey as MarlinVerifierKey,
 };
-use proof_systems::darlin::t_dlog_acc_marlin::Marlin;
+use proof_systems::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
 use rand_core::RngCore;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -269,10 +269,11 @@ fn generate_keys<G1: Curve, G2: Curve, CS: ConstraintSynthesizer<G1::ScalarField
     MarlinVerifierKey<G1, G2, D>,
 ) {
     let universal_srs =
-        Marlin::<G1, G2, D>::universal_setup(num_constraints, num_constraints, false).unwrap();
+        TDLogAccMarlin::<G1, G2, D>::universal_setup(num_constraints, num_constraints, false)
+            .unwrap();
     let (pc_pk, pc_vk) = universal_srs.trim(segment_size).unwrap();
     let (index_pk, index_vk) =
-        Marlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circuit).unwrap();
+        TDLogAccMarlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circuit).unwrap();
     (pc_pk, pc_vk, index_pk, index_vk)
 }
 
@@ -294,7 +295,7 @@ fn generate_trivial_accumulators(
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let (_, verification_g1) = Marlin::<G2, G1, D>::hard_verify(
+    let (_, verification_g1) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -339,7 +340,7 @@ fn generate_random_accumulators<R: RngCore>(
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let (_, verification_g1) = Marlin::<G2, G1, D>::hard_verify(
+    let (_, verification_g1) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -408,7 +409,7 @@ fn bench_prover_single_prev_acc<C1, C2>(
                     (circ, dlog_acc, t_acc, bullet_poly, t_poly)
                 },
                 |(c, dlog_acc, t_acc, bullet_poly, t_poly)| {
-                    Marlin::<G1, G2, D>::prove(
+                    TDLogAccMarlin::<G1, G2, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,
@@ -486,7 +487,7 @@ fn bench_prover_trivial_prev_acc<C1, C2>(
                     (circ, dlog_acc, t_acc, bullet_poly, t_poly)
                 },
                 |(c, dlog_acc, t_acc, bullet_poly, t_poly)| {
-                    Marlin::<G1, G2, D>::prove(
+                    TDLogAccMarlin::<G1, G2, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,

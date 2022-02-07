@@ -201,8 +201,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
     /// Prover first round of the algebraic oracle proof, the initial round in [HGB].
     /// Determines the oracles for the witness-related polynomials
-    /// `w(X)`, `y_A(X)` and `y_B(X)`.
-    ///
+    ///   `w(X)`, `y_A(X)` and `y_B(X)`
+    /// And for the input polynomial
+    ///   `x(X)`.
     /// [HGB]: https://eprint.iacr.org/2021/930
     pub fn prover_first_round<'a, R: RngCore>(
         mut state: ProverState<'a, G1, G2>,
@@ -347,7 +348,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     }
 
     /// Given the Lagrange representation M(X,Y) for the R1CS matrices M=A,B,C,
-    /// batching challenges eta_M, M=A,B,C, and r(alpha,Y) over H, computes
+    /// batching challenges eta_M, M=A,B,C, and L(alpha,Y) over H, computes
     /// the circuit polynomial
     ///     t(X) = Sum_M eta_M * r_M(alpha,X),
     /// where r_M(X,Y) = Sum_{z in H}  r(X,z)* M(z,Y) = <r(X, .), M(.,Y)> =
@@ -374,7 +375,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             }
         }
         Ok(t_evals_on_h)
-        // Ok(EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h, domain_h).interpolate())
     }
 
     /// Returns the ratio of the sizes of `domain` and `subdomain` or an Error if
@@ -526,8 +526,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             + 1;
         let domain_b = get_best_evaluation_domain::<G1::ScalarField>(domain_b_size)
             .expect("field is not smooth enough to construct domain");
-        // TODO: can we reuse the domain evals over H here, instead of recomputing?
-        // For example, by coset FFT?
         let l_x_alpha_evals = l_x_alpha_poly.evaluate_over_domain_by_ref(domain_b.clone());
         let summed_y_m_evals = summed_y_m_poly.evaluate_over_domain_by_ref(domain_b.clone());
         let y_poly_evals = y_poly.evaluate_over_domain_by_ref(domain_b.clone());
@@ -680,46 +678,50 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         }
         end_timer!(l_x_beta_evals_time);
 
-        let t_eta_poly_time = start_timer!(|| "Compute t_eta_poly");
+        let curr_bridging_poly_time = start_timer!(|| "Compute curr_bridging_poly");
         let m_a = mat_vec_mul(&index.a, l_x_beta_evals_on_h.as_slice());
         let m_b = mat_vec_mul(&index.b, l_x_beta_evals_on_h.as_slice());
         let m_c = mat_vec_mul(&index.c, l_x_beta_evals_on_h.as_slice());
 
-        let t_evals_on_h: Vec<_> = m_a
+        let curr_bridging_poly_on_h: Vec<_> = m_a
             .iter()
             .zip(&m_b)
             .zip(&m_c)
             .map(|((a, b), c)| eta[0] * a + eta[1] * b + eta[2] * c)
             .collect();
-        let t_eta_poly =
-            EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), state.domain_h.clone())
-                .interpolate();
-        end_timer!(t_eta_poly_time);
+        let curr_bridging_poly = EvaluationsOnDomain::from_vec_and_domain(
+            curr_bridging_poly_on_h.clone(),
+            state.domain_h.clone(),
+        )
+        .interpolate();
+        end_timer!(curr_bridging_poly_time);
 
-        let t_prime_poly_time = start_timer!(|| "Compute t_prime_poly");
+        let prev_bridging_poly_time = start_timer!(|| "Compute prev_bridging_poly");
 
         let eta = &state.inner_sumcheck_acc.1.eta;
 
-        let t_evals_on_h: Vec<_> = m_a
+        let prev_bridging_poly_on_h: Vec<_> = m_a
             .iter()
             .zip(&m_b)
             .zip(&m_c)
             .map(|((a, b), c)| eta[0] * a + eta[1] * b + eta[2] * c)
             .collect();
-        let t_prime_poly =
-            EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), state.domain_h.clone())
-                .interpolate();
-        end_timer!(t_prime_poly_time);
+        let prev_bridging_poly = EvaluationsOnDomain::from_vec_and_domain(
+            prev_bridging_poly_on_h.clone(),
+            state.domain_h.clone(),
+        )
+        .interpolate();
+        end_timer!(prev_bridging_poly_time);
 
         let oracles = ProverThirdOracles {
             curr_bridging_poly: LabeledPolynomial::new(
                 "curr_bridging_poly".into(),
-                t_eta_poly,
+                curr_bridging_poly,
                 false,
             ),
             prev_bridging_poly: LabeledPolynomial::new(
                 "prev_bridging_poly".into(),
-                t_prime_poly,
+                prev_bridging_poly,
                 false,
             ),
         };
@@ -765,9 +767,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let l_x_gamma_evals_on_h = state.domain_h.domain_eval_lagrange_kernel(gamma)?;
         end_timer!(l_x_gamma_evals_time);
 
-        let t_second_poly_time = start_timer!(|| "Compute t_second_poly evaluations");
+        let curr_t_acc_poly_time = start_timer!(|| "Compute curr_t_acc_poly evaluations");
 
-        let t_second_evals_on_h = Self::calculate_t(
+        let curr_t_acc_poly_on_h = Self::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
             &eta_second,
             &state.domain_x,
@@ -775,15 +777,19 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             &l_x_gamma_evals_on_h,
         )?;
 
-        let t_second_poly = EvaluationsOnDomain::from_vec_and_domain(
-            t_second_evals_on_h.clone(),
+        let curr_t_acc_poly = EvaluationsOnDomain::from_vec_and_domain(
+            curr_t_acc_poly_on_h.clone(),
             state.domain_h.clone(),
         )
         .interpolate();
-        end_timer!(t_second_poly_time);
+        end_timer!(curr_t_acc_poly_time);
 
         let oracles = ProverFourthOracles {
-            curr_t_acc_poly: LabeledPolynomial::new("curr_t_acc_poly".into(), t_second_poly, false),
+            curr_t_acc_poly: LabeledPolynomial::new(
+                "curr_t_acc_poly".into(),
+                curr_t_acc_poly,
+                false,
+            ),
         };
 
         end_timer!(round_time);

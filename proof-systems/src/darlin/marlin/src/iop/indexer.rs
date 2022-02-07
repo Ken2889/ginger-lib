@@ -437,7 +437,8 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
     })
 }
 
-fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> bool) -> bool {
+/// Checks that the slice `x_s` is ordered according to the criterion defined by `is_less_than`.
+pub fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> bool) -> bool {
     if x_s.is_empty() {
         true
     } else {
@@ -458,7 +459,7 @@ fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> boo
 
 /// This function converts a R1CS matrix from ginger-lib into the sparse matrix representation
 /// `Matrix` as used in this crate.
-fn to_matrix_helper<F: PrimeField>(
+pub fn to_matrix_helper<F: PrimeField>(
     matrix: &[Vec<(F, VarIndex)>],
     num_input_variables: usize,
 ) -> SparseMatrix<F> {
@@ -484,7 +485,7 @@ fn to_matrix_helper<F: PrimeField>(
 /// A simple function that balances the non-zero entries between A and B.
 // TODO: write a test to check that `balance_matrices` improves the balancing of the matrices
 // A and B by distributing the non-zero elements (more or less) evenly between the two.
-fn balance_matrices<F: Field>(
+pub fn balance_matrices<F: Field>(
     a_matrix: &mut Vec<Vec<(F, VarIndex)>>,
     b_matrix: &mut Vec<Vec<(F, VarIndex)>>,
 ) {
@@ -503,7 +504,9 @@ fn balance_matrices<F: Field>(
     }
 }
 
-pub(crate) fn post_process_matrices<F: PrimeField>(
+/// Convert the A, B, and C matrices fo the R1CS into the SparseMatrix format representation used
+/// inside the proving system.
+pub fn post_process_matrices<F: PrimeField>(
     cs: &mut ConstraintSystem<F>,
 ) -> Option<(SparseMatrix<F>, SparseMatrix<F>, SparseMatrix<F>)> {
     balance_matrices(&mut cs.at, &mut cs.bt);
@@ -513,7 +516,9 @@ pub(crate) fn post_process_matrices<F: PrimeField>(
     Some((a, b, c))
 }
 
-pub(crate) fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
+/// Return the number of non-zero elements of the R1CS matrices, that is the maximum number of non-
+/// zero elements among matrices A, B, and C.
+pub fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
     let a_non_zeros = cs.at.iter().map(|row| row.len()).sum();
     let b_non_zeros = cs.bt.iter().map(|row| row.len()).sum();
     let c_non_zeros = cs.ct.iter().map(|row| row.len()).sum();

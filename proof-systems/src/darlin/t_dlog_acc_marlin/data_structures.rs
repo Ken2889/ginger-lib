@@ -85,7 +85,7 @@ pub struct Proof<G1: Curve, G2: Curve, D: Digest + 'static> {
     g2: PhantomData<G2>,
 }
 
-/// An item to be collectred in an inner-sumcheck accumulator.
+/// An item to be collected in an inner-sumcheck accumulator.
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SumcheckItem<G: Curve> {
     /// Sampling point.

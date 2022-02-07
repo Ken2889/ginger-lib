@@ -2,14 +2,13 @@
 
 use algebra::{
     get_best_evaluation_domain, serialize::*, Curve, EvaluationDomain,
-    Evaluations as EvaluationsOnDomain, Field, PrimeField, SemanticallyValid, ToBytes,
+    Evaluations as EvaluationsOnDomain, PrimeField, SemanticallyValid, ToBytes,
 };
 use derivative::Derivative;
-use r1cs_core::{
-    ConstraintSynthesizer, ConstraintSystem, Index as VarIndex, SynthesisError, SynthesisMode,
-};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use marlin::iop::indexer::{is_in_ascending_order, num_non_zero, post_process_matrices};
 use marlin::iop::sparse_linear_algebra::SparseMatrix;
 use marlin::iop::Error;
 use poly_commit::LabeledPolynomial;
@@ -314,92 +313,4 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
         col: LabeledPolynomial::new(m_name.clone() + "_col", col, false),
         val_row_col: LabeledPolynomial::new(m_name.clone() + "_val_row_col", val_row_col, false),
     })
-}
-
-fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> bool) -> bool {
-    if x_s.is_empty() {
-        true
-    } else {
-        let mut i = 0;
-        let mut is_sorted = true;
-        while i < (x_s.len() - 1) {
-            is_sorted &= is_less_than(&x_s[i], &x_s[i + 1]);
-            i += 1;
-        }
-        is_sorted
-    }
-}
-
-/*
-    Elementary R1CS matrix conversion and post-processing.
-
-*/
-
-/// This function converts a R1CS matrix from ginger-lib into the sparse matrix representation
-/// `Matrix` as used in this crate.
-fn to_matrix_helper<F: PrimeField>(
-    matrix: &[Vec<(F, VarIndex)>],
-    num_input_variables: usize,
-) -> SparseMatrix<F> {
-    let mut new_matrix = Vec::with_capacity(matrix.len());
-    let domain_x = get_best_evaluation_domain::<F>(num_input_variables).unwrap();
-    let domain_x_size = domain_x.size();
-    for row in matrix {
-        let mut new_row = Vec::with_capacity(row.len());
-        for (fe, column) in row {
-            let column = match column {
-                // public inputs correspond to the first columns
-                VarIndex::Input(i) => *i,
-                // private witnesses start right after
-                VarIndex::Aux(i) => domain_x_size + i,
-            };
-            new_row.push((*fe, column))
-        }
-        new_matrix.push(new_row)
-    }
-    new_matrix
-}
-
-/// A simple function that balances the non-zero entries between A and B.
-// TODO: write a test to check that `balance_matrices` improves the balancing of the matrices
-// A and B by distributing the non-zero elements (more or less) evenly between the two.
-fn balance_matrices<F: Field>(
-    a_matrix: &mut Vec<Vec<(F, VarIndex)>>,
-    b_matrix: &mut Vec<Vec<(F, VarIndex)>>,
-) {
-    let mut a_weight: usize = a_matrix.iter().map(|row| row.len()).sum();
-    let mut b_weight: usize = b_matrix.iter().map(|row| row.len()).sum();
-    for (a_row, b_row) in a_matrix.iter_mut().zip(b_matrix) {
-        let a_row_weight = a_row.len();
-        let b_row_weight = b_row.len();
-        if (a_weight < b_weight && a_row_weight < b_row_weight)
-            || (a_weight > b_weight && a_row_weight > b_row_weight)
-        {
-            std::mem::swap(a_row, b_row);
-            a_weight = a_weight - a_row_weight + b_row_weight;
-            b_weight = b_weight - b_row_weight + a_row_weight;
-        }
-    }
-}
-
-pub(crate) fn post_process_matrices<F: PrimeField>(
-    cs: &mut ConstraintSystem<F>,
-) -> Option<(SparseMatrix<F>, SparseMatrix<F>, SparseMatrix<F>)> {
-    balance_matrices(&mut cs.at, &mut cs.bt);
-    let a = to_matrix_helper(&cs.at, cs.num_inputs);
-    let b = to_matrix_helper(&cs.bt, cs.num_inputs);
-    let c = to_matrix_helper(&cs.ct, cs.num_inputs);
-    Some((a, b, c))
-}
-
-pub(crate) fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
-    let a_non_zeros = cs.at.iter().map(|row| row.len()).sum();
-    let b_non_zeros = cs.bt.iter().map(|row| row.len()).sum();
-    let c_non_zeros = cs.ct.iter().map(|row| row.len()).sum();
-
-    let max = *[a_non_zeros, b_non_zeros, c_non_zeros]
-        .iter()
-        .max()
-        .expect("iterator is not empty");
-    max
 }
