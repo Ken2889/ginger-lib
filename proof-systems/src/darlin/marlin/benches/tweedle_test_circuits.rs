@@ -605,7 +605,7 @@ fn bench_prover_circuit<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>
         let c = TestCircuit::<G::ScalarField>::get_instance_for_setup(num_constraints, circuit_type);
 
         let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
-        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup(&pc_pk, c.clone()).unwrap();
+        let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
             || format!("****************{}*******************", num_constraints),

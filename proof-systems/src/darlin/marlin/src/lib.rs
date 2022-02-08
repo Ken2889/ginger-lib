@@ -31,7 +31,7 @@
 #[macro_use]
 extern crate bench_utils;
 
-use algebra::EndoMulCurve;
+use algebra::{CanonicalSerialize, EndoMulCurve, serialize_no_metadata};
 use digest::Digest;
 use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
@@ -102,7 +102,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The circuit-specific setup. Given a circuit `c` and a committer_key of the polynomial
     /// commitment scheme, generate the key material for the circuit. The latter is split into
     /// a prover key and a verifier key.
-    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G::ScalarField>>(
+    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G::ScalarField>, D: Digest>(
         committer_key: &PC::CommitterKey,
         c: C,
     ) -> Result<(ProverKey<G, PC>, VerifierKey<G, PC>), Error<PC::Error>> {
@@ -123,9 +123,15 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .map(|c| c.commitment().clone())
             .collect();
 
+        let vk_hash = serialize_no_metadata![index.index_info, index_comms]
+            .map_err(|e| {
+                Error::Other(format!("Unable to serialize vk elements: {:?}", e))
+            })?;
+
         let index_vk = VerifierKey {
             index_info: index.index_info,
             index_comms,
+            vk_hash,
         };
 
         let index_pk = ProverKey {
@@ -161,15 +167,13 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder
                 .add_bytes(&Self::PROTOCOL_NAME)?
-                .add_bytes(&pc_pk.get_hash())?
-                // NOTE: As both vk and public input use constant length encoding of field elements,
-                // we can simply apply add_bytes to achieve a one-to-one serialization.
-                .add_bytes(&index_pk.index_vk)?
-                .add_bytes(&public_input)?;
+                .add_bytes(&pc_pk.get_hash())?;
             seed_builder.finalize()?
         };
 
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+        fs_rng.absorb::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
+        fs_rng.absorb(public_input)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -401,16 +405,18 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         let public_input = public_input.to_vec();
 
+        // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
             let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
             seed_builder
                 .add_bytes(&Self::PROTOCOL_NAME)?
-                .add_bytes(&pc_vk.get_hash())?
-                .add_bytes(&index_vk)?
-                .add_bytes(&public_input)?;
+                .add_bytes(&pc_vk.get_hash())?;
             seed_builder.finalize()?
         };
+
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+        fs_rng.absorb::<G::BaseField, _>(index_vk.get_hash())?;
+        fs_rng.absorb(public_input.clone())?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */

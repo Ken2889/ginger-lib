@@ -88,7 +88,7 @@ where
     /// Generate the index-specific (i.e., circuit-specific) prover and verifier
     /// keys from the dedicated PCDCircuit.
     /// This is a deterministic algorithm that anyone can rerun.
-    pub fn index<C: PCDCircuit<G1>>(
+    pub fn index<C: PCDCircuit<G1>, D: Digest>(
         committer_key: &DLogProverKey<G1>,
         config: C::SetupData,
     ) -> Result<
@@ -105,7 +105,7 @@ where
         FinalDarlinError,
     > {
         let c = C::init(config);
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::circuit_specific_setup(committer_key, c)?;
+        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::circuit_specific_setup::<_, D>(committer_key, c)?;
 
         Ok(res)
     }

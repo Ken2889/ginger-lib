@@ -148,7 +148,7 @@ pub fn generate_test_data<'a, D: Digest, G: EndoMulCurve, FS: FiatShamirRng + 'a
     let (index_pk, index_vk) = Marlin::<
         G,
         DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>,
-    >::circuit_specific_setup(&committer_key, circ.clone())
+    >::circuit_specific_setup::<_, D>(&committer_key, circ.clone())
     .unwrap();
 
     // Generate Marlin PCDs

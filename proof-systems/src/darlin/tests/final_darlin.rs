@@ -382,7 +382,7 @@ where
     };
 
     let (index_pk, index_vk) =
-        FinalDarlin::<G1, G2, FS>::index::<TestCircuit<G1, G2>>(&committer_key_g1, info.clone())
+        FinalDarlin::<G1, G2, FS>::index::<TestCircuit<G1, G2>, D>(&committer_key_g1, info.clone())
             .unwrap();
 
     // Generate Final Darlin PCDs
