@@ -13,7 +13,7 @@ pub trait FiatShamirRngGadget<ConstraintF: PrimeField>:
     /// initialize from a seed
     fn init_from_seed<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
-        seed: Vec<ConstraintF>
+        seed: Vec<u8>
     ) -> Result<Self, SynthesisError>;
 
     /// take in field elements

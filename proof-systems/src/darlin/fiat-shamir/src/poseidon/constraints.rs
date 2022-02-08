@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 
 use algebra::PrimeField;
-use primitives::PoseidonParameters;
+use primitives::{PoseidonParameters, PoseidonSponge, PoseidonQuinticSBox};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_crypto::{AlgebraicSpongeGadget, density_optimized::{DensityOptimizedPoseidonQuinticSboxSpongeGadget, S}, DensityOptimizedPoseidonQuinticSBoxParameters};
 use r1cs_std::{to_field_gadget_vec::ToConstraintFieldGadget, fields::fp::FpGadget, boolean::Boolean, prelude::ConstantGadget};
 
-use crate::constraints::FiatShamirRngGadget;
+use crate::{constraints::FiatShamirRngGadget, FiatShamirRng};
 
 impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
     where
@@ -20,22 +20,27 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
 
     fn init_from_seed<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        seed: Vec<ConstraintF>
+        seed: Vec<u8>
     ) -> Result<Self, SynthesisError> {
-        // Create new instance
-        let mut new_instance = Self::init(cs.ns(|| "create new instance"))?;
+        // Create primitive instance from seed and get the state afterwards
+        let primitive_fs_rng = PoseidonSponge::<ConstraintF, P, PoseidonQuinticSBox<ConstraintF, P>>::from_seed(seed)
+            .map_err(|e| SynthesisError::Other(e.to_string()))?;
+        let state = primitive_fs_rng.get_state();
+        
+        // Create new circuit instance
+        let mut gadget_fs_rng = Self::init(cs.ns(|| "create new instance"))?;
 
         // Hardcode inital state
         let state = Vec::<FpGadget<ConstraintF>>::from_value(
             cs.ns(|| "hardcode initial state"),
-            &seed
+            &state
         );
 
         // Set state
-        new_instance.set_state(state);
+        gadget_fs_rng.set_state(state);
 
         // Return new instance
-        Ok(new_instance) 
+        Ok(gadget_fs_rng) 
     }
 
     fn enforce_absorb<CS, AG>(
@@ -94,7 +99,7 @@ mod test {
         FS:  FiatShamirRng,
         FSG: FiatShamirRngGadget<G::BaseField>,
         R: RngCore
-    >(rng: &mut R, num_inputs: usize)
+    >(rng: &mut R, num_inputs: usize, initial_seed: Option<Vec<u8>>)
     {
         // Generate test data
         let native_inputs: Vec<G::BaseField> = (0..num_inputs).map(|_| G::BaseField::rand(rng)).collect();
@@ -137,11 +142,19 @@ mod test {
         // Test Non Native inputs
 
         // Create a primitive FS rng and absorb nonnative inputs
-        let mut fs_rng = FS::default();
+        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
+            FS::from_seed(seed).unwrap()
+        } else {
+            FS::default()
+        };
         fs_rng.absorb(nonnative_inputs).unwrap();
 
         // Create a circuit FS rng and absorb nonnative inputs
-        let mut fs_rng_g = FSG::init(cs.ns(|| "new fs_rng_g for non native inputs")).unwrap();
+        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
+            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for non native inputs"), seed).unwrap()
+        } else {
+            FSG::init(cs.ns(|| "new fs_rng_g for non native inputs")).unwrap()
+        };
         fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb non native field elements"), nonnative_inputs_g.as_slice()).unwrap();
 
         // Squeeze from primitive and circuit FS rng and assert equality
@@ -168,11 +181,19 @@ mod test {
         // Test Native inputs
 
         // Create a primitive FS rng and absorb native inputs
-        let mut fs_rng = FS::default();
+        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
+            FS::from_seed(seed).unwrap()
+        } else {
+            FS::default()
+        };
         fs_rng.absorb(native_inputs).unwrap();   
 
         // Create a circuit FS rng and absorb native inputs
-        let mut fs_rng_g = FSG::init(cs.ns(|| "new fs_rng_g for native inputs")).unwrap();
+        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
+            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for native inputs"), seed).unwrap()
+        } else {
+            FSG::init(cs.ns(|| "new fs_rng_g for native inputs")).unwrap()
+        };
         fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb native field elements"), native_inputs_g).unwrap();
 
         // Squeeze from primitive and circuit FS rng and assert equality
@@ -199,11 +220,19 @@ mod test {
         // Test byte inputs
 
         // Create a primitive FS rng and absorb byte inputs
-        let mut fs_rng = FS::default();
+        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
+            FS::from_seed(seed).unwrap()
+        } else {
+            FS::default()
+        };
         fs_rng.absorb::<G::BaseField, _>(byte_inputs.as_slice()).unwrap();
 
         // Create a circuit FS rng and absorb byte inputs
-        let mut fs_rng_g = FSG::init(cs.ns(|| "new fs_rng_g for byte inputs")).unwrap();
+        let mut fs_rng_g = if let Some(seed) = initial_seed {
+            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for byte inputs"), seed).unwrap()
+        } else {
+            FSG::init(cs.ns(|| "new fs_rng_g for byte inputs")).unwrap()
+        };
         fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb byte elements"), byte_inputs_g.as_slice()).unwrap();
 
         // Squeeze from primitive and circuit FS rng and assert equality
@@ -241,9 +270,12 @@ mod test {
         use r1cs_crypto::crh::poseidon::TweedleFqDensityOptimizedPoseidonSpongeGadget;
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
-        for i in 0..=5 {
-            test_native_result::<TweedleDee, TweedleFqPoseidonSponge, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, i);
+        for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
+            for i in 0..=5 {
+                test_native_result::<TweedleDee, TweedleFqPoseidonSponge, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
+            }
         }
+        
     }
 
     #[test]
@@ -253,8 +285,10 @@ mod test {
         use r1cs_crypto::crh::poseidon::TweedleFrDensityOptimizedPoseidonSpongeGadget;
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
-        for i in 0..=5 {
-            test_native_result::<TweedleDum, TweedleFrPoseidonSponge, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, i);
+        for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
+            for i in 0..=5 {
+                test_native_result::<TweedleDum, TweedleFrPoseidonSponge, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
+            }
         }
     }
 }
