@@ -1,5 +1,5 @@
 use crate::{
-    fields::{BitIterator, Field, SquareRootField},
+    fields::{BitIterator, PrimeField, SquareRootField},
     groups::Group,
     CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand, ToConstraintField,
 };
@@ -36,7 +36,7 @@ pub trait Curve:
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
-    type BaseField: Field + SquareRootField;
+    type BaseField: PrimeField + SquareRootField;
     type AffineRep: Sized
         + Sync
         + Copy

@@ -80,7 +80,7 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
 
 #[cfg(test)]
 mod test {
-    use algebra::{EndoMulCurve, Field, UniformRand};
+    use algebra::{EndoMulCurve, UniformRand};
     use r1cs_core::{ConstraintSystem, ConstraintSystemAbstract, SynthesisMode, ConstraintSystemDebugger};
     use r1cs_std::{fields::{fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget}, alloc::AllocGadget, prelude::UInt8};
     use rand::{RngCore, Rng, SeedableRng};
@@ -92,23 +92,23 @@ mod test {
     fn test_native_result<
         G: EndoMulCurve,
         FS:  FiatShamirRng,
-        FSG: FiatShamirRngGadget<<G::BaseField as Field>::BasePrimeField>,
+        FSG: FiatShamirRngGadget<G::BaseField>,
         R: RngCore
     >(rng: &mut R, num_inputs: usize)
     {
         // Generate test data
-        let native_inputs: Vec<<G::BaseField as Field>::BasePrimeField> = (0..num_inputs).map(|_| <G::BaseField as Field>::BasePrimeField::rand(rng)).collect();
+        let native_inputs: Vec<G::BaseField> = (0..num_inputs).map(|_| G::BaseField::rand(rng)).collect();
         let nonnative_inputs: Vec<G::ScalarField> = (0..num_inputs).map(|_| G::ScalarField::rand(rng)).collect();
         let byte_inputs: Vec<u8> = (0..num_inputs * 10).map(|_| rng.gen()).collect();
 
-        let mut cs = ConstraintSystem::<<G::BaseField as Field>::BasePrimeField>::new(SynthesisMode::Debug);
+        let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
         // Alloc data
         let native_inputs_g = native_inputs
             .iter()
             .enumerate()
             .map(|(i, fe)| 
-                FpGadget::<<G::BaseField as Field>::BasePrimeField>::alloc(
+                FpGadget::<G::BaseField>::alloc(
                     cs.ns(|| format!("alloc native input {}", i)),
                     || Ok(fe)
                 ).unwrap()
@@ -118,7 +118,7 @@ mod test {
             .iter()
             .enumerate()
             .map(|(i, fe)| 
-                NonNativeFieldGadget::<G::ScalarField, <G::BaseField as Field>::BasePrimeField>::alloc(
+                NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc(
                     cs.ns(|| format!("alloc nonnative input {}", i)),
                     || Ok(fe)
                 ).unwrap()
@@ -200,7 +200,7 @@ mod test {
 
         // Create a primitive FS rng and absorb byte inputs
         let mut fs_rng = FS::default();
-        fs_rng.absorb::<<G::BaseField as Field>::BasePrimeField, _>(byte_inputs.as_slice()).unwrap();
+        fs_rng.absorb::<G::BaseField, _>(byte_inputs.as_slice()).unwrap();
 
         // Create a circuit FS rng and absorb byte inputs
         let mut fs_rng_g = FSG::init(cs.ns(|| "new fs_rng_g for byte inputs")).unwrap();
