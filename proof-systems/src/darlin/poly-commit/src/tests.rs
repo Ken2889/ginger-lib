@@ -9,10 +9,10 @@ where
     G: EndoMulCurve,
     PC: PolynomialCommitment<G>,
 {
-    let mut fs_rng_seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+    let mut fs_rng_seed_builder = FiatShamirRngSeed::new();
     fs_rng_seed_builder.add_bytes(b"TEST_SEED").unwrap();
     let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
-    PC::RandomOracle::from_seed(fs_rng_seed)
+    PC::RandomOracle::from_seed(fs_rng_seed).unwrap()
 }
 
 #[derive(Copy, Clone, PartialEq)]

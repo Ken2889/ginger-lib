@@ -67,12 +67,11 @@ fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(c: &mut Crite
 
                     let point = G::ScalarField::rand(rng);
 
-                    let mut fs_rng_seed_builder =
-                        <<InnerProductArgPC<G, FS> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
+                    let mut fs_rng_seed_builder = FiatShamirRngSeed::new();
                     fs_rng_seed_builder.add_bytes(b"BENCH_SEED").unwrap();
                     let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
                     let fs_rng =
-                        <InnerProductArgPC::<G, FS> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed);
+                        <InnerProductArgPC::<G, FS> as PolynomialCommitment<G>>::RandomOracle::from_seed(fs_rng_seed).unwrap();
 
                     (polynomials, comms, point, fs_rng, rands)
                 },

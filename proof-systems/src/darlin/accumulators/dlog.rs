@@ -77,7 +77,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         // Initialize Fiat-Shamir rng
         let fs_rng_init_seed = {
-            let mut seed_builder = FS::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
             seed_builder.add_bytes(&vk.hash)?;
 
@@ -87,7 +87,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
             seed_builder.add_bytes(&previous_accumulators)?;
             seed_builder.finalize()?
         };
-        let mut fs_rng = FS::from_seed(fs_rng_init_seed);
+        let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G>();
@@ -257,14 +257,14 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
 
         // Initialize Fiat-Shamir rng
         let fs_rng_init_seed = {
-            let mut seed_builder = FS::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
             seed_builder.add_bytes(&ck.hash)?;
             // TODO: Shall we decompose this further when passing it to the seed builder ?
             seed_builder.add_bytes(&accumulators)?;
             seed_builder.finalize()?
         };
-        let mut fs_rng = FS::from_seed(fs_rng_init_seed);
+        let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G>();
@@ -477,10 +477,10 @@ mod test {
     use std::marker::PhantomData;
 
     fn get_test_fs_rng<G: EndoMulCurve, FS: FiatShamirRng>() -> FS {
-        let mut seed_builder = FS::Seed::new();
+        let mut seed_builder = FiatShamirRngSeed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize().unwrap();
-        FS::from_seed(fs_rng_seed)
+        FS::from_seed(fs_rng_seed).unwrap()
     }
 
     #[derive(Copy, Clone, Default)]

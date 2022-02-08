@@ -193,11 +193,11 @@ macro_rules! generate_pc_tests {
                 // Empty test
                 {
                     let mut rng1 = $fs_rng::from_seed(
-                        <$fs_rng as FiatShamirRng>::Seed::new().finalize().unwrap(),
-                    );
+                        FiatShamirRngSeed::new().finalize().unwrap(),
+                    ).unwrap();
                     let mut rng2 = $fs_rng::from_seed(
-                        <$fs_rng as FiatShamirRng>::Seed::new().finalize().unwrap(),
-                    );
+                        FiatShamirRngSeed::new().finalize().unwrap(),
+                    ).unwrap();
 
                     assert_eq!(rng1.get_state(), rng2.get_state());
 
@@ -222,20 +222,20 @@ macro_rules! generate_pc_tests {
                 // No cross protocol attacks possible
                 {
                     let fs_rng_seed = {
-                        let mut seed_builder = <$fs_rng as FiatShamirRng>::Seed::new();
+                        let mut seed_builder = FiatShamirRngSeed::new();
                         seed_builder.add_bytes(b"TEST_SEED").unwrap();
                         seed_builder.finalize().unwrap()
                     };
 
                     let malicious_fs_rng_seed = {
-                        let mut seed_builder = <$fs_rng as FiatShamirRng>::Seed::new();
+                        let mut seed_builder = FiatShamirRngSeed::new();
                         seed_builder.add_bytes(b"TEST_").unwrap();
                         seed_builder.add_bytes(b"SEED").unwrap();
                         seed_builder.finalize().unwrap()
                     };
 
-                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed);
-                    let mut malicious_fs_rng = $fs_rng::from_seed(malicious_fs_rng_seed);
+                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed).unwrap();
+                    let mut malicious_fs_rng = $fs_rng::from_seed(malicious_fs_rng_seed).unwrap();
 
                     assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
@@ -260,11 +260,11 @@ macro_rules! generate_pc_tests {
                 // set_state test
                 {
                     let fs_rng_seed = {
-                        let mut seed_builder = <$fs_rng as FiatShamirRng>::Seed::new();
+                        let mut seed_builder = FiatShamirRngSeed::new();
                         seed_builder.add_bytes(b"TEST_SEED").unwrap();
                         seed_builder.finalize().unwrap()
                     };
-                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed);
+                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed).unwrap();
 
                     let mut fs_rng_copy = $fs_rng::default();
                     fs_rng_copy.set_state(fs_rng.get_state().clone());

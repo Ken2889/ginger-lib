@@ -1,70 +1,10 @@
 use crate::error::Error;
-use algebra::serialize_no_metadata;
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
 use rand_core::{RngCore, SeedableRng};
 use std::{convert::TryInto, marker::PhantomData};
 use super::*;
-
-#[derive(Default)]
-/// Encoding of seed material as discussed in [issue/22](https://github.com/HorizenLabs/poly-commit/issues/22).
-/// Output type of the seed is a byte array.
-pub struct FiatShamirChaChaRngSeed {
-    // the number of seed elements.
-    num_elements: u64,
-    // the byte lengths of the seed elements.
-    elements_len: Vec<u64>,
-    // the concatenated byte sequence of elements.
-    seed_bytes: Vec<u8>,
-}
-
-impl FiatShamirRngSeed for FiatShamirChaChaRngSeed {
-    type FinalizedSeed = Vec<u8>;
-
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Error> {
-        // Check we have not reached the maximum allowed seed size
-        if self.num_elements == u64::MAX {
-            return Err(Error::BadFiatShamirInitialization(format!(
-                "Maximum seed length {} exceeded",
-                u64::MAX
-            )));
-        }
-
-        // Get elem bytes and check that they are not over the maximum allowed elem len
-        let mut elem_bytes = serialize_no_metadata!(elem).map_err(|_| {
-            Error::BadFiatShamirInitialization("Unable to convert elem to bytes".to_owned())
-        })?;
-        let elem_bytes_len: u64 = elem_bytes.len().try_into().map_err(|_| {
-            Error::BadFiatShamirInitialization(format!(
-                "Max elem length exceeded. Max: {}",
-                u64::MAX
-            ))
-        })?;
-
-        // Update internal state
-        self.num_elements += 1;
-        self.elements_len.push(elem_bytes_len);
-        self.seed_bytes.append(&mut elem_bytes);
-        Ok(self)
-    }
-
-    fn add_field<F: Field>(&mut self, elem: &F) -> Result<&mut Self, Error> {
-        self.add_bytes(elem)
-    }
-
-    fn finalize(self) -> Result<Self::FinalizedSeed, Error> 
-    {
-        serialize_no_metadata![self.num_elements, self.elements_len, self.seed_bytes]
-            .map_err(|e| {
-                Error::BadFiatShamirInitialization(format!("Unable to finalize seed: {:?}", e))
-            })
-    }
-}
 
 /// A `SeedableRng` that refreshes its seed by hashing together the previous seed
 /// and the new seed material.
@@ -99,7 +39,7 @@ impl<D: Digest> Default for FiatShamirChaChaRng<D> {
     /// WARNING: Not intended for normal usage. FiatShamir must be initialized with proper,
     /// protocol-binded values. Use `from_seed` function instead.
     fn default() -> Self {
-        Self::_from_seed(FiatShamirChaChaRngSeed::default().finalize().unwrap())
+        Self::_from_seed(FiatShamirRngSeed::default().finalize().unwrap())
     }
 }
 
@@ -128,7 +68,6 @@ impl<D: Digest> RngCore for FiatShamirChaChaRng<D> {
 
 impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     type State = Vec<u8>;
-    type Seed = FiatShamirChaChaRngSeed;
 
     /// Refresh `self.seed` with new material. Achieved by setting
     /// `self.seed = H(self.seed || new_seed)`.
@@ -144,8 +83,8 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
     /// Create a new `Self` by initializing with a fresh seed.
     #[inline]
-    fn from_seed(seed: <Self::Seed as FiatShamirRngSeed>::FinalizedSeed) -> Self {
-        Self::_from_seed(seed)
+    fn from_seed(seed: Vec<u8>) -> Result<Self, Error> {
+        Ok(Self::_from_seed(seed))
     }
 
     /// Get `self.seed`.

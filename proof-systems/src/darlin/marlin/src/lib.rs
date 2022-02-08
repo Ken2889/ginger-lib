@@ -164,14 +164,14 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
-            let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder
                 .add_bytes(&Self::PROTOCOL_NAME)?
                 .add_bytes(&pc_pk.get_hash())?;
             seed_builder.finalize()?
         };
 
-        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
         fs_rng.absorb::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
         fs_rng.absorb(public_input)?;
 
@@ -407,14 +407,14 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
-            let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder
                 .add_bytes(&Self::PROTOCOL_NAME)?
                 .add_bytes(&pc_vk.get_hash())?;
             seed_builder.finalize()?
         };
 
-        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
         fs_rng.absorb::<G::BaseField, _>(index_vk.get_hash())?;
         fs_rng.absorb(public_input.clone())?;
 
