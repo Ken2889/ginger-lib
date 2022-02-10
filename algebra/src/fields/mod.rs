@@ -319,11 +319,8 @@ pub trait FpParameters: 'static + Send + Sync + Sized {
 }
 
 /// The interface for a prime field.
-pub trait PrimeField: 
-    Field<BasePrimeField = Self> 
-    + FromStr
-    + From<BigUint>
-    + Into<BigUint>
+pub trait PrimeField:
+    Field<BasePrimeField = Self> + FromStr + From<BigUint> + Into<BigUint>
 {
     type Params: FpParameters<BigInt = Self::BigInt>;
     type BigInt: BigInteger;

@@ -3,14 +3,18 @@ extern crate criterion;
 
 use std::collections::HashSet;
 
+use algebra::{fields::tweedle::Fr as FieldElement, UniformRand};
 use criterion::{BatchSize, BenchmarkId, Criterion};
-use algebra::{UniformRand, fields::tweedle::Fr as FieldElement};
-use primitives::{FieldBasedMerkleTree, FieldBasedSparseMerkleTree, crh::{TweedleFrPoseidonHash as FieldHash, TweedleFrBatchPoseidonHash as BatchFieldHash}, merkle_tree::{
-        TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS as MHT_POSEIDON_PARAMETERS, FieldBasedMerkleTreeParameters,
-        BatchFieldBasedMerkleTreeParameters, FieldBasedMerkleTreePrecomputedZeroConstants,
-        FieldBasedSparseMHT, ActionLeaf, OperationLeaf,
-    }};
-use rand::{Rng, thread_rng};
+use primitives::{
+    crh::{TweedleFrBatchPoseidonHash as BatchFieldHash, TweedleFrPoseidonHash as FieldHash},
+    merkle_tree::{
+        ActionLeaf, BatchFieldBasedMerkleTreeParameters, FieldBasedMerkleTreeParameters,
+        FieldBasedMerkleTreePrecomputedZeroConstants, FieldBasedSparseMHT, OperationLeaf,
+        TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS as MHT_POSEIDON_PARAMETERS,
+    },
+    FieldBasedMerkleTree, FieldBasedSparseMerkleTree,
+};
+use rand::{thread_rng, Rng};
 
 const BENCH_HEIGHT: u8 = 22;
 
@@ -37,14 +41,19 @@ fn fill_tree_and_get_leaves_to_remove(
     num_leaves_to_fill: usize,
     num_leaves_to_remove: usize,
     actually_remove_leaves: bool,
-) -> Vec<OperationLeaf<u32, FieldElement>> 
-{
+) -> Vec<OperationLeaf<u32, FieldElement>> {
     // Generate leaves to be added
     let rng = &mut thread_rng();
     let leaves_to_add = (0..num_leaves_to_fill)
-        .map(|idx| OperationLeaf::new(idx as u32, ActionLeaf::Insert, Some(FieldElement::rand(rng))))
+        .map(|idx| {
+            OperationLeaf::new(
+                idx as u32,
+                ActionLeaf::Insert,
+                Some(FieldElement::rand(rng)),
+            )
+        })
         .collect::<Vec<_>>();
-    smt.update_leaves(leaves_to_add.iter().cloned().collect::<HashSet<_>>()).unwrap();
+    smt.update_leaves(leaves_to_add).unwrap();
     smt.finalize_in_place().unwrap();
 
     // Collect leaves to remove randomly among the ones already present in the tree
@@ -65,14 +74,12 @@ fn fill_tree_and_get_leaves_to_remove(
         .collect();
 
     if actually_remove_leaves {
-        smt.update_leaves(leaves_to_remove.iter().cloned().collect::<HashSet<_>>()).unwrap();
+        smt.update_leaves(leaves_to_remove.clone()).unwrap();
         smt.finalize_in_place().unwrap();
-        leaves_to_remove
-            .iter_mut()
-            .for_each(|leaf|{
-                (*leaf).action = ActionLeaf::Insert;
-                (*leaf).hash = Some(FieldElement::rand(rng))
-            });
+        leaves_to_remove.iter_mut().for_each(|leaf| {
+            (*leaf).action = ActionLeaf::Insert;
+            (*leaf).hash = Some(FieldElement::rand(rng))
+        });
     }
 
     leaves_to_remove
@@ -95,10 +102,14 @@ fn bench_batch_addition_removal_smt(
             |b, _num_leaves| {
                 b.iter_batched(
                     || {
-                        let mut smt = FieldBasedSparseMHT::<FieldBasedMerkleTreeParams>::init(BENCH_HEIGHT);
+                        let mut smt =
+                            FieldBasedSparseMHT::<FieldBasedMerkleTreeParams>::init(BENCH_HEIGHT);
                         let leaves_to_remove = fill_tree_and_get_leaves_to_remove(
-                            &mut smt, leaves_to_fill, num_leaves, actually_remove_leaves
-                        ).into_iter().collect::<HashSet<_>>();
+                            &mut smt,
+                            leaves_to_fill,
+                            num_leaves,
+                            actually_remove_leaves,
+                        );
                         (smt, leaves_to_remove)
                     },
                     |(mut smt, leaves)| {
@@ -121,14 +132,19 @@ fn fill_tree_and_add_new(
     mut num_leaves_to_fill: usize,
     num_leaves_to_add: usize,
     subsequent: bool,
-) -> Vec<OperationLeaf<u32, FieldElement>> 
-{
+) -> Vec<OperationLeaf<u32, FieldElement>> {
     // Generate leaves to be added
     let rng = &mut thread_rng();
     let leaves_to_add = (0..num_leaves_to_fill)
-        .map(|idx| OperationLeaf::new(idx as u32, ActionLeaf::Insert, Some(FieldElement::rand(rng))))
+        .map(|idx| {
+            OperationLeaf::new(
+                idx as u32,
+                ActionLeaf::Insert,
+                Some(FieldElement::rand(rng)),
+            )
+        })
         .collect::<Vec<_>>();
-    smt.update_leaves(leaves_to_add.iter().cloned().collect::<HashSet<_>>()).unwrap();
+    smt.update_leaves(leaves_to_add).unwrap();
     smt.finalize_in_place().unwrap();
 
     // Collect leaves to add randomly
@@ -162,9 +178,8 @@ fn bench_batch_addition(
     c: &mut Criterion,
     bench_name: &str,
     leaves_to_fill: usize,
-    subsequent: bool
-) 
-{
+    subsequent: bool,
+) {
     let mut group = c.benchmark_group(bench_name);
 
     let num_leaves_samples = (5..=12).map(|i| 1 << i).collect::<Vec<_>>();
@@ -176,10 +191,10 @@ fn bench_batch_addition(
             |b, _num_leaves| {
                 b.iter_batched(
                     || {
-                        let mut smt = FieldBasedSparseMHT::<FieldBasedMerkleTreeParams>::init(BENCH_HEIGHT);
-                        let leaves_to_add = fill_tree_and_add_new(
-                            &mut smt, leaves_to_fill, num_leaves, subsequent
-                        ).into_iter().collect::<HashSet<_>>();
+                        let mut smt =
+                            FieldBasedSparseMHT::<FieldBasedMerkleTreeParams>::init(BENCH_HEIGHT);
+                        let leaves_to_add =
+                            fill_tree_and_add_new(&mut smt, leaves_to_fill, num_leaves, subsequent);
                         (smt, leaves_to_add)
                     },
                     |(mut smt, leaves)| {
@@ -194,27 +209,87 @@ fn bench_batch_addition(
 }
 
 fn all_benches_batch_remove(c: &mut Criterion) {
-    bench_batch_addition_removal_smt(c, "almost empty tree - remove batch", (1 << BENCH_HEIGHT as usize)/10, false);
-    bench_batch_addition_removal_smt(c, "half full tree - remove batch", (1 << BENCH_HEIGHT as usize)/2, false);
-    bench_batch_addition_removal_smt(c, "almost full tree - remove batch", (9 * (1 << BENCH_HEIGHT as usize))/10, false);
+    bench_batch_addition_removal_smt(
+        c,
+        "almost empty tree - remove batch",
+        (1 << BENCH_HEIGHT as usize) / 10,
+        false,
+    );
+    bench_batch_addition_removal_smt(
+        c,
+        "half full tree - remove batch",
+        (1 << BENCH_HEIGHT as usize) / 2,
+        false,
+    );
+    bench_batch_addition_removal_smt(
+        c,
+        "almost full tree - remove batch",
+        (9 * (1 << BENCH_HEIGHT as usize)) / 10,
+        false,
+    );
 }
 
 fn all_benches_batch_remove_then_add(c: &mut Criterion) {
-    bench_batch_addition_removal_smt(c, "almost empty tree - remove then add batch", (1 << BENCH_HEIGHT as usize)/10, true);
-    bench_batch_addition_removal_smt(c, "half full tree - remove then add batch", (1 << BENCH_HEIGHT as usize)/2, true);
-    bench_batch_addition_removal_smt(c, "almost full tree - remove then add batch", (9 * (1 << BENCH_HEIGHT as usize))/10, true);
+    bench_batch_addition_removal_smt(
+        c,
+        "almost empty tree - remove then add batch",
+        (1 << BENCH_HEIGHT as usize) / 10,
+        true,
+    );
+    bench_batch_addition_removal_smt(
+        c,
+        "half full tree - remove then add batch",
+        (1 << BENCH_HEIGHT as usize) / 2,
+        true,
+    );
+    bench_batch_addition_removal_smt(
+        c,
+        "almost full tree - remove then add batch",
+        (9 * (1 << BENCH_HEIGHT as usize)) / 10,
+        true,
+    );
 }
 
 fn all_benches_batch_add(c: &mut Criterion) {
-    bench_batch_addition(c, "almost empty tree - add batch random idx", (1 << BENCH_HEIGHT as usize)/10, false);
-    bench_batch_addition(c, "half full tree - add batch random idx", (1 << BENCH_HEIGHT as usize)/2, false);
-    bench_batch_addition(c, "almost full tree - add batch random idx", (9 * (1 << BENCH_HEIGHT as usize))/10, false);
+    bench_batch_addition(
+        c,
+        "almost empty tree - add batch random idx",
+        (1 << BENCH_HEIGHT as usize) / 10,
+        false,
+    );
+    bench_batch_addition(
+        c,
+        "half full tree - add batch random idx",
+        (1 << BENCH_HEIGHT as usize) / 2,
+        false,
+    );
+    bench_batch_addition(
+        c,
+        "almost full tree - add batch random idx",
+        (9 * (1 << BENCH_HEIGHT as usize)) / 10,
+        false,
+    );
 }
 
 fn all_benches_batch_add_subsequent(c: &mut Criterion) {
-    bench_batch_addition(c, "almost empty tree - add batch subsequent idx", (1 << BENCH_HEIGHT as usize)/10, true);
-    bench_batch_addition(c, "half full tree - add batch subsequent idx", (1 << BENCH_HEIGHT as usize)/2, true);
-    bench_batch_addition(c, "almost full tree - add batch subsequent idx", (9 * (1 << BENCH_HEIGHT as usize))/10, true);
+    bench_batch_addition(
+        c,
+        "almost empty tree - add batch subsequent idx",
+        (1 << BENCH_HEIGHT as usize) / 10,
+        true,
+    );
+    bench_batch_addition(
+        c,
+        "half full tree - add batch subsequent idx",
+        (1 << BENCH_HEIGHT as usize) / 2,
+        true,
+    );
+    bench_batch_addition(
+        c,
+        "almost full tree - add batch subsequent idx",
+        (9 * (1 << BENCH_HEIGHT as usize)) / 10,
+        true,
+    );
 }
 
 criterion_group! {

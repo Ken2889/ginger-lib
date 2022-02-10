@@ -4,26 +4,26 @@
 // We have that:
 // A[0] = MDS[1,0]/MDS[0,0]; B[1] = MDS[1,1] - MDS[1,0]*MDS[0,1]/MDS[0,0]; C[1] = MDS[1,2] - MDS[1,0]*MDS[0,2]/MDS[0,0]
 // D[0] = MDS[2,0]/MDS[0,0]; E[1] = MDS[2,1] - MDS[2,0]*MDS[0,1]/MDS[0,0]; F[1] = MDS[2,2] - MDS[2,0]*MDS[0,2]/MDS[0,0]
-// 
+//
 // (B[i]    C[i]) = (B[1]   C[1])^i
 // (E[i]    F[i])   (E[1]   F[1])       for 0 <= i <= 4
-// 
+//
 // (A[i]) = (B[i]    C[i]) * (A[0])
 // (D[i]) = (E[i]    F[i])   (D[0])     for 0 <= i <= 4
 //
 // LC[i,0] = B[i]*MDS[0,1] + E[i]*MDS[0,2]
 // LC[i,1] = C[i]*MDS[0,1] + F[i]*MDS[0,2]
 // LC[1+i, 2+j] = A[j-i]*MDS[0,1] + B[j-i]*MDS[0,2] for 0 <= j <= i <= 2
-// 
+//
 // ALPHA[i][j] = sum_{k=0}^{j} (MDS[0,1]  MDS[0,2])*(B[k]    C[k]) * (ROUND_CONSTANT[3*(i + j - k) + 1])
 //                                                  (E[k]    F[k])   (ROUND_CONSTANT[3*(i + j - k) + 1])
-// 
+//
 // BETA[i][j] = sum_{k=1}^{j} (B[k]    C[k]) * (ROUND_CONSTANT[3*(i + j - k) + 1])
 //                                             (ROUND_CONSTANT[3*(i + j - k) + 2])
-// 
+//
 // GAMMA[i][j] = sum_{k=1}^{j} (E[k]    F[k]) * (ROUND_CONSTANT[3*(i + j - k) + 1])
 //                                              (ROUND_CONSTANT[3*(i + j - k) + 2])
-// 
+//
 use algebra::{field_new, fields::tweedle::Fr as TweedleFr, BigInteger256 as BigInteger};
 use primitives::crh::TweedleFrPoseidonParameters;
 

@@ -193,8 +193,13 @@ fn elementary_test_alloc_random<SimulationF: PrimeField, ConstraintF: PrimeField
         )
         .unwrap();
 
-
-        assert_eq!(surfeit, ceil_log_2!(&a.num_of_additions_over_normal_form + BigUint::one()), "expected surfeit: {} != actual surfeit: {}", surfeit, ceil_log_2!(&a.num_of_additions_over_normal_form + BigUint::one()));
+        assert_eq!(
+            surfeit,
+            ceil_log_2!(&a.num_of_additions_over_normal_form + BigUint::one()),
+            "expected surfeit: {} != actual surfeit: {}",
+            surfeit,
+            ceil_log_2!(&a.num_of_additions_over_normal_form + BigUint::one())
+        );
 
         assert!(a.check(), "allocated random fails on check()")
     }
@@ -531,7 +536,7 @@ fn elementary_test_sub_without_prereduce<
         let surfeit_bound = (BigUint::from(2u32)
             .pow((ConstraintF::Params::CAPACITY as usize - 3 - params.bits_per_limb) as u32)
             - BigUint::from(3u32))
-            .bits() as usize
+        .bits() as usize
             - 1;
 
         // We sample `surfeit_a` so that the edge case for substraction is still possible,
@@ -543,7 +548,7 @@ fn elementary_test_sub_without_prereduce<
                 .pow((ConstraintF::Params::CAPACITY as usize - 3 - params.bits_per_limb) as u32)
                 - BigUint::from(2u32).pow(surfeit_a as u32)
                 - BigUint::from(3u32))
-                .bits() as usize
+            .bits() as usize
                 - 1
         } else {
             rng.gen_range(0..surfeit_bound)
@@ -1866,7 +1871,7 @@ macro_rules! pseudomersenne_test {
             }
         }
     }
-}   
+}
 
 macro_rules! stress_test {
     ($test_method:ident, $test_name:ident, $test_simulation_field:ty, $test_constraint_field:ty) => {

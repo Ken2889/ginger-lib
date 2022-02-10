@@ -1397,7 +1397,11 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
             )?;
 
             // Step 2: mul without pre reduce
-            self.mul_without_prereduce_for_pseudomersenne(cs.ns(|| "calc actual result"), other, false)?
+            self.mul_without_prereduce_for_pseudomersenne(
+                cs.ns(|| "calc actual result"),
+                other,
+                false,
+            )?
         } else {
             self.mul_for_generic_field(cs.ns(|| "calc_actual_result"), other, false)?
         };

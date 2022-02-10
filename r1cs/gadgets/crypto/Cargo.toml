@@ -13,7 +13,10 @@ authors = [
     "Ulrich Haboeck <ulrich@horizenlabs.io>",
     "Maksym Vereshchak <phoinic@gmail.com>",
     "Luigi Varriale <luigi@horizenlabs.io>",
-    "cronicc <cronic@horizenlabs.io>"
+    "cronicc <cronic@horizenlabs.io>",
+    "Luca Giussani <lucagiussani@horizenlabs.io>",
+    "Daniele Di Tullio <danieled@horizenlabs.io>",
+    "Nicholas Mainardi <nicholas@horizenlabs.io>"
 ]
 description = "A crypto library for constraint system gadgets"
 include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]

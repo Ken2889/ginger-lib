@@ -231,7 +231,10 @@ impl<P: MerkleTreeConfig> MerkleHashTree<P> {
 
         // Check that index is not bigger than num_leaves
         if index >= 1 << P::HEIGHT {
-            Err(MerkleTreeError::IncorrectLeafIndex(index, format!("Leaf index out of range. Max: {}", (1 << P::HEIGHT) - 1)))?
+            Err(MerkleTreeError::IncorrectLeafIndex(
+                index,
+                format!("Leaf index out of range. Max: {}", (1 << P::HEIGHT) - 1),
+            ))?
         }
 
         let prove_time = start_timer!(|| "MerkleTree::GenProof");
@@ -243,7 +246,10 @@ impl<P: MerkleTreeConfig> MerkleHashTree<P> {
 
         // Check that the given index corresponds to the correct leaf.
         if leaf_hash != self.tree[tree_index] {
-            Err(MerkleTreeError::IncorrectLeafIndex(tree_index, "Leaf and index mismatch".to_string()))?
+            Err(MerkleTreeError::IncorrectLeafIndex(
+                tree_index,
+                "Leaf and index mismatch".to_string(),
+            ))?
         }
 
         // Iterate from the leaf up to the root, storing all intermediate hash values.
@@ -296,7 +302,7 @@ impl std::fmt::Display for MerkleTreeError {
         let msg = match self {
             MerkleTreeError::IncorrectLeafIndex(index, message) => {
                 format!("incorrect leaf index: {} - {}", index, message)
-            },
+            }
             MerkleTreeError::TooManyLeaves(height) => format!(
                 "Reached maximum number of leaves for a tree of height {}",
                 height
