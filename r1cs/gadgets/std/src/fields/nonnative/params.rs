@@ -72,7 +72,7 @@ const fn find_parameters_for_pseudomersenne(
     let num_adds_plus_one = 2u128.pow(SURFEIT);
     let capacity = base_field_prime_length - 1;
 
-    let mut bits_per_limb = 1usize;
+    let mut bits_per_limb = 2usize;
 
     while bits_per_limb <= target_field_prime_length - 1 {
         // we compute the number of constraints for a `single mul_without_prereduce()`
@@ -162,7 +162,7 @@ const fn find_parameters_for_generic_field(
     let num_adds_plus_one = 2usize.pow(SURFEIT);
     let capacity = base_field_prime_length - 1;
 
-    let mut bits_per_limb = 1usize;
+    let mut bits_per_limb = 2usize;
 
     while bits_per_limb <= target_field_prime_length - 1 {
         // we compute the number of constraints for a `single mul_without_prereduce()`

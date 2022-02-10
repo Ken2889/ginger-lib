@@ -106,7 +106,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         let limb_bound_ms = normal_form_bound_ms * &num_add_plus_one;
 
         let valid_num_adds = 2 * params.bits_per_limb + ceil_log_2!(num_add_plus_one)
-            < ConstraintF::size_in_bits() - 1;
+            <= ConstraintF::size_in_bits() - 1;
 
         // k-ary and of the limb checks.
         let valid_limbs = self.limbs.iter().enumerate().all(|(i, limb)| {

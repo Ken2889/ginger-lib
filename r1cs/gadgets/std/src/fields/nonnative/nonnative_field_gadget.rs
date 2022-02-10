@@ -80,7 +80,7 @@ pub fn bigint_to_constraint_field<ConstraintF: PrimeField>(bigint: &BigUint) -> 
     let mut cur = ConstraintF::one();
     let bytes = bigint.to_bytes_be();
 
-    let basefield_256 = ConstraintF::from_repr(<ConstraintF as PrimeField>::BigInt::from(256));
+    let basefield_256 = ConstraintF::from(256u128);
 
     for byte in bytes.iter().rev() {
         let bytes_basefield = ConstraintF::from(*byte as u128);
@@ -140,7 +140,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         let limb_bound_ms = normal_form_bound_ms * &num_add_plus_one;
 
         let valid_num_adds =
-            params.bits_per_limb + ceil_log_2!(num_add_plus_one) < ConstraintF::size_in_bits() - 1;
+            params.bits_per_limb + ceil_log_2!(num_add_plus_one) <= ConstraintF::size_in_bits() - 1;
 
         // k-ary and of the limb checks.
         let valid_limbs = self.limbs.iter().enumerate().all(|(i, limb)| {
@@ -1640,7 +1640,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FromBitsGadget<Constraint
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> ToBytesGadget<ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
-    // Returns the big endian bit representation of `self mod p`.
+    // Returns the little-endian byte representation of `self mod p`.
     fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
