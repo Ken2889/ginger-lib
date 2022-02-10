@@ -3,8 +3,7 @@
 use crate::iop::indexer::IndexInfo;
 use crate::iop::*;
 
-use algebra::PrimeField;
-use algebra::{get_best_evaluation_domain, EvaluationDomain};
+use algebra::{get_best_evaluation_domain, EvaluationDomain, PrimeField};
 use fiat_shamir::FiatShamirRng;
 use poly_commit::QueryMap;
 
@@ -58,11 +57,8 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let alpha = F::read_bits(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
-        ).map_err(|e| Error::Other(e.to_string()))?;
+        let alpha = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
@@ -70,11 +66,8 @@ impl<F: PrimeField> IOP<F> {
             ))?
         }
 
-        let eta = F::read_bits(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
-        ).map_err(|e| Error::Other(e.to_string()))?;
+        let eta = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierFirstMsg { alpha, eta };
 
@@ -95,11 +88,8 @@ impl<F: PrimeField> IOP<F> {
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
-        let beta = F::read_bits(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
-        ).map_err(|e| Error::Other(e.to_string()))?;
+        let beta = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
@@ -119,11 +109,8 @@ impl<F: PrimeField> IOP<F> {
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<VerifierState<F>, Error> {
-        let gamma = F::read_bits(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
-        ).map_err(|e| Error::Other(e.to_string()))?;
+        let gamma = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         state.gamma = Some(gamma);
         Ok(state)
@@ -151,6 +138,7 @@ impl<F: PrimeField> IOP<F> {
         // Outer sumcheck
 
         // First round polys
+        query_map.insert(("x".into(), "beta".into()), beta);
         query_map.insert(("w".into(), "beta".into()), beta);
         query_map.insert(("y_a".into(), "beta".into()), beta);
         query_map.insert(("y_b".into(), "beta".into()), beta);

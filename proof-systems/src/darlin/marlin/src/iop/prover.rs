@@ -17,6 +17,9 @@ pub struct ProverState<'a, F: PrimeField> {
     formatted_input_assignment: Vec<F>,
     witness_assignment: Vec<F>,
 
+    // the polynomial associated to the formatted public input.
+    x_poly: LabeledPolynomial<F>,
+
     // the witness polynomial w(X), normalized by the vanishing polynomial of
     // the input domain, such that y(X) = x(X) + w(X)*Z_I(X).
     w_poly: Option<LabeledPolynomial<F>>,
@@ -54,6 +57,19 @@ impl<'a, F: PrimeField> ProverState<'a, F> {
         let mut witness_assignment = self.witness_assignment.clone();
         padded_public_input.append(&mut witness_assignment);
         padded_public_input
+    }
+}
+
+/// The "oracles" output by prover during initialization.
+pub struct ProverInitOracles<F: Field> {
+    /// The public input polynomial `x`
+    pub x: LabeledPolynomial<F>,
+}
+
+impl<F: Field> ProverInitOracles<F> {
+    /// Iterate over the polynomials output by the prover during initialization.
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+        vec![&self.x].into_iter()
     }
 }
 
@@ -111,7 +127,7 @@ impl<F: PrimeField> IOP<F> {
     pub fn prover_init<'a, C: ConstraintSynthesizer<F>>(
         index: &'a Index<F>,
         c: C,
-    ) -> Result<ProverState<'a, F>, Error> {
+    ) -> Result<(ProverInitOracles<F>, ProverState<'a, F>), Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -154,11 +170,19 @@ impl<F: PrimeField> IOP<F> {
         let domain_b = get_best_evaluation_domain::<F>(4 * (domain_k.size() - 1))
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        end_timer!(init_time);
+        let x_time = start_timer!(|| "Computing x polynomial and evals");
+        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
+            formatted_input_assignment.clone(),
+            domain_x.clone(),
+        )
+        .interpolate();
+        let x_poly = LabeledPolynomial::new("x".to_string(), x_poly, false);
+        end_timer!(x_time);
 
-        Ok(ProverState {
+        let prover_state = ProverState {
             formatted_input_assignment,
             witness_assignment,
+            x_poly: x_poly.clone(),
             w_poly: None,
             my_polys: None,
             index,
@@ -167,7 +191,13 @@ impl<F: PrimeField> IOP<F> {
             domain_k,
             domain_x,
             domain_b,
-        })
+        };
+
+        let oracles = ProverInitOracles { x: x_poly };
+
+        end_timer!(init_time);
+
+        Ok((oracles, prover_state))
     }
 
     /// Prover first round of the algebraic oracle proof, the initial round in [HGB].
@@ -182,16 +212,11 @@ impl<F: PrimeField> IOP<F> {
     ) -> Result<(ProverFirstOracles<F>, ProverState<'a, F>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
-
-        let x_time = start_timer!(|| "Computing x polynomial and evals");
         let domain_x = &state.domain_x;
-        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
-            state.formatted_input_assignment.clone(),
-            domain_x.clone(),
-        )
-        .interpolate();
+
+        let x_time = start_timer!(|| "Computing x polynomial evaluations");
         // Evaluate the input polynomial x(X) over H.
-        let x_evals = domain_h.fft(&x_poly);
+        let x_evals = domain_h.fft(&state.x_poly);
         end_timer!(x_time);
 
         /* Compute the normalized witness polynomial w(X) which allows easy
@@ -368,11 +393,6 @@ impl<F: PrimeField> IOP<F> {
             ))?
         }
         Ok(step)
-    }
-
-    /// Output the number of oracles sent by the prover in the first round.
-    pub fn prover_num_first_round_oracles() -> usize {
-        3
     }
 
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
@@ -617,11 +637,6 @@ impl<F: PrimeField> IOP<F> {
         Ok((oracles, state))
     }
 
-    /// Output the number of oracles sent by the prover in the second round.
-    pub fn prover_num_second_round_oracles() -> usize {
-        2
-    }
-
     /// Prover third round of the algebraic oracle proof, the "inner sumcheck".
     /// Determines the oracles for `U_2(X)` and `h_2(X)`.
     // Note: the inner sumcheck identity is
@@ -822,10 +837,5 @@ impl<F: PrimeField> IOP<F> {
         end_timer!(round_time);
 
         Ok(oracles)
-    }
-
-    /// Output the number of oracles sent by the prover in the third round.
-    pub fn prover_num_third_round_oracles() -> usize {
-        2
     }
 }

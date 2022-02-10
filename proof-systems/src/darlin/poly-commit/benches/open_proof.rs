@@ -132,11 +132,11 @@ mod benches {
 #[cfg(feature = "circuit-friendly")]
 mod benches {
     use super::*;
-    use fiat_shamir::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
+    use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
 
     pub(crate) fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DeeJacobian, TweedleFqPoseidonSponge, Blake2s>(
+            bench_open_proof::<DeeJacobian, TweedleFqPoseidonFSRng, Blake2s>(
                 c,
                 "open proof in tweedle-dee, poseidon fs, coeffs",
                 1 << n,
@@ -146,7 +146,7 @@ mod benches {
 
     pub(crate) fn bench_open_proof_tweedle_dum(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DumJacobian, TweedleFrPoseidonSponge, Blake2s>(
+            bench_open_proof::<DumJacobian, TweedleFrPoseidonFSRng, Blake2s>(
                 c,
                 "open proof in tweedle-dum, poseidon fs, coeffs",
                 1 << n,

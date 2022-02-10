@@ -26,6 +26,8 @@ pub struct VerifierKey<G: Group, PC: PolynomialCommitment<G>> {
     pub index_info: IndexInfo<G::ScalarField>,
     /// Commitments to the indexed polynomials.
     pub index_comms: Vec<PC::Commitment>,
+    /// Commitments of the lagrange polynomials over the input domain.
+    pub lagrange_comms: Vec<PC::Commitment>,
     /// Hash of the above elements
     pub vk_hash: Vec<u8>,
 }
