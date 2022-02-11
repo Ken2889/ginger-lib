@@ -57,8 +57,9 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let alpha = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
+        let chals = fs_rng.get_many_challenges::<128>(2)?;
+
+        let alpha = F::read_bits(chals[0].to_vec()).map_err(|e| Error::Other(e.to_string()))?;
 
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
@@ -66,8 +67,7 @@ impl<F: PrimeField> IOP<F> {
             ))?
         }
 
-        let eta = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
+        let eta = F::read_bits(chals[1].to_vec()).map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierFirstMsg { alpha, eta };
 

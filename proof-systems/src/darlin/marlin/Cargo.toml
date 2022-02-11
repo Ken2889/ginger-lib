@@ -24,6 +24,8 @@ algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive
 fiat-shamir = { path = "../fiat-shamir" }
 bench-utils = {  path = "../../../../bench-utils" }
 r1cs-core = {  path = "../../../../r1cs/core" }
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto" }
+r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"] }
 poly-commit = {path = "../poly-commit" }
 
 rand = "0.8.4"
@@ -34,6 +36,7 @@ derivative = { version = "2", features = ["use_core"] }
 
 [dev-dependencies]
 algebra = { path = "../../../../algebra", features = ["tweedle", "derive"]}
+primitives = { path = "../../../../primitives" }
 fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
 r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"] }

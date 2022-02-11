@@ -6,13 +6,13 @@ use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError}
 /// often the same quadratic constraints a*b=c and b*c=d.
 // TODO: replace this example by a more representative (high-rank A,B,C).
 #[derive(Copy, Clone)]
-struct Circuit<F: Field> {
-    a: Option<F>,
-    b: Option<F>,
-    c: Option<F>,
-    d: Option<F>,
-    num_constraints: usize,
-    num_variables: usize,
+pub(crate) struct Circuit<F: Field> {
+    pub(crate) a: Option<F>,
+    pub(crate) b: Option<F>,
+    pub(crate) c: Option<F>,
+    pub(crate) d: Option<F>,
+    pub(crate) num_constraints: usize,
+    pub(crate) num_variables: usize,
 }
 
 impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<ConstraintF> {
@@ -50,7 +50,6 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
     }
 }
 
-
 mod marlin {
     use super::*;
     use crate::Marlin;
@@ -58,10 +57,10 @@ mod marlin {
     use crate::error::Error as MarlinError;
     use crate::iop::Error as IOPError;
     use algebra::{
-        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, EndoMulCurve,
-        SemanticallyValid, UniformRand,
+        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize,
+        EndoMulCurve, SemanticallyValid, UniformRand,
     };
-    
+
     use blake2::Blake2s;
     use digest::Digest;
     use poly_commit::{
@@ -71,7 +70,6 @@ mod marlin {
     };
     use rand::thread_rng;
     use std::ops::MulAssign;
-
 
     trait TestUtils {
         /// Copy other instance params into this
@@ -241,11 +239,11 @@ mod marlin {
                 fn [<prove_and_verify_with_tall_matrix_big_ $pc_inst_name>]() {
                     let num_constraints = 100;
                     let num_variables = 25;
-            
+
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
-            
+
                 #[test]
                 fn [<prove_and_verify_with_tall_matrix_small_ $pc_inst_name>]() {
                     let num_constraints = 26;
@@ -253,40 +251,40 @@ mod marlin {
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
-            
+
                 #[test]
                 fn [<prove_and_verify_with_squat_matrix_big_ $pc_inst_name>]() {
                     let num_constraints = 25;
                     let num_variables = 100;
-            
+
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
-            
+
                 #[test]
                 fn [<prove_and_verify_with_squat_matrix_small_ $pc_inst_name>]() {
                     let num_constraints = 25;
                     let num_variables = 26;
-            
+
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
-            
+
                 #[test]
                 fn [<prove_and_verify_with_square_matrix_ $pc_inst_name>]() {
                     let num_constraints = 25;
                     let num_variables = 25;
-            
+
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
-            
+
                 #[test]
                 // See https://github.com/HorizenLabs/marlin/issues/3 for the rationale behind this test
                 fn [<prove_and_verify_with_trivial_index_polynomials_ $pc_inst_name>]() {
                     let num_constraints = 1 << 6;
                     let num_variables = 1 << 4;
-            
+
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, false);
                     test_circuit::<$curve, $pc_inst, $digest>(25, num_constraints, num_variables, true);
                 }
@@ -299,8 +297,10 @@ mod marlin {
         use super::*;
         use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-        type MultiPCChaCha =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
+        type MultiPCChaCha = DomainExtendedPolynomialCommitment<
+            DumJacobian,
+            InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>,
+        >;
 
         generate_tests!(dum_blake2s, DumJacobian, MultiPCChaCha, Blake2s);
     }
@@ -308,12 +308,22 @@ mod marlin {
     #[cfg(feature = "circuit-friendly")]
     mod poseidon_fs {
         use super::*;
-        use fiat_shamir::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
+        use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
 
         type MultiPCPoseidon<FS> =
             DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FS>>;
 
-        generate_tests!(dum_tweedle_fr_poseidon_fs, DumJacobian, MultiPCPoseidon::<TweedleFrPoseidonFSRng>, Blake2s);
-        generate_tests!(dum_tweedle_fq_poseidon_fs, DumJacobian, MultiPCPoseidon::<TweedleFqPoseidonFSRng>, Blake2s);
+        generate_tests!(
+            dum_tweedle_fr_poseidon_fs,
+            DumJacobian,
+            MultiPCPoseidon::<TweedleFrPoseidonFSRng>,
+            Blake2s
+        );
+        generate_tests!(
+            dum_tweedle_fq_poseidon_fs,
+            DumJacobian,
+            MultiPCPoseidon::<TweedleFqPoseidonFSRng>,
+            Blake2s
+        );
     }
 }
