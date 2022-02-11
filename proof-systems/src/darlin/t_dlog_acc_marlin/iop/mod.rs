@@ -38,8 +38,10 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
     pub const PROVER_POLYNOMIALS: [&'static str; 12] = [
+        // Input poly
+        "x",
         // First round oracles
-        "x", "w", "y_a", "y_b",
+        "w", "y_a", "y_b",
         // Second round oracles
         "u_1", "h_1", "t",
         // Third round oracles

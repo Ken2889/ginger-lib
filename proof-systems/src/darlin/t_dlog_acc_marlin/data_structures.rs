@@ -363,7 +363,7 @@ impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for Proof<G1, G
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 4;
-        let comms_per_round = vec![4, 3, 2, 1];
+        let comms_per_round = vec![3, 3, 2, 1];
 
         // Check commitments are grouped into correct num_rounds
         if self.commitments.len() != num_rounds {
@@ -507,7 +507,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![4, 3, 2, 1];
+        let comms_per_round = vec![3, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -547,7 +547,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![4, 3, 2, 1];
+        let comms_per_round = vec![3, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -588,7 +588,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![4, 3, 2, 1];
+        let comms_per_round = vec![3, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {
@@ -632,7 +632,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
     ) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
-        let comms_per_round = vec![4, 3, 2, 1];
+        let comms_per_round = vec![3, 3, 2, 1];
         let mut commitments = Vec::with_capacity(num_rounds);
 
         for i in 0..num_rounds {

@@ -121,7 +121,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     fn fiat_shamir_rng_init(
         pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
         index_vk: &VerifierKey<G1, G2, D>,
-        public_input: &Vec<G1::ScalarField>,
+        x_poly_comm: &<PC<G1, D> as PolynomialCommitment<G1>>::Commitment,
         inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         dlog_acc: &DualDLogItem<G2, G1>,
     ) -> Result<<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle, poly_commit::error::Error>
@@ -135,7 +135,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             seed_builder.add_bytes(inner_sumcheck_acc)?;
             seed_builder.add_bytes(dlog_acc)?;
             seed_builder.add_bytes(&index_vk.index_comms)?;
-            seed_builder.add_bytes(public_input)?;
+            seed_builder.add_bytes(x_poly_comm)?;
 
             seed_builder.finalize()
         };
@@ -169,9 +169,17 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         let zk_rng = &mut OptionalRng(zk_rng);
         let prover_time = start_timer!(|| "Marlin::Prover");
 
-        let prover_init_state =
+        let (prover_init_oracles, prover_init_state) =
             IOP::prover_init(&index_pk.index_vk.index, c, previous_inner_sumcheck_acc)?;
-        let public_input = prover_init_state.public_input();
+
+        let x_poly_comm_time = start_timer!(|| "Committing to input poly");
+        let (init_comms, init_comm_rands) = <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
+            pc_pk,
+            prover_init_oracles.iter(),
+            None,
+        )
+        .map_err(Error::from_pc_err)?;
+        end_timer!(x_poly_comm_time);
 
         let verifier_init_state = IOP::verifier_init(
             &index_pk.index_vk.index.index_info,
@@ -181,7 +189,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         let mut fs_rng = Self::fiat_shamir_rng_init(
             pc_pk,
             &index_pk.index_vk,
-            &public_input,
+            init_comms[0].commitment(),
             previous_inner_sumcheck_acc,
             previous_dlog_acc,
         )
@@ -318,22 +326,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         ];
 
         // Gather prover polynomials in one vector.
-        let polynomials: Vec<_> = prover_first_oracles
+        let polynomials: Vec<_> = prover_init_oracles
             .iter()
+            .chain(prover_first_oracles.iter())
             .chain(prover_second_oracles.iter())
             .chain(prover_third_oracles.iter())
             .chain(prover_fourth_oracles.iter())
             .chain(prover_accumulator_oracles.iter())
             .collect();
-
-        // Gather commitments in one vector.
-        #[rustfmt::skip]
-        let commitments = vec![
-            first_comms.iter().map(|p| p.commitment().clone()).collect(),
-            second_comms.iter().map(|p| p.commitment().clone()).collect(),
-            third_comms.iter().map(|p| p.commitment().clone()).collect(),
-            fourth_comms.iter().map(|p| p.commitment().clone()).collect(),
-        ];
 
         let labeled_comms: Vec<_> = index_pk
             .index_vk
@@ -341,6 +341,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .cloned()
             .zip(&IOP::<G1, G2>::INDEXER_POLYNOMIALS)
             .map(|(c, l)| LabeledCommitment::new(l.to_string(), c))
+            .chain(init_comms.iter().cloned())
             .chain(first_comms.iter().cloned())
             .chain(second_comms.iter().cloned())
             .chain(third_comms.iter().cloned())
@@ -355,12 +356,24 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .index_comm_rands
             .clone()
             .into_iter()
+            .chain(init_comm_rands)
             .chain(first_comm_rands)
             .chain(second_comm_rands)
             .chain(third_comm_rands)
             .chain(fourth_comm_rands)
             .chain(accumulator_comm_rands)
             .collect();
+
+        // Gather commitments in one vector.
+        // The commitment of the input poly is not included in the proof, because it needs to be
+        // recomputed by the verifier anyways.
+        #[rustfmt::skip]
+            let commitments = vec![
+            first_comms.iter().map(|p| p.commitment().clone()).collect(),
+            second_comms.iter().map(|p| p.commitment().clone()).collect(),
+            third_comms.iter().map(|p| p.commitment().clone()).collect(),
+            fourth_comms.iter().map(|p| p.commitment().clone()).collect(),
+        ];
 
         // Set up the IOP verifier's query set.
         let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
@@ -479,19 +492,30 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
-        let public_input = public_input.to_vec();
-
         let verifier_init_state =
             IOP::verifier_init(&index_vk.index.index_info, prev_inner_sumcheck_acc)?;
+
+        let x_poly_comm = index_vk
+            .lagrange_comms
+            .iter()
+            .zip(IOP::<G1, G2>::format_public_input(&public_input).iter())
+            .map(|(g, x)| g.clone() * x)
+            .reduce(|a, b| a + b)
+            .expect("public input should include at least one element");
 
         let mut fs_rng = Self::fiat_shamir_rng_init(
             pc_vk,
             index_vk,
-            &public_input,
+            &x_poly_comm,
             prev_inner_sumcheck_acc,
             prev_dlog_acc,
         )
         .map_err(Error::from_pc_err)?;
+
+        /*  The commitment of the input poly is not included in the proof, because it needs to be
+           recomputed by the verifier anyways
+        */
+        let init_comms = vec![x_poly_comm];
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -526,8 +550,9 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         ];
 
         // Gather commitments in one vector.
-        let commitments: Vec<_> = first_comms
-            .into_iter()
+        let commitments: Vec<_> = init_comms
+            .iter()
+            .chain(first_comms)
             .chain(second_comms)
             .chain(third_comms)
             .chain(fourth_comms)
@@ -549,25 +574,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
         for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
             evaluations.insert(((q.0).0, q.1), *eval);
-        }
-
-        // Check that the polynomial behind the commitment of the `x` poly from the first round is
-        // indeed the (formatted) input polynomial.
-        // This is done by performing a MSM between the `lagrange_comms` and the (formatted) input
-        // poly and comparing the result with the aforementioned commitment.
-        let x_poly_comm = index_vk
-            .lagrange_comms
-            .iter()
-            .zip(IOP::<G1, G2>::format_public_input(&public_input).iter())
-            .map(|(g, x)| g[0] * x)
-            .reduce(|a, b| a + b)
-            .expect("public input should include at least one element");
-
-        if x_poly_comm != first_comms[0][0] {
-            end_timer!(iop_verification_time);
-            return Err(Error::Other(
-                "Public input not coherent with commitment of x poly inside proof".to_string(),
-            ));
         }
 
         let result = IOP::verify_outer_sumcheck(&public_input, &evaluations, &verifier_state);

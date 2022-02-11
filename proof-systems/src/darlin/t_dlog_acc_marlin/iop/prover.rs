@@ -22,6 +22,9 @@ pub struct ProverState<'a, G1: Curve, G2: Curve> {
     formatted_input_assignment: Vec<G1::ScalarField>,
     witness_assignment: Vec<G1::ScalarField>,
 
+    // the polynomial associated to the formatted public input.
+    x_poly: LabeledPolynomial<G1::ScalarField>,
+
     // the witness polynomial w(X), normalized by the vanishing polynomial of
     // the input domain, such that y(X) = x(X) + w(X)*Z_I(X).
     w_poly: Option<LabeledPolynomial<G1::ScalarField>>,
@@ -62,10 +65,19 @@ impl<'a, G1: Curve, G2: Curve> ProverState<'a, G1, G2> {
     }
 }
 
-/// The first set of prover oracles.
-pub struct ProverFirstOracles<F: Field> {
+pub struct ProverInitOracles<F: Field> {
     /// The public input polynomial `x`
     pub x: LabeledPolynomial<F>,
+}
+
+impl<F: Field> ProverInitOracles<F> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+        vec![&self.x].into_iter()
+    }
+}
+
+/// The first set of prover oracles.
+pub struct ProverFirstOracles<F: Field> {
     /// The randomized witness polynomial `w`.
     pub w: LabeledPolynomial<F>,
     /// The randomized y_A(X)= Sum_{z in H} A(X,z)*y(z)
@@ -77,7 +89,7 @@ pub struct ProverFirstOracles<F: Field> {
 impl<F: Field> ProverFirstOracles<F> {
     /// Iterate over the polynomials output by the prover in the first round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.x, &self.w, &self.y_a, &self.y_b].into_iter()
+        vec![&self.w, &self.y_a, &self.y_b].into_iter()
     }
 }
 
@@ -149,7 +161,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         index: &'a Index<G1, G2>,
         c: C,
         inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
-    ) -> Result<ProverState<'a, G1, G2>, Error> {
+    ) -> Result<(ProverInitOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -184,11 +196,20 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let domain_x = get_best_evaluation_domain::<G1::ScalarField>(num_input_variables)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        end_timer!(init_time);
+        let x_time = start_timer!(|| "Computing x polynomial and evals");
+        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
+            formatted_input_assignment.clone(),
+            domain_x.clone(),
+        )
+        .interpolate();
+        let x_poly = LabeledPolynomial::new("x".to_string(), x_poly, false);
 
-        Ok(ProverState {
+        end_timer!(x_time);
+
+        let prover_state = ProverState {
             formatted_input_assignment,
             witness_assignment,
+            x_poly: x_poly.clone(),
             w_poly: None,
             my_polys: None,
             index,
@@ -196,14 +217,18 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             inner_sumcheck_acc,
             domain_h,
             domain_x,
-        })
+        };
+
+        let oracles = ProverInitOracles { x: x_poly };
+
+        end_timer!(init_time);
+
+        Ok((oracles, prover_state))
     }
 
     /// Prover first round of the algebraic oracle proof, the initial round in [HGB].
     /// Determines the oracles for the witness-related polynomials
     ///   `w(X)`, `y_A(X)` and `y_B(X)`
-    /// And for the input polynomial
-    ///   `x(X)`.
     /// [HGB]: https://eprint.iacr.org/2021/930
     pub fn prover_first_round<'a, R: RngCore>(
         mut state: ProverState<'a, G1, G2>,
@@ -212,16 +237,11 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     ) -> Result<(ProverFirstOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
-
-        let x_time = start_timer!(|| "Computing x polynomial and evals");
         let domain_x = &state.domain_x;
-        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
-            state.formatted_input_assignment.clone(),
-            domain_x.clone(),
-        )
-        .interpolate();
+
+        let x_time = start_timer!(|| "Computing x polynomial evaluations");
         // Evaluate the input polynomial x(X) over H.
-        let x_evals = domain_h.fft(&x_poly);
+        let x_evals = domain_h.fft(&state.x_poly.polynomial());
         end_timer!(x_time);
 
         /* Compute the normalized witness polynomial w(X) which allows easy
@@ -323,18 +343,15 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         };
         end_timer!(y_b_poly_time);
 
-        assert!(x_poly.degree() <= domain_x.size() - 1);
         assert!(w_poly.degree() <= domain_h.size() - domain_x.size() + zk as usize - 1);
         assert!(y_a_poly.degree() <= domain_h.size() + zk as usize - 1);
         assert!(y_b_poly.degree() <= domain_h.size() + zk as usize - 1);
 
-        let x = LabeledPolynomial::new("x".to_string(), x_poly, false);
         let w = LabeledPolynomial::new("w".to_string(), w_poly, zk);
         let y_a = LabeledPolynomial::new("y_a".to_string(), y_a_poly, zk);
         let y_b = LabeledPolynomial::new("y_b".to_string(), y_b_poly, zk);
 
         let oracles = ProverFirstOracles {
-            x: x.clone(),
             w: w.clone(),
             y_a: y_a.clone(),
             y_b: y_b.clone(),
@@ -395,11 +412,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             ))?
         }
         Ok(step)
-    }
-
-    /// Output the number of oracles sent by the prover in the first round.
-    pub fn prover_num_first_round_oracles() -> usize {
-        4
     }
 
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
@@ -644,11 +656,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         Ok((oracles, state))
     }
 
-    /// Output the number of oracles sent by the prover in the second round.
-    pub fn prover_num_second_round_oracles() -> usize {
-        3
-    }
-
     /// Prover third round of the algebraic oracle proof.
     /// It is the first round of the inner-sumcheck aggregation.
     pub fn prover_third_round<'a>(
@@ -731,11 +738,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         Ok((oracles, state))
     }
 
-    /// Output the number of oracles sent by the prover in the third round.
-    pub fn prover_num_third_round_oracles() -> usize {
-        2
-    }
-
     /// Prover fourth round of the algebraic oracle proof.
     /// It is the second round of the inner-sumcheck aggregation.
     pub fn prover_fourth_round<'a>(
@@ -795,10 +797,5 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         end_timer!(round_time);
 
         Ok((oracles, state))
-    }
-
-    /// Output the number of oracles sent by the prover in the fourth round.
-    pub fn prover_num_fourth_round_oracles() -> usize {
-        1
     }
 }
