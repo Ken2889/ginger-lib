@@ -69,17 +69,18 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
         mut cs: CS,
         num: usize
     ) -> Result<Vec<[Boolean; 128]>, SynthesisError> {
-        (0..num).map(|i| {
-            let chal_bits = <Self as AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>>::enforce_squeeze_bits(
-                self,
-                cs.ns(|| format!("squeeze 128 bits chal {}", i)),
-                128
-            )?;
+        let chal_bits = <Self as AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>>::enforce_squeeze_bits(
+            self,
+            cs.ns(|| format!("squeeze {} 128 bits chals", num)),
+            128 * num
+        )?;
 
-            let chal_bits: [Boolean; 128] = chal_bits.try_into().unwrap(); // Cannot fail as we explicitly squeeze 128 bits
-
-            Ok(chal_bits)
-        }).collect()   
+        Ok(
+            chal_bits
+                .chunks_exact(128)
+                .map(|chunk| chunk.to_vec().try_into().unwrap())
+                .collect()
+        )
     }
 }
 

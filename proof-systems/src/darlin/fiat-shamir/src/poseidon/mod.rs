@@ -43,24 +43,24 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
         Ok(self)
     }
 
-    fn squeeze<F: PrimeField>(&mut self) -> F
+    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Vec<F>
     {
         // We allow only squeezing native field elements
         assert!(check_field_equals::<F, SpongeF>());
 
         // Squeeze field elements
-        let fes = <Self as AlgebraicSponge<SpongeF>>::squeeze(self, 1);
+        let fes = <Self as AlgebraicSponge<SpongeF>>::squeeze(self, num);
 
         // Cast to SpongeF and return
-        (unsafe { std::mem::transmute::<Vec<SpongeF>, Vec<F>>(fes) })[0]
+        unsafe { std::mem::transmute::<Vec<SpongeF>, Vec<F>>(fes) }
     }
 
-    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField {
+    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Vec<G::ScalarField> {
         // Squeeze 128 bits from the sponge
-        let bits = self.squeeze_bits(128);
+        let bits = self.squeeze_bits(num * 128);
 
         // Return an endo scalar out of them
-        G::endo_rep_to_scalar(bits).expect("Should be able to get endo scalar")
+        bits.chunks(128).flat_map(|bits| G::endo_rep_to_scalar(bits.to_vec())).collect()
     }
 
     fn get_state(&self) -> Self::State {

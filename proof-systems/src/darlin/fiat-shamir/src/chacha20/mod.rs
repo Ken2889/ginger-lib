@@ -102,12 +102,12 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     }
 
     /// Squeeze a new random field element, changing the internal state.
-    fn squeeze<F: PrimeField>(&mut self) -> F {
-        F::rand(self)
+    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Vec<F> {
+        (0..num).map(|_| F::rand(self)).collect()
     }
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
-    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField {
-        self.gen_range(1u128..=u128::MAX).into()
+    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Vec<G::ScalarField> {
+        (0..num).map(|_| self.gen_range(1u128..=u128::MAX).into()).collect()
     }
 }
