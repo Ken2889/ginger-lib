@@ -120,7 +120,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     /// A batch evaluation proof in the sense of Boneh (et al.) contains an additional commitment.
     type MultiPointProof: PCMultiPointProof<G, Proof = Self::Proof, Commitment = Self::Commitment>;
     /// The error type for the scheme.
-    type Error: std::error::Error + From<Error>;
+    type Error: std::error::Error + From<Error> + From<fiat_shamir::error::Error>;
     /// The stateful Fiat-Shamir random number generator.
     type RandomOracle: FiatShamirRng;
 
@@ -557,7 +557,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
         // as the statement/assertion of the opening proof is already bound to the interal state
         // of the fr_rng, we simply squeeze the challenge scalar for the random linear combination
-        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
         let mut cur_challenge = G::ScalarField::one();
 
         // compute the random linear combination using the powers of lambda
@@ -644,7 +644,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
         // as the statement of the opening proof is already bound to the interal state of the fs_rng,
         // we simply squeeze the challenge scalar for the random linear combination
-        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
         let mut cur_challenge = G::ScalarField::one();
 
         let mut has_hiding = false;
@@ -745,7 +745,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         fs_rng
             .absorb(h_commitment.clone())
             .map_err(Error::FiatShamirTransformError)?;
-        let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
+        let x_point = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         // Assert x_point != x_1, ..., x_m
         // This is needed as we use a slightly optimized LC, which costs one
@@ -821,7 +821,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let mut combined_commitment = Self::Commitment::zero();
         let mut combined_value = G::ScalarField::zero();
 
-        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
         let mut cur_challenge = G::ScalarField::one();
 
         let labeled_commitments_iter = labeled_commitments.into_iter();
@@ -870,7 +870,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             .collect();
 
         // lambda
-        let lambda = fs_rng.squeeze_128_bits_challenge::<G>();
+        let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
@@ -878,7 +878,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             .absorb(multi_point_proof.get_h_commitment().clone())
             .map_err(Error::FiatShamirTransformError)?;
             
-        let x_point = fs_rng.squeeze_128_bits_challenge::<G>();
+        let x_point = fs_rng.squeeze_128_bits_challenge::<G>()?;
         
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
         let mut lc_commitment = Self::Commitment::zero();

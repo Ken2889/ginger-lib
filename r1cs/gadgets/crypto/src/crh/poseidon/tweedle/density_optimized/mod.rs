@@ -585,6 +585,78 @@ where
         }
         Ok(())
     }
+
+    fn _enforce_absorb<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        elems: Vec<FpGadget<ConstraintF>>,
+    ) -> Result<(), SynthesisError>
+    {
+        match self.mode {
+            SpongeMode::Absorbing => {
+                // If we were absorbing keep doing it
+                elems.iter().enumerate().map(|(i, f)| {
+                    self.enforce_update(cs.ns(|| format!("update_{}", i)), f.clone())
+                }).collect::<Result<(), SynthesisError>>()?;
+            },
+
+            SpongeMode::Squeezing => {
+                // If we were squeezing, change the mode into absorbing
+                self.mode = SpongeMode::Absorbing;
+                self._enforce_absorb(cs, elems)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn _enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        num: usize
+    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> 
+    {
+        let mut outputs = Vec::with_capacity(num);
+
+        if num > 0 {
+            match self.mode {
+                SpongeMode::Absorbing => {
+                    // If pending is empty and we were in absorbing, it means that a Poseidon
+                    // permutation was applied just before calling squeeze(), (unless you absorbed
+                    // nothing, but that is handled) therefore it's wasted to apply another
+                    // permutation, and we can directly add state[0] to the outputs
+                    // If pending is not empty and we were absorbing, then we need to add the
+                    // pending elements to the state and then apply a permutation
+                    if !self.pending.is_empty() {
+                        self.enforce_permutation(
+                            cs.ns(|| "permutation")
+                        )?;
+                    }
+                    outputs.push(self.state[0].clone());
+                    
+                    self.mode = SpongeMode::Squeezing;
+                    outputs.append(&mut self._enforce_squeeze(
+                        cs.ns(|| "squeeze remaining elements"),
+                        num - 1
+                    )?);
+                },
+
+                // If we were squeezing, then squeeze the required number of field elements
+                SpongeMode::Squeezing => {
+                    debug_assert!(self.pending.is_empty());
+
+                    for i in 0..num {
+                        DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::poseidon_perm(
+                            cs.ns(|| format!("poseidon_perm_{}", i)),
+                            &mut self.state
+                        )?;
+                        outputs.push(self.state[0].clone());
+                    }
+                }
+            }
+        }
+        Ok(outputs)
+    }
 }
 
 // AlgebraicSpongeGadget trait implementation
@@ -616,8 +688,8 @@ where
         })
     }
 
-    fn get_state(&self) -> &[FpGadget<ConstraintF>] {
-        &self.state
+    fn get_state(&self) -> Vec<FpGadget<ConstraintF>> {
+        self.state.clone()
     }
 
     fn set_state(&mut self, state: Vec<FpGadget<ConstraintF>>) {
@@ -641,71 +713,27 @@ where
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
         AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-{
+    {
         let elems = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
-        if elems.len() > 0 {
-            match self.mode {
-
-                SpongeMode::Absorbing => {
-                    elems.iter().enumerate().map(|(i, f)| {
-                        self.enforce_update(cs.ns(|| format!("update_{}", i)), f.clone())
-                    }).collect::<Result<(), SynthesisError>>()?;
-                },
-
-                SpongeMode::Squeezing => {
-                    self.mode = SpongeMode::Absorbing;
-                    self.enforce_absorb(cs, elems)?;
-                }
-            }
+        
+        if elems.is_empty() {
+            return Err(SynthesisError::Other("Noting to absorb !".to_string()));
         }
 
-        Ok(())
+        self._enforce_absorb(cs, elems)
     }
 
     fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
-        mut cs: CS,
+        cs: CS,
         num: usize
     ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> 
     {
-        let mut outputs = Vec::with_capacity(num);
-
-        if num > 0 {
-            match self.mode {
-                SpongeMode::Absorbing => {
-
-                    if self.pending.len() == 0 {
-                        outputs.push(self.state[0].clone());
-                    } else {
-                        self.enforce_permutation(
-                            cs.ns(|| "permutation")
-                        )?;
-
-                        outputs.push(self.state[0].clone());
-                    }
-                    self.mode = SpongeMode::Squeezing;
-                    outputs.append(&mut self.enforce_squeeze(
-                        cs.ns(|| "squeeze remaining elements"),
-                        num - 1
-                    )?);
-                },
-
-                // If we were squeezing, then squeeze the required number of field elements
-                SpongeMode::Squeezing => {
-                    for i in 0..num {
-                        debug_assert!(self.pending.len() == 0);
-
-                        DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::poseidon_perm(
-                            cs.ns(|| format!("poseidon_perm_{}", i)),
-                            &mut self.state
-                        )?;
-
-                        outputs.push(self.state[0].clone());
-                    }
-                }
-            }
+        if num == 0 {
+            return Err(SynthesisError::Other("Nothing to squeeze !".to_string()));
         }
-        Ok(outputs)
+
+        self._enforce_squeeze(cs, num)
     }
 }
 
@@ -777,11 +805,56 @@ pub type TweedleFqDensityOptimizedPoseidonSpongeGadget = DensityOptimizedPoseido
 
 #[cfg(test)]
 mod test {
-    use rand::SeedableRng;
+    use primitives::FieldBasedHashParameters;
+    use r1cs_core::ConstraintSystem;
+    use rand::{SeedableRng, RngCore};
     use rand_xorshift::XorShiftRng;
     use crate::crh::test::{constant_length_field_based_hash_gadget_native_test, algebraic_sponge_gadget_test};
 
     use super::*;
+
+    // TODO: Is the behavior of this implementation of Sponge consistent with its specifications as crypto primitive ?
+    //       Maybe it has to do with definition of state: the whole Sponge state should include also the pending elements
+    //       formally.
+    fn poseidon_sponge_gadget_test<ConstraintF, P, DOP, R>(rate: usize, rng: &mut R)
+    where
+        ConstraintF: PrimeField,
+        P:           PoseidonParameters<Fr = ConstraintF>,
+        DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
+        R:           RngCore,
+    {
+        let mut cs = ConstraintSystem::<ConstraintF>::new(r1cs_core::SynthesisMode::Debug);
+        let mut sponge = DensityOptimizedPoseidonQuinticSboxSpongeGadget::<ConstraintF, P, DOP>::new(cs.ns(|| "init sponge")).unwrap();
+        let mut prev_state = sponge.get_state();
+
+        let fes = (0..rate)
+            .map(|i| FpGadget::alloc(
+                cs.ns(|| format!("alloc random fe {}", i)),
+                || Ok(ConstraintF::rand(rng))
+            ).unwrap()).collect::<Vec<_>>();
+
+        // Assert that, before absorbing rate elements, state doesn't change.
+        sponge.enforce_absorb(cs.ns(|| "absorb rate - 1 elems"), fes[..rate-1].to_vec()).unwrap();
+        assert_eq!(sponge.get_state(), prev_state.clone());
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
+        prev_state = sponge.get_state();
+
+        // After having absorbed rate elements a permutation is triggered and the state changes
+        sponge.enforce_absorb(cs.ns(|| "absorb one more element to reach rate many"), fes[rate - 1].clone()).unwrap();
+        assert_ne!(sponge.get_state(), prev_state.clone());
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
+        prev_state = sponge.get_state();
+
+        // Assert that, calling squeeze() after absorbing rate elements doesn't change the state.
+        sponge.enforce_squeeze(cs.ns(|| "squeeze after permutation"), 1).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
+        assert_eq!(prev_state.clone(), sponge.get_state());
+
+        // Assert that the next squeeze() should instead change the state
+        sponge.enforce_squeeze(cs.ns(|| "squeeze one more"), 1).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
+        assert_ne!(prev_state, sponge.get_state());
+    }
 
     #[test]
     fn test_density_optimized_tweedle_fr_poseidon() {
@@ -791,6 +864,11 @@ mod test {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrDensityOptimizedPoseidonHashGadget, _>(rng, ins);
             algebraic_sponge_gadget_test::<Fq, Fr, _, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
         }
+
+        poseidon_sponge_gadget_test::<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters, _>(
+            TweedleFrPoseidonParameters::R,
+            rng
+        );
     }
 
     #[test]
@@ -801,5 +879,10 @@ mod test {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqDensityOptimizedPoseidonHashGadget, _>(rng, ins);
             algebraic_sponge_gadget_test::<Fr, Fq, _, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
         }
+
+        poseidon_sponge_gadget_test::<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters, _>(
+            TweedleFqPoseidonParameters::R,
+            rng
+        );
     }
 }

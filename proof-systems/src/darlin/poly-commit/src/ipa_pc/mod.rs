@@ -134,7 +134,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         fs_rng.absorb(values)?;
 
         // Sample new batching challenge
-        let random_scalar = fs_rng.squeeze_128_bits_challenge::<G>();
+        let random_scalar = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -316,7 +316,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // the deterministically derived combined_commitment and its combined_v.
             fs_rng.absorb(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
@@ -334,7 +334,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -390,7 +390,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // no need to absorb it
             fs_rng.absorb([lr[0], lr[1]])?;
 
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
             // round_challenge is guaranteed to be non-zero by squeeze function
             let round_challenge_inv = round_challenge.inverse().unwrap();
 
@@ -468,7 +468,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             let rand = proof.rand.unwrap();
 
             fs_rng.absorb(hiding_comm)?;
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
             fs_rng.absorb(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
@@ -477,7 +477,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -488,7 +488,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.absorb([*l, *r])?;
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>();
+            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
             round_challenges.push(round_challenge);
 

@@ -252,7 +252,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         /* Preparations before entering the batch evaluation proof
          */
 
-        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng)?;
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_pk
@@ -440,7 +440,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let third_comms = &proof.commitments[2];
         fs_rng.absorb(third_comms.clone())?;
 
-        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng)?;
 
         // Gather commitments in one vector.
         let commitments: Vec<_> = index_vk

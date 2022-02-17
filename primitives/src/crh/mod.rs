@@ -167,7 +167,7 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
     /// The internal state of the Sponge
     type State: Clone + Eq + PartialEq + std::fmt::Debug;
 
-    /// Initialize the sponge
+    /// Initialize the sponge in absorbing mode
     fn init() -> Self;
 
     /// Get the sponge internal state
@@ -183,13 +183,16 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
     fn set_mode(&mut self, mode: SpongeMode);
 
     /// Absorb field elements belonging to F.
-    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A);
+    /// If 'to_absorb' is empty an Error should be thrown and state consistency should be assured.
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
 
     /// Squeeze field elements belonging to SpongeF.
-    fn squeeze(&mut self, num: usize) -> Vec<SpongeF>;
+    /// If 'num' == 0 an Error should be thrown and state consistency should be assured.
+    fn squeeze(&mut self, num: usize) -> Result<Vec<SpongeF>, Error>;
 
     /// Squeeze 'num_bits' from this sponge
-    fn squeeze_bits(&mut self, num_bits: usize) -> Vec<bool> {
+    /// If 'num_bits' == 0 an Error should be thrown and state consistency should be assured.
+    fn squeeze_bits(&mut self, num_bits: usize) -> Result<Vec<bool>, Error> {
         // We return a certain amount of bits by squeezing field elements instead,
         // serialize them and return their bits.
 
@@ -198,7 +201,7 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
         // comes handy as in the circuit we don't need to enforce range proofs for them.
         let usable_bits = SpongeF::Params::CAPACITY as usize; 
         let num_elements = (num_bits + usable_bits - 1) / usable_bits;
-        let src_elements = self.squeeze(num_elements);
+        let src_elements = self.squeeze(num_elements)?;
 
         // Serialize field elements into bits and return them
         let mut dest_bits: Vec<bool> = Vec::with_capacity(num_bits);
@@ -209,7 +212,7 @@ pub trait AlgebraicSponge<SpongeF: PrimeField>: Clone
             let elem_bits = elem.write_bits();
             dest_bits.extend_from_slice(&elem_bits[skip..]);
         }
-        dest_bits[..num_bits].to_vec()
+        Ok(dest_bits[..num_bits].to_vec())
     }
 
     /// Reset the sponge to its initial state
@@ -323,43 +326,50 @@ mod test {
     pub(crate) fn algebraic_sponge_consistency_test<H: AlgebraicSponge<F1>, F1: PrimeField, F2: PrimeField, R: RngCore>(rng: &mut R, expected_output: F1)
     {
         let mut sponge = H::init();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
         // Absorb random native field elements
         let to_absorb = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(to_absorb);
+        sponge.absorb(to_absorb).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
         // Absorb random non native field elements
         let to_absorb = (0..10).map(|_| F2::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(to_absorb);
+        sponge.absorb(to_absorb).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
         // Absorb random bytes
         let to_absorb = (0..100).map(|_| rng.gen()).collect::<Vec<u8>>();
-        sponge.absorb::<F1, _>(to_absorb.as_slice());
+        sponge.absorb::<F1, _>(to_absorb.as_slice()).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
-        let out: F1 = sponge.squeeze(1)[0];
+        let out: F1 = sponge.squeeze(1).unwrap()[0];
         assert_eq!(out, expected_output);
+        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
         // println!("{:?}", out);
 
         // Check that calling squeeze() multiple times without absorbing
         // changes the output
         let mut prev = out;
         for _ in 0..100 {
-            let curr = sponge.squeeze(1)[0];
+            let curr = sponge.squeeze(1).unwrap()[0];
+            assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
             assert!(prev != curr);
             prev = curr;
         }
 
         // Check squeeze() outputs the correct number of field elements
         // all different from each others
-        for i in 0..=10 {
+        for i in 1..=10 {
             let mut set = std::collections::HashSet::new();
             let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-            sponge.absorb(random_fes);
+            sponge.absorb(random_fes).unwrap();
+            assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
             // Native squeeze test
-            let outs: Vec<F1> = sponge.squeeze(i);
+            let outs: Vec<F1> = sponge.squeeze(i).unwrap();
+            assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
             assert_eq!(i, outs.len());
-
 
             // HashSet::insert(val) returns false if val was already present, so to check
             // that all the elements output by the sponge are different, we assert insert()
@@ -368,48 +378,38 @@ mod test {
         }
 
         // Check squeeze_bits() outputs the correct number of bits
-        for i in 0..=10 {
+        for i in 1..=10 {
             let random_fes = (0..i).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-            sponge.absorb(random_fes);
+            sponge.absorb(random_fes).unwrap();
+            assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
 
             // Native squeeze bits test
-            let out_bits: Vec<bool> = sponge.squeeze_bits(i * 10);
+            let out_bits: Vec<bool> = sponge.squeeze_bits(i * 10).unwrap();
             assert_eq!(i * 10, out_bits.len());
+            assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
 
-            if i > 0 {
-                // Bits shouldn't be all 0 with overwhelming probabiltiy
-                assert!(!out_bits.iter().all(|bit| !bit));
+            // Bits shouldn't be all 0 with overwhelming probabiltiy
+            assert!(!out_bits.iter().all(|bit| !bit));
 
-                // Bits shouldn't be all 1 with overwhelming probabiltiy
-                assert!(!out_bits.into_iter().all(|bit| bit));
-            }
+            // Bits shouldn't be all 1 with overwhelming probabiltiy
+            assert!(!out_bits.into_iter().all(|bit| bit));
         }
 
-        //Test edge cases. Assumption: R = 2
+        //Test edge cases.
         sponge.reset();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
+
+        let prev_state = sponge.get_state();
 
         // Absorb nothing. Check that the internal state is not changed.
-        let prev_state = sponge.get_state();
-        sponge.absorb(Vec::<F1>::new());
+        assert!(sponge.absorb(Vec::<F1>::new()).is_err());
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
         assert_eq!(prev_state, sponge.get_state());
 
         // Squeeze nothing. Check that the internal state is not changed.
-        let prev_state = sponge.get_state();
-        sponge.squeeze(0);
+        assert!(sponge.squeeze(0).is_err());
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
         assert_eq!(prev_state, sponge.get_state());
-
-        // Absorb up to rate elements and trigger a permutation. Assert that calling squeeze()
-        // afterwards won't trigger another permutation.
-        let fes = (0..2).map(|_| F1::rand(rng)).collect::<Vec<_>>();
-        sponge.absorb(fes);
-        let prev_state = sponge.get_state();
-        sponge.squeeze(1);
-        let curr_state = sponge.get_state();
-        assert_eq!(prev_state, curr_state);
-
-        // The next squeeze() should instead change the state
-        sponge.squeeze(1);
-        assert!(curr_state != sponge.get_state());
     }
 
     #[ignore]

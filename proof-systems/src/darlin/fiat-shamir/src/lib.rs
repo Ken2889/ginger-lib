@@ -88,14 +88,14 @@ pub trait FiatShamirRng: Sized + Default {
     fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
 
     /// Squeeze a new random field element, changing the internal state.
-    fn squeeze<F: PrimeField>(&mut self) -> F {
-        self.squeeze_many(1)[0]
+    fn squeeze<F: PrimeField>(&mut self) -> Result<F, Error> {
+        Ok(self.squeeze_many(1)?[0])
     }
 
     /// Squeeze 'num' many random field elements, changing the internal state.
     /// Depending on the internal implementation, it might be more
     /// efficient than calling 'squeeze()' num times.
-    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Vec<F>;
+    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Result<Vec<F>, Error>;
 
     /// Squeeze a new random field element having bit length of 128, changing the internal state.
     /// NOTE: We require the G: EndoMulCurve generic for backward compatibility reasons: we don't
@@ -104,14 +104,14 @@ pub trait FiatShamirRng: Sized + Default {
     ///       squeeze a endo scalar in case of circuit friendly implementation and it will be simply
     ///       ignored by a non circuit friendly implementation.
     /// TODO: Can we do better ?
-    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> G::ScalarField {
-        self.squeeze_many_128_bits_challenges::<G>(1)[0]
+    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> Result<G::ScalarField, Error> {
+        Ok(self.squeeze_many_128_bits_challenges::<G>(1)?[0])
     }
 
     /// Squeeze 'num' many random field elements having bit length of 128, changing the internal state.
     /// Depending on the internal implementation, it might be more efficient than calling
     /// 'squeeze_128_bits_challenge' num times.
-    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Vec<G::ScalarField>;
+    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Result<Vec<G::ScalarField>, Error>;
 
     /// Get the internal state in the form of an instance of `Self::Seed`.
     fn get_state(&self) -> Self::State;

@@ -24,9 +24,8 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
             .to_field_elements()
             .map_err(|e| Error::BadFiatShamirInitialization(format!("Unable to convert seed to field elements: {:?}", e)))?;
 
-        seed_fes
-            .into_iter()
-            .for_each(|fe| <Self as AlgebraicSponge<SpongeF>>::absorb(&mut sponge, fe));
+        <Self as AlgebraicSponge<SpongeF>>::absorb(&mut sponge, seed_fes)
+            .map_err(|e| Error::BadFiatShamirInitialization(e.to_string()))?;
 
         // If there are pending elements, add them to the state and apply a permutation
         if sponge.pending.len() != 0 {
@@ -38,29 +37,33 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
     }
 
     fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
-        <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb);
+        <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb)
+            .map_err(|e| Error::AbsorptionError(e.to_string()))?;
 
         Ok(self)
     }
 
-    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Vec<F>
+    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Result<Vec<F>, Error>
     {
         // We allow only squeezing native field elements
         assert!(check_field_equals::<F, SpongeF>());
 
         // Squeeze field elements
-        let fes = <Self as AlgebraicSponge<SpongeF>>::squeeze(self, num);
+        let fes = <Self as AlgebraicSponge<SpongeF>>::squeeze(self, num)
+            .map_err(|e| Error::SqueezeError(e.to_string()))?;
+
 
         // Cast to SpongeF and return
-        unsafe { std::mem::transmute::<Vec<SpongeF>, Vec<F>>(fes) }
+        Ok(unsafe { std::mem::transmute::<Vec<SpongeF>, Vec<F>>(fes) })
     }
 
-    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Vec<G::ScalarField> {
+    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Result<Vec<G::ScalarField>, Error> {
         // Squeeze 128 bits from the sponge
-        let bits = self.squeeze_bits(num * 128);
+        let bits = self.squeeze_bits(num * 128)
+            .map_err(|e| Error::SqueezeError(e.to_string()))?;
 
         // Return an endo scalar out of them
-        bits.chunks(128).flat_map(|bits| G::endo_rep_to_scalar(bits.to_vec())).collect()
+        Ok(bits.chunks(128).flat_map(|bits| G::endo_rep_to_scalar(bits.to_vec())).collect())
     }
 
     fn get_state(&self) -> Self::State {

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use algebra::{Field, PrimeField, ToConstraintField};
 
-use crate::{PoseidonParameters, SBox, SpongeMode, AlgebraicSponge, PoseidonHash};
+use crate::{PoseidonParameters, SBox, SpongeMode, AlgebraicSponge, PoseidonHash, Error};
 
 /// Return true if F1 and F2 are of the same type, false otherwise
 pub fn check_field_equals<F1: Field, F2: Field>() -> bool {
@@ -48,18 +48,51 @@ impl<SpongeF, P, SB> PoseidonSponge<SpongeF, P, SB>
     }
 
     fn _absorb(&mut self, elems: Vec<SpongeF>) {
-        if elems.len() > 0 {
-            match self.mode {
-                // If we were absorbing keep doing it
-                SpongeMode::Absorbing => elems.into_iter().for_each(|f| { self.update(f); }),
+        match self.mode {
+            // If we were absorbing keep doing it
+            SpongeMode::Absorbing => elems.into_iter().for_each(|f| { self.update(f); }),
 
-                // If we were squeezing, change the state into absorbing
+            // If we were squeezing, change the mode into absorbing
+            SpongeMode::Squeezing => {
+                self.mode = SpongeMode::Absorbing;
+                self._absorb(elems);
+            }
+        }
+    }
+
+    fn _squeeze(&mut self, num: usize) -> Vec<SpongeF> {
+        let mut outputs = Vec::with_capacity(num);
+
+        if num > 0 {
+            match self.mode {
+                SpongeMode::Absorbing => {
+                    // If pending is empty and we were in absorbing, it means that a Poseidon
+                    // permutation was applied just before calling squeeze(), (unless you absorbed
+                    // nothing, but that is handled) therefore it's wasted to apply another
+                    // permutation, and we can directly add state[0] to the outputs
+                    // If pending is not empty and we were absorbing, then we need to add the
+                    // pending elements to the state and then apply a permutation
+                    if !self.pending.is_empty() {
+                        self.apply_permutation();
+                    }
+                    outputs.push(self.state[0].clone());
+                    
+                    self.mode = SpongeMode::Squeezing;
+                    outputs.append(&mut self._squeeze(num - 1));
+                },
+
+                // If we were squeezing, then squeeze the required number of field elements
                 SpongeMode::Squeezing => {
-                    self.mode = SpongeMode::Absorbing;
-                    self._absorb(elems);
+                    debug_assert!(self.pending.len() == 0);
+
+                    for _ in 0..num {
+                        PoseidonHash::<SpongeF, P, SB>::poseidon_perm(&mut self.state);
+                        outputs.push(self.state[0].clone());
+                    }
                 }
             }
         }
+        outputs
     }
 
     pub fn get_pending(&self) -> &[SpongeF] {
@@ -118,10 +151,14 @@ impl<SpongeF, P, SB> AlgebraicSponge<SpongeF> for PoseidonSponge<SpongeF, P, SB>
         self.mode = mode;
     }
 
-    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A)
+    fn absorb<F: Field, A: ToConstraintField<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>
     {
         // Get F field elements
-        let fes = to_absorb.to_field_elements().unwrap();
+        let fes = to_absorb.to_field_elements()?;
+
+        if fes.is_empty() {
+            Err("Nothing to absorb !")?
+        }
 
         // Convert to_absorb to native field, if needed
         let elems = {
@@ -141,56 +178,68 @@ impl<SpongeF, P, SB> AlgebraicSponge<SpongeF> for PoseidonSponge<SpongeF, P, SB>
                     .collect::<Vec<_>>();
 
                 // Read native field elements out of them in F::CAPACITY chunks
-                bits.to_field_elements().unwrap()
+                bits.to_field_elements()?
             }
         };
 
         // Perform absorption
         self._absorb(elems);
+
+        Ok(self)
     }
 
-    fn squeeze(&mut self, num: usize) -> Vec<SpongeF> {
-        let mut outputs = Vec::with_capacity(num);
-
-        if num > 0 {
-            match self.mode {
-                SpongeMode::Absorbing => {
-                    // If pending is empty and we were in absorbing, it means that a Poseidon
-                    // permutation was applied just before calling squeeze(), (unless you absorbed
-                    // nothing, but that is handled) therefore it's wasted to apply another
-                    // permutation, and we can directly add state[0] to the outputs
-                    if self.pending.len() == 0 {
-                        outputs.push(self.state[0].clone());
-                    }
-
-                    // If pending is not empty and we were absorbing, then we need to add the
-                    // pending elements to the state and then apply a permutation
-                    else {
-                        self.apply_permutation();
-                        outputs.push(self.state[0].clone());
-                    }
-                    self.mode = SpongeMode::Squeezing;
-                    outputs.append(&mut self.squeeze(num - 1));
-                },
-
-                // If we were squeezing, then squeeze the required number of field elements
-                SpongeMode::Squeezing => {
-                    debug_assert!(self.pending.len() == 0);
-
-                    for _ in 0..num {
-                        PoseidonHash::<SpongeF, P, SB>::poseidon_perm(&mut self.state);
-                        outputs.push(self.state[0].clone());
-                    }
-                }
-            }
+    fn squeeze(&mut self, num: usize) -> Result<Vec<SpongeF>, Error> {
+        if num == 0 {
+            Err("Nothing to squeeze !")?
         }
-        outputs
+
+        Ok(self._squeeze(num))
     }
 }
 
 #[cfg(test)]
 mod test {
+    use rand::RngCore;
     use crate::crh::test::algebraic_sponge_consistency_test;
+    use super::*;
+
+    // TODO: Is the behavior of this implementation of Sponge consistent with its specifications as crypto primitive ?
+    //       Maybe it has to do with definition of state: the whole Sponge state should include also the pending elements
+    //       formally.
+    fn poseidon_sponge_test<SpongeF, P, SB, R>(rate: usize, rng: &mut R)
+    where
+        SpongeF: PrimeField,
+        P: PoseidonParameters<Fr = SpongeF>,
+        SB: SBox<Field = SpongeF, Parameters = P>,
+        R: RngCore,
+    {
+        let mut sponge = PoseidonSponge::<SpongeF, P, SB>::init();
+        let mut prev_state = sponge.get_state();
+
+        let fes = (0..rate).map(|_| SpongeF::rand(rng)).collect::<Vec<_>>();
+
+        // Assert that, before absorbing rate elements, state doesn't change.
+        sponge.absorb(fes[..rate-1].to_vec()).unwrap();
+        assert_eq!(sponge.get_state(), prev_state);
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
+        prev_state = sponge.get_state();
+
+        // After having absorbed rate elements a permutation is triggered and the state changes
+        sponge.absorb(fes[rate - 1]).unwrap();
+        assert_ne!(sponge.get_state(), prev_state);
+        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
+        prev_state = sponge.get_state();
+
+        // Assert that, calling squeeze() after absorbing rate elements doesn't change the state.
+        sponge.squeeze(1).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
+        assert_eq!(prev_state, sponge.get_state());
+
+        // Assert that the next squeeze() should instead change the state
+        sponge.squeeze(1).unwrap();
+        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
+        assert_ne!(prev_state, sponge.get_state());
+    }
 
     #[cfg(feature = "tweedle")]
     #[test]
@@ -198,12 +247,16 @@ mod test {
         use algebra::{fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq}, BigInteger256};
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
-        use crate::crh::poseidon::parameters::tweedle_dee::*;
+        use crate::{crh::poseidon::parameters::tweedle_dee::*, PoseidonQuinticSBox, FieldBasedHashParameters};
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         algebraic_sponge_consistency_test::<TweedleFrPoseidonSponge, TweedleFr, TweedleFq, _>(
             rng,
             TweedleFr::new(BigInteger256([17557730391780768820, 833391141355621901, 9784327965554015212, 4565399072776154451]))
+        );
+        poseidon_sponge_test::<TweedleFr, TweedleFrPoseidonParameters, PoseidonQuinticSBox<TweedleFr, TweedleFrPoseidonParameters>, _>(
+            TweedleFrPoseidonParameters::R,
+            rng,
         );
     }
 
@@ -213,12 +266,16 @@ mod test {
         use algebra::{fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq}, BigInteger256};
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
-        use crate::crh::poseidon::parameters::tweedle_dum::*;
+        use crate::{crh::poseidon::parameters::tweedle_dum::*, PoseidonQuinticSBox, FieldBasedHashParameters};
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         algebraic_sponge_consistency_test::<TweedleFqPoseidonSponge, TweedleFq, TweedleFr, _>(
             rng,
             TweedleFq::new(BigInteger256([15066118701042310099, 6292950449475163714, 12227215585442390780, 2897043864867774388]))
+        );
+        poseidon_sponge_test::<TweedleFq, TweedleFqPoseidonParameters, PoseidonQuinticSBox<TweedleFq, TweedleFqPoseidonParameters>, _>(
+            TweedleFqPoseidonParameters::R,
+            rng,
         );
     }
 }

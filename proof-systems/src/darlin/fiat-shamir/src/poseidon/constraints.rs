@@ -161,8 +161,8 @@ mod test {
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
             (
-                fs_rng.squeeze(),
-                fs_rng.squeeze_128_bits_challenge::<G>(),
+                fs_rng.squeeze().unwrap(),
+                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
             ),
             (
                 fs_rng_g.enforce_squeeze(
@@ -200,8 +200,8 @@ mod test {
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
             (
-                fs_rng.squeeze(),
-                fs_rng.squeeze_128_bits_challenge::<G>(),
+                fs_rng.squeeze().unwrap(),
+                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
             ),
             (
                 fs_rng_g.enforce_squeeze(
@@ -239,8 +239,8 @@ mod test {
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
             (
-                fs_rng.squeeze(),
-                fs_rng.squeeze_128_bits_challenge::<G>(),
+                fs_rng.squeeze().unwrap(),
+                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
             ),
             (
                 fs_rng_g.enforce_squeeze(

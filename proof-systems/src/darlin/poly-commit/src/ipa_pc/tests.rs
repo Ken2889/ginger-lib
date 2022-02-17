@@ -201,8 +201,8 @@ macro_rules! generate_pc_tests {
 
                     assert_eq!(rng1.get_state(), rng2.get_state());
 
-                    let a: Fq = rng1.squeeze();
-                    let b = rng2.squeeze();
+                    let a: Fq = rng1.squeeze().unwrap();
+                    let b = rng2.squeeze().unwrap();
 
                     assert_eq!(a, b);
                     assert_eq!(rng1.get_state(), rng2.get_state());
@@ -212,8 +212,8 @@ macro_rules! generate_pc_tests {
 
                     assert_eq!(rng1.get_state(), rng2.get_state());
 
-                    let a = rng1.squeeze_128_bits_challenge::<TweedleDee>();
-                    let b = rng2.squeeze_128_bits_challenge::<TweedleDee>();
+                    let a = rng1.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
+                    let b = rng2.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
 
                     assert_eq!(a, b);
                     assert_eq!(rng1.get_state(), rng2.get_state());
@@ -239,8 +239,8 @@ macro_rules! generate_pc_tests {
 
                     assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
-                    let a: Fq = fs_rng.squeeze();
-                    let b = malicious_fs_rng.squeeze();
+                    let a: Fq = fs_rng.squeeze().unwrap();
+                    let b = malicious_fs_rng.squeeze().unwrap();
 
                     assert_ne!(a, b);
                     assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
@@ -250,8 +250,8 @@ macro_rules! generate_pc_tests {
 
                     assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
 
-                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
-                    let b = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
+                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
+                    let b = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
 
                     assert_ne!(a, b);
                     assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
@@ -276,8 +276,8 @@ macro_rules! generate_pc_tests {
 
                     assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
 
-                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>();
-                    let b = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>();
+                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
+                    let b = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
 
                     assert_eq!(a, b);
                     assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());

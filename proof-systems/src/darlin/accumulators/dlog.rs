@@ -90,7 +90,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>();
+        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         let comms_values = previous_accumulators
             .into_par_iter()
@@ -267,7 +267,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>();
+        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         // Collect xi_s from the accumulators
         let xi_s = accumulators

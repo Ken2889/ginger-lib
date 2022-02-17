@@ -58,14 +58,14 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let alpha: F = fs_rng.squeeze_128_bits_challenge::<G>();
+        let alpha: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
                 "Sampled an alpha challenge belonging to H domain".to_owned(),
             ))?
         }
 
-        let eta: F = fs_rng.squeeze_128_bits_challenge::<G>();
+        let eta: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
 
         let msg = VerifierFirstMsg { alpha, eta };
 
@@ -86,7 +86,7 @@ impl<F: PrimeField> IOP<F> {
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
-        let beta: F = fs_rng.squeeze_128_bits_challenge::<G>();
+        let beta: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
                 "Sampled a beta challenge belonging to H domain".to_owned(),
@@ -104,10 +104,10 @@ impl<F: PrimeField> IOP<F> {
     pub fn verifier_third_round<R: FiatShamirRng, G: EndoMulCurve<ScalarField = F>>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
-    ) -> VerifierState<F> {
-        let gamma: F = fs_rng.squeeze_128_bits_challenge::<G>();
+    ) -> Result<VerifierState<F>, Error> {
+        let gamma: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
         state.gamma = Some(gamma);
-        state
+        Ok(state)
     }
 
     /// Output the query state and next round state.

@@ -264,33 +264,26 @@ where
 #[cfg(all(test, feature = "tweedle"))]
 mod test {
 
-    use crate::crh::test::{algebraic_sponge_gadget_test, constant_length_field_based_hash_gadget_native_test};
+    use crate::tweedle::*;
+    use crate::crh::test::constant_length_field_based_hash_gadget_native_test;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
     #[test]
     fn poseidon_tweedle_fr_gadget_test() {
-        use crate::tweedle::*;
-        use algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq};
-
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget, _>(rng, ins);
-            algebraic_sponge_gadget_test::<TweedleFq, TweedleFr, _, TweedleFrPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 
     #[test]
     fn poseidon_tweedle_fq_gadget_test() {
-        use crate::tweedle::*;
-        use algebra::fields::tweedle::{Fq as TweedleFq, Fr as TweedleFr};
-
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget, _>(rng, ins);
-            algebraic_sponge_gadget_test::<TweedleFr, TweedleFq, _, TweedleFqPoseidonSpongeGadget, _>(rng, ins);
         }
     }
 }

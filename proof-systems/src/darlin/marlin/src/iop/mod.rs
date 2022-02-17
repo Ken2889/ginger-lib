@@ -287,6 +287,8 @@ pub enum Error {
     ConstraintSystemError(SynthesisError),
     /// The given coboundary polynomial evaluations over a domain don't sum to zero.
     InvalidCoboundaryPolynomial,
+    /// An error occured with Fiat Shamir transcript
+    FiatShamirError(fiat_shamir::error::Error),
     /// Other error
     Other(String),
 }
@@ -307,6 +309,7 @@ impl std::fmt::Display for Error {
                 f,
                 "The given coboundary polynomial evaluations over a domain don't sum to zero"
             ),
+            Error::FiatShamirError(message) =>  write!(f, "{}", message),
             Error::Other(message) => write!(f, "{}", message),
         }
     }
@@ -317,6 +320,12 @@ impl std::error::Error for Error {}
 impl From<SynthesisError> for Error {
     fn from(other: SynthesisError) -> Self {
         Error::ConstraintSystemError(other)
+    }
+}
+
+impl From<fiat_shamir::error::Error> for Error {
+    fn from(other: fiat_shamir::error::Error) -> Self {
+        Error::FiatShamirError(other)
     }
 }
 
