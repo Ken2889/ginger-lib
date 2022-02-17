@@ -272,7 +272,7 @@ mod test {
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
-            for i in 0..=5 {
+            for i in 1..=5 {
                 test_native_result::<TweedleDee, TweedleFqPoseidonSponge, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
             }
         }
@@ -287,7 +287,7 @@ mod test {
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
-            for i in 0..=5 {
+            for i in 1..=5 {
                 test_native_result::<TweedleDum, TweedleFrPoseidonSponge, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
             }
         }
