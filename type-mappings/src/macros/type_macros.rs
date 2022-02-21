@@ -61,7 +61,8 @@ macro_rules! _generate_merkle_tree_types {
             type BH = BatchFieldHash;
         }
 
-        pub type GingerMHT = FieldBasedOptimizedMHT<GingerMHTParams>;
+        pub type GingerMHT = FieldBasedAppendOnlyMHT<GingerMHTParams>;
+        pub type GingerSparseMHT = FieldBasedSparseMHT<GingerMHTParams>;
         pub type GingerMHTPath = FieldBasedBinaryMHTPath<GingerMHTParams>;
         pub const GINGER_MHT_POSEIDON_PARAMETERS: FieldBasedMerkleTreePrecomputedZeroConstants<'static, FieldHash> = $tree_params;
     };
