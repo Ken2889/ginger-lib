@@ -122,3 +122,22 @@ pub trait MontgomeryModelParameters: ModelParameters {
 
     type TEModelParameters: TEModelParameters<BaseField = Self::BaseField>;
 }
+
+pub trait EndoMulParameters: SWModelParameters {
+    /// Parameters for endomorphism-based scalar multiplication [Halo](https://eprint.iacr.org/2019/1021).
+    /// A non-trivial cubic root of unity `ENDO_COEFF` for a curve endomorphism of the form
+    ///     (x, y) -> (ENDO_COEFF * x, y).
+    const ENDO_COEFF: Self::BaseField;
+
+    /// The scalar representation `zeta_r` of `ENDO_COEFF`.
+    /// NOTE : If one wants to use the endo mul circuit with `lambda` many bits,
+    /// then `zeta_r` MUST satisfy the minimal distance property
+    ///     D = min { d(n*zeta_r, m*zeta_r) : n,m in [0, T] } >= R + 1,
+    /// where `T = 2^{lambda/2 + 1} + 2^{lambda/2} - 1` is the output
+    /// bound for the coefficients a, b of the equivalent scalar
+    /// representation `a*zeta_r + b`.
+    const ENDO_SCALAR: Self::ScalarField;
+
+    /// Maximum number of bits for which security of endo mul is proven. MUST be an even number.
+    const LAMBDA: usize;
+}

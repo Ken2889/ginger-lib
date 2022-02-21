@@ -2,7 +2,7 @@
 //!
 
 use algebra::PrimeField;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::MultiEq;
 use r1cs_std::uint32::UInt32;
@@ -64,7 +64,7 @@ fn apply_round_function<ConstraintF, CS>(
 ) -> Result<UInt32, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     // Select and return the proper round function according to round idx
     let (tri_fn, circ_fn): (
@@ -121,7 +121,7 @@ pub fn ripemd160_block_no_padding<ConstraintF, CS>(
 ) -> Result<Vec<Boolean>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert_eq!(input.len(), 512);
 
@@ -140,7 +140,7 @@ pub fn ripemd160<ConstraintF, CS>(
 ) -> Result<Vec<Boolean>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert!(input.len() % 8 == 0);
 
@@ -181,7 +181,7 @@ fn ripemd160_compression_function<ConstraintF, CS>(
 ) -> Result<Vec<UInt32>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert_eq!(input.len(), 512);
     assert_eq!(current_hash_value.len(), 5);
@@ -302,10 +302,9 @@ where
 mod test {
     use super::*;
     use algebra::fields::bls12_381::Fr;
-    use r1cs_std::{
-        alloc::AllocGadget, boolean::AllocatedBit, test_constraint_system::TestConstraintSystem,
-    };
+    use r1cs_std::{alloc::AllocGadget, boolean::AllocatedBit};
 
+    use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use rand::{RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
@@ -320,7 +319,7 @@ mod test {
 
         let iv = get_ripemd160_iv();
 
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
         let input_bits: Vec<_> = (0..512)
             .map(|i| {
                 Boolean::from(
@@ -356,7 +355,7 @@ mod test {
             h.update(&data);
             let hash_result = h.finalize();
 
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
             let mut input_bits = vec![];
 
             for (byte_i, input_byte) in data.into_iter().enumerate() {
@@ -426,7 +425,7 @@ mod test {
         ];
 
         for (test_input, test_output) in test_inputs.iter().zip(test_outputs.iter()) {
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
             let mut input_bits = vec![];
 
             for (byte_i, input_byte) in test_input.as_bytes().iter().enumerate() {

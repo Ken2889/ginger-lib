@@ -1,5 +1,7 @@
 use algebra::Field;
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, LinearCombination, SynthesisError};
+use r1cs_core::{
+    ConstraintSynthesizer, ConstraintSystemAbstract, LinearCombination, SynthesisError,
+};
 use std::marker::PhantomData;
 
 pub struct Benchmark<F: Field> {
@@ -17,7 +19,7 @@ impl<F: Field> Benchmark<F> {
 }
 
 impl<F: Field> ConstraintSynthesizer<F> for Benchmark<F> {
-    fn generate_constraints<CS: ConstraintSystem<F>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

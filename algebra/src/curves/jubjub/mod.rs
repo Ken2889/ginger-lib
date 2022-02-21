@@ -35,7 +35,7 @@ const GENERATOR_Y: Fq = field_new!(
 );
 
 /// `JubJub` is a twisted Edwards curve. These curves have equations of the
-/// form: ax² + y² = 1 - dx²y².
+/// form: ax² + y² = 1 + dx²y².
 /// over some base finite field Fq.
 ///
 /// JubJub's curve equation: -x² + y² = 1 - (10240/10241)x²y²

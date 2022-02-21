@@ -3,7 +3,7 @@
 //! This is a port from the implementation in [Bellman](https://docs.rs/bellman/0.8.0/src/bellman/gadgets/sha256.rs.html#47-74)
 
 use algebra::PrimeField;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::AllocatedBit;
 use r1cs_std::eq::MultiEq;
 use r1cs_std::uint32::UInt32;
@@ -32,7 +32,7 @@ pub fn sha256_block_no_padding<ConstraintF, CS>(
 ) -> Result<Vec<Boolean>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert_eq!(input.len(), 512);
 
@@ -50,7 +50,7 @@ pub fn sha256<ConstraintF, CS>(
 ) -> Result<Vec<Boolean>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert!(input.len() % 8 == 0);
 
@@ -87,7 +87,7 @@ fn sha256_compression_function<ConstraintF, CS>(
 ) -> Result<Vec<UInt32>, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     assert_eq!(input.len(), 512);
     assert_eq!(current_hash_value.len(), 8);
@@ -147,8 +147,8 @@ where
         ) -> Result<UInt32, SynthesisError>
         where
             ConstraintF: PrimeField,
-            CS: ConstraintSystem<ConstraintF>,
-            M: ConstraintSystem<ConstraintF, Root = MultiEq<ConstraintF, CS>>,
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            M: ConstraintSystemAbstract<ConstraintF, Root = MultiEq<ConstraintF, CS>>,
         {
             Ok(match self {
                 Maybe::Concrete(ref v) => return Ok(v.clone()),
@@ -276,7 +276,7 @@ pub fn sha256_ch_uint32<ConstraintF, CS>(
 ) -> Result<UInt32, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     triop(
         cs,
@@ -298,7 +298,7 @@ pub fn sha256_maj_uint32<ConstraintF, CS>(
 ) -> Result<UInt32, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     triop(
         cs,
@@ -320,7 +320,7 @@ pub fn triop<ConstraintF, CS, F, U>(
 ) -> Result<UInt32, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
     F: Fn(u32, u32, u32) -> u32,
     U: Fn(&mut CS, usize, &Boolean, &Boolean, &Boolean) -> Result<Boolean, SynthesisError>,
 {
@@ -353,7 +353,7 @@ pub fn sha256_ch_boolean<'a, ConstraintF, CS>(
 ) -> Result<Boolean, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     let ch_value = match (a.get_value(), b.get_value(), c.get_value()) {
         (Some(a), Some(b), Some(c)) => {
@@ -464,7 +464,7 @@ pub fn sha256_maj_boolean<'a, ConstraintF, CS>(
 ) -> Result<Boolean, SynthesisError>
 where
     ConstraintF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 {
     let maj_value = match (a.get_value(), b.get_value(), c.get_value()) {
         (Some(a), Some(b), Some(c)) => {
@@ -580,10 +580,9 @@ where
 mod test {
     use super::*;
     use algebra::fields::bls12_381::Fr;
-    use r1cs_std::{
-        alloc::AllocGadget, boolean::AllocatedBit, test_constraint_system::TestConstraintSystem,
-    };
+    use r1cs_std::{alloc::AllocGadget, boolean::AllocatedBit};
 
+    use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use rand::{RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
@@ -598,7 +597,7 @@ mod test {
 
         let iv = get_sha256_iv();
 
-        let mut cs = TestConstraintSystem::<Fr>::new();
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
         let input_bits: Vec<_> = (0..512)
             .map(|i| {
                 Boolean::from(
@@ -634,7 +633,7 @@ mod test {
             h.update(&data);
             let hash_result = h.finalize();
 
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
             let mut input_bits = vec![];
 
             for (byte_i, input_byte) in data.into_iter().enumerate() {
@@ -693,7 +692,7 @@ mod test {
         ];
 
         for (test_input, test_output) in test_inputs.iter().zip(test_outputs.iter()) {
-            let mut cs = TestConstraintSystem::<Fr>::new();
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
             let mut input_bits = vec![];
 
             for (byte_i, input_byte) in test_input.as_bytes().iter().enumerate() {

@@ -3,10 +3,7 @@ use crate::field_new;
 use crate::{
     biginteger::{BigInteger256, BigInteger384},
     curves::models::{ModelParameters, SWModelParameters},
-    fields::{
-        bls12_377::{Fq, Fq2, Fr},
-        Field,
-    },
+    fields::{bls12_377::*, Field},
 };
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]

@@ -51,6 +51,9 @@ pub mod tweedle;
 #[cfg(feature = "secp256k1")]
 pub mod secp256k1;
 
+#[cfg(feature = "ed25519")]
+pub mod ed25519;
+
 #[cfg(test)]
 pub mod tests;
 
@@ -319,6 +322,21 @@ pub trait AffineCurve:
     /// `Self::ScalarField`.
     #[must_use]
     fn mul_by_cofactor_inv(&self) -> Self;
+}
+
+/// The `EndoMulCurve` trait for curves that have a non-trivial endomorphism
+/// `Phi` of the form `Phi(x,y) = (zeta*x,y)`.
+pub trait EndoMulCurve: AffineCurve {
+    /// Apply `Phi`
+    fn apply_endomorphism(&self) -> Self;
+
+    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent
+    /// scalar
+    fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error>;
+
+    /// Endomorphism-based multiplication of `&self` with `bits`, a little-endian
+    /// endomorphism representation.
+    fn endo_mul(&self, bits: Vec<bool>) -> Result<Self::Projective, Error>;
 }
 
 impl<C: ProjectiveCurve> Group for C {

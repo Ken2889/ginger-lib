@@ -31,7 +31,6 @@
     private_in_public,
     unsafe_code
 )]
-#![forbid(unsafe_code)]
 #![allow(
     clippy::upper_case_acronyms,
     clippy::too_many_arguments,
@@ -41,15 +40,16 @@
     clippy::not_unsafe_ptr_arg_deref,
     clippy::suspicious_op_assign_impl,
     clippy::suspicious_arithmetic_impl,
-    clippy::assertions_on_constants
+    clippy::assertions_on_constants,
+    clippy::op_ref,
+    clippy::many_single_char_names
 )]
+
 
 #[macro_use]
 extern crate algebra;
 #[macro_use]
 extern crate derivative;
-
-pub mod test_constraint_system;
 
 pub mod bits;
 pub use self::bits::*;
@@ -84,7 +84,7 @@ pub mod prelude {
 }
 
 use algebra::Field;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 pub trait Assignment<T> {
     fn get(self) -> Result<T, SynthesisError>;
@@ -100,5 +100,8 @@ impl<T> Assignment<T> for Option<T> {
 }
 
 pub trait FromGadget<T, ConstraintF: Field>: Sized {
-    fn from<CS: ConstraintSystem<ConstraintF>>(other: T, cs: CS) -> Result<Self, SynthesisError>;
+    fn from<CS: ConstraintSystemAbstract<ConstraintF>>(
+        other: T,
+        cs: CS,
+    ) -> Result<Self, SynthesisError>;
 }

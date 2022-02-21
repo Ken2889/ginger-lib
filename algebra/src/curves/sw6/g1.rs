@@ -5,7 +5,7 @@ use crate::{
         models::{ModelParameters, SWModelParameters},
         short_weierstrass_jacobian::{GroupAffine, GroupProjective},
     },
-    fields::sw6::{Fq, Fr},
+    fields::sw6::*,
 };
 
 pub type G1Affine = GroupAffine<SW6G1Parameters>;

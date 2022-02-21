@@ -2,7 +2,7 @@ use algebra::{
     fields::{Fp3Parameters, Fp3ParamsWrapper},
     PrimeField, SquareRootField,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{fields::fp::FpGadget, prelude::*};
 
@@ -11,14 +11,14 @@ impl<P: Fp3Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
 {
     type BaseFieldGadget = FpGadget<ConstraintF>;
 
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError> {
         fe.mul_by_constant(cs, &P::NONRESIDUE)
     }
 
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         c1: &mut Self::BaseFieldGadget,
         c2: &mut Self::BaseFieldGadget,
@@ -38,7 +38,7 @@ impl<P: Fp3Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
 {
     /// Multiply a Fp3Gadget by a Fp gadget.
     #[inline]
-    pub fn mul_assign_by_base_field_gadget<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_assign_by_base_field_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
         fe: &FpGadget<P::Fp>,

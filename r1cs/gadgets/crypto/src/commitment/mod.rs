@@ -1,6 +1,6 @@
 use algebra::Field;
 use primitives::CommitmentScheme;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::prelude::*;
 use std::fmt::Debug;
 
@@ -18,7 +18,7 @@ pub trait CommitmentGadget<C: CommitmentScheme, ConstraintF: Field> {
     type ParametersGadget: AllocGadget<C::Parameters, ConstraintF> + Clone;
     type RandomnessGadget: AllocGadget<C::Randomness, ConstraintF> + Clone;
 
-    fn check_commitment_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn check_commitment_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],

@@ -6,10 +6,7 @@ use crate::{
         bls12_381::Bls12_381Parameters,
         models::{ModelParameters, SWModelParameters},
     },
-    fields::{
-        bls12_381::{Fq, Fr},
-        Field,
-    },
+    fields::{bls12_381::*, Field},
 };
 
 pub type G1Affine = Bls12G1Affine<Bls12_381Parameters>;

@@ -1,6 +1,6 @@
 use algebra::{bytes::ToBytes, FpParameters, PrimeField};
 use r1cs_core::{
-    ConstraintSystem,
+    ConstraintSystemAbstract,
     ConstraintVar::{self, *},
     LinearCombination, SynthesisError,
 };
@@ -17,18 +17,21 @@ pub struct FpGadget<F: PrimeField> {
 
 impl<F: PrimeField> FpGadget<F> {
     #[inline]
-    pub fn from<CS: ConstraintSystem<F>>(mut cs: CS, value: &F) -> Self {
+    pub fn from<CS: ConstraintSystemAbstract<F>>(mut cs: CS, value: &F) -> Self {
         Self::alloc(cs.ns(|| "from"), || Ok(*value)).unwrap()
     }
 
     #[inline]
-    pub fn is_odd<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Boolean, SynthesisError> {
+    pub fn is_odd<CS: ConstraintSystemAbstract<F>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Boolean, SynthesisError> {
         let bits = self.to_bits_strict(cs.ns(|| "to bits strict"))?;
         Ok(bits[bits.len() - 1])
     }
 
     #[inline]
-    pub fn to_bits_with_length_restriction<CS: ConstraintSystem<F>>(
+    pub fn to_bits_with_length_restriction<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         skip_leading_bits: usize,
@@ -67,7 +70,7 @@ impl<F: PrimeField> FpGadget<F> {
     }
 
     #[inline]
-    pub fn to_bytes_with_length_restriction<CS: ConstraintSystem<F>>(
+    pub fn to_bytes_with_length_restriction<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         to_skip: usize,
@@ -128,7 +131,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn zero<CS: ConstraintSystem<F>>(_cs: CS) -> Result<Self, SynthesisError> {
+    fn zero<CS: ConstraintSystemAbstract<F>>(_cs: CS) -> Result<Self, SynthesisError> {
         let value = Some(F::zero());
         Ok(FpGadget {
             value,
@@ -137,7 +140,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn one<CS: ConstraintSystem<F>>(_cs: CS) -> Result<Self, SynthesisError> {
+    fn one<CS: ConstraintSystemAbstract<F>>(_cs: CS) -> Result<Self, SynthesisError> {
         let value = Some(F::one());
         Ok(FpGadget {
             value,
@@ -146,7 +149,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn conditionally_add_constant<CS: ConstraintSystem<F>>(
+    fn conditionally_add_constant<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut _cs: CS,
         bit: &Boolean,
@@ -163,7 +166,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn add<CS: ConstraintSystem<F>>(
+    fn add<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut _cs: CS,
         other: &Self,
@@ -179,14 +182,14 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
         })
     }
 
-    fn double<CS: ConstraintSystem<F>>(&self, _cs: CS) -> Result<Self, SynthesisError> {
+    fn double<CS: ConstraintSystemAbstract<F>>(&self, _cs: CS) -> Result<Self, SynthesisError> {
         let value = self.value.map(|val| val.double());
         let mut variable = self.variable.clone();
         variable.double_in_place();
         Ok(FpGadget { value, variable })
     }
 
-    fn double_in_place<CS: ConstraintSystem<F>>(
+    fn double_in_place<CS: ConstraintSystemAbstract<F>>(
         &mut self,
         _cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -196,7 +199,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn sub<CS: ConstraintSystem<F>>(
+    fn sub<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut _cs: CS,
         other: &Self,
@@ -213,14 +216,14 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn negate<CS: ConstraintSystem<F>>(&self, cs: CS) -> Result<Self, SynthesisError> {
+    fn negate<CS: ConstraintSystemAbstract<F>>(&self, cs: CS) -> Result<Self, SynthesisError> {
         let mut result = self.clone();
         result.negate_in_place(cs)?;
         Ok(result)
     }
 
     #[inline]
-    fn negate_in_place<CS: ConstraintSystem<F>>(
+    fn negate_in_place<CS: ConstraintSystemAbstract<F>>(
         &mut self,
         _cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -230,7 +233,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn mul<CS: ConstraintSystem<F>>(
+    fn mul<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -248,7 +251,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn add_constant<CS: ConstraintSystem<F>>(
+    fn add_constant<CS: ConstraintSystemAbstract<F>>(
         &self,
         _cs: CS,
         other: &F,
@@ -261,7 +264,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn add_constant_in_place<CS: ConstraintSystem<F>>(
+    fn add_constant_in_place<CS: ConstraintSystemAbstract<F>>(
         &mut self,
         _cs: CS,
         other: &F,
@@ -272,7 +275,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn mul_by_constant<CS: ConstraintSystem<F>>(
+    fn mul_by_constant<CS: ConstraintSystemAbstract<F>>(
         &self,
         cs: CS,
         other: &F,
@@ -283,7 +286,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn mul_by_constant_in_place<CS: ConstraintSystem<F>>(
+    fn mul_by_constant_in_place<CS: ConstraintSystemAbstract<F>>(
         &mut self,
         mut _cs: CS,
         other: &F,
@@ -294,7 +297,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn inverse<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Self, SynthesisError> {
+    fn inverse<CS: ConstraintSystemAbstract<F>>(&self, mut cs: CS) -> Result<Self, SynthesisError> {
         let inverse = Self::alloc(cs.ns(|| "inverse"), || {
             let result = self.value.get()?;
             if result.is_zero() {
@@ -314,7 +317,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
         Ok(inverse)
     }
 
-    fn frobenius_map<CS: ConstraintSystem<F>>(
+    fn frobenius_map<CS: ConstraintSystemAbstract<F>>(
         &self,
         _: CS,
         _: usize,
@@ -322,7 +325,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
         Ok(self.clone())
     }
 
-    fn frobenius_map_in_place<CS: ConstraintSystem<F>>(
+    fn frobenius_map_in_place<CS: ConstraintSystemAbstract<F>>(
         &mut self,
         _: CS,
         _: usize,
@@ -330,7 +333,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
         Ok(self)
     }
 
-    fn mul_equals<CS: ConstraintSystem<F>>(
+    fn mul_equals<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -345,7 +348,7 @@ impl<F: PrimeField> FieldGadget<F, F> for FpGadget<F> {
         Ok(())
     }
 
-    fn square_equals<CS: ConstraintSystem<F>>(
+    fn square_equals<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         result: &Self,
@@ -381,7 +384,7 @@ impl<F: PrimeField> PartialEq for FpGadget<F> {
 impl<F: PrimeField> Eq for FpGadget<F> {}
 
 impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
-    fn is_eq<CS: ConstraintSystem<F>>(
+    fn is_eq<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -424,7 +427,7 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
         Ok(v)
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<F>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -442,7 +445,7 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
         Ok(())
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<F>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -468,11 +471,14 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
 impl<F: PrimeField> ToBitsGadget<F> for FpGadget<F> {
     /// Outputs the binary representation of the value in `self` in *big-endian*
     /// form.
-    fn to_bits<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Vec<Boolean>, SynthesisError> {
+    fn to_bits<CS: ConstraintSystemAbstract<F>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<Boolean>, SynthesisError> {
         self.to_bits_with_length_restriction(&mut cs, 0)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<F>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -487,7 +493,7 @@ impl<F: PrimeField> ToBitsGadget<F> for FpGadget<F> {
 // `F::Params::CAPACITY` many in a single field element (to allow efficient unpacking).
 // The bundling regards the Booleans in big endian order.
 impl<F: PrimeField> FromBitsGadget<F> for FpGadget<F> {
-    fn from_bits<CS: ConstraintSystem<F>>(
+    fn from_bits<CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         bits: &[Boolean],
     ) -> Result<Self, SynthesisError> {
@@ -525,11 +531,14 @@ impl<F: PrimeField> FromBitsGadget<F> for FpGadget<F> {
 }
 
 impl<F: PrimeField> ToBytesGadget<F> for FpGadget<F> {
-    fn to_bytes<CS: ConstraintSystem<F>>(&self, mut cs: CS) -> Result<Vec<UInt8>, SynthesisError> {
+    fn to_bytes<CS: ConstraintSystemAbstract<F>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<UInt8>, SynthesisError> {
         self.to_bytes_with_length_restriction(&mut cs, 0)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<F>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<F>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -550,7 +559,7 @@ impl<F: PrimeField> ToBytesGadget<F> for FpGadget<F> {
 
 impl<F: PrimeField> CondSelectGadget<F> for FpGadget<F> {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<F>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -593,7 +602,7 @@ impl<F: PrimeField> CondSelectGadget<F> for FpGadget<F> {
 /// `b` is little-endian: `b[0]` is LSB.
 impl<F: PrimeField> TwoBitLookupGadget<F> for FpGadget<F> {
     type TableConstant = F;
-    fn two_bit_lookup<CS: ConstraintSystem<F>>(
+    fn two_bit_lookup<CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         b: &[Boolean],
         c: &[Self::TableConstant],
@@ -620,7 +629,7 @@ impl<F: PrimeField> TwoBitLookupGadget<F> for FpGadget<F> {
         Ok(result)
     }
 
-    fn two_bit_lookup_lc<CS: ConstraintSystem<F>>(
+    fn two_bit_lookup_lc<CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         precomp: &Boolean,
         b: &[Boolean],
@@ -647,7 +656,7 @@ impl<F: PrimeField> TwoBitLookupGadget<F> for FpGadget<F> {
 impl<F: PrimeField> ThreeBitCondNegLookupGadget<F> for FpGadget<F> {
     type TableConstant = F;
 
-    fn three_bit_cond_neg_lookup<CS: ConstraintSystem<F>>(
+    fn three_bit_cond_neg_lookup<CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         b: &[Boolean],
         b0b1: &Boolean,
@@ -701,7 +710,7 @@ impl<F: PrimeField> Clone for FpGadget<F> {
 
 impl<F: PrimeField> AllocGadget<F, F> for FpGadget<F> {
     #[inline]
-    fn alloc<FN, T, CS: ConstraintSystem<F>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
@@ -725,7 +734,7 @@ impl<F: PrimeField> AllocGadget<F, F> for FpGadget<F> {
     }
 
     #[inline]
-    fn alloc_input<FN, T, CS: ConstraintSystem<F>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<F>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
@@ -752,7 +761,7 @@ impl<F: PrimeField> AllocGadget<F, F> for FpGadget<F> {
 
 impl<F: PrimeField> ConstantGadget<F, F> for FpGadget<F> {
     #[inline]
-    fn from_value<CS: ConstraintSystem<F>>(_cs: CS, value: &F) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<F>>(_cs: CS, value: &F) -> Self {
         let value = *value;
         FpGadget {
             value: Some(value),

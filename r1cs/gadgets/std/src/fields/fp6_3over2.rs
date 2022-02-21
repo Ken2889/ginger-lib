@@ -6,7 +6,7 @@ use algebra::{
     },
     PrimeField,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{fields::fp2::Fp2Gadget, prelude::*};
 
@@ -18,14 +18,14 @@ where
 {
     type BaseFieldGadget = Fp2Gadget<P::Fp2Params, ConstraintF>;
 
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError> {
         fe.mul_by_constant(cs, &P::NONRESIDUE)
     }
 
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         c1: &mut Self::BaseFieldGadget,
         c2: &mut Self::BaseFieldGadget,
@@ -46,7 +46,7 @@ where
     P::Fp2Params: Fp2Parameters<Fp = ConstraintF>,
 {
     #[inline]
-    pub fn mul_by_0_c1_0<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_0_c1_0<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         c1: &Fp2Gadget<P::Fp2Params, ConstraintF>,
@@ -82,7 +82,7 @@ where
         Ok(Self::new(c0, c1, c2))
     }
 
-    pub fn mul_by_c0_c1_0<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_c0_c1_0<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         c0: &Fp2Gadget<P::Fp2Params, ConstraintF>,

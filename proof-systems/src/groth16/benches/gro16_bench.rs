@@ -3,7 +3,9 @@ extern crate criterion;
 
 use algebra::{curves::bn_382::Bn382, fields::bn_382::Fr, Field, PrimeField, UniformRand};
 use proof_systems::groth16::{create_random_proof, generate_random_parameters};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, LinearCombination, SynthesisError};
+use r1cs_core::{
+    ConstraintSynthesizer, ConstraintSystemAbstract, LinearCombination, SynthesisError,
+};
 
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
@@ -20,7 +22,7 @@ pub struct Benchmark<F: PrimeField> {
 }
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for Benchmark<F> {
-    fn generate_constraints<CS: ConstraintSystem<F>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
@@ -66,7 +68,7 @@ pub struct BenchmarkHighDensities<F: Field> {
 }
 
 impl<F: Field> ConstraintSynthesizer<F> for BenchmarkHighDensities<F> {
-    fn generate_constraints<CS: ConstraintSystem<F>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

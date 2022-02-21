@@ -1,5 +1,5 @@
 use algebra::{CubicExtField, CubicExtParameters, Field, PrimeField, SquareRootField};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::{borrow::Borrow, marker::PhantomData};
 
 use crate::{fields::FieldGadget, prelude::*, Assignment};
@@ -10,13 +10,13 @@ pub trait CubicExtParametersGadget<ConstraintF: PrimeField>:
     type BaseFieldGadget: FieldGadget<Self::BaseField, ConstraintF>;
 
     /// Multiply a BaseFieldGadget by quadratic nonresidue.
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError>;
 
     /// Multiply a BaseFieldGadget by the Frobenius Coefficient at given power
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         c1: &mut Self::BaseFieldGadget,
         c2: &mut Self::BaseFieldGadget,
@@ -85,7 +85,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         let c0 = P::BaseFieldGadget::zero(cs.ns(|| "c0"))?;
         let c1 = P::BaseFieldGadget::zero(cs.ns(|| "c1"))?;
         let c2 = P::BaseFieldGadget::zero(cs.ns(|| "c2"))?;
@@ -93,7 +93,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn one<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+    fn one<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         let c0 = P::BaseFieldGadget::one(cs.ns(|| "c0"))?;
         let c1 = P::BaseFieldGadget::zero(cs.ns(|| "c1"))?;
         let c2 = P::BaseFieldGadget::zero(cs.ns(|| "c2"))?;
@@ -101,7 +101,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn conditionally_add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         bit: &Boolean,
@@ -120,7 +120,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -132,7 +132,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn sub<CS: ConstraintSystem<ConstraintF>>(
+    fn sub<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -144,7 +144,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn negate<CS: ConstraintSystem<ConstraintF>>(
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -155,7 +155,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn negate_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn negate_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
     ) -> Result<&mut Self, SynthesisError> {
@@ -167,7 +167,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
 
     /// Use the Toom-Cook-3x method to compute multiplication.
     #[inline]
-    fn mul<CS: ConstraintSystem<ConstraintF>>(
+    fn mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -316,7 +316,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     /// Abstract Pairing-Friendly
     /// Fields.pdf; Section 4 (CH-SQR2))
     #[inline]
-    fn square<CS: ConstraintSystem<ConstraintF>>(
+    fn square<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -350,7 +350,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn mul_equals<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_equals<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -506,7 +506,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &CubicExtField<P>,
@@ -519,7 +519,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn add_constant_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
         other: &CubicExtField<P>,
@@ -531,7 +531,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn mul_by_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_by_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &CubicExtField<P>,
@@ -580,7 +580,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
         Ok(Self::new(c0, c1, c2))
     }
 
-    fn frobenius_map<CS: ConstraintSystem<ConstraintF>>(
+    fn frobenius_map<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         power: usize,
@@ -590,7 +590,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
         Ok(result)
     }
 
-    fn frobenius_map_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn frobenius_map_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
         power: usize,
@@ -638,7 +638,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
 impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareRootField>
     EqGadget<ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -651,7 +651,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -667,7 +667,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -689,7 +689,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
 impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareRootField>
     ToBitsGadget<ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -703,7 +703,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
         Ok(c0)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -721,7 +721,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
 impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareRootField>
     ToBytesGadget<ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -735,7 +735,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
         Ok(c0)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -762,7 +762,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     CondSelectGadget<ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -799,7 +799,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     TwoBitLookupGadget<ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
     type TableConstant = CubicExtField<P>;
-    fn two_bit_lookup<CS: ConstraintSystem<ConstraintF>>(
+    fn two_bit_lookup<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         b: &[Boolean],
         c: &[Self::TableConstant],
@@ -813,7 +813,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
         Ok(Self::new(c0, c1, c2))
     }
 
-    fn two_bit_lookup_lc<CS: ConstraintSystem<ConstraintF>>(
+    fn two_bit_lookup_lc<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         precomp: &Boolean,
         b: &[Boolean],
@@ -838,7 +838,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
 {
     type TableConstant = CubicExtField<P>;
 
-    fn three_bit_cond_neg_lookup<CS: ConstraintSystem<ConstraintF>>(
+    fn three_bit_cond_neg_lookup<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         b: &[Boolean],
         b0b1: &Boolean,
@@ -865,7 +865,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     AllocGadget<CubicExtField<P>, ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
     #[inline]
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -892,7 +892,7 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     }
 
     #[inline]
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: F,
     ) -> Result<Self, SynthesisError>
@@ -923,7 +923,10 @@ impl<P: CubicExtParametersGadget<ConstraintF>, ConstraintF: PrimeField + SquareR
     ConstantGadget<CubicExtField<P>, ConstraintF> for CubicExtFieldGadget<P, ConstraintF>
 {
     #[inline]
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &CubicExtField<P>) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        value: &CubicExtField<P>,
+    ) -> Self {
         let c0 = P::BaseFieldGadget::from_value(&mut cs.ns(|| "c0"), &value.c0);
         let c1 = P::BaseFieldGadget::from_value(&mut cs.ns(|| "c1"), &value.c1);
         let c2 = P::BaseFieldGadget::from_value(&mut cs.ns(|| "c2"), &value.c2);

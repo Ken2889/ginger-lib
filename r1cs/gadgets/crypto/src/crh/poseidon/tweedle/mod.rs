@@ -20,3 +20,6 @@ pub type TweedleFrPoseidonHashGadget = PoseidonHashGadget<
     TweedleFrQuinticSbox,
     TweedleFrQuinticSboxGadget,
 >;
+
+pub mod density_optimized;
+pub use density_optimized::*;

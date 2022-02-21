@@ -7,7 +7,7 @@ use crate::{
         short_weierstrass_projective::{GroupAffine, GroupProjective},
         AffineCurve,
     },
-    fields::mnt6::{Fq, Fq3, Fr},
+    fields::mnt6::*,
 };
 use crate::{field_new, FromBytes};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};

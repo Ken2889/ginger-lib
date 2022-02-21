@@ -1,4 +1,4 @@
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use algebra::{
     fields::{
@@ -24,7 +24,7 @@ where
 {
     type BaseFieldGadget = Fp6Gadget<P::Fp6Params, ConstraintF>;
 
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError> {
@@ -37,7 +37,7 @@ where
         ))
     }
 
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         c1: &mut Self::BaseFieldGadget,
         power: usize,
@@ -51,7 +51,7 @@ where
         Ok(())
     }
 
-    fn cyclotomic_square_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn cyclotomic_square_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         fe: &QuadExtFieldGadget<Self, ConstraintF>,
     ) -> Result<QuadExtFieldGadget<Self, ConstraintF>, SynthesisError> {
@@ -189,7 +189,7 @@ where
 {
     /// Multiplies by an element of the form (c0 = (c0, c1, 0), c1 = (0, d1, 0))
     #[inline]
-    pub fn mul_by_014<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_014<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         c0: &Fp2Gadget<<P::Fp6Params as Fp6Parameters>::Fp2Params, ConstraintF>,
@@ -217,7 +217,7 @@ where
 
     /// Multiplies by an element of the form (c0 = (c0, 0, 0), c1 = (d0, d1, 0))
     #[inline]
-    pub fn mul_by_034<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_034<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         c0: &Fp2Gadget<<P::Fp6Params as Fp6Parameters>::Fp2Params, ConstraintF>,

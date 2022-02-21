@@ -1,8 +1,10 @@
 use crate::{
+    biginteger::BigInteger,
     curves::{
-        models::SWModelParameters, tests::curve_tests, tweedle::*, AffineCurve, ProjectiveCurve,
+        models::SWModelParameters, tests::curve_tests, tweedle::*, AffineCurve, EndoMulCurve,
+        ProjectiveCurve,
     },
-    fields::{tweedle::*, Field, SquareRootField},
+    fields::{tweedle::*, Field, PrimeField, SquareRootField},
     groups::tests::group_test,
 };
 use std::ops::{AddAssign, MulAssign};
@@ -11,7 +13,8 @@ use std::str::FromStr;
 use crate::curves::tests::sw_jacobian_tests;
 use crate::curves::tweedle::dee::TweedledeeParameters;
 use crate::curves::tweedle::dum::TweedledumParameters;
-use rand::{Rng, SeedableRng};
+use crate::UniformRand;
+use rand::{thread_rng, Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
 #[test]
@@ -210,4 +213,36 @@ fn test_dum_addition_correctness() {
             false,
         )
     );
+}
+
+#[test]
+fn test_dee_endo_mul() {
+    for _ in 0..100 {
+        let p = dee::Projective::rand(&mut thread_rng()).into_affine();
+
+        let scalar: Fq = u128::rand(&mut thread_rng()).into();
+        let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
+
+        let p_mul = p.mul(dee::Affine::endo_rep_to_scalar(bits.clone()).unwrap());
+        let pe_mul = p.endo_mul(bits.clone()).unwrap();
+
+        assert_eq!(p_mul, pe_mul);
+    }
+}
+
+#[test]
+fn test_dum_endo_mul() {
+    for _ in 0..100 {
+        let p = dum::Projective::rand(&mut thread_rng()).into_affine();
+
+        let scalar: Fq = u128::rand(&mut thread_rng()).into();
+        let bits = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
+
+        println!("{}", bits.len());
+
+        let p_mul = p.mul(dum::Affine::endo_rep_to_scalar(bits.clone()).unwrap());
+        let pe_mul = p.endo_mul(bits.clone()).unwrap();
+
+        assert_eq!(p_mul, pe_mul);
+    }
 }

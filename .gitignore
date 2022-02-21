@@ -7,3 +7,4 @@ Cargo.lock
 *.orig
 coeffs_*
 msm_bases_*
+*.py

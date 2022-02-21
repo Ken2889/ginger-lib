@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use algebra::{BigInteger, Field, FpParameters, Group, PrimeField};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use std::{borrow::Borrow, fmt::Debug};
 
@@ -29,18 +29,20 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
 
     fn get_variable(&self) -> Self::Variable;
 
-    fn zero<CS: ConstraintSystem<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError>;
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError>;
 
-    fn is_zero<CS: ConstraintSystem<ConstraintF>>(&self, cs: CS)
-        -> Result<Boolean, SynthesisError>;
+    fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Boolean, SynthesisError>;
 
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
     ) -> Result<Self, SynthesisError>;
 
-    fn sub<CS: ConstraintSystem<ConstraintF>>(
+    fn sub<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -49,13 +51,13 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         self.add(cs.ns(|| "Self - other"), &neg_other)
     }
 
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &G,
     ) -> Result<Self, SynthesisError>;
 
-    fn sub_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn sub_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &G,
@@ -64,18 +66,21 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         self.add_constant(cs.ns(|| "Self - other"), &neg_other)
     }
 
-    fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         cs: CS,
     ) -> Result<(), SynthesisError>;
 
-    fn negate<CS: ConstraintSystem<ConstraintF>>(&self, cs: CS) -> Result<Self, SynthesisError>;
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Self, SynthesisError>;
 
     /// Variable base exponentiation.
     /// Inputs must be specified in *little-endian* form.
     /// If the addition law is incomplete for the identity element,
     /// `result` must not be the identity element.
-    fn mul_bits<'a, CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         bits: impl Iterator<Item = &'a Boolean>,
@@ -101,7 +106,7 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         scalar_bits_with_base_powers: I,
     ) -> Result<(), SynthesisError>
     where
-        CS: ConstraintSystem<ConstraintF>,
+        CS: ConstraintSystemAbstract<ConstraintF>,
         I: Iterator<Item = (B, &'a G)>,
         B: Borrow<Boolean>,
         G: 'a,
@@ -125,7 +130,7 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
     /// `precomputed_base_scalar_mul`. Inputs must be specified in
     /// *little-endian* form. If the addition law is incomplete for
     /// the identity element, `result` must not be the identity element.
-    fn mul_bits_fixed_base<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(
         base: &G,
         mut cs: CS,
         bits: &[Boolean],
@@ -140,7 +145,7 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         _: &[J],
     ) -> Result<Self, SynthesisError>
     where
-        CS: ConstraintSystem<ConstraintF>,
+        CS: ConstraintSystemAbstract<ConstraintF>,
         I: Borrow<[Boolean]>,
         J: Borrow<[I]>,
         B: Borrow<[G]>,
@@ -154,7 +159,7 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         scalars: I,
     ) -> Result<Self, SynthesisError>
     where
-        CS: ConstraintSystem<ConstraintF>,
+        CS: ConstraintSystemAbstract<ConstraintF>,
         T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
         I: Iterator<Item = &'a T>,
         B: Borrow<[G]>,
@@ -175,6 +180,19 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
     fn cost_of_add() -> usize;
 
     fn cost_of_double() -> usize;
+}
+
+pub trait EndoMulCurveGadget<G: Group, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
+    fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Self, SynthesisError>;
+
+    fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+        bits: &[Boolean],
+    ) -> Result<Self, SynthesisError>;
 }
 
 /// Pre-checks for vbSM with incomplete arithmetic using Hopwood algorithm (https://github.com/zcash/zcash/issues/3924) :
@@ -333,7 +351,7 @@ pub(crate) fn scalar_bits_to_constant_length<
     'a,
     ConstraintF: PrimeField,
     ScalarF: PrimeField,
-    CS: ConstraintSystem<ConstraintF>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
 >(
     mut cs: CS,
     bits: Vec<Boolean>,
@@ -454,10 +472,16 @@ pub(crate) fn scalar_bits_to_constant_length<
 
 #[cfg(test)]
 pub(crate) mod test {
-    use algebra::{BigInteger, Field, FpParameters, Group, PrimeField, ToBits, UniformRand};
-    use r1cs_core::ConstraintSystem;
+    use algebra::{
+        BigInteger, EndoMulCurve, Field, FpParameters, Group, PrimeField, ProjectiveCurve, ToBits,
+        UniformRand,
+    };
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
 
-    use crate::{prelude::*, test_constraint_system::TestConstraintSystem};
+    use crate::groups::EndoMulCurveGadget;
+    use crate::prelude::*;
     use rand::thread_rng;
 
     #[allow(dead_code)]
@@ -466,7 +490,7 @@ pub(crate) mod test {
         G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         let a: G = UniformRand::rand(&mut thread_rng());
         let b: G = UniformRand::rand(&mut thread_rng());
@@ -524,13 +548,13 @@ pub(crate) mod test {
         G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
-        let a: G = UniformRand::rand(&mut thread_rng());
-        let b: G = UniformRand::rand(&mut thread_rng());
+        let a_native: G = UniformRand::rand(&mut thread_rng());
+        let b_native: G = UniformRand::rand(&mut thread_rng());
 
-        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a)).unwrap();
-        let b = GG::alloc(&mut cs.ns(|| "generate_b"), || Ok(b)).unwrap();
+        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
+        let b = GG::alloc(&mut cs.ns(|| "generate_b"), || Ok(b_native)).unwrap();
 
         let _zero = GG::zero(cs.ns(|| "Zero")).unwrap();
 
@@ -585,7 +609,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     fn scalar_bits_to_constant_length_test<ConstraintF: PrimeField, G: Group>() {
         for _ in 0..30 {
-            let mut cs = TestConstraintSystem::<ConstraintF>::new();
+            let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
             let rng = &mut thread_rng();
 
             let a = G::ScalarField::rand(rng);
@@ -616,8 +640,7 @@ pub(crate) mod test {
             );
             assert!(
                 native_result[expected_len - 1]
-                    || (!native_result[expected_len - 1]
-                        && native_result[expected_len - 2]),
+                    || (!native_result[expected_len - 1] && native_result[expected_len - 2]),
                 "unexpected value of native result"
             );
 
@@ -659,7 +682,7 @@ pub(crate) mod test {
         G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
-        let mut cs: TestConstraintSystem<ConstraintF> = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
         let rng = &mut thread_rng();
 
         // Sample random base
@@ -705,7 +728,7 @@ pub(crate) mod test {
         G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
-        let mut cs = TestConstraintSystem::<ConstraintF>::new();
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
         let rng = &mut thread_rng();
 
         let g: G = UniformRand::rand(rng);
@@ -773,5 +796,38 @@ pub(crate) mod test {
             mul_bits_native_test::<ConstraintF, G, GG>();
             mul_bits_additivity_test::<ConstraintF, G, GG>();
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn endo_mul_test<
+        ConstraintF: Field,
+        G: ProjectiveCurve,
+        GG: EndoMulCurveGadget<G, ConstraintF, Value = G>,
+    >()
+    where
+        <G as ProjectiveCurve>::Affine: EndoMulCurve,
+    {
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+
+        let a_native_proj = G::rand(&mut thread_rng());
+        let a_native = a_native_proj.into_affine();
+        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native_proj)).unwrap();
+
+        let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
+
+        let b_native = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
+        let b = b_native
+            .iter()
+            .map(|&bit| Boolean::constant(bit))
+            .collect::<Vec<_>>();
+
+        let r_native = a_native.endo_mul(b_native).unwrap();
+        let r = a
+            .endo_mul(cs.ns(|| "endo mul"), &b)
+            .unwrap()
+            .get_value()
+            .unwrap();
+
+        assert_eq!(r_native, r);
     }
 }

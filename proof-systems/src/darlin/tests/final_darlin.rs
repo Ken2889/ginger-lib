@@ -13,7 +13,7 @@ use poly_commit::{
     ipa_pc::{CommitterKey, InnerProductArgPC, UniversalParams},
     Error as PCError,
 };
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::{Rng, RngCore};
 
@@ -137,7 +137,7 @@ where
     G2: AffineCurve<BaseField = <G1 as AffineCurve>::ScalarField>
         + ToConstraintField<<G1 as AffineCurve>::ScalarField>,
 {
-    fn generate_constraints<CS: ConstraintSystem<G1::ScalarField>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<G1::ScalarField>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

@@ -6,7 +6,7 @@ use algebra::{
     BitIterator, Field,
 };
 
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::prelude::*;
 
@@ -64,7 +64,7 @@ mod montgomery_affine_impl {
             Ok((montgomery_point.x, montgomery_point.y))
         }
 
-        pub fn from_edwards<CS: ConstraintSystem<ConstraintF>>(
+        pub fn from_edwards<CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             p: &TEAffine<P>,
         ) -> Result<Self, SynthesisError> {
@@ -77,7 +77,7 @@ mod montgomery_affine_impl {
             Ok(Self::new(u, v))
         }
 
-        pub fn into_edwards<CS: ConstraintSystem<ConstraintF>>(
+        pub fn into_edwards<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
         ) -> Result<AffineGadget<P, ConstraintF, F>, SynthesisError> {
@@ -124,7 +124,7 @@ mod montgomery_affine_impl {
             Ok(AffineGadget::new(u, v))
         }
 
-        pub fn add<CS: ConstraintSystem<ConstraintF>>(
+        pub fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &Self,
@@ -262,7 +262,9 @@ mod affine_impl {
         }
 
         #[inline]
-        fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+        fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+            mut cs: CS,
+        ) -> Result<Self, SynthesisError> {
             Ok(Self::new(
                 F::zero(cs.ns(|| "zero"))?,
                 F::one(cs.ns(|| "one"))?,
@@ -271,7 +273,7 @@ mod affine_impl {
 
         //TODO: Implement this using enforce_verdict
         #[inline]
-        fn is_zero<CS: ConstraintSystem<ConstraintF>>(
+        fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             _: CS,
         ) -> Result<Boolean, SynthesisError> {
@@ -281,7 +283,7 @@ mod affine_impl {
         /// Optimized constraints for checking Edwards point addition from ZCash
         /// developers Daira Hopwood and Sean Bowe. Requires only 6 constraints
         /// compared to 7 for the straightforward version we had earlier.
-        fn add<CS: ConstraintSystem<ConstraintF>>(
+        fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &Self,
@@ -342,7 +344,7 @@ mod affine_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+        fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &TEAffine<P>,
@@ -405,7 +407,7 @@ mod affine_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+        fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
             &mut self,
             mut cs: CS,
         ) -> Result<(), SynthesisError> {
@@ -454,7 +456,7 @@ mod affine_impl {
             Ok(())
         }
 
-        fn negate<CS: ConstraintSystem<ConstraintF>>(
+        fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
         ) -> Result<Self, SynthesisError> {
@@ -480,7 +482,7 @@ mod affine_impl {
         F: FieldGadget<P::BaseField, ConstraintF>,
         Self: GroupGadget<TEAffine<P>, ConstraintF>,
     {
-        fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -524,7 +526,7 @@ mod affine_impl {
         }
 
         #[inline]
-        fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -550,7 +552,7 @@ mod affine_impl {
         }
 
         #[inline]
-        fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -633,7 +635,7 @@ mod affine_impl {
             Ok(ge)
         }
 
-        fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -685,7 +687,10 @@ mod affine_impl {
         Self: GroupGadget<TEAffine<P>, ConstraintF>,
     {
         #[inline]
-        fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &TEAffine<P>) -> Self {
+        fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+            mut cs: CS,
+            value: &TEAffine<P>,
+        ) -> Self {
             let x = F::from_value(cs.ns(|| "hardcode x"), &value.x);
             let y = F::from_value(cs.ns(|| "hardcode y"), &value.y);
 
@@ -735,7 +740,9 @@ mod projective_impl {
         }
 
         #[inline]
-        fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+        fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+            mut cs: CS,
+        ) -> Result<Self, SynthesisError> {
             Ok(Self::new(
                 F::zero(cs.ns(|| "zero"))?,
                 F::one(cs.ns(|| "one"))?,
@@ -744,7 +751,7 @@ mod projective_impl {
 
         //TODO: Implement this using enforce_verdict
         #[inline]
-        fn is_zero<CS: ConstraintSystem<ConstraintF>>(
+        fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             _: CS,
         ) -> Result<Boolean, SynthesisError> {
@@ -754,7 +761,7 @@ mod projective_impl {
         /// Optimized constraints for checking Edwards point addition from ZCash
         /// developers Daira Hopwood and Sean Bowe. Requires only 6 constraints
         /// compared to 7 for the straightforward version we had earlier.
-        fn add<CS: ConstraintSystem<ConstraintF>>(
+        fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &Self,
@@ -815,7 +822,7 @@ mod projective_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+        fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
             other: &TEProjective<P>,
@@ -879,7 +886,7 @@ mod projective_impl {
             Ok(Self::new(x3, y3))
         }
 
-        fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+        fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
             &mut self,
             mut cs: CS,
         ) -> Result<(), SynthesisError> {
@@ -928,7 +935,7 @@ mod projective_impl {
             Ok(())
         }
 
-        fn negate<CS: ConstraintSystem<ConstraintF>>(
+        fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,
         ) -> Result<Self, SynthesisError> {
@@ -944,7 +951,7 @@ mod projective_impl {
             scalar_bits_with_base_powers: I,
         ) -> Result<(), SynthesisError>
         where
-            CS: ConstraintSystem<ConstraintF>,
+            CS: ConstraintSystemAbstract<ConstraintF>,
             I: Iterator<Item = (B, &'a TEProjective<P>)>,
             B: Borrow<Boolean>,
         {
@@ -1000,7 +1007,7 @@ mod projective_impl {
             scalars: &[J],
         ) -> Result<Self, SynthesisError>
         where
-            CS: ConstraintSystem<ConstraintF>,
+            CS: ConstraintSystemAbstract<ConstraintF>,
             I: Borrow<[Boolean]>,
             J: Borrow<[I]>,
             B: Borrow<[TEProjective<P>]>,
@@ -1131,7 +1138,7 @@ mod projective_impl {
         F: FieldGadget<P::BaseField, ConstraintF>,
         Self: GroupGadget<TEProjective<P>, ConstraintF>,
     {
-        fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -1175,7 +1182,7 @@ mod projective_impl {
         }
 
         #[inline]
-        fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -1201,7 +1208,7 @@ mod projective_impl {
         }
 
         #[inline]
-        fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -1289,7 +1296,7 @@ mod projective_impl {
             Ok(ge)
         }
 
-        fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+        fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value_gen: FN,
         ) -> Result<Self, SynthesisError>
@@ -1342,7 +1349,7 @@ mod projective_impl {
         Self: GroupGadget<TEProjective<P>, ConstraintF>,
     {
         #[inline]
-        fn from_value<CS: ConstraintSystem<ConstraintF>>(
+        fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
             mut cs: CS,
             value: &TEProjective<P>,
         ) -> Self {
@@ -1374,7 +1381,7 @@ where
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -1397,7 +1404,7 @@ where
     ConstraintF: Field,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1408,7 +1415,7 @@ where
     }
 
     #[inline]
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1422,7 +1429,7 @@ where
     }
 
     #[inline]
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -1447,7 +1454,7 @@ where
     ConstraintF: Field,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -1457,7 +1464,7 @@ where
         Ok(x_bits)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -1475,7 +1482,7 @@ where
     ConstraintF: Field,
     F: FieldGadget<P::BaseField, ConstraintF>,
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -1485,7 +1492,7 @@ where
         Ok(x_bytes)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -1505,16 +1512,14 @@ where
     P: TEModelParameters,
     GG: GroupGadget<TEAffine<P>, ConstraintF, Value = TEAffine<P>>,
 {
-    use crate::{
-        boolean::AllocatedBit, groups::test::group_test, prelude::*,
-        test_constraint_system::TestConstraintSystem,
-    };
+    use crate::{boolean::AllocatedBit, groups::test::group_test, prelude::*};
     use algebra::{Group, PrimeField, UniformRand};
+    use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use rand::{thread_rng, Rng};
 
     group_test::<ConstraintF, TEAffine<P>, GG>();
 
-    let mut cs = TestConstraintSystem::new();
+    let mut cs = ConstraintSystem::new(SynthesisMode::Debug);
 
     let a: TEAffine<P> = UniformRand::rand(&mut thread_rng());
     let gadget_a = GG::alloc(&mut cs.ns(|| "a"), || Ok(a)).unwrap();
@@ -1535,7 +1540,7 @@ where
     assert!(cs.is_satisfied());
 
     // Test the cost of allocation, conditional selection, and point addition.
-    let mut cs = TestConstraintSystem::new();
+    let mut cs = ConstraintSystem::new(SynthesisMode::Debug);
 
     let bit = AllocatedBit::alloc(&mut cs.ns(|| "bool"), || Ok(true))
         .unwrap()

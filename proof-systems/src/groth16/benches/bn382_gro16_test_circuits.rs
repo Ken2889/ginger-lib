@@ -1,6 +1,6 @@
 use algebra::{curves::bn_382::Bn382, fields::bn_382::Fr, PrimeField, UniformRand};
 use proof_systems::groth16::{create_random_proof, generate_random_parameters};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 
 use criterion::Criterion;
 use criterion::{BatchSize, BenchmarkId};
@@ -36,7 +36,7 @@ pub struct TestCircuit2<F: PrimeField> {
 }
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit1<F> {
-    fn generate_constraints<CS: ConstraintSystem<F>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
@@ -83,7 +83,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit1<F> {
 }
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit2<F> {
-    fn generate_constraints<CS: ConstraintSystem<F>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<F>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

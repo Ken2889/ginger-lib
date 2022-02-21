@@ -2,13 +2,11 @@ use algebra::fft::domain::{get_best_evaluation_domain, sample_element_outside_do
 use algebra::msm::FixedBaseMSM;
 use algebra::{groups::Group, Field, PairingEngine, PrimeField, ProjectiveCurve, UniformRand};
 
-use r1cs_core::{
-    ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable,
-};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand::Rng;
 use rayon::prelude::*;
 
-use crate::groth16::{push_constraints, r1cs_to_qap::R1CStoQAP, Parameters, VerifyingKey};
+use crate::groth16::{r1cs_to_qap::R1CStoQAP, Parameters, VerifyingKey};
 
 /// Generates a random common reference string for
 /// a circuit.
@@ -29,104 +27,6 @@ where
     generate_parameters::<E, C, R>(circuit, alpha, beta, gamma, delta, rng)
 }
 
-/// This is our assembly structure that we'll use to synthesize the
-/// circuit into a QAP.
-pub struct KeypairAssembly<E: PairingEngine> {
-    pub(crate) num_inputs: usize,
-    pub(crate) num_aux: usize,
-    pub(crate) num_constraints: usize,
-    pub(crate) at: Vec<Vec<(E::Fr, Index)>>,
-    pub(crate) bt: Vec<Vec<(E::Fr, Index)>>,
-    pub(crate) ct: Vec<Vec<(E::Fr, Index)>>,
-}
-
-impl<E: PairingEngine> ConstraintSystem<E::Fr> for KeypairAssembly<E> {
-    type Root = Self;
-
-    #[inline]
-    fn alloc<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable, SynthesisError>
-    where
-        F: FnOnce() -> Result<E::Fr, SynthesisError>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
-        // There is no assignment, so we don't invoke the
-        // function for obtaining one.
-
-        let index = self.num_aux;
-        self.num_aux += 1;
-
-        Ok(Variable::new_unchecked(Index::Aux(index)))
-    }
-
-    #[inline]
-    fn alloc_input<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable, SynthesisError>
-    where
-        F: FnOnce() -> Result<E::Fr, SynthesisError>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
-        // There is no assignment, so we don't invoke the
-        // function for obtaining one.
-
-        let index = self.num_inputs;
-        self.num_inputs += 1;
-
-        Ok(Variable::new_unchecked(Index::Input(index)))
-    }
-
-    fn enforce<A, AR, LA, LB, LC>(&mut self, _: A, a: LA, b: LB, c: LC)
-    where
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-        LA: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-        LB: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-        LC: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-    {
-        self.at.push(vec![]);
-        self.bt.push(vec![]);
-        self.ct.push(vec![]);
-
-        push_constraints(
-            a(LinearCombination::zero()),
-            &mut self.at,
-            self.num_constraints,
-        );
-        push_constraints(
-            b(LinearCombination::zero()),
-            &mut self.bt,
-            self.num_constraints,
-        );
-        push_constraints(
-            c(LinearCombination::zero()),
-            &mut self.ct,
-            self.num_constraints,
-        );
-
-        self.num_constraints += 1;
-    }
-
-    fn push_namespace<NR, N>(&mut self, _: N)
-    where
-        NR: Into<String>,
-        N: FnOnce() -> NR,
-    {
-        // Do nothing; we don't care about namespaces in this context.
-    }
-
-    fn pop_namespace(&mut self) {
-        // Do nothing; we don't care about namespaces in this context.
-    }
-
-    fn get_root(&mut self) -> &mut Self::Root {
-        self
-    }
-
-    fn num_constraints(&self) -> usize {
-        self.num_constraints
-    }
-}
-
 /// Create parameters for a circuit, given some toxic waste.
 pub fn generate_parameters<E, C, R>(
     circuit: C,
@@ -141,17 +41,7 @@ where
     C: ConstraintSynthesizer<E::Fr>,
     R: Rng,
 {
-    let mut assembly = KeypairAssembly {
-        num_inputs: 0,
-        num_aux: 0,
-        num_constraints: 0,
-        at: vec![],
-        bt: vec![],
-        ct: vec![],
-    };
-
-    // Allocate the "one" input variable
-    assembly.alloc_input(|| "", || Ok(E::Fr::one()))?;
+    let mut assembly = ConstraintSystem::<E::Fr>::new(SynthesisMode::Setup);
 
     // Synthesize the circuit.
     let synthesis_time = start_timer!(|| "Constraint synthesis");

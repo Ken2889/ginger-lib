@@ -15,7 +15,7 @@ use crate::{
     vrf::FieldBasedVrfGadget,
 };
 use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
-use r1cs_core::{ConstraintSystem, SynthesisError, ToConstraintField};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError, ToConstraintField};
 use r1cs_std::bits::boolean::Boolean;
 use std::{borrow::Borrow, marker::PhantomData};
 
@@ -45,7 +45,7 @@ where
     G: ProjectiveCurve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc_internal<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_internal<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
         gamma_on_curve: bool,
@@ -106,7 +106,7 @@ where
     G: ProjectiveCurve,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -117,7 +117,7 @@ where
         Self::alloc_internal(cs, f, false, false)
     }
 
-    fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -128,7 +128,7 @@ where
         Self::alloc_internal(cs, f, true, false)
     }
 
-    fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -139,7 +139,7 @@ where
         Self::alloc_internal(cs, f, true, true)
     }
 
-    fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: FN,
     ) -> Result<Self, SynthesisError>
@@ -189,7 +189,7 @@ where
     G: Group,
     GG: GroupGadget<G, ConstraintF>,
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -210,7 +210,7 @@ where
         })
     }
 
-    fn alloc_without_check<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -226,7 +226,7 @@ where
         })
     }
 
-    fn alloc_checked<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -247,7 +247,7 @@ where
         })
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         f: F,
     ) -> Result<Self, SynthesisError>
@@ -310,7 +310,7 @@ where
     type PublicKeyGadget = FieldBasedEcVrfPkGadget<ConstraintF, G, GG>;
     type GHParametersGadget = GHG::ParametersGadget;
 
-    fn enforce_proof_to_hash_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_proof_to_hash_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         group_hash_params: &Self::GHParametersGadget,
         public_key: &Self::PublicKeyGadget,
@@ -459,12 +459,13 @@ mod test {
         },
     };
 
-    use r1cs_core::ConstraintSystem;
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
     use r1cs_std::alloc::AllocGadget;
     use r1cs_std::instantiated::{
         mnt4_753::G1Gadget as MNT4G1Gadget, mnt6_753::G1Gadget as MNT6G1Gadget,
     };
-    use r1cs_std::test_constraint_system::TestConstraintSystem;
 
     use primitives::vrf::ecvrf::FieldBasedEcVrfPk;
     use rand::{thread_rng, Rng};
@@ -531,7 +532,7 @@ mod test {
         proof: EcVrfMNT4Proof,
         pp: &BHMNT4Parameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+        let mut cs = ConstraintSystem::<MNT4Fr>::new(SynthesisMode::Debug);
 
         //Alloc proof, pk and message
         let proof_g =
@@ -623,7 +624,7 @@ mod test {
         proof: EcVrfMNT6Proof,
         pp: &BHMNT6Parameters,
     ) -> bool {
-        let mut cs = TestConstraintSystem::<MNT6Fr>::new();
+        let mut cs = ConstraintSystem::<MNT6Fr>::new(SynthesisMode::Debug);
 
         //Alloc proof, pk and message
         let proof_g =
@@ -718,7 +719,7 @@ mod test {
         for _ in 0..samples {
             let message: MNT4Fr = rng.gen();
             let (sig, pk) = prove::<EcVrfMNT4, _>(rng, &pp, message);
-            let mut cs = TestConstraintSystem::<MNT4Fr>::new();
+            let mut cs = ConstraintSystem::<MNT4Fr>::new(SynthesisMode::Debug);
 
             //Alloc proof, pk, hash params and message
             let proof_g =

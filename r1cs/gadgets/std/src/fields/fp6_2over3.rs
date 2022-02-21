@@ -5,7 +5,7 @@ use algebra::{
     },
     PrimeField, SquareRootField,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{fields::fp3::Fp3Gadget, prelude::*};
 
@@ -17,7 +17,7 @@ where
 {
     type BaseFieldGadget = Fp3Gadget<P::Fp3Params, ConstraintF>;
 
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError> {
@@ -30,7 +30,7 @@ where
         ))
     }
 
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         c1: &mut Self::BaseFieldGadget,
         power: usize,
@@ -44,7 +44,7 @@ where
         Ok(())
     }
 
-    fn cyclotomic_square_gadget<CS: ConstraintSystem<ConstraintF>>(
+    fn cyclotomic_square_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         fe: &QuadExtFieldGadget<Self, ConstraintF>,
     ) -> Result<QuadExtFieldGadget<Self, ConstraintF>, SynthesisError> {
@@ -176,7 +176,7 @@ where
     P::Fp3Params: Fp3Parameters<Fp = ConstraintF>,
 {
     #[inline]
-    pub fn mul_by_2345<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_2345<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,

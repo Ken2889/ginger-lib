@@ -1,7 +1,7 @@
 use crate::crh::{FieldBasedHashGadget, SBoxGadget};
 use algebra::PrimeField;
 use primitives::crh::poseidon::{PoseidonHash, PoseidonParameters};
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{
     alloc::ConstantGadget,
     fields::{fp::FpGadget, FieldGadget},
@@ -49,7 +49,7 @@ impl<
         SBG: SBoxGadget<ConstraintF, SB>,
     > PoseidonHashGadget<ConstraintF, P, SB, SBG>
 {
-    fn poseidon_perm<CS: ConstraintSystem<ConstraintF>>(
+    fn poseidon_perm<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         state: &mut [FpGadget<ConstraintF>],
     ) -> Result<(), SynthesisError> {
@@ -138,7 +138,7 @@ impl<
     }
 
     // Function that does the dot product for the mix matrix
-    fn dot_prod<CS: ConstraintSystem<ConstraintF>>(
+    fn dot_prod<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         res: &mut FpGadget<ConstraintF>,
         state: &mut [FpGadget<ConstraintF>],
@@ -160,7 +160,7 @@ impl<
     }
 
     // Function that does the mix matrix
-    fn matrix_mix<CS: ConstraintSystem<ConstraintF>>(
+    fn matrix_mix<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         state: &mut [FpGadget<ConstraintF>],
     ) -> Result<(), SynthesisError> {
@@ -210,7 +210,7 @@ where
 {
     type DataGadget = FpGadget<ConstraintF>;
 
-    fn enforce_hash_constant_length<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         input: &[Self::DataGadget],
     ) -> Result<Self::DataGadget, SynthesisError>
@@ -279,7 +279,7 @@ mod test {
     use crate::crh::test::constant_length_field_based_hash_gadget_native_test;
     use algebra::PrimeField;
 
-    fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
+    pub(crate) fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
         let mut inputs = Vec::with_capacity(num);
         for i in 1..=num {
             let input = F::from(i as u32);

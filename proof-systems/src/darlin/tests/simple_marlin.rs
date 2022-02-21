@@ -8,7 +8,7 @@ use algebra::{AffineCurve, Field, UniformRand};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, UniversalParams};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;
 
@@ -28,7 +28,7 @@ pub(crate) struct Circuit<F: Field> {
 }
 
 impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<ConstraintF> {
-    fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<ConstraintF>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {

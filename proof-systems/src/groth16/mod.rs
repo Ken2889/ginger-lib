@@ -6,7 +6,7 @@ use algebra::{
     Field, FromBytesChecked, PairingEngine, SemanticallyValid,
 };
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use r1cs_core::{Index, LinearCombination, SynthesisError};
+use r1cs_core::SynthesisError;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Result as IoResult, Write};
 
@@ -373,19 +373,6 @@ impl<E: PairingEngine> PartialEq for VerifyingKey<E> {
             && self.gamma_g2 == other.gamma_g2
             && self.delta_g2 == other.delta_g2
             && self.gamma_abc_g1 == other.gamma_abc_g1
-    }
-}
-
-pub(crate) fn push_constraints<F: Field>(
-    l: LinearCombination<F>,
-    constraints: &mut [Vec<(F, Index)>],
-    this_constraint: usize,
-) {
-    for (var, coeff) in l.as_ref() {
-        match var.get_unchecked() {
-            Index::Input(i) => constraints[this_constraint].push((*coeff, Index::Input(i))),
-            Index::Aux(i) => constraints[this_constraint].push((*coeff, Index::Aux(i))),
-        }
     }
 }
 

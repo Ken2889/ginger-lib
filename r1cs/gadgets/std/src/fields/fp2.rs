@@ -2,7 +2,7 @@ use algebra::{
     fields::{Fp2Parameters, Fp2ParamsWrapper, QuadExtParameters},
     PrimeField, SquareRootField,
 };
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{fields::fp::FpGadget, prelude::*};
 
@@ -11,14 +11,14 @@ impl<P: Fp2Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
 {
     type BaseFieldGadget = FpGadget<ConstraintF>;
 
-    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_nonresidue<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         fe: &Self::BaseFieldGadget,
     ) -> Result<Self::BaseFieldGadget, SynthesisError> {
         fe.mul_by_constant(cs, &Self::NONRESIDUE)
     }
 
-    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystem<ConstraintF>>(
+    fn mul_base_field_gadget_by_frobenius_coeff<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         c1: &mut Self::BaseFieldGadget,
         power: usize,
@@ -34,7 +34,7 @@ impl<P: Fp2Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
     Fp2Gadget<P, ConstraintF>
 {
     #[inline]
-    pub fn mul_assign_by_base_field_gadget<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_assign_by_base_field_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
         fe: &FpGadget<P::Fp>,
@@ -45,7 +45,7 @@ impl<P: Fp2Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
     }
 
     #[inline]
-    pub fn mul_by_base_field_constant_in_place<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_base_field_constant_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
         fe: &P::Fp,
@@ -56,7 +56,7 @@ impl<P: Fp2Parameters<Fp = ConstraintF>, ConstraintF: PrimeField + SquareRootFie
     }
 
     #[inline]
-    pub fn mul_by_base_field_constant<CS: ConstraintSystem<ConstraintF>>(
+    pub fn mul_by_base_field_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         fe: &P::Fp,

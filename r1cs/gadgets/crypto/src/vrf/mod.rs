@@ -1,6 +1,6 @@
 use algebra::Field;
 use primitives::vrf::FieldBasedVrf;
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::alloc::AllocGadget;
 use r1cs_std::fields::FieldGadget;
 
@@ -12,7 +12,7 @@ pub trait FieldBasedVrfGadget<S: FieldBasedVrf, ConstraintF: Field> {
     type PublicKeyGadget: AllocGadget<S::PublicKey, ConstraintF>;
     type GHParametersGadget: AllocGadget<S::GHParams, ConstraintF>;
 
-    fn enforce_proof_to_hash_verification<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_proof_to_hash_verification<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         pp: &Self::GHParametersGadget,
         public_key: &Self::PublicKeyGadget,

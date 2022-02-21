@@ -2,181 +2,14 @@ use rand::Rng;
 use rayon::prelude::*;
 
 use algebra::msm::VariableBaseMSM;
-use algebra::{AffineCurve, Field, PairingEngine, PrimeField, ProjectiveCurve, UniformRand};
+use algebra::{AffineCurve, PairingEngine, PrimeField, ProjectiveCurve, UniformRand};
 
 use crate::gm17::r1cs_to_sap::R1CStoSAP;
 use crate::gm17::{Parameters, Proof};
 
-use r1cs_core::{
-    ConstraintSynthesizer, ConstraintSystem, Index, LinearCombination, SynthesisError, Variable,
-};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 
-use smallvec::SmallVec;
-
-use std::{
-    ops::{AddAssign, MulAssign},
-    sync::Arc,
-};
-
-type CoeffVec<T> = SmallVec<[T; 2]>;
-
-#[inline]
-fn eval<E: PairingEngine>(
-    lc: &LinearCombination<E::Fr>,
-    constraints: &mut [CoeffVec<(E::Fr, Index)>],
-    input_assignment: &[E::Fr],
-    aux_assignment: &[E::Fr],
-    this_constraint: usize,
-) -> E::Fr {
-    let mut acc = E::Fr::zero();
-
-    for &(index, coeff) in lc.as_ref() {
-        let mut tmp;
-
-        match index.get_unchecked() {
-            Index::Input(i) => {
-                constraints[this_constraint].push((coeff, Index::Input(i)));
-                tmp = input_assignment[i];
-            }
-            Index::Aux(i) => {
-                constraints[this_constraint].push((coeff, Index::Aux(i)));
-                tmp = aux_assignment[i];
-            }
-        }
-
-        if coeff.is_one() {
-            acc.add_assign(&tmp);
-        } else {
-            tmp.mul_assign(&coeff);
-            acc.add_assign(&tmp);
-        }
-    }
-
-    acc
-}
-
-pub struct ProvingAssignment<E: PairingEngine> {
-    // Constraints
-    pub(crate) at: Vec<CoeffVec<(E::Fr, Index)>>,
-    pub(crate) bt: Vec<CoeffVec<(E::Fr, Index)>>,
-    pub(crate) ct: Vec<CoeffVec<(E::Fr, Index)>>,
-
-    // Evaluations of A and C polynomials
-    pub(crate) a: Vec<E::Fr>,
-    pub(crate) b: Vec<E::Fr>,
-    pub(crate) c: Vec<E::Fr>,
-
-    // Assignments of variables
-    pub(crate) input_assignment: Vec<E::Fr>,
-    pub(crate) aux_assignment: Vec<E::Fr>,
-    pub(crate) num_inputs: usize,
-    pub(crate) num_aux: usize,
-    pub(crate) num_constraints: usize,
-}
-
-impl<E: PairingEngine> ProvingAssignment<E> {
-    pub fn which_is_unsatisfied(&self) -> Option<usize> {
-        for (i, ((a_i, b_i), c_i)) in (self.a.iter().zip(self.b.iter()))
-            .zip(self.c.iter())
-            .enumerate()
-        {
-            if *a_i * b_i != *c_i {
-                return Some(i);
-            }
-        }
-        None
-    }
-}
-
-impl<E: PairingEngine> ConstraintSystem<E::Fr> for ProvingAssignment<E> {
-    type Root = Self;
-
-    #[inline]
-    fn alloc<F, A, AR>(&mut self, _: A, f: F) -> Result<Variable, SynthesisError>
-    where
-        F: FnOnce() -> Result<E::Fr, SynthesisError>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
-        let index = self.num_aux;
-        self.num_aux += 1;
-
-        self.aux_assignment.push(f()?);
-        Ok(Variable::new_unchecked(Index::Aux(index)))
-    }
-
-    #[inline]
-    fn alloc_input<F, A, AR>(&mut self, _: A, f: F) -> Result<Variable, SynthesisError>
-    where
-        F: FnOnce() -> Result<E::Fr, SynthesisError>,
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
-        let index = self.num_inputs;
-        self.num_inputs += 1;
-
-        self.input_assignment.push(f()?);
-        Ok(Variable::new_unchecked(Index::Input(index)))
-    }
-
-    #[inline]
-    fn enforce<A, AR, LA, LB, LC>(&mut self, _: A, a: LA, b: LB, c: LC)
-    where
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-        LA: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-        LB: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-        LC: FnOnce(LinearCombination<E::Fr>) -> LinearCombination<E::Fr>,
-    {
-        self.at.push(CoeffVec::new());
-        self.bt.push(CoeffVec::new());
-        self.ct.push(CoeffVec::new());
-
-        self.a.push(eval::<E>(
-            &a(LinearCombination::zero()),
-            &mut self.at,
-            &self.input_assignment,
-            &self.aux_assignment,
-            self.num_constraints,
-        ));
-        self.b.push(eval::<E>(
-            &b(LinearCombination::zero()),
-            &mut self.bt,
-            &self.input_assignment,
-            &self.aux_assignment,
-            self.num_constraints,
-        ));
-        self.c.push(eval::<E>(
-            &c(LinearCombination::zero()),
-            &mut self.ct,
-            &self.input_assignment,
-            &self.aux_assignment,
-            self.num_constraints,
-        ));
-
-        self.num_constraints += 1;
-    }
-
-    fn push_namespace<NR, N>(&mut self, _: N)
-    where
-        NR: Into<String>,
-        N: FnOnce() -> NR,
-    {
-        // Do nothing; we don't care about namespaces in this context.
-    }
-
-    fn pop_namespace(&mut self) {
-        // Do nothing; we don't care about namespaces in this context.
-    }
-
-    fn get_root(&mut self) -> &mut Self::Root {
-        self
-    }
-
-    fn num_constraints(&self) -> usize {
-        self.a.len()
-    }
-}
+use std::{ops::AddAssign, sync::Arc};
 
 pub fn create_random_proof<E, C, R>(
     circuit: C,
@@ -207,22 +40,10 @@ where
     C: ConstraintSynthesizer<E::Fr>,
 {
     let prover_time = start_timer!(|| "Prover");
-    let mut prover = ProvingAssignment {
-        at: vec![],
-        bt: vec![],
-        ct: vec![],
-        a: vec![],
-        b: vec![],
-        c: vec![],
-        input_assignment: vec![],
-        aux_assignment: vec![],
-        num_inputs: 0,
-        num_aux: 0,
-        num_constraints: 0,
+    let mode = SynthesisMode::Prove {
+        construct_matrices: true,
     };
-
-    // Allocate the "one" input variable
-    prover.alloc_input(|| "", || Ok(E::Fr::one()))?;
+    let mut prover = ConstraintSystem::<E::Fr>::new(mode);
 
     // Synthesize the circuit.
     let synthesis_time = start_timer!(|| "Constraint synthesis");

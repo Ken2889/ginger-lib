@@ -1,12 +1,12 @@
 use algebra::{Field, FromBytesChecked};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 struct MySillyCircuit<F: Field> {
     a: Option<F>,
     b: Option<F>,
 }
 
 impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for MySillyCircuit<ConstraintF> {
-    fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(
+    fn generate_constraints<CS: ConstraintSystemAbstract<ConstraintF>>(
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
@@ -23,12 +23,12 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for MySillyCircuit<C
             },
         )?;
 
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
-        cs.enforce(|| "a*b=c", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_0", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_1", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_2", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_3", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_4", |lc| lc + a, |lc| lc + b, |lc| lc + c);
+        cs.enforce(|| "constraint_5", |lc| lc + a, |lc| lc + b, |lc| lc + c);
 
         Ok(())
     }

@@ -7,17 +7,19 @@ use algebra::{
     curves::short_weierstrass_jacobian::{
         GroupAffine as SWAffine, GroupProjective as SWProjective,
     },
-    AffineCurve, BitIterator, Field, PrimeField, ProjectiveCurve, SWModelParameters,
-    SquareRootField,
+    AffineCurve, BitIterator, EndoMulParameters, Field, PrimeField, ProjectiveCurve,
+    SWModelParameters, SquareRootField,
 };
 
-use r1cs_core::{ConstraintSystem, SynthesisError};
+use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use crate::{
     alloc::{AllocGadget, ConstantGadget},
     boolean::Boolean,
     fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget},
-    groups::{check_mul_bits_fixed_base_inputs, check_mul_bits_inputs, GroupGadget},
+    groups::{
+        check_mul_bits_fixed_base_inputs, check_mul_bits_inputs, EndoMulCurveGadget, GroupGadget,
+    },
     prelude::EqGadget,
     select::{CondSelectGadget, TwoBitLookupGadget},
     uint8::UInt8,
@@ -52,7 +54,7 @@ where
     type Value = SWProjective<P>;
     type Variable = ();
 
-    fn add<CS: ConstraintSystem<ConstraintF>>(
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -61,7 +63,7 @@ where
     }
 
     #[inline]
-    fn zero<CS: ConstraintSystem<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         Ok(Self::new(
             NonNativeFieldGadget::zero(cs.ns(|| "zero"))?,
             NonNativeFieldGadget::one(cs.ns(|| "one"))?,
@@ -70,17 +72,19 @@ where
     }
 
     #[inline]
-    fn is_zero<CS: ConstraintSystem<ConstraintF>>(&self, _: CS) -> Result<Boolean, SynthesisError> {
+    fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        _: CS,
+    ) -> Result<Boolean, SynthesisError> {
         Ok(self.infinity)
     }
 
     #[inline]
-    fn double_in_place<CS: ConstraintSystem<ConstraintF>>(
+    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
     ) -> Result<(), SynthesisError> {
-        let x_squared = self.x.mul_without_reduce(cs.ns(|| "x^2"), &self.x)?;
-        //TODO: Once mul_by_constant is implemented properly we can avoid all these adds
+        let x_squared = self.x.mul_without_prereduce(cs.ns(|| "x^2"), &self.x)?;
         let three_x_squared_plus_a = x_squared
             .add(cs.ns(|| "2x^2"), &x_squared)?
             .add(cs.ns(|| "3x^2"), &x_squared)?
@@ -135,7 +139,7 @@ where
         Ok(())
     }
 
-    fn negate<CS: ConstraintSystem<ConstraintF>>(
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Self, SynthesisError> {
@@ -148,7 +152,7 @@ where
 
     /// Incomplete addition: neither `self` nor `other` can be the neutral
     /// element.
-    fn add_constant<CS: ConstraintSystem<ConstraintF>>(
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &SWProjective<P>,
@@ -228,7 +232,7 @@ where
     /// For a detailed explanation, see the native implementation.
     ///
     /// [Hopwood] https://github.com/zcash/zcash/issues/3924
-    fn mul_bits<'a, CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         // variable base point, must be non-trivial and in the prime order subgroup
         &self,
         mut cs: CS,
@@ -351,7 +355,7 @@ where
     /// CAUTION: Due to the use of incomplete arithemtics, there are few exceptions
     /// described in `fn check_mul_bits_fixed_base_inputs()`.
     #[inline]
-    fn mul_bits_fixed_base<'a, CS: ConstraintSystem<ConstraintF>>(
+    fn mul_bits_fixed_base<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         base: &'a SWProjective<P>,
         mut cs: CS,
         bits: &[Boolean],
@@ -487,6 +491,86 @@ where
     }
 }
 
+impl<P, ConstraintF, SimulationF> EndoMulCurveGadget<SWProjective<P>, ConstraintF>
+    for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
+where
+    P: EndoMulParameters<BaseField = SimulationF>,
+    ConstraintF: PrimeField,
+    SimulationF: PrimeField + SquareRootField,
+{
+    /// Given an arbitrary curve element `&self`, applies the endomorphism
+    /// defined by `ENDO_COEFF`.
+    fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self::new(
+            self.x.mul_by_constant(cs.ns(|| "endo x"), &P::ENDO_COEFF)?,
+            self.y.clone(),
+            self.infinity,
+        ))
+    }
+
+    /// The endomorphism-based scalar multiplication circuit from [Halo] in non-native
+    /// arithmetics. Assumes that `ENDO_SCALAR` satisfies the minimal distance property as
+    /// mentioned in `SWModelParameters`.
+    /// Given any non-trivial point `P= &self` of the prime order r subgroup, and a slice
+    /// of an even number of at most `lambda` Booleans `bits`, enforces that the result equals
+    ///     `phi(bits) * P`,
+    /// where `phi(bits)` is the equivalent scalar representation of `bits`.
+    ///
+    /// [Halo]: https://eprint.iacr.org/2019/1021
+    fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        bits: &[Boolean],
+    ) -> Result<Self, SynthesisError> {
+        let mut bits = bits.to_vec();
+        if bits.len() % 2 == 1 {
+            bits.push(Boolean::constant(false));
+        }
+
+        if bits.len() > P::LAMBDA {
+            Err(SynthesisError::Other(
+                "Endo mul bits length exceeds LAMBDA".to_owned(),
+            ))?
+        }
+
+        let endo_self = self.apply_endomorphism(cs.ns(|| "endo self"))?;
+        let self_y_neg = self.y.negate(cs.ns(|| "self y negate"))?;
+
+        let mut acc = endo_self.clone();
+        acc = acc.add(cs.ns(|| "add"), &self)?;
+        acc.double_in_place(cs.ns(|| "double"))?;
+
+        for i in (0..(bits.len() / 2)).rev() {
+            // Conditional select between (-1)^b_0 * Phi^{b_1}(&self), according
+            // to [b_1,b_0] = bits[2i+1, 2i].
+            // Takes 2 constraints.
+            let add = Self::new(
+                NonNativeFieldGadget::conditionally_select(
+                    cs.ns(|| format!("conditional bit1 select endo {}", i)),
+                    &bits[i * 2 + 1],
+                    &endo_self.x,
+                    &self.x,
+                )?,
+                NonNativeFieldGadget::conditionally_select(
+                    cs.ns(|| format!("conditional bit0 select negate {}", i)),
+                    &bits[i * 2],
+                    &self.y,
+                    &self_y_neg,
+                )?,
+                self.infinity,
+            );
+
+            // The unsafe double and add, takes 5 constraints.
+            acc = acc.double_and_add_unsafe(cs.ns(|| format!("double_and_add {}", i)), &add)?;
+        }
+
+        Ok(acc)
+    }
+}
+
 impl<P, ConstraintF, SimulationF> PartialEq
     for GroupAffineNonNativeGadget<P, ConstraintF, SimulationF>
 where
@@ -514,7 +598,7 @@ where
     ConstraintF: PrimeField,
     SimulationF: PrimeField + SquareRootField,
 {
-    fn to_bits<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -525,7 +609,7 @@ where
         Ok(x_bits)
     }
 
-    fn to_bits_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bits_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<Boolean>, SynthesisError> {
@@ -549,7 +633,7 @@ where
     ConstraintF: PrimeField,
     SimulationF: PrimeField + SquareRootField,
 {
-    fn to_bytes<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -561,7 +645,7 @@ where
         Ok(x_bytes)
     }
 
-    fn to_bytes_strict<CS: ConstraintSystem<ConstraintF>>(
+    fn to_bytes_strict<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
     ) -> Result<Vec<UInt8>, SynthesisError> {
@@ -586,7 +670,7 @@ where
     ConstraintF: PrimeField,
     SimulationF: PrimeField + SquareRootField,
 {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -607,7 +691,7 @@ where
     }
 
     #[inline]
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -623,7 +707,7 @@ where
     }
 
     #[inline]
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -665,7 +749,7 @@ where
     /// Incomplete addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
     /// If `safe` is set, enforce in the circuit exceptional cases not occurring.
-    fn add_internal<CS: ConstraintSystem<ConstraintF>>(
+    fn add_internal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -723,6 +807,8 @@ where
         let x3_plus_x1_plus_x2 = x_3
             .add(cs.ns(|| "x3 + x1"), &self.x)?
             .add(cs.ns(|| "x3 + x1 + x2"), &other.x)?;
+        // TODO: the default implementation for mul_equals() calls mul() and
+        // then enforce_equal(). Both do reduction. Let us improve here.
         lambda.mul_equals(cs.ns(|| "check x3"), &lambda, &x3_plus_x1_plus_x2)?;
 
         // Check y3
@@ -736,7 +822,7 @@ where
     #[inline]
     /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn add_unsafe<CS: ConstraintSystem<ConstraintF>>(
+    pub fn add_unsafe<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -749,7 +835,7 @@ where
     /// than computing self.double().add(other).
     /// Incomplete add: neither `self` nor `other` can be the neutral element, and other != ±self;
     /// If `safe` is set, enforce in the circuit that exceptional cases not occurring.
-    fn double_and_add_internal<CS: ConstraintSystem<ConstraintF>>(
+    fn double_and_add_internal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -873,7 +959,7 @@ where
     /// Compute 2 * self + other.
     /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn double_and_add<CS: ConstraintSystem<ConstraintF>>(
+    pub fn double_and_add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -885,7 +971,7 @@ where
     /// Compute 2 * self + other.
     /// Incomplete, unsafe, addition: neither `self` nor `other` can be the neutral
     /// element, and other != ±self.
-    pub fn double_and_add_unsafe<CS: ConstraintSystem<ConstraintF>>(
+    pub fn double_and_add_unsafe<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -902,7 +988,7 @@ where
     SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
-    fn conditionally_select<CS: ConstraintSystem<ConstraintF>>(
+    fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         cond: &Boolean,
         first: &Self,
@@ -943,7 +1029,10 @@ where
     ConstraintF: PrimeField,
     SimulationF: PrimeField + SquareRootField,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &SWProjective<P>) -> Self {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        value: &SWProjective<P>,
+    ) -> Self {
         let value = value.into_affine();
         let x = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode x"), &value.x);
         let y = NonNativeFieldGadget::from_value(cs.ns(|| "hardcode y"), &value.y);
@@ -974,7 +1063,7 @@ where
     SimulationF: PrimeField + SquareRootField,
 {
     #[inline]
-    fn alloc<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
@@ -1004,8 +1093,8 @@ where
 
         // Check that y^2 = x^3 + ax +b
         // We do this by checking that y^2 - b = x * (x^2 +a)
-        let x2 = x.mul_without_reduce(cs.ns(|| "x^2"), &x)?;
-        let y2 = y.mul_without_reduce(cs.ns(|| "y^2"), &y)?;
+        let x2 = x.mul_without_prereduce(cs.ns(|| "x^2"), &x)?;
+        let y2 = y.mul_without_prereduce(cs.ns(|| "y^2"), &y)?;
 
         let x2_plus_a = x2
             .add_constant(cs.ns(|| "x^2 + a"), &a)?
@@ -1026,7 +1115,7 @@ where
     }
 
     #[inline]
-    fn alloc_without_check<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_without_check<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
@@ -1054,7 +1143,7 @@ where
     }
 
     #[inline]
-    fn alloc_checked<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_checked<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>
@@ -1133,7 +1222,7 @@ where
     }
 
     #[inline]
-    fn alloc_input<FN, T, CS: ConstraintSystem<ConstraintF>>(
+    fn alloc_input<FN, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         value_gen: FN,
     ) -> Result<Self, SynthesisError>

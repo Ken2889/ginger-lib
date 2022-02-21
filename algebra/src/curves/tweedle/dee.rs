@@ -3,7 +3,7 @@ use crate::{
     biginteger::BigInteger256,
     curves::{
         models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-        ModelParameters, SWModelParameters,
+        EndoMulParameters, ModelParameters, SWModelParameters,
     },
     fields::tweedle::*,
     Field,
@@ -57,6 +57,30 @@ impl SWModelParameters for TweedledeeParameters {
     fn mul_by_a(_: &Self::BaseField) -> Self::BaseField {
         Self::BaseField::zero()
     }
+}
+
+impl EndoMulParameters for TweedledeeParameters {
+    const ENDO_COEFF: Self::BaseField = field_new!(
+        Fq,
+        BigInteger256([
+            0x140bcab6b02dbd7e,
+            0x2dd04fb5f1e1e149,
+            0x0101a1617f7ccf41,
+            0x09d5c457f968aea9,
+        ])
+    );
+
+    const ENDO_SCALAR: Self::ScalarField = field_new!(
+        Fr,
+        BigInteger256([
+            0xbcb40a68df900505,
+            0xe63d49524c1c22e0,
+            0xd21459c9bc9b5382,
+            0x1a64663c51995775,
+        ])
+    );
+
+    const LAMBDA: usize = 128;
 }
 
 /// G_GENERATOR_X =

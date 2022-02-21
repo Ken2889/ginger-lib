@@ -1,11 +1,11 @@
 use crate::prelude::*;
 use algebra::{Field, FpParameters, PrimeField};
-use r1cs_core::{ConstraintSystem, LinearCombination, SynthesisError, Variable};
+use r1cs_core::{ConstraintSystemAbstract, LinearCombination, SynthesisError, Variable};
 
 /// Specifies how to generate constraints that check for equality for two variables of type `Self`.
 pub trait EqGadget<ConstraintF: Field>: Eq {
     /// Output a `Boolean` value representing whether `self.value() == other.value()`.
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -14,7 +14,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
     /// Output a `Boolean` value representing whether `self.value() != other.value()`.
     ///
     /// By default, this is defined as `self.is_eq(other)?.not()`.
-    fn is_neq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_neq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -30,7 +30,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
     ///
     /// More efficient specialized implementation may be possible; implementors
     /// are encouraged to carefully analyze the efficiency and safety of these.
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -51,7 +51,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
     ///
     /// More efficient specialized implementation may be possible; implementors
     /// are encouraged to carefully analyze the efficiency and safety of these.
-    fn enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -67,7 +67,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
     ///
     /// More efficient specialized implementation may be possible; implementors
     /// are encouraged to carefully analyze the efficiency and safety of these.
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -88,7 +88,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
     ///
     /// More efficient specialized implementation may be possible; implementors
     /// are encouraged to carefully analyze the efficiency and safety of these.
-    fn enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
         other: &Self,
@@ -98,7 +98,7 @@ pub trait EqGadget<ConstraintF: Field>: Eq {
 }
 
 impl<T: EqGadget<ConstraintF>, ConstraintF: Field> EqGadget<ConstraintF> for [T] {
-    fn is_eq<CS: ConstraintSystem<ConstraintF>>(
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -112,7 +112,7 @@ impl<T: EqGadget<ConstraintF>, ConstraintF: Field> EqGadget<ConstraintF> for [T]
         Boolean::kary_and(cs.ns(|| "kary and"), &results)
     }
 
-    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -129,7 +129,7 @@ impl<T: EqGadget<ConstraintF>, ConstraintF: Field> EqGadget<ConstraintF> for [T]
         Ok(())
     }
 
-    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
         other: &Self,
@@ -155,7 +155,7 @@ impl<T: EqGadget<ConstraintF>, ConstraintF: Field> EqGadget<ConstraintF> for [T]
 /// a more efficient equality enforcement (by packing them in parallel into constraint
 /// field elements).
 /// Used for simulating arithmetic operations modulo a power of 2.
-pub struct MultiEq<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> {
+pub struct MultiEq<ConstraintF: PrimeField, CS: ConstraintSystemAbstract<ConstraintF>> {
     cs: CS,
     // a counter for the number of used equality constraints
     ops: usize,
@@ -168,7 +168,7 @@ pub struct MultiEq<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> {
     rhs: LinearCombination<ConstraintF>,
 }
 
-impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> MultiEq<ConstraintF, CS> {
+impl<ConstraintF: PrimeField, CS: ConstraintSystemAbstract<ConstraintF>> MultiEq<ConstraintF, CS> {
     pub fn new(cs: CS) -> Self {
         MultiEq {
             cs,
@@ -222,7 +222,9 @@ impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> MultiEq<Constra
     }
 }
 
-impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> Drop for MultiEq<ConstraintF, CS> {
+impl<ConstraintF: PrimeField, CS: ConstraintSystemAbstract<ConstraintF>> Drop
+    for MultiEq<ConstraintF, CS>
+{
     fn drop(&mut self) {
         if self.bits_used > 0 {
             self.accumulate();
@@ -230,8 +232,8 @@ impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> Drop for MultiE
     }
 }
 
-impl<ConstraintF: PrimeField, CS: ConstraintSystem<ConstraintF>> ConstraintSystem<ConstraintF>
-    for MultiEq<ConstraintF, CS>
+impl<ConstraintF: PrimeField, CS: ConstraintSystemAbstract<ConstraintF>>
+    ConstraintSystemAbstract<ConstraintF> for MultiEq<ConstraintF, CS>
 {
     type Root = Self;
 
