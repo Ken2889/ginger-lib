@@ -33,11 +33,11 @@ extern crate bench_utils;
 
 use algebra::{CanonicalSerialize, EndoMulCurve, serialize_no_metadata};
 use digest::Digest;
-use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
-    optional_rng::OptionalRng, LabeledCommitment, PCCommitterKey, PCVerifierKey,
-    PolynomialCommitment,
+    evaluate_query_map_to_vec, Evaluations, LabeledRandomness, PCCommitterKey, PCVerifierKey,
+    QueryMap,
 };
+use poly_commit::{optional_rng::OptionalRng, LabeledCommitment, PolynomialCommitment};
 use r1cs_core::ConstraintSynthesizer;
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -292,12 +292,12 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect();
 
         // Set up the IOP verifier's query set.
-        let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, _) = IOP::verifier_query_map(verifier_state)?;
 
         // Compute the queried values
         let eval_time = start_timer!(|| "Evaluating polynomials over query set");
 
-        let mut evaluations = evaluate_query_set_to_vec(polynomials.clone(), &query_set);
+        let mut evaluations = evaluate_query_map_to_vec(polynomials.clone(), &query_map);
 
         evaluations.sort_by(|a, b| a.0.cmp(&b.0));
         let evaluations = evaluations
@@ -318,7 +318,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             pc_pk,
             polynomials.clone(),
             &labeled_comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &comm_rands,
             Some(zk_rng),
@@ -353,14 +353,14 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             return Ok(false);
         }
 
-        let (query_set, evaluations, commitments, mut fs_rng) = iop_result.unwrap();
+        let (query_map, evaluations, commitments, mut fs_rng) = iop_result.unwrap();
 
         // Check opening proof
         let opening_result = Self::verify_opening(
             pc_vk,
             proof,
             commitments,
-            query_set,
+            query_map,
             evaluations,
             &mut fs_rng,
         );
@@ -387,15 +387,15 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     // TODO: By now, the only external call is from the batch verifier for FinalDarlin /
     // SimpleMarlin proofs. Let us think whether serving this functionality as public is a good
     // decision.
-    pub fn verify_iop<'a>(
+    pub fn verify_iop(
         pc_vk: &PC::VerifierKey,
         index_vk: &VerifierKey<G, PC>,
         public_input: &[G::ScalarField],
         proof: &Proof<G, PC>,
     ) -> Result<
         (
-            QuerySet<'a, G::ScalarField>,
-            Evaluations<'a, G::ScalarField>,
+            QueryMap<G::ScalarField>,
+            Evaluations<G::ScalarField>,
             Vec<LabeledCommitment<PC::Commitment>>,
             PC::RandomOracle,
         ),
@@ -454,17 +454,11 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect();
 
         // Check sumchecks equations
-        let (query_set, verifier_state) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, verifier_state) = IOP::verifier_query_map(verifier_state)?;
 
         let mut evaluations = Evaluations::new();
-        let mut evaluation_labels = Vec::new();
-        for (poly_label, (point_label, point)) in query_set.iter().cloned() {
-            evaluation_labels.push(((poly_label, point_label), point));
-        }
-
-        evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
-        for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
-            evaluations.insert(((q.0).0, q.1), *eval);
+        for ((labels, _point), eval) in query_map.iter().zip(&proof.evaluations) {
+            evaluations.insert(labels.clone(), *eval);
         }
 
         let result = IOP::verify_sumchecks(&public_input, &evaluations, &verifier_state);
@@ -476,16 +470,16 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         end_timer!(iop_verification_time);
 
-        Ok((query_set, evaluations, commitments, fs_rng))
+        Ok((query_map, evaluations, commitments, fs_rng))
     }
 
     /// The remaining check of verifying the batch evaluation proof.
-    pub fn verify_opening<'a>(
+    pub fn verify_opening(
         pc_vk: &PC::VerifierKey,
         proof: &Proof<G, PC>,
         labeled_comms: Vec<LabeledCommitment<PC::Commitment>>,
-        query_set: QuerySet<'a, G::ScalarField>,
-        evaluations: Evaluations<'a, G::ScalarField>,
+        query_map: QueryMap<G::ScalarField>,
+        evaluations: Evaluations<G::ScalarField>,
         fs_rng: &mut PC::RandomOracle,
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");
@@ -495,7 +489,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &proof.pc_proof,
             fs_rng,

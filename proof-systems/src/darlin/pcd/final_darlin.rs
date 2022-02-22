@@ -86,7 +86,7 @@ where
         let ahp_verify_time = start_timer!(|| "AHP verify");
 
         // Verify sumchecks
-        let (query_set, evaluations, labeled_comms, mut fs_rng) =
+        let (query_map, evaluations, labeled_comms, mut fs_rng) =
             FinalDarlin::<G1, G2, FS>::verify_ahp(
                 vk.dlog_vks.0,
                 vk.final_darlin_vk,
@@ -115,7 +115,7 @@ where
         let verifier_state = DomainExtendedPolynomialCommitment::<G1, InnerProductArgPC::<G1, FS>>::succinct_multi_point_multi_poly_verify(
             vk.dlog_vks.0,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &self.final_darlin_proof.proof.pc_proof,
             &mut fs_rng,

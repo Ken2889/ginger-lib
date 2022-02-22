@@ -31,16 +31,15 @@ use crate::darlin::{
 };
 use algebra::{EndoMulCurve, Group, GroupVec, ToConstraintField};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
         CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
         VerifierKey as DLogVerifierKey,
     },
-    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
-    QuerySet,
+    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, QueryMap,
 };
-use fiat_shamir::FiatShamirRng;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -182,17 +181,22 @@ where
     /// Verifies only the IOP part of a `FinalDarlinProof`, i.e. a Marlin AHP
     /// for the PCDCircuit with correctly combined system and user inputs.
     pub fn verify_ahp(
-        pc_vk:          &DLogVerifierKey<G1>,
-        index_vk:       &FinalDarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>,
-        usr_ins:        &[G1::ScalarField],
-        proof:          &FinalDarlinProof<G1, G2, FS>,
-    )  -> Result<(
-        QuerySet<'a, G1::ScalarField>,
-        Evaluations<'a, G1::ScalarField>,
-        Vec<LabeledCommitment<GroupVec<G1>>>,
-        FS,
-    ), FinalDarlinError>
-    {
+        pc_vk: &DLogVerifierKey<G1>,
+        index_vk: &FinalDarlinVerifierKey<
+            G1,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
+        >,
+        usr_ins: &[G1::ScalarField],
+        proof: &FinalDarlinProof<G1, G2, FS>,
+    ) -> Result<
+        (
+            QueryMap<G1::ScalarField>,
+            Evaluations<G1::ScalarField>,
+            Vec<LabeledCommitment<GroupVec<G1>>>,
+            FS,
+        ),
+        FinalDarlinError,
+    > {
         // Get "system inputs"
         let mut public_inputs = proof.deferred.to_field_elements().map_err(|_| {
             FinalDarlinError::Other(
@@ -217,12 +221,12 @@ where
         pc_vk: &DLogVerifierKey<G1>,
         proof: &FinalDarlinProof<G1, G2, FS>,
         labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
-        query_set: QuerySet<'a, G1::ScalarField>,
-        evaluations: Evaluations<'a, G1::ScalarField>,
+        query_map: QueryMap<G1::ScalarField>,
+        evaluations: Evaluations<G1::ScalarField>,
         fs_rng: &mut FS,
     ) -> Result<bool, FinalDarlinError> {
         let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::verify_opening(
-            pc_vk, &proof.proof, labeled_comms, query_set, evaluations, fs_rng
+            pc_vk, &proof.proof, labeled_comms, query_map, evaluations, fs_rng
         )?;
 
         Ok(res)

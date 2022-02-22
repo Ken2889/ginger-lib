@@ -135,27 +135,27 @@ impl std::fmt::Display for Error {
         match self {
             Error::MissingPolynomial { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but it was not provided.",
+                "`QueryMap` refers to polynomial \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingCommitment { label } => write!(
                 f,
-                "`QuerySet` refers to commitment \"{}\", but it was not provided.",
+                "`QueryMap` refers to commitment \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingRandomness { label } => write!(
                 f,
-                "`QuerySet` refers to randomness \"{}\", but it was not provided.",
+                "`QueryMap` refers to randomness \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingEvaluation { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but `Evaluations` does not contain an evaluation for it.",
+                "`QueryMap` refers to polynomial \"{}\", but `Evaluations` does not contain an evaluation for it.",
                 label
             ),
             Error::MissingBatchEvaluation { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but `BatchEvaluations` does not contain an evaluation for it.",
+                "`QueryMap` refers to polynomial \"{}\", but `BatchEvaluations` does not contain an evaluation for it.",
                 label
             ),
             Error::MissingLHS { label } => {

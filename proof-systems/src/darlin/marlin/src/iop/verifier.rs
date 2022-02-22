@@ -6,7 +6,7 @@ use crate::iop::*;
 use algebra::{PrimeField, EndoMulCurve};
 use algebra::{get_best_evaluation_domain, EvaluationDomain};
 use fiat_shamir::FiatShamirRng;
-use poly_commit::QuerySet;
+use poly_commit::QueryMap;
 
 /// State of the IOP verifier
 pub struct VerifierState<F: PrimeField> {
@@ -111,9 +111,9 @@ impl<F: PrimeField> IOP<F> {
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_set<'a, 'b>(
+    pub fn verifier_query_map(
         state: VerifierState<F>,
-    ) -> Result<(QuerySet<'b, F>, VerifierState<F>), Error> {
+    ) -> Result<(QueryMap<F>, VerifierState<F>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
@@ -127,39 +127,39 @@ impl<F: PrimeField> IOP<F> {
         let g_h = state.domain_h.group_gen();
         let g_k = state.domain_k.group_gen();
 
-        let mut query_set = QuerySet::new();
+        let mut query_map = QueryMap::new();
 
         // Outer sumcheck
 
         // First round polys
-        query_set.insert(("w".into(), ("beta".into(), beta)));
-        query_set.insert(("y_a".into(), ("beta".into(), beta)));
-        query_set.insert(("y_b".into(), ("beta".into(), beta)));
+        query_map.insert(("w".into(), "beta".into()), beta);
+        query_map.insert(("y_a".into(), "beta".into()), beta);
+        query_map.insert(("y_b".into(), "beta".into()), beta);
 
         // Second round polys
-        query_set.insert(("u_1".into(), ("beta".into(), beta)));
-        query_set.insert(("u_1".into(), ("g * beta".into(), g_h * beta)));
-        query_set.insert(("h_1".into(), ("beta".into(), beta)));
+        query_map.insert(("u_1".into(), "beta".into()), beta);
+        query_map.insert(("u_1".into(), "g_h * beta".into()), g_h * beta);
+        query_map.insert(("h_1".into(), "beta".into()), beta);
 
         // Inner sumcheck
 
         // Third round polys
-        query_set.insert(("u_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("u_2".into(), ("g * gamma".into(), g_k * gamma)));
-        query_set.insert(("h_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_val_row_col".into(), ("gamma".into(), gamma)));
+        query_map.insert(("u_2".into(), "gamma".into()), gamma);
+        query_map.insert(("u_2".into(), "g_k * gamma".into()), g_k * gamma);
+        query_map.insert(("h_2".into(), "gamma".into()), gamma);
+        query_map.insert(("a_row".into(), "gamma".into()), gamma);
+        query_map.insert(("a_col".into(), "gamma".into()), gamma);
+        query_map.insert(("a_row_col".into(), "gamma".into()), gamma);
+        query_map.insert(("a_val_row_col".into(), "gamma".into()), gamma);
+        query_map.insert(("b_row".into(), "gamma".into()), gamma);
+        query_map.insert(("b_col".into(), "gamma".into()), gamma);
+        query_map.insert(("b_row_col".into(), "gamma".into()), gamma);
+        query_map.insert(("b_val_row_col".into(), "gamma".into()), gamma);
+        query_map.insert(("c_row".into(), "gamma".into()), gamma);
+        query_map.insert(("c_col".into(), "gamma".into()), gamma);
+        query_map.insert(("c_row_col".into(), "gamma".into()), gamma);
+        query_map.insert(("c_val_row_col".into(), "gamma".into()), gamma);
 
-        Ok((query_set, state))
+        Ok((query_map, state))
     }
 }
