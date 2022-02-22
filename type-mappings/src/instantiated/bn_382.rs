@@ -5,7 +5,10 @@ use {
             Projective as Bn382DualProjective,
         },
     },
-    primitives::crh::poseidon::parameters::bn382::{BN382FrBatchPoseidonHash, BN382FrPoseidonHash},
+    primitives::crh::{
+        FieldBasedHash,
+        poseidon::parameters::bn382::{BN382FrBatchPoseidonHash, BN382FrPoseidonHash}
+    },
     primitives::merkle_tree::bn382::BN382_MHT_POSEIDON_PARAMETERS,
 };
 

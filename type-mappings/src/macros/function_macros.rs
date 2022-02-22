@@ -209,7 +209,6 @@ macro_rules! generate_field_element_functions {
 macro_rules! _generate_poseidon_hash_functions {
     () => {
         use super::*;
-        use primitives::crh::*;
 
         pub fn get_poseidon_hash_constant_length(
             input_size: usize,

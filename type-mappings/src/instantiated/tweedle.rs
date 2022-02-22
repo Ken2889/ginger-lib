@@ -4,8 +4,11 @@ use {
             Affine as DumAffine, Projective as DumProjective, TweedledumParameters,
         },
     },
-    primitives::crh::poseidon::parameters::tweedle_dee::{
-        TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash,
+    primitives::crh::{
+        FieldBasedHash,
+        poseidon::parameters::tweedle_dee::{
+            TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash,
+        }
     },
     primitives::merkle_tree::tweedle_dee::TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS,
 };
