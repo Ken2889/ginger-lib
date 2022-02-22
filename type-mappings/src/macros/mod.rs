@@ -28,6 +28,7 @@ pub use {
     rand_xorshift::XorShiftRng,
     std::fs::*,
     std::io::{BufReader, BufWriter, Cursor, Error as IoError, ErrorKind, Read, Write},
+    std::collections::{HashMap, HashSet},
 };
 
 pub type Error = Box<dyn std::error::Error>;

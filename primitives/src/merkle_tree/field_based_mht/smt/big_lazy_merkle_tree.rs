@@ -276,6 +276,22 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedSparseMHT<T> {
         self.root.1 = false;
         Ok(new_root)
     }
+
+    /// Get the idx of 'leaf' if it's in the tree, None otherwise.
+    /// Tree must be finalized before calling this function.
+    pub fn get_idx_from_leaf(&self, leaf: &T::Data) -> Result<Option<usize>, Error> {
+        if self.pending_changes() {
+            Err(MerkleTreeError::Other("Identified pending changes: unable to perform this operation until changes are applied to the tree.".to_string()))?
+        }
+
+        for (idx, (tree_leaf, _)) in self.leaves.iter() {
+            if leaf == tree_leaf {
+                return Ok(Some(*idx as usize));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedMerkleTree for FieldBasedSparseMHT<T> {

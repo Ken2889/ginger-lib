@@ -371,6 +371,61 @@ macro_rules! _generate_merkle_tree_functions {
             tree.reset();
         }
 
+        pub fn new_ginger_sparse_mht(height: u8) -> GingerSparseMHT {
+            GingerSparseMHT::init(height)
+        }
+
+        pub fn insert_leaves_to_ginger_sparse_mht(tree: &mut GingerSparseMHT, leaves: HashMap<u32, FieldElement>) -> Result<(), Error> {
+            tree.insert_leaves(leaves)?;
+            Ok(())
+        }
+
+        pub fn remove_leaves_from_ginger_sparse_mht(tree: &mut GingerSparseMHT, leaves: HashSet<u32>) -> Result<(), Error> {
+            tree.remove_leaves(leaves)?;
+            Ok(())
+        }
+
+        pub fn finalize_ginger_sparse_mht(tree: &GingerSparseMHT) -> Result<GingerSparseMHT, Error> {
+            tree.finalize()
+        }
+
+        pub fn finalize_ginger_sparse_mht_in_place(tree: &mut GingerSparseMHT) -> Result<(), Error> {
+            tree.finalize_in_place()?;
+            Ok(())
+        }
+
+        pub fn get_ginger_sparse_mht_root(tree: &GingerSparseMHT) -> Result<FieldElement, Error> {
+            let root = tree
+                .root()
+                .ok_or("Unable to get root of a non finalized tree")?;
+            Ok(root)
+        }
+
+        pub fn is_leaf_empty_in_ginger_sparse_mht(tree: &GingerSparseMHT, position: u32) -> Result<bool, Error> {
+            tree.is_leaf_empty(position)
+        }
+
+        pub fn get_leaf_index_from_ginger_sparse_mht(tree: &GingerSparseMHT, leaf: &FieldElement) -> Result<Option<usize>, Error> {
+            tree.get_idx_from_leaf(leaf)
+        }
+
+        pub fn get_ginger_sparse_mht_path(tree: &GingerSparseMHT, leaf_index: u32) -> Result<GingerMHTPath, Error> {
+            use std::convert::TryInto;
+
+            let path = match tree.get_merkle_path(leaf_index) {
+                Some(path) => path
+                    .try_into()
+                    .map_err(|e| format!("Unable to convert to binary Merkle Path {:?}", e)),
+                None => Err("Unable to get path of a non finalized tree".to_owned()),
+            }?;
+
+            Ok(path)
+        }
+
+        pub fn reset_ginger_sparse_mht(tree: &mut GingerSparseMHT) {
+            tree.reset();
+        }
+
         pub fn verify_ginger_merkle_path(
             path: &GingerMHTPath,
             height: usize,
