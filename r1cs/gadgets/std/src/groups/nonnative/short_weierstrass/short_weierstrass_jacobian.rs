@@ -55,6 +55,8 @@ where
     type Value = Jacobian<P>;
     type Variable = ();
 
+    /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
+    /// element.
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,

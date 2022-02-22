@@ -1,15 +1,12 @@
-use crate::{
-    fields::{
-        Field, FpParameters, PrimeField,
-    },
-    curves::{
-        Curve,
-        models::{SWModelParameters, TEModelParameters},
-        short_weierstrass_jacobian::Jacobian,
-        short_weierstrass_projective::Projective,
-        twisted_edwards_extended::TEExtended,
-    }, ToBits,
-};
+use crate::{fields::{
+    Field, FpParameters, PrimeField,
+}, curves::{
+    Curve,
+    models::{SWModelParameters, TEModelParameters},
+    short_weierstrass_jacobian::Jacobian,
+    short_weierstrass_projective::Projective,
+    twisted_edwards_extended::TEExtended,
+}, ToBits, Group};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -72,12 +69,13 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
             x_fe.extend_from_slice(&y_fe);
             Ok(x_fe)
         } else {
-            // Otherwise, return the coordinates of the infinity representation in Jacobian
-            let mut x_fe = self.x.to_field_elements()?;
-            let y_fe = self.y.to_field_elements()?;
+            // Otherwise, serialize the point as the affine point x=0, y=0,
+            // which is for sure not on the curve unless b=0 (which should never happen in our case
+            // as if b=0 then the curve has non-prime order).
+            debug_assert!(!M::COEFF_B.is_zero());
+            let mut x_fe = M::BaseField::zero().to_field_elements()?;
+            let y_fe = M::BaseField::zero().to_field_elements()?;
             x_fe.extend_from_slice(&y_fe);
-            let z_fe = self.z.to_field_elements()?;
-            x_fe.extend_from_slice(&z_fe);
             Ok(x_fe)
         }
     }
@@ -96,12 +94,13 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
             x_fe.extend_from_slice(&y_fe);
             Ok(x_fe)
         } else {
-            // Otherwise, return the coordinates of the infinity representation in Projective
-            let mut x_fe = self.x.to_field_elements()?;
-            let y_fe = self.y.to_field_elements()?;
+            // Otherwise, serialize the point as the affine point x=0, y=0,
+            // which is for sure not on the curve unless b=0 (which should never happen in our case
+            // as if b=0 then the curve has non-prime order).
+            debug_assert!(!M::COEFF_B.is_zero());
+            let mut x_fe = M::BaseField::zero().to_field_elements()?;
+            let y_fe = M::BaseField::zero().to_field_elements()?;
             x_fe.extend_from_slice(&y_fe);
-            let z_fe = self.z.to_field_elements()?;
-            x_fe.extend_from_slice(&z_fe);
             Ok(x_fe)
         }
     }

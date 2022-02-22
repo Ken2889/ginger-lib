@@ -560,6 +560,11 @@ pub(crate) mod test {
         // a - a = 0
         assert_eq!(a.sub(cs.ns(|| "a_minus_a"), &a).unwrap(), zero);
 
+        // 0 + b = b
+        assert_eq!(zero.add(cs.ns(|| "zero_plus_b"), &b).unwrap(), b);
+        // 0 - b = -b
+        assert_eq!(zero.sub(cs.ns(|| "zero_minus_b"), &b).unwrap(), b.negate(cs.ns(|| "-b")).unwrap());
+
         // a + b = b + a
         let a_b = a.add(cs.ns(|| "a_plus_b"), &b).unwrap();
         let b_a = b.add(cs.ns(|| "b_plus_a"), &a).unwrap();
@@ -579,6 +584,11 @@ pub(crate) mod test {
         b2.double_in_place(cs.ns(|| "2b")).unwrap();
         let b_b = b.add(cs.ns(|| "b + b"), &b).unwrap();
         assert_eq!(b2, b_b);
+
+        // 0 + 0 = 0
+        assert_eq!(zero.add(cs.ns(|| "0+0"), &zero).unwrap(), zero);
+        // 0 - 0 = 0
+        assert_eq!(zero.sub(cs.ns(|| "0-0"), &zero).unwrap(), zero);
 
         let _ = a.to_bytes(&mut cs.ns(|| "ToBytes")).unwrap();
         let _ = a.to_bytes_strict(&mut cs.ns(|| "ToBytes Strict")).unwrap();
@@ -652,6 +662,9 @@ pub(crate) mod test {
         let _ = b
             .to_bytes_strict(&mut cs.ns(|| "b ToBytes Strict"))
             .unwrap();
+        if !cs.is_satisfied() {
+            println!("{:?}", cs.which_is_unsatisfied());
+        }
         assert!(cs.is_satisfied());
 
         scalar_bits_to_constant_length_test::<<ConstraintF as Field>::BasePrimeField, G>();

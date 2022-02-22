@@ -333,8 +333,8 @@ where
     #[inline]
     fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
         Ok(Self::new(
-            F::zero(cs.ns(|| "zero"))?,
-            F::one(cs.ns(|| "one"))?,
+            F::zero(cs.ns(|| "x-zero"))?,
+            F::zero(cs.ns(|| "y-zero"))?,
             Boolean::constant(true),
         ))
     }
@@ -348,14 +348,113 @@ where
     }
 
     #[inline]
-    /// Incomplete, safe, addition: neither `self` nor `other` can be the neutral
-    /// element.
+    // Algorithm for complete addition ported in R1CS from zcash: https://github.com/ebfull/halo/blob/master/src/gadgets/ecc.rs#L357
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
-        cs: CS,
+        mut cs: CS,
         other: &Self,
     ) -> Result<Self, SynthesisError> {
-        self.add_internal(cs, other, true)
+        let zero = F::zero(cs.ns(|| "alloc constant 0"))?;
+        let is_same_x = F::alloc(cs.ns(|| "alloc x1 == x2"),
+                                 || Ok(
+                                     if self.x.get_value().get()? == other.x.get_value().get()? {
+                                         P::BaseField::one()
+                                     } else {
+                                         P::BaseField::zero()
+                                     })
+        )?;
+        let not_is_same_x = is_same_x.negate(cs.ns(|| "-is_same_x"))?.add_constant(cs.ns(|| "1 - is_same_x"), &P::BaseField::one())?;
+
+        let x2_minus_x1 = other.x.sub(cs.ns(|| "x2 - x1"), &self.x)?;
+        let inv = F::alloc(cs.ns(|| "alloc (x2-x1)^-1"), ||
+            Ok(
+                x2_minus_x1.get_value().get()?.inverse().unwrap_or(P::BaseField::one())
+            )
+        )?;
+
+        // enforce that is_same_x = 0 if x2 != x1
+        x2_minus_x1.mul_equals(cs.ns(|| "enforce (x2-x1)*is_same_x = 0"), &is_same_x, &zero)?;
+        // enforce that is_same_x = 1 if x2 == x1
+        x2_minus_x1.mul_equals(cs.ns(|| "enforce (x2-x1)*(x2-x1)^-1 = 1-is_same_x"), &inv, &not_is_same_x)?;
+
+        // compute lambda_diff = (y2-y1)/(x2-x1+is_same_x), the value for lambda to be used in case x1 != x2
+        let y2_minus_y1 = other.y.sub(cs.ns(|| "y2 - y1"), &self.y)?;
+        let x2_minus_x1_plus_x_same = x2_minus_x1.add(cs.ns(|| "x2 - x1 + x_is_same"), &is_same_x)?;
+        let lambda_diff = F::alloc(cs.ns(|| "alloc lambda_diff"), || Ok(
+            y2_minus_y1.get_value().get()?*x2_minus_x1_plus_x_same.get_value().get()?.inverse().unwrap()
+            // safe to unwrap inverse as x2_minus_x1_plus_x_same cannot be 0 by construction
+        )
+        )?;
+        lambda_diff.mul_equals(cs.ns(|| "enforce lambda_diff = (y2-y1) div (x2-x1+is_same_x"), &x2_minus_x1_plus_x_same, &y2_minus_y1)?;
+
+        // compute lambda_same = (3x1^2+a)/(2y1), the value for lambda to be used in case x1 = x2.
+        // in case y1 = 0, which happens only when self is the identity, the constraint
+        // 2y1*lambda_same = 3x1^2+a cannot be satisfied, unless a == 0.
+        // Therefore, we modify the constraint as (2y1+self.infinity)*lambda_same = 3x1^2+a, which
+        // allows to satisfy the constraint when y1=0 for an arbitrary value of a
+        let infinity_flag_to_field = F::from(self.infinity, cs.ns(|| "self infinity to field element"))?;
+        let two_y1_plus_infinity_flag = self.y.double(cs.ns(|| "2y1"))?.add(cs.ns(|| "2y1+self.infinity"), &infinity_flag_to_field)?;
+        let three_times_x1_square_plus_a = self.x.square(cs.ns(|| "x1^2"))?.mul_by_constant(cs.ns(|| "3x1^2"), &P::BaseField::from(3u128))?.add_constant(cs.ns(|| "3x1^2+a"), &P::COEFF_A)?;
+        let lambda_same = F::alloc(cs.ns(|| "alloc lambda_same"), || Ok(
+            three_times_x1_square_plus_a.get_value().get()?*two_y1_plus_infinity_flag.get_value().get()?.inverse().unwrap_or(P::BaseField::one())
+        ))?;
+        lambda_same.mul_equals(cs.ns(|| "enforce lambda_same = (3x1^2+a) div 2y1"), &two_y1_plus_infinity_flag, &three_times_x1_square_plus_a)?;
+
+        // set lambda to either lambda_same or lambda_diff depending on is_same_x flag
+        let lambda = F::alloc(cs.ns(|| "alloc lambda"), || Ok(
+            if is_same_x.get_value().get()?.is_one() {
+                lambda_same.get_value().get()?
+            } else {
+                lambda_diff.get_value().get()?
+            }
+        ))?;
+        let lambda_minus_diff = lambda.sub(cs.ns(|| "lambda - lambda_diff"), &lambda_diff)?;
+        let lambda_same_minus_diff = lambda_same.sub(cs.ns(|| "lambda_same - lambda_diff"), &lambda_diff)?;
+        lambda_same_minus_diff.mul_equals(cs.ns(|| "enforce (lambda-lambda_diff) = is_same_x*(lambda_same-lambda_diff)"), &is_same_x, &lambda_minus_diff)?;
+
+        // x3 = lambda^2-x1-x2
+        let x1_plus_x2 = self.x.add(cs.ns(|| "x1+x2"), &other.x)?;
+        let x3 = lambda.square(cs.ns(|| "lambda^2"))?.sub(cs.ns(|| "x3=lambda^2-x1-x2"), &x1_plus_x2)?;
+        // y3 = lambda*(x1-x3)-y1
+        let x1_minus_x3 = self.x.sub(cs.ns(|| "x1-x3"), &x3)?;
+        let y3 = lambda.mul(cs.ns(|| "lambda*(x1-x3)"), &x1_minus_x3)?.sub(cs.ns(|| "y3=lambda*(x1-x3)-y1"), &self.y)?;
+
+        // compute a flag is_sum_zero which is true iff self+other == identity
+        let y1_plus_y2 = self.y.add(cs.ns(|| "y1+y2"), &other.y)?;
+        let is_sum_zero = F::alloc(cs.ns(|| "alloc self+other == 0"), || Ok(
+            if y1_plus_y2.get_value().get()?.is_zero() {
+                is_same_x.get_value().get()?
+            } else {
+                P::BaseField::zero()
+            }
+        ))?;
+        // enforce sum_is_zero == 0 if y1+y2 != 0, that is if the sum is not the identity
+        y1_plus_y2.mul_equals(cs.ns(|| "enforce (y1+y2)*sum_is_zero=0"), &is_sum_zero, &zero)?;
+        let same_x_minus_sum_zero = is_same_x.sub(cs.ns(|| "is_same_x-sum_is_zero"), &is_sum_zero)?;
+        let inv = F::alloc(cs.ns(|| "alloc (y1+y2)^-1"), || Ok(
+            // set inv to is_same_x if y1+y2 !=0, otherwise we can set it to an arbitrary as it has no impact on the constraint
+            is_same_x.get_value().get()?*y1_plus_y2.get_value().get()?.inverse().unwrap_or(P::BaseField::one())
+        ))?;
+
+        // enforce sum_is_zero == is_same_x if y1+y2 == 0, as in this case the sum is the identity iff the x-coordinates are the same
+        y1_plus_y2.mul_equals(cs.ns(|| "enforce (y1+y2)*(y1+y2)^-1=is_same_x-sum_is_zero"), &inv, &same_x_minus_sum_zero)?;
+
+        // enforce that x4 = y4 = 0 if sum is zero
+        let is_sum_not_zero = is_sum_zero.negate(cs.ns(|| "-is_sum_zero"))?.add_constant(cs.ns(|| "1-is_sum_zero"), &P::BaseField::one())?;
+        let x4 = x3.mul(cs.ns(|| "x4 = x3*(1-is_sum_zero)"), &is_sum_not_zero)?;
+        let y4 = y3.mul(cs.ns(|| "y4 = y3*(1-is_sum_zero)"), &is_sum_not_zero)?;
+
+        // deal with the case when self is the identity
+        let x5 = F::conditionally_select(cs.ns(|| "x5=x2 if self == 0, x4 otherwise"), &self.infinity, &other.x, &x4)?;
+        let y5 = F::conditionally_select(cs.ns(|| "y5=y2 if self == 0, y4 otherwise"), &self.infinity, &other.y, &y4)?;
+
+        // deal with the case when other is the identity
+        let x_out = F::conditionally_select(cs.ns(|| "x_out=x1 if other == 0, x5 otherwise"), &other.infinity, &self.x, &x5)?;
+        let y_out = F::conditionally_select(cs.ns(|| "y_out=y1 if other == 0, y5 otherwise"), &other.infinity, &self.y, &y5)?;
+
+        let infinity_out = F::try_into(is_sum_zero)?;
+
+        Ok(Self::new(x_out, y_out, infinity_out))
     }
 
     /// Incomplete addition: neither `self` nor `other` can be the neutral
@@ -1120,7 +1219,7 @@ where
             Ok(ge) => {
                 let ge = ge.borrow();
                 if ge.is_zero() {
-                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::zero()), Ok(true))
                 } else {
                     let ge = ge.into_affine().unwrap();
                     (Ok(ge.x), Ok(ge.y), Ok(false))
@@ -1173,7 +1272,7 @@ where
             Ok(ge) => {
                 let ge = ge.borrow();
                 if ge.is_zero() {
-                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::zero()), Ok(true))
                 } else {
                     let ge = ge.into_affine().unwrap();
                     (Ok(ge.x), Ok(ge.y), Ok(false))
@@ -1282,7 +1381,7 @@ where
             Ok(ge) => {
                 let ge = ge.borrow();
                 if ge.is_zero() {
-                    (Ok(P::BaseField::zero()), Ok(P::BaseField::one()), Ok(true))
+                    (Ok(P::BaseField::zero()), Ok(P::BaseField::zero()), Ok(true))
                 } else {
                     let ge = ge.into_affine().unwrap();
                     (Ok(ge.x), Ok(ge.y), Ok(false))

@@ -6,8 +6,9 @@ use r1cs_core::{
 };
 
 use std::borrow::Borrow;
+use std::convert::TryInto;
 
-use crate::{boolean::AllocatedBit, prelude::*, Assignment};
+use crate::{boolean::AllocatedBit, prelude::*, Assignment, FromGadget};
 
 #[derive(Debug)]
 pub struct FpGadget<F: PrimeField> {
@@ -122,6 +123,60 @@ impl<F: PrimeField> FpGadget<F> {
         cs.enforce(|| "unpacking_constraint", |lc| lc, |lc| lc, |_| lc);
 
         Ok(bytes)
+    }
+}
+
+impl<F: PrimeField> TryInto<Boolean> for FpGadget<F> {
+    type Error = SynthesisError;
+
+    fn try_into(self) -> Result<Boolean, Self::Error> {
+
+        let variable = match self.get_variable() {
+            Var(var) =>  var,
+            LC(_) => Err(SynthesisError::Other(String::from("cannot convert linear combination of variables to Boolean variable")))?
+        };
+        let value = self.get_value().map(|val| if val.is_zero() {
+            Ok(Some(false))
+        } else if val.is_one() {
+            Ok(Some(true))
+        } else {
+            Err(SynthesisError::Other(String::from("converting field element other than 0 or 1 to Boolean")))
+        }).unwrap_or(Ok(None))?;
+        let alloc_bit = AllocatedBit{
+            variable,
+            value,
+        };
+        Ok(Boolean::from(alloc_bit))
+    }
+}
+
+impl<F: PrimeField> FromGadget<Boolean, F> for FpGadget<F> {
+    fn from<CS: ConstraintSystemAbstract<F>>(bit: Boolean, mut cs: CS) -> Result<Self, SynthesisError> {
+        if bit.is_constant() {
+            return if bit.get_value().unwrap() {
+                Self::one(cs.ns(|| "alloc constant 1"))
+            } else {
+                Self::zero(cs.ns(|| "alloc constant 0"))
+            }
+        }
+
+        let alloc_bit = match bit {
+            Boolean::Is(alloc_bit) | Boolean::Not(alloc_bit) => alloc_bit,
+            _ => unreachable!(),
+        };
+
+        let variable = ConstraintVar::<F>::from(alloc_bit.get_variable());
+        let value = bit.get_value().map(|bit_val| if bit_val {
+            F::one()
+        } else {
+            F::zero()
+        });
+
+        Ok(
+            Self{
+                value,
+                variable,
+        })
     }
 }
 

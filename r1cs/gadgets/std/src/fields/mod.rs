@@ -1,9 +1,10 @@
+use std::convert::TryInto;
 // use std::ops::{Mul, MulAssign};
 use algebra::{BitIterator, Field};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::fmt::Debug;
 
-use crate::{prelude::*, Assignment};
+use crate::{prelude::*, Assignment, FromGadget};
 
 pub mod cmp;
 pub mod fp;
@@ -23,6 +24,8 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
     + TwoBitLookupGadget<ConstraintF, TableConstant = F>
     + ThreeBitCondNegLookupGadget<ConstraintF, TableConstant = F>
     + Debug
+    + TryInto<Boolean, Error=SynthesisError>
+    + FromGadget<Boolean, ConstraintF>
 {
     type Variable: Clone + Debug;
 

@@ -12,23 +12,16 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 
 use crate::fields::nonnative::NonNativeFieldParams;
-use crate::{
-    fields::fp::FpGadget,
-    fields::nonnative::{
-        nonnative_field_mul_result_gadget::NonNativeFieldMulResultGadget,
-        params::get_params,
-        reduce::Reducer,
-    },
-    fields::FieldGadget,
-    ceil_log_2,
-    prelude::*,
-    to_field_gadget_vec::ToConstraintFieldGadget,
-    Assignment,
-};
+use crate::{fields::fp::FpGadget, fields::nonnative::{
+    nonnative_field_mul_result_gadget::NonNativeFieldMulResultGadget,
+    params::get_params,
+    reduce::Reducer,
+}, fields::FieldGadget, ceil_log_2, prelude::*, to_field_gadget_vec::ToConstraintFieldGadget, Assignment, FromGadget};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::cmp::max;
 use std::marker::PhantomData;
 use std::{borrow::Borrow, vec, vec::Vec};
+use std::convert::TryInto;
 
 #[derive(Debug, Eq, PartialEq)]
 #[must_use]
@@ -1008,6 +1001,20 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
  *  The high-level functions for arithmetic mod p: Implementation of FieldGadget
  * 
  * *****************************************************************************/
+impl<SimulationF: PrimeField, ConstraintF: PrimeField> TryInto<Boolean> for NonNativeFieldGadget<SimulationF, ConstraintF> {
+    type Error = SynthesisError;
+
+    fn try_into(self) -> Result<Boolean, Self::Error> {
+        unimplemented!()
+    }
+}
+
+impl<SimulationF: PrimeField, ConstraintF: PrimeField> FromGadget<Boolean, ConstraintF> for NonNativeFieldGadget<SimulationF, ConstraintF> {
+    fn from<CS: ConstraintSystemAbstract<ConstraintF>>(other: Boolean, cs: CS) -> Result<Self, SynthesisError> {
+        unimplemented!()
+    }
+}
+
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, ConstraintF>
     for NonNativeFieldGadget<SimulationF, ConstraintF>
 {
