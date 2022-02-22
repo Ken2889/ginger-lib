@@ -10,7 +10,6 @@
 use crate::{String, ToString, Vec};
 use algebra::{get_best_evaluation_domain, DensePolynomial, EvaluationDomain, Evaluations};
 use algebra::{Field, PrimeField};
-use poly_commit::PolynomialLabel;
 use r1cs_core::SynthesisError;
 use std::marker::PhantomData;
 
@@ -150,12 +149,12 @@ impl<F: PrimeField> IOP<F> {
         let l_alpha_beta = state.domain_h.eval_lagrange_kernel(alpha, beta);
         let v_X_at_beta = domain_x.evaluate_vanishing_polynomial(beta);
 
-        let w_at_beta = get_poly_eval(evals, "w".into(), beta)?;
-        let y_a_at_beta = get_poly_eval(evals, "y_a".into(), beta)?;
-        let y_b_at_beta = get_poly_eval(evals, "y_b".into(), beta)?;
-        let u_1_at_beta = get_poly_eval(evals, "u_1".into(), beta)?;
-        let u_1_at_g_beta = get_poly_eval(evals, "u_1".into(), g_h * beta)?;
-        let h_1_at_beta = get_poly_eval(evals, "h_1".into(), beta)?;
+        let w_at_beta = get_poly_eval(evals, "w".into(), "beta".into())?;
+        let y_a_at_beta = get_poly_eval(evals, "y_a".into(), "beta".into())?;
+        let y_b_at_beta = get_poly_eval(evals, "y_b".into(), "beta".into())?;
+        let u_1_at_beta = get_poly_eval(evals, "u_1".into(), "beta".into())?;
+        let u_1_at_g_beta = get_poly_eval(evals, "u_1".into(), "g_h * beta".into())?;
+        let h_1_at_beta = get_poly_eval(evals, "h_1".into(), "beta".into())?;
 
         // we compute the public input polynomial using FFT
         // That is, we compute
@@ -206,24 +205,27 @@ impl<F: PrimeField> IOP<F> {
 
                 let v_K_at_gamma = domain_k.evaluate_vanishing_polynomial(gamma);
 
-                let u_2_at_gamma = get_poly_eval(evals, "u_2".into(), gamma)?;
-                let u_2_at_g_gamma = get_poly_eval(evals, "u_2".into(), g_k * gamma)?;
-                let h_2_at_gamma = get_poly_eval(evals, "h_2".into(), gamma)?;
+                let u_2_at_gamma = get_poly_eval(evals, "u_2".into(), "gamma".into())?;
+                let u_2_at_g_gamma = get_poly_eval(evals, "u_2".into(), "g_k * gamma".into())?;
+                let h_2_at_gamma = get_poly_eval(evals, "h_2".into(), "gamma".into())?;
 
-                let a_row_at_gamma = get_poly_eval(evals, "a_row".into(), gamma)?;
-                let a_col_at_gamma = get_poly_eval(evals, "a_col".into(), gamma)?;
-                let a_row_col_at_gamma = get_poly_eval(evals, "a_row_col".into(), gamma)?;
-                let a_val_row_col_at_gamma = get_poly_eval(evals, "a_val_row_col".into(), gamma)?;
+                let a_row_at_gamma = get_poly_eval(evals, "a_row".into(), "gamma".into())?;
+                let a_col_at_gamma = get_poly_eval(evals, "a_col".into(), "gamma".into())?;
+                let a_row_col_at_gamma = get_poly_eval(evals, "a_row_col".into(), "gamma".into())?;
+                let a_val_row_col_at_gamma =
+                    get_poly_eval(evals, "a_val_row_col".into(), "gamma".into())?;
 
-                let b_row_at_gamma = get_poly_eval(evals, "b_row".into(), gamma)?;
-                let b_col_at_gamma = get_poly_eval(evals, "b_col".into(), gamma)?;
-                let b_row_col_at_gamma = get_poly_eval(evals, "b_row_col".into(), gamma)?;
-                let b_val_row_col_at_gamma = get_poly_eval(evals, "b_val_row_col".into(), gamma)?;
+                let b_row_at_gamma = get_poly_eval(evals, "b_row".into(), "gamma".into())?;
+                let b_col_at_gamma = get_poly_eval(evals, "b_col".into(), "gamma".into())?;
+                let b_row_col_at_gamma = get_poly_eval(evals, "b_row_col".into(), "gamma".into())?;
+                let b_val_row_col_at_gamma =
+                    get_poly_eval(evals, "b_val_row_col".into(), "gamma".into())?;
 
-                let c_row_at_gamma = get_poly_eval(evals, "c_row".into(), gamma)?;
-                let c_col_at_gamma = get_poly_eval(evals, "c_col".into(), gamma)?;
-                let c_row_col_at_gamma = get_poly_eval(evals, "c_row_col".into(), gamma)?;
-                let c_val_row_col_at_gamma = get_poly_eval(evals, "c_val_row_col".into(), gamma)?;
+                let c_row_at_gamma = get_poly_eval(evals, "c_row".into(), "gamma".into())?;
+                let c_col_at_gamma = get_poly_eval(evals, "c_col".into(), "gamma".into())?;
+                let c_row_col_at_gamma = get_poly_eval(evals, "c_row_col".into(), "gamma".into())?;
+                let c_val_row_col_at_gamma =
+                    get_poly_eval(evals, "c_val_row_col".into(), "gamma".into())?;
 
                 // The denominator terms, using row.col_M(X)
 
@@ -267,11 +269,14 @@ impl<F: PrimeField> IOP<F> {
 
 fn get_poly_eval<F: Field>(
     evals: &poly_commit::Evaluations<F>,
-    label: PolynomialLabel,
-    point: F,
+    poly_label: String,
+    point_label: String,
 ) -> Result<F, Error> {
-    let key = (label.clone(), point);
-    evals.get(&key).copied().ok_or(Error::MissingEval(label))
+    let key = (poly_label.clone(), point_label.clone());
+    evals.get(&key).copied().ok_or(Error::MissingEval(format!(
+        "polynomial {} at point {}",
+        poly_label, point_label
+    )))
 }
 
 /// Describes the failure modes of the IOP scheme.
@@ -309,7 +314,7 @@ impl std::fmt::Display for Error {
                 f,
                 "The given coboundary polynomial evaluations over a domain don't sum to zero"
             ),
-            Error::FiatShamirError(message) =>  write!(f, "{}", message),
+            Error::FiatShamirError(message) => write!(f, "{}", message),
             Error::Other(message) => write!(f, "{}", message),
         }
     }

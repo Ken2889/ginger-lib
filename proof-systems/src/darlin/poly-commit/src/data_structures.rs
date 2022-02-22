@@ -23,6 +23,8 @@ use std::{
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
 pub type PolynomialLabel = String;
+/// Labels a point at which a `LabeledPolynomial` should be (or has been) evaluated.
+pub type PointLabel = String;
 
 /// Defines the minimal interface of committer keys for any polynomial
 /// commitment scheme.

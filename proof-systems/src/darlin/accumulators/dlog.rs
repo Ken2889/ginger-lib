@@ -498,12 +498,12 @@ mod test {
     struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
-        query_set: QuerySet<'a, G::ScalarField>,
+        query_map: QuerySet<'a, G::ScalarField>,
         values: Evaluations<'a, G::ScalarField>,
         proof: DomainExtendedMultiPointProof<G, Proof<G>>,
         polynomials: Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials: usize,
-        num_points_in_query_set: usize,
+        num_points_in_query_map: usize,
         _m: PhantomData<&'a G::ScalarField>, // To avoid compilation issue 'a
     }
 
@@ -556,7 +556,7 @@ mod test {
         println!("Sampled supported degree");
 
         // Generate random dense polynomials
-        let num_points_in_query_set =
+        let num_points_in_query_map =
             rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
         for i in 0..num_polynomials {
             let label = format!("Test{}", i);
@@ -580,7 +580,7 @@ mod test {
             polynomials.push(LabeledPolynomial::new(label, poly, hiding))
         }
         println!("supported degree: {:?}", supported_degree);
-        println!("num_points_in_query_set: {:?}", num_points_in_query_set);
+        println!("num_points_in_query_map: {:?}", num_points_in_query_map);
         let (ck, vk) = pp.trim(supported_degree)?;
         println!("Trimmed");
 
@@ -596,13 +596,13 @@ mod test {
 
         // Construct "symmetric" query set: every polynomial is evaluated at every
         // point.
-        let mut query_set = QuerySet::new();
+        let mut query_map = QuerySet::new();
         let mut values = Evaluations::new();
         // let mut point = F::one();
-        for _ in 0..num_points_in_query_set {
+        for _ in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
             for (i, label) in labels.iter().enumerate() {
-                query_set.insert((label.clone(), (format!("{}", i), point)));
+                query_map.insert((label.clone(), (format!("{}", i), point)));
                 let value = polynomials[i].evaluate(point);
                 values.insert((label.clone(), point), value);
             }
@@ -614,7 +614,7 @@ mod test {
             &ck,
             &polynomials,
             &comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &rands,
             Some(rng),
@@ -625,12 +625,12 @@ mod test {
         Ok(VerifierData {
             vk,
             comms,
-            query_set,
+            query_map,
             values,
             proof,
             polynomials,
             num_polynomials,
-            num_points_in_query_set,
+            num_points_in_query_map,
             _m: PhantomData,
         })
     }
@@ -677,7 +677,7 @@ mod test {
             }
 
             let mut comms = Vec::new();
-            let mut query_sets = Vec::new();
+            let mut query_maps = Vec::new();
             let mut evals = Vec::new();
             let mut proofs = Vec::new();
             let mut states = Vec::new();
@@ -688,7 +688,7 @@ mod test {
                 let len = verifier_data.vk.comm_key.len();
                 assert_eq!(&verifier_data.vk.comm_key[..], &vk.comm_key[..len]); // Vk should be equal for all proofs
                 comms.push(verifier_data.comms.as_slice());
-                query_sets.push(&verifier_data.query_set);
+                query_maps.push(&verifier_data.query_map);
                 evals.push(&verifier_data.values);
                 proofs.push(&verifier_data.proof);
                 states.push(&state);
@@ -701,7 +701,7 @@ mod test {
             >::batch_succinct_verify(
                 &vk,
                 comms.clone(),
-                query_sets.clone(),
+                query_maps.clone(),
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
@@ -780,7 +780,7 @@ mod test {
             }
 
             let mut comms = Vec::new();
-            let mut query_sets = Vec::new();
+            let mut query_maps = Vec::new();
             let mut evals = Vec::new();
             let mut proofs = Vec::new();
             let mut states = Vec::new();
@@ -791,7 +791,7 @@ mod test {
                 let len = verifier_data.vk.comm_key.len();
                 assert_eq!(&verifier_data.vk.comm_key[..], &vk.comm_key[..len]); // Vk should be equal for all proofs
                 comms.push(verifier_data.comms.as_slice());
-                query_sets.push(&verifier_data.query_set);
+                query_maps.push(&verifier_data.query_map);
                 evals.push(&verifier_data.values);
                 proofs.push(&verifier_data.proof);
                 states.push(&state);
@@ -804,7 +804,7 @@ mod test {
             >::batch_succinct_verify(
                 &vk,
                 comms.clone(),
-                query_sets.clone(),
+                query_maps.clone(),
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),

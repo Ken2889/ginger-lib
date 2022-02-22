@@ -1,7 +1,7 @@
 //! Unit tests for linear polynomial commitment schemes and their domain extension.
-use fiat_shamir::FiatShamirRngSeed;
 use crate::*;
 use algebra::{serialize::test_canonical_serialize_deserialize, SemanticallyValid, UniformRand};
+use fiat_shamir::FiatShamirRngSeed;
 use rand::{distributions::Distribution, thread_rng};
 
 fn setup_test_fs_rng<G, PC>() -> PC::RandomOracle
@@ -103,15 +103,15 @@ where
         // sample the maximum number of segments for domain extended commitments
         // from 5 up to 15.
         let seg_mul = rand::distributions::Uniform::from(5..=15).sample(rng);
-        let mut labels = Vec::new();
+        let mut poly_labels = Vec::new();
         println!("Sampled supported degree");
 
         // sample `max_num_queries` query points
-        let num_points_in_query_set =
+        let num_points_in_query_map =
             rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
         for i in 0..num_polynomials {
-            let label = format!("Test{}", i);
-            labels.push(label.clone());
+            let poly_label = format!("Test{}", i);
+            poly_labels.push(poly_label.clone());
 
             // sample polynomial of random degree
             let degree;
@@ -140,13 +140,13 @@ where
                 false
             };
 
-            polynomials.push(LabeledPolynomial::new(label, poly, is_hiding))
+            polynomials.push(LabeledPolynomial::new(poly_label, poly, is_hiding))
         }
         println!(
             "supported degree by the non-extended scheme: {:?}",
             supported_degree
         );
-        println!("num_points_in_query_set: {:?}", num_points_in_query_set);
+        println!("num_points_in_query_map: {:?}", num_points_in_query_map);
         let (mut ck, mut vk) = pp.trim(supported_degree)?;
 
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::CommitterKey {
@@ -176,18 +176,19 @@ where
 
         // Construct "symmetric" query set from the query points, over which every polynomial
         // is to be queried
-        let mut query_set = QuerySet::new();
+        let mut query_map = QueryMap::new();
         let mut values = Evaluations::new();
-        // let mut point = F::one();
-        for _ in 0..num_points_in_query_set {
+        for j in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
-            for (i, label) in labels.iter().enumerate() {
-                query_set.insert((label.clone(), (format!("{}", i), point)));
+            let point_label = format!("{}", j);
+            for (i, poly_label) in poly_labels.iter().enumerate() {
+                let evaluation_label = (poly_label.clone(), point_label.clone());
+                query_map.insert(evaluation_label.clone(), point);
                 let value = polynomials[i].evaluate(point);
                 if negative_type.is_some() && negative_type.unwrap() == NegativeType::Values {
-                    values.insert((label.clone(), point), G::ScalarField::rand(rng));
+                    values.insert(evaluation_label, G::ScalarField::rand(rng));
                 } else {
-                    values.insert((label.clone(), point), value);
+                    values.insert(evaluation_label, value);
                 }
             }
         }
@@ -196,12 +197,12 @@ where
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
 
         println!("FS RNG initialized");
-        
+
         let proof = PC::multi_point_multi_poly_open(
             &ck,
             &polynomials,
             &comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &rands,
             Some(rng),
@@ -216,15 +217,15 @@ where
         let result = PC::multi_point_multi_poly_verify(
             &vk,
             &comms,
-            &query_set,
+            &query_map,
             &values,
             &proof,
             &mut fs_rng,
         )?;
         if !result {
             println!(
-                "Failed with {} polynomials, num_points_in_query_set: {:?}",
-                num_polynomials, num_points_in_query_set
+                "Failed with {} polynomials, num_points_in_query_map: {:?}",
+                num_polynomials, num_points_in_query_map
             );
             println!("Degree of polynomials:",);
             for poly in polynomials {
@@ -242,7 +243,7 @@ where
         assert!(PC::multi_point_multi_poly_verify(
             &vk,
             &comms,
-            &query_set,
+            &query_map,
             &values,
             &proof,
             &mut fs_rng
@@ -274,7 +275,9 @@ where
     test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn single_poly_test<G, PC, D>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
+pub(crate) fn single_poly_test<G, PC, D>(
+    negative_type: Option<NegativeType>,
+) -> Result<(), PC::Error>
 where
     G: EndoMulCurve,
     D: Digest,

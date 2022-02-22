@@ -45,7 +45,7 @@ use algebra::{
 use digest::Digest;
 use rand_core::RngCore;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt::Debug,
     iter::FromIterator,
     rc::Rc,
@@ -72,21 +72,23 @@ pub use domain_extended::*;
 /// The [BCMS20](https://eprint.iacr.org/2020/499) variant of the dlog commitment scheme.
 pub mod ipa_pc;
 
-/// `QuerySet` is the set of queries that are to be made to a set of labeled polynomials or linear combinations.
+/// `QueryMap` represents queries that are to be made to a set `p` of labeled polynomials or
+/// linear combinations.
 ///
-///  Each element of a `QuerySet` is a pair of `(label, (point_label, point))`, where
-///  * `label` is the label of a polynomial in `p`,
-///  * `point_label` is the label for the point (e.g., "beta"), and  and
-///  * `point` is the field element that `p[label]` is to be queried at.
-pub type QuerySet<'a, F> = BTreeSet<(String, (String, F))>;
+///  `QueryMap` maps the pair `(poly_label, point_label)` to `point`, where:
+///  * `poly_label` is the label of a polynomial in `p`,
+///  * `point_label` is the label for the point (e.g., "beta"), and
+///  * `point` is the field element that `p[poly_label]` is to be queried at.
+pub type QueryMap<F> = BTreeMap<(PolynomialLabel, PointLabel), F>;
 
-/// `Evaluations` is the result of querying a set of labeled polynomials or linear combinations
-/// `p` at a `QuerySet` `Q`.
+/// `Evaluations` is the result of querying a set `p` of labeled polynomials or linear combinations
+///  at a `QueryMap` `Q`.
 ///
-/// It maps each element of `Q` to the resulting evaluation.
-/// That is, if `(label, query)` is an element of `Q`, then `evaluation.get((label, query))`
-/// should equal `p[label].evaluate(query)`.
-pub type Evaluations<'a, F> = BTreeMap<(String, F), F>;
+///  `Evaluations` maps the pair `(poly_label, point_label)` to `eval`, where:
+///  * `poly_label` is the label of a polynomial in `p`,
+///  * `point_label` is the label for the point (e.g., "beta"), and
+///  * `eval` is the result of evaluating `p[poly_label]` at point `Q.get((poly_label, point_label))`.
+pub type Evaluations<F> = BTreeMap<(PolynomialLabel, PointLabel), F>;
 
 /// Describes the interface for a homomorphic polynomial commitment scheme with values
 /// in a commitment group `G`.  
@@ -372,7 +374,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_set: &QuerySet<G::ScalarField>,
+        query_map: &QueryMap<G::ScalarField>,
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
         // The optional rng for additional internal randomness of open()
@@ -399,7 +401,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
                 ck,
                 labeled_polynomials,
                 labeled_commitments,
-                query_set,
+                query_map,
                 fs_rng,
                 labeled_randomnesses,
                 if rng.is_some() {
@@ -476,7 +478,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     fn multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_set: &QuerySet<G::ScalarField>,
+        query_map: &QueryMap<G::ScalarField>,
         evaluations: &Evaluations<G::ScalarField>,
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle,
@@ -484,7 +486,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let (combined_commitment, combined_value, combined_point) =
             Self::multi_point_multi_poly_verify_combine(
                 labeled_commitments,
-                query_set,
+                query_map,
                 evaluations,
                 multi_point_proof,
                 fs_rng,
@@ -504,7 +506,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_set: &QuerySet<G::ScalarField>,
+        query_map: &QueryMap<G::ScalarField>,
         evaluations: &Evaluations<G::ScalarField>,
         multi_point_proof: &Self::MultiPointProof,
         // This implementation assumes that the commitments, query set and evaluations are already absorbed by the Fiat Shamir rng
@@ -513,7 +515,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let (combined_commitment, combined_value, combined_point) =
             Self::multi_point_multi_poly_verify_combine(
                 labeled_commitments,
-                query_set,
+                query_map,
                 evaluations,
                 multi_point_proof,
                 fs_rng,
@@ -608,7 +610,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_set: &QuerySet<G::ScalarField>,
+        query_map: &QueryMap<G::ScalarField>,
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
         mut rng: Option<&mut dyn RngCore>,
@@ -665,7 +667,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         let mut polynomials = vec![];
         let mut randomnesses = vec![];
 
-        for (label, (_point_label, point)) in query_set.iter() {
+        for ((label, _point_label), point) in query_map.iter() {
             eval_points.insert(*point);
 
             if !commitment_map.contains_key(label) {
@@ -850,7 +852,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     // TODO: let us declare this function as internal.
     fn multi_point_multi_poly_verify_combine<'a>(
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_set: &QuerySet<G::ScalarField>,
+        query_map: &QueryMap<G::ScalarField>,
         evaluations: &Evaluations<G::ScalarField>,
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle,
@@ -886,7 +888,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         // Expected value wich LC(p_1(X),p_2(X),...,p_m(X),h(X)) opens to
         let mut lc_value = G::ScalarField::zero();
 
-        for (label, (_point_label, point)) in query_set.iter() {
+        for ((label, point_label), point) in query_map.iter() {
             // Assert x_point != x_1, ..., x_m
             if point == &x_point {
                 Err(Error::Other(
@@ -900,12 +902,11 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
                 })?;
 
             // y_i
-            let y_i =
-                *evaluations
-                    .get(&(label.clone(), *point))
-                    .ok_or(Error::MissingEvaluation {
-                        label: label.to_string(),
-                    })?;
+            let y_i = *evaluations
+                .get(&(label.clone(), point_label.clone()))
+                .ok_or(Error::MissingEvaluation {
+                    label: label.to_string(),
+                })?;
 
             // (X - x_i)
             let x_polynomial =
@@ -937,8 +938,8 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     fn batch_succinct_verify<'a>(
         vk: &Self::VerifierKey,
         commitments: impl IntoIterator<Item = &'a [LabeledCommitment<Self::Commitment>]>,
-        query_sets: impl IntoIterator<Item = &'a QuerySet<'a, G::ScalarField>>,
-        values: impl IntoIterator<Item = &'a Evaluations<'a, G::ScalarField>>,
+        query_maps: impl IntoIterator<Item = &'a QueryMap<G::ScalarField>>,
+        values: impl IntoIterator<Item = &'a Evaluations<G::ScalarField>>,
         multi_point_proofs: impl IntoIterator<Item = &'a Self::MultiPointProof>,
         states: impl IntoIterator<Item = &'a <Self::RandomOracle as FiatShamirRng>::State>,
     ) -> Result<Vec<Self::VerifierState>, Self::Error>
@@ -948,7 +949,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
         Self::RandomOracle: 'a,
     {
         let comms = commitments.into_iter().collect::<Vec<_>>();
-        let query_sets = query_sets.into_iter().collect::<Vec<_>>();
+        let query_maps = query_maps.into_iter().collect::<Vec<_>>();
         let values = values.into_iter().collect::<Vec<_>>();
         let multi_point_proofs = multi_point_proofs.into_iter().collect::<Vec<_>>();
         let states = states.into_iter().collect::<Vec<_>>();
@@ -963,12 +964,12 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             Vec<Result<_, Self::Error>>,
         ) = comms
             .into_iter()
-            .zip(query_sets)
+            .zip(query_maps)
             .zip(values)
             .zip(multi_point_proofs)
             .zip(states)
             .map(
-                |((((commitments, query_set), values), multi_point_proof), state)| {
+                |((((commitments, query_map), values), multi_point_proof), state)| {
                     let mut fs_rng = Self::RandomOracle::default();
                     fs_rng.set_state(state.clone());
 
@@ -976,7 +977,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
                     let verfifier_state = Self::succinct_multi_point_multi_poly_verify(
                         vk,
                         commitments,
-                        query_set,
+                        query_map,
                         values,
                         multi_point_proof,
                         &mut fs_rng,
@@ -1005,31 +1006,31 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
     }
 }
 
-/// Evaluate the given polynomials at `query_set`.
-pub fn evaluate_query_set<'a, F: Field>(
+/// Evaluate the given polynomials at `query_map`.
+pub fn evaluate_query_map<'a, F: Field>(
     polys: impl IntoIterator<Item = &'a LabeledPolynomial<F>>,
-    query_set: &QuerySet<'a, F>,
-) -> Evaluations<'a, F> {
+    query_map: &QueryMap<F>,
+) -> Evaluations<F> {
     let polys = BTreeMap::from_iter(polys.into_iter().map(|p| (p.label(), p)));
     let mut evaluations = Evaluations::new();
-    for (label, (_, point)) in query_set {
+    for ((label, point_label), point) in query_map {
         let poly = polys
             .get(label)
             .expect("polynomial in evaluated lc is not found");
         let eval = poly.evaluate(*point);
-        evaluations.insert((label.clone(), *point), eval);
+        evaluations.insert((label.clone(), point_label.clone()), eval);
     }
     evaluations
 }
 
-/// Evaluate the given polynomials at `query_set` and returns a Vec<((poly_label, point_label), eval)>)
-pub fn evaluate_query_set_to_vec<'a, F: Field>(
+/// Evaluate the given polynomials at `query_map` and returns a Vec<((poly_label, point_label), eval)>)
+pub fn evaluate_query_map_to_vec<'a, F: Field>(
     polys: impl IntoIterator<Item = &'a LabeledPolynomial<F>>,
-    query_set: &QuerySet<'a, F>,
+    query_map: &QueryMap<F>,
 ) -> Vec<((String, String), F)> {
     let polys = BTreeMap::from_iter(polys.into_iter().map(|p| (p.label(), p)));
     let mut v = Vec::new();
-    for (label, (point_label, point)) in query_set {
+    for ((label, point_label), point) in query_map {
         let poly = polys
             .get(label)
             .expect("polynomial in evaluated lc is not found");

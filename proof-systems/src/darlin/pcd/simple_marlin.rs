@@ -130,7 +130,7 @@ where
         let succinct_time = start_timer!(|| "Marlin succinct verifier");
 
         // Verify the IOP/AHP
-        let (query_set, evaluations, labeled_comms, mut fs_rng) = Marlin::<
+        let (query_map, evaluations, labeled_comms, mut fs_rng) = Marlin::<
             G,
             DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>,
         >::verify_iop(
@@ -156,7 +156,7 @@ where
         let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, FS>>::succinct_multi_point_multi_poly_verify(
             &vk.1,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &self.proof.pc_proof,
             &mut fs_rng,
