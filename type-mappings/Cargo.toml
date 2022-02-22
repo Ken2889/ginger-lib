@@ -12,10 +12,10 @@ edition = "2018"
 
 [dependencies]
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
-primitives = { features = ["merkle_tree", "signature", "vrf"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development" }
+primitives = { path = "../primitives", features = ["merkle_tree", "signature", "vrf"] }
 
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
-proof-systems = { features = ["groth16"], git = "https://github.com/HorizenOfficial/ginger-lib.git", branch = "development", optional = true }
+proof-systems = { path = "../proof-systems", features = ["groth16"], optional = true }
 marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "dev", optional = true }
 poly-commit = { git = "https://github.com/HorizenLabs/poly-commit", branch = "dev", optional = true }
 
