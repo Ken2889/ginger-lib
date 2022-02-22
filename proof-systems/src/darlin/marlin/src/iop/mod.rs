@@ -114,10 +114,8 @@ impl<F: PrimeField> IOP<F> {
         state: &verifier::VerifierState<F>,
     ) -> Result<(), Error> {
         let domain_h = &state.domain_h;
-        let g_h = domain_h.group_gen();
 
         let domain_k = &state.domain_k;
-        let g_k = domain_k.group_gen();
         let k_size_inv = domain_k.size_inv();
 
         let public_input = Self::format_public_input(public_input);

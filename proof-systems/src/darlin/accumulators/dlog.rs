@@ -6,9 +6,7 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{
-    serialize::*, Field, Group, GroupVec, SemanticallyValid, UniformRand, EndoMulCurve,
-};
+use algebra::{serialize::*, EndoMulCurve, Field, Group, GroupVec, SemanticallyValid, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::{
@@ -279,13 +277,17 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
 
         // Compute multi-poly single-point opening proof for the G_f's, i.e.
         // the commitments of the item polys.
-        let opening_proof =
-            InnerProductArgPC::<G, FS>::open_reduction_polynomials(&ck, xi_s.iter(), z, &mut fs_rng)
-                .map_err(|e| {
-                    end_timer!(poly_time);
-                    end_timer!(accumulate_time);
-                    e
-                })?;
+        let opening_proof = InnerProductArgPC::<G, FS>::open_reduction_polynomials(
+            &ck,
+            xi_s.iter(),
+            z,
+            &mut fs_rng,
+        )
+        .map_err(|e| {
+            end_timer!(poly_time);
+            end_timer!(accumulate_time);
+            e
+        })?;
 
         end_timer!(poly_time);
 
@@ -350,8 +352,12 @@ pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
     pub(crate) Vec<DLogItem<G2>>,
 );
 
-
-pub struct DualDLogItemAccumulator<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
+pub struct DualDLogItemAccumulator<
+    'a,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'static,
+> {
     _lifetime: PhantomData<&'a ()>,
     _group_1: PhantomData<G1>,
     _group_2: PhantomData<G2>,
@@ -363,7 +369,7 @@ impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
-    FS: FiatShamirRng + 'static
+    FS: FiatShamirRng + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
     type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
@@ -468,7 +474,7 @@ mod test {
     use poly_commit::{
         ipa_pc::{Parameters, Proof},
         DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial, PCParameters,
-        PolynomialCommitment, QuerySet,
+        PolynomialCommitment, QueryMap,
     };
 
     use blake2::Blake2s;
@@ -498,8 +504,8 @@ mod test {
     struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
-        query_map: QuerySet<'a, G::ScalarField>,
-        values: Evaluations<'a, G::ScalarField>,
+        query_map: QueryMap<G::ScalarField>,
+        values: Evaluations<G::ScalarField>,
         proof: DomainExtendedMultiPointProof<G, Proof<G>>,
         polynomials: Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials: usize,
@@ -516,7 +522,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let TestInfo {
             max_degree,       // maximum degree supported by the dlog commitment scheme
@@ -534,7 +540,9 @@ mod test {
         let pp = if pp.is_some() {
             pp.unwrap()
         } else {
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+                max_degree,
+            )?
         };
 
         test_canonical_serialize_deserialize(true, &pp);
@@ -552,15 +560,15 @@ mod test {
 
         // random degree multiplier when using segementation
         let seg_mul = rand::distributions::Uniform::from(5..=15).sample(rng);
-        let mut labels = Vec::new();
+        let mut poly_labels = Vec::new();
         println!("Sampled supported degree");
 
         // Generate random dense polynomials
         let num_points_in_query_map =
             rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
         for i in 0..num_polynomials {
-            let label = format!("Test{}", i);
-            labels.push(label.clone());
+            let poly_label = format!("Test{}", i);
+            poly_labels.push(poly_label.clone());
             let degree;
             if segmented {
                 degree = if supported_degree > 0 {
@@ -577,7 +585,7 @@ mod test {
             }
             let poly = Polynomial::rand(degree, rng);
 
-            polynomials.push(LabeledPolynomial::new(label, poly, hiding))
+            polynomials.push(LabeledPolynomial::new(poly_label, poly, hiding))
         }
         println!("supported degree: {:?}", supported_degree);
         println!("num_points_in_query_map: {:?}", num_points_in_query_map);
@@ -596,15 +604,16 @@ mod test {
 
         // Construct "symmetric" query set: every polynomial is evaluated at every
         // point.
-        let mut query_map = QuerySet::new();
+        let mut query_map = QueryMap::new();
         let mut values = Evaluations::new();
-        // let mut point = F::one();
-        for _ in 0..num_points_in_query_map {
+        for j in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
-            for (i, label) in labels.iter().enumerate() {
-                query_map.insert((label.clone(), (format!("{}", i), point)));
+            let point_label = format!("{}", j);
+            for (i, poly_label) in poly_labels.iter().enumerate() {
+                let eval_label = (poly_label.clone(), point_label.clone());
                 let value = polynomials[i].evaluate(point);
-                values.insert((label.clone(), point), value);
+                query_map.insert(eval_label.clone(), point);
+                values.insert(eval_label, value);
             }
         }
         println!("Generated query set");
@@ -641,7 +650,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -654,8 +663,9 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+            max_degree,
+        )?;
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -747,7 +757,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -760,8 +770,9 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+            max_degree,
+        )?;
         let (_, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
@@ -839,7 +850,6 @@ mod test {
     };
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-    
     #[test]
     fn test_tweedle_accumulate_verify() {
         accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
