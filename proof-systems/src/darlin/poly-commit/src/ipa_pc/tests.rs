@@ -2,21 +2,21 @@
 #![allow(non_camel_case_types)]
 
 use algebra::{
-    curves::tweedle::dee::DeeJacobian as TweedleDee, fields::tweedle::{Fr, Fq},
-    Curve, Field, UniformRand, EndoMulCurve, CanonicalSerialize, serialize_no_metadata};
+    curves::tweedle::dee::DeeJacobian as TweedleDee,
+    fields::tweedle::{Fq, Fr},
+    serialize_no_metadata, CanonicalSerialize, Curve, EndoMulCurve, Field, UniformRand,
+};
 use blake2::Blake2s;
 use digest::Digest;
 
 use super::InnerProductArgPC;
-use crate::Error;
-use fiat_shamir::{
-    FiatShamirRng, FiatShamirRngSeed,
-};
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
+use crate::Error;
 use crate::{
     DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PolynomialCommitment,
 };
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use rand::thread_rng;
 use rayon::prelude::*;
 use std::ops::Mul;
@@ -35,7 +35,6 @@ impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
 use crate::tests::*;
 
 fn exec_tests<FN: Fn(Option<NegativeType>) -> Result<(), Error>>(test: FN) {
-
     // Positive case
     test(None).expect("test failed");
 
@@ -298,9 +297,16 @@ mod chacha_fs {
     // The ipa_pc over the Tweedle Dee using a Chacha-Blake2s based Fiat-Shamir rng.
     type PC_DEE_CHACHA_BLAKE2S = PC<TweedleDee, FiatShamirChaChaRng<Blake2s>>;
     // its domain extended variant
-    type PC_DEE_CHACHA_DE_BLAKE2S = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_CHACHA_BLAKE2S>;
-    
-    generate_pc_tests!(pc_dee, PC_DEE_CHACHA_BLAKE2S, PC_DEE_CHACHA_DE_BLAKE2S, Blake2s, CHACHA_BLAKE2S_FS_RNG);
+    type PC_DEE_CHACHA_DE_BLAKE2S =
+        DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_CHACHA_BLAKE2S>;
+
+    generate_pc_tests!(
+        pc_dee,
+        PC_DEE_CHACHA_BLAKE2S,
+        PC_DEE_CHACHA_DE_BLAKE2S,
+        Blake2s,
+        CHACHA_BLAKE2S_FS_RNG
+    );
 }
 
 #[cfg(feature = "circuit-friendly")]
@@ -312,8 +318,13 @@ mod poseidon_fs {
     type PC_DEE_POSEIDON = PC<TweedleDee, TweedleFqPoseidonSponge>;
     // its domain extended variant
     type PC_DEE_POSEIDON_DE = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_POSEIDON>;
-    
-    generate_pc_tests!(pc_dee, PC_DEE_POSEIDON, PC_DEE_POSEIDON_DE, Blake2s, POSEIDON_TWEEDLE_FQ_FS_RNG);
+
+    generate_pc_tests!(
+        pc_dee,
+        PC_DEE_POSEIDON,
+        PC_DEE_POSEIDON_DE,
+        Blake2s,
+        POSEIDON_TWEEDLE_FQ_FS_RNG
+    );
 }
 // The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
-

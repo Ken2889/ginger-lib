@@ -25,6 +25,10 @@ algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive
 bench-utils = {  path = "../../../../bench-utils" }
 primitives = { path = "../../../../primitives", features = ["tweedle"], optional = true }
 fiat-shamir = { path = "../fiat-shamir" }
+r1cs-std = { path =  "../../../../r1cs/gadgets/std", features = ["nonnative"]}
+r1cs-core = { path = "../../../../r1cs/core" }
+r1cs-crypto = { path =  "../../../../r1cs/gadgets/crypto"}
+
 
 rand = { version = "0.8.4", default-features = false }
 rand_core = { version = "0.6.3", default-features = false }

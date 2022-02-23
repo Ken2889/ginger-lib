@@ -10,19 +10,22 @@ use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    BitIterator, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata, EndoMulCurve
+    serialize_no_metadata, BitIterator, CanonicalSerialize, EndoMulCurve, Field, Group, PrimeField,
+    SemanticallyValid, UniformRand,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
 use std::{format, vec};
 
+mod constraints;
 mod data_structures;
+pub use constraints::InnerProductArgGadget;
 pub use data_structures::*;
 
 use rayon::prelude::*;
 
-use fiat_shamir::FiatShamirRng;
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 
 #[cfg(test)]
 mod tests;
@@ -220,7 +223,10 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
+    fn setup_from_seed<D: Digest>(
+        max_degree: usize,
+        seed: &[u8],
+    ) -> Result<Self::Parameters, Self::Error> {
         // Ensure that max_degree + 1 is a power of 2
         let max_degree = (max_degree + 1).next_power_of_two() - 1;
 
@@ -228,7 +234,8 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let generators = Self::sample_generators::<D>(max_degree + 3, seed);
         end_timer!(setup_time);
 
-        let hash = D::digest(&serialize_no_metadata![&generators, max_degree as u32].unwrap()).to_vec();
+        let hash =
+            D::digest(&serialize_no_metadata![&generators, max_degree as u32].unwrap()).to_vec();
 
         let h = generators[0].clone();
         let s = generators[1].clone();
@@ -438,7 +445,12 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         fs_rng: &mut FS,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
         let succinct_verify_time = start_timer!(|| "Succinct verify");
-
+        println!(
+            "actual commitment: {:?}, actual point: {}, actual value: {}",
+            commitment.normalize(),
+            point,
+            value
+        );
         let log_key_len = proof.l_vec.len();
 
         if proof.l_vec.len() != proof.r_vec.len() {
@@ -489,18 +501,15 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.absorb([*l, *r])?;
             round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
-
             round_challenges.push(round_challenge);
 
             // round_challenge is guaranteed to be non-zero by squeeze function
             round_commitment_proj +=
                 &(l.mul(&round_challenge.inverse().unwrap()) + &r.mul(&round_challenge));
         }
-
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
         let check_poly = SuccinctCheckPolynomial::<G::ScalarField>(round_challenges);
         let v_prime = check_poly.evaluate(point) * &proof.c;
-
         let check_commitment_elem: G = Self::inner_commit(
             &[
                 proof.final_comm_key.into_affine().unwrap(),
@@ -510,7 +519,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             None,
             None,
         )?;
-
         if !G::is_zero(&(round_commitment_proj - &check_commitment_elem)) {
             end_timer!(succinct_verify_time);
             return Ok(None);

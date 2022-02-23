@@ -1,4 +1,4 @@
-use algebra::{DensePolynomial as Polynomial, UniformRand, EndoMulCurve};
+use algebra::{DensePolynomial as Polynomial, EndoMulCurve, UniformRand};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -14,7 +14,9 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest, R: RngCore>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest, R: RngCore>(
+    info: &BenchInfo,
+) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -33,7 +35,11 @@ fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest, R: RngCore>(info: 
     ck
 }
 
-fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(c: &mut Criterion, bench_name: &str, coeffs: usize) {
+fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(
+    c: &mut Criterion,
+    bench_name: &str,
+    coeffs: usize,
+) {
     let mut group = c.benchmark_group(bench_name);
 
     let max_degree = coeffs - 1;
@@ -104,13 +110,21 @@ mod benches {
 
     pub(crate) fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DeeJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(c, "open proof in tweedle-dee, chacha fs, coeffs", 1 << n);
+            bench_open_proof::<DeeJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                c,
+                "open proof in tweedle-dee, chacha fs, coeffs",
+                1 << n,
+            );
         }
     }
-    
+
     pub(crate) fn bench_open_proof_tweedle_dum(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DumJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(c, "open proof in tweedle-dum, chacha fs, coeffs", 1 << n);
+            bench_open_proof::<DumJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                c,
+                "open proof in tweedle-dum, chacha fs, coeffs",
+                1 << n,
+            );
         }
     }
 }
@@ -122,13 +136,21 @@ mod benches {
 
     pub(crate) fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DeeJacobian, TweedleFqPoseidonSponge, Blake2s>(c, "open proof in tweedle-dee, poseidon fs, coeffs", 1 << n);
+            bench_open_proof::<DeeJacobian, TweedleFqPoseidonSponge, Blake2s>(
+                c,
+                "open proof in tweedle-dee, poseidon fs, coeffs",
+                1 << n,
+            );
         }
     }
-    
+
     pub(crate) fn bench_open_proof_tweedle_dum(c: &mut Criterion) {
         for n in 16..22 {
-            bench_open_proof::<DumJacobian, TweedleFrPoseidonSponge, Blake2s>(c, "open proof in tweedle-dum, poseidon fs, coeffs", 1 << n);
+            bench_open_proof::<DumJacobian, TweedleFrPoseidonSponge, Blake2s>(
+                c,
+                "open proof in tweedle-dum, poseidon fs, coeffs",
+                1 << n,
+            );
         }
     }
 }

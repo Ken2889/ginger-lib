@@ -73,7 +73,7 @@ pub mod prelude {
         },
         eq::*,
         fields::FieldGadget,
-        groups::GroupGadget,
+        groups::{GroupGadget, EndoMulCurveGadget},
         select::*,
     };
 }

@@ -9,7 +9,8 @@
 use crate::*;
 use algebra::groups::{Group, GroupVec};
 use std::{
-    io::{ Read, Write }, convert::TryFrom,
+    convert::TryFrom,
+    io::{Read, Write},
 };
 
 /// Multi-point multi-poly opening proof according to [BDFG2020](https://eprint.iacr.org/2020/081).
@@ -17,17 +18,16 @@ use std::{
 /// linear combinations.
 #[derive(Derivative)]
 #[derivative(
-Clone(bound = ""),
-Debug(bound = ""),
-Eq(bound = ""),
-PartialEq(bound = ""),
+    Clone(bound = ""),
+    Debug(bound = ""),
+    Eq(bound = ""),
+    PartialEq(bound = "")
 )]
 pub struct DomainExtendedMultiPointProof<G, P>
-    where
-        G: Group,
-        P: PCProof,
+where
+    G: Group,
+    P: PCProof,
 {
-
     /// This is a "classical" single-point multi-poly proof which involves all commitments:
     /// commitments from the initial claim and the new "h_commitment"
     pub proof: P,
@@ -37,9 +37,9 @@ pub struct DomainExtendedMultiPointProof<G, P>
 }
 
 impl<G, P> PCMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
-    where
-        G: Group,
-        P: PCProof,
+where
+    G: Group,
+    P: PCProof,
 {
     type Commitment = GroupVec<G>;
     type Proof = P;
@@ -48,7 +48,7 @@ impl<G, P> PCMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self {
         Self {
             proof,
-            h_commitment
+            h_commitment,
         }
     }
 
@@ -64,29 +64,28 @@ impl<G, P> PCMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
 }
 
 impl<G, P> SemanticallyValid for DomainExtendedMultiPointProof<G, P>
-    where
-        G: Group,
-        P: PCProof,
+where
+    G: Group,
+    P: PCProof,
 {
     fn is_valid(&self) -> bool {
-        self.proof.is_valid() &&
-            self.h_commitment.is_valid()
+        self.proof.is_valid() && self.h_commitment.is_valid()
     }
 }
 
 impl<G, P> CanonicalSerialize for DomainExtendedMultiPointProof<G, P>
-    where
-        G: Group,
-        P: PCProof,
+where
+    G: Group,
+    P: PCProof,
 {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-
         // Serialize proof
         CanonicalSerialize::serialize(&self.proof, &mut writer)?;
 
         // Serialize h_comm
         // More than enough for practical applications
-        let h_comm_len = u8::try_from(self.h_commitment.len()).map_err(|_| SerializationError::NotEnoughSpace)?;
+        let h_comm_len = u8::try_from(self.h_commitment.len())
+            .map_err(|_| SerializationError::NotEnoughSpace)?;
         CanonicalSerialize::serialize(&h_comm_len, &mut writer)?;
 
         // Save only one of the coordinates of the point and one byte of flags in order
@@ -100,10 +99,14 @@ impl<G, P> CanonicalSerialize for DomainExtendedMultiPointProof<G, P>
 
     fn serialized_size(&self) -> usize {
         self.proof.serialized_size()
-            + 1 + (self.h_commitment.len() * self.h_commitment[0].serialized_size())
+            + 1
+            + (self.h_commitment.len() * self.h_commitment[0].serialized_size())
     }
 
-    fn serialize_without_metadata<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+    fn serialize_without_metadata<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), SerializationError> {
         // Serialize proof
         CanonicalSerialize::serialize_without_metadata(&self.proof, &mut writer)?;
 
@@ -122,7 +125,8 @@ impl<G, P> CanonicalSerialize for DomainExtendedMultiPointProof<G, P>
 
         // Serialize h_comm
         // More than enough for practical applications
-        let h_comm_len = u8::try_from(self.h_commitment.len()).map_err(|_| SerializationError::NotEnoughSpace)?;
+        let h_comm_len = u8::try_from(self.h_commitment.len())
+            .map_err(|_| SerializationError::NotEnoughSpace)?;
         CanonicalSerialize::serialize_uncompressed(&h_comm_len, &mut writer)?;
 
         // Save only one of the coordinates of the point and one byte of flags in order
@@ -137,17 +141,17 @@ impl<G, P> CanonicalSerialize for DomainExtendedMultiPointProof<G, P>
     #[inline]
     fn uncompressed_size(&self) -> usize {
         self.proof.uncompressed_size()
-            + 1 + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size())
+            + 1
+            + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size())
     }
 }
 
 impl<G, P> CanonicalDeserialize for DomainExtendedMultiPointProof<G, P>
-    where
-        G: Group,
-        P: PCProof,
+where
+    G: Group,
+    P: PCProof,
 {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-
         // Read proof
         let proof: P = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -203,7 +207,9 @@ impl<G, P> CanonicalDeserialize for DomainExtendedMultiPointProof<G, P>
     }
 
     #[inline]
-    fn deserialize_uncompressed_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
         // Read proof
         let proof: P = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 

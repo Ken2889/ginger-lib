@@ -37,12 +37,13 @@ extern crate bench_utils;
 #[cfg(test)]
 mod tests;
 
-use fiat_shamir::FiatShamirRng;
 pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, EndoMulCurve, Field, Group, LinearCombination, SemanticallyValid, ToConstraintField,
+    serialize::*, EndoMulCurve, Field, Group, LinearCombination, SemanticallyValid,
+    ToConstraintField,
 };
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use rand_core::RngCore;
 use std::{
     collections::BTreeMap,
@@ -72,9 +73,11 @@ pub use domain_extended::*;
 /// The [BCMS20](https://eprint.iacr.org/2020/499) variant of the dlog commitment scheme.
 pub mod ipa_pc;
 
-/// `QueryMap` represents queries that are to be made to a set `p` of labeled polynomials or
-/// linear combinations.
-///
+/// Gadget to verify opening proofs of a linear polynomial commitment scheme
+pub mod constraints;
+pub use constraints::*;
+
+/// `QueryMap` represents queries that are to be made to a set `p` of labeled polynomials or linear combinations.
 ///  `QueryMap` maps the pair `(poly_label, point_label)` to `point`, where:
 ///  * `poly_label` is the label of a polynomial in `p`,
 ///  * `point_label` is the label for the point (e.g., "beta"), and
@@ -132,7 +135,10 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
     /// Constructs public parameters when given as input the maximum degree `degree`
     /// for the polynomial commitment scheme from given seed
-    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error>;
+    fn setup_from_seed<D: Digest>(
+        max_degree: usize,
+        seed: &[u8],
+    ) -> Result<Self::Parameters, Self::Error>;
 
     /// Computes the commitment of a single polynomial
     fn commit(
@@ -873,15 +879,16 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
         // lambda
         let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        println!("actual lambda: {}", lambda);
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
         fs_rng
             .absorb(multi_point_proof.get_h_commitment().clone())
             .map_err(Error::FiatShamirTransformError)?;
-            
+
         let x_point = fs_rng.squeeze_128_bits_challenge::<G>()?;
-        
+
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
         let mut lc_commitment = Self::Commitment::zero();
 
@@ -915,7 +922,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             // z_i(x)/z(x) = 1 / (x - x_i).
             // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
             let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
-
+            println!("z_i_over_z: {}", z_i_over_z_value);
             lc_commitment +=
                 &(labeled_commitment.commitment().clone() * &(z_i_over_z_value * cur_challenge));
 
