@@ -354,9 +354,9 @@ pub(crate) fn multi_poly_multi_point_test<
 >() -> Result<(), PCG::Error> {
     test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
         num_iters: 5,
-        max_degree: Some(64),
-        supported_degree: Some(64),
-        num_polynomials: 2,
+        max_degree: None,
+        supported_degree: None,
+        num_polynomials: 5,
         max_num_queries: 5,
     })
 }
@@ -370,8 +370,8 @@ pub(crate) fn single_poly_multi_point_test<
 >() -> Result<(), PCG::Error> {
     test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
         num_iters: 5,
-        max_degree: Some(64),
-        supported_degree: Some(64),
+        max_degree: None,
+        supported_degree: None,
         num_polynomials: 1,
         max_num_queries: 5,
     })

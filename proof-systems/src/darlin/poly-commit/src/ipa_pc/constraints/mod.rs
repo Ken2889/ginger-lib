@@ -17,6 +17,7 @@ use std::marker::PhantomData;
 
 mod data_structures;
 
+#[cfg(feature = "circuit-friendly")]
 #[cfg(test)]
 mod tests;
 
