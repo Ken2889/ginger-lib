@@ -68,15 +68,17 @@ impl<
             random_oracle.enforce_absorb(cs.ns(|| "absorb hiding commitment"), comm.clone())?;
             let hiding_challenge = random_oracle
                 .enforce_squeeze_128_bits_challenges(cs.ns(|| "squeeze hiding challenge"), 1)?[0];
-            let hiding_randomness = proof.rand.as_ref().unwrap();
-            let hiding_randomness_bits =
-                hiding_randomness.to_bits(cs.ns(|| "hiding randomness to bits"))?;
+            let hiding_randomness_bits = proof.rand.as_ref().unwrap();
+            //ToDo: conversion to NonNativeFieldGadget is necessary only because hiding_randomness
+            // must be absorbed to be compliant with the primitive. Since this absorb may seem
+            // unnecessary, we may remove it also from here once it is removed in the primitive
+            let hiding_randomness=
+                NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| "hiding randomness to bits"), &hiding_randomness_bits)?;
             random_oracle.enforce_absorb(
                 cs.ns(|| "absorb hiding randomness"),
-                &[hiding_randomness.clone()][..],
+                &[hiding_randomness][..],
             )?;
 
-            //let comm_times_challenge = comm.endo_mul(cs.ns(|| "hiding_commitment * hiding_challenge"), &hiding_challenge)?;
             let comm_times_challenge =
                 safe_mul::<ConstraintF, G, GG, InnerProductArgPC<G, FS>, Self, _, _>(
                     cs.ns(|| "hiding_commitment * hiding_challenge"),
@@ -239,15 +241,13 @@ impl<
             point_power.square_in_place(cs.ns(|| format!("compute point^(2^{})", i)))?;
         }
 
-        let v_prime = proof
-            .c
-            .mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
-        let c_bits = proof.c.to_bits(cs.ns(|| "c to bits"))?;
+        let c = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| "proof.c from bits"), &proof.c)?;
+        let v_prime =c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
         let c_times_final_comm_key =
             safe_mul::<ConstraintF, G, GG, InnerProductArgPC<G, FS>, Self, _, _>(
                 cs.ns(|| "c*g_final"),
                 &proof.final_comm_key,
-                c_bits.iter().rev(),
+                proof.c.iter().rev(),
                 false,
             )?;
         let v_prime_bits = v_prime.to_bits(cs.ns(|| "v' to bits"))?;

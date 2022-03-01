@@ -1,15 +1,16 @@
 use crate::ipa_pc::constraints::InnerProductArgGadget;
 use crate::ipa_pc::{InnerProductArgPC, MultiPointProof, Proof, VerifierKey, VerifierState};
 use crate::{MultiPointProofGadget, PCVerifierKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, VerifierStateGadget};
-use algebra::{EndoMulCurve, PrimeField, SemanticallyValid};
+use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, ToBits};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
-use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget};
+use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget, UInt8};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::{borrow::Borrow, marker::PhantomData};
+use r1cs_std::boolean::Boolean;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IPAVerifierKeyGadget<
@@ -20,6 +21,7 @@ pub struct IPAVerifierKeyGadget<
     segment_size: usize,
     pub(crate) h: GG,
     pub(crate) s: GG,
+    hash: Vec<UInt8>,
     _group_phantom: PhantomData<G>,
     _constraint_field_phantom: PhantomData<ConstraintF>,
 }
@@ -31,6 +33,10 @@ impl<
 > VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG> {
     fn segment_size(&self) -> usize {
         self.segment_size
+    }
+
+    fn get_hash(&self) -> &Vec<UInt8> {
+        &self.hash
     }
 }
 
@@ -54,10 +60,13 @@ impl<
         let h = GG::alloc(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
         let s = GG::alloc(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
+        let hash = UInt8::alloc_vec(cs.ns(|| "alloc hash of vk"), vk.get_hash())?;
+
         Ok(Self {
             segment_size: vk.segment_size(),
             h,
             s,
+            hash,
             _group_phantom: PhantomData,
             _constraint_field_phantom: PhantomData,
         })
@@ -77,10 +86,13 @@ impl<
         let h = GG::alloc_input(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
         let s = GG::alloc_input(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
+        let hash = UInt8::alloc_input_vec(cs.ns(|| "alloc hash of vk"), vk.get_hash())?;
+
         Ok(Self {
             segment_size: vk.segment_size(),
             h,
             s,
+            hash,
             _group_phantom: PhantomData,
             _constraint_field_phantom: PhantomData,
         })
@@ -210,9 +222,9 @@ pub struct IPAProofGadget<
     pub(crate) vec_l: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
     pub(crate) vec_r: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
     pub(crate) final_comm_key: IPACommitment<ConstraintF, G, GG, FS, FSG>,
-    pub(crate) c: NonNativeFieldGadget<G::ScalarField, ConstraintF>,
+    pub(crate) c: Vec<Boolean>,
     pub(crate) hiding_comm: Option<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
-    pub(crate) rand: Option<NonNativeFieldGadget<G::ScalarField, ConstraintF>>, //ToDo: this can be probably represented as a Boolean sequence rather than a NonNativeFieldGadget
+    pub(crate) rand: Option<Vec<Boolean>>,
 }
 
 impl<
@@ -253,8 +265,8 @@ impl<
         let final_comm_key = GG::alloc(cs.ns(|| "alloc final commitment key for proof"), || {
             Ok(proof.final_comm_key)
         })?;
-        let c = NonNativeFieldGadget::alloc(cs.ns(|| "alloc final polynomial for proof"), || {
-            Ok(proof.c)
+        let c = Vec::<Boolean>::alloc(cs.ns(|| "alloc final polynomial for proof"), || {
+            Ok(proof.c.write_bits())
         })?;
 
         let hiding_comm = match proof.hiding_comm {
@@ -266,9 +278,9 @@ impl<
         };
 
         let rand = match proof.rand {
-            Some(r) => Some(NonNativeFieldGadget::alloc(
-                cs.ns(|| "alloc hiding randomenss for proof"),
-                || Ok(r),
+            Some(r) => Some(Vec::<Boolean>::alloc(
+                cs.ns(|| "alloc hiding randomness for proof"),
+                || Ok(r.write_bits()),
             )?),
             None => None,
         };
@@ -314,8 +326,8 @@ impl<
             GG::alloc_input(cs.ns(|| "alloc final commitment key for proof"), || {
                 Ok(proof.final_comm_key)
             })?;
-        let c = NonNativeFieldGadget::alloc(cs.ns(|| "alloc final commitment for proof"), || {
-            Ok(proof.c)
+        let c = Vec::<Boolean>::alloc(cs.ns(|| "alloc final commitment for proof"), || {
+            Ok(proof.c.write_bits())
         })?;
 
         let hiding_comm = match proof.hiding_comm {
@@ -327,9 +339,9 @@ impl<
         };
 
         let rand = match proof.rand {
-            Some(r) => Some(NonNativeFieldGadget::alloc_input(
+            Some(r) => Some(Vec::<Boolean>::alloc_input(
                 cs.ns(|| "alloc hiding randomness for proof"),
-                || Ok(r),
+                || Ok(r.write_bits()),
             )?),
             None => None,
         };

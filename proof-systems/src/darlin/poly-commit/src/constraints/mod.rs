@@ -16,6 +16,7 @@ use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
+use r1cs_std::uint8::UInt8;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Clone)]
@@ -85,6 +86,9 @@ pub trait VerifierKeyGadget<VK: PCVerifierKey, ConstraintF: PrimeField>:
     /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
     /// with `self`
     fn segment_size(&self) -> usize;
+
+    /// Get the gadget for the hash of the verifier key `VK` represented by `self`
+    fn get_hash(&self) -> &Vec<UInt8>;
 }
 
 impl From<SynthesisError> for PolyError {
