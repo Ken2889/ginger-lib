@@ -1,7 +1,8 @@
 //!
 //! A module for extending the domain of an arbitrary homomorphic commitment scheme beyond the
 //! maximum degree supported by it.
-
+mod constraints;
+pub use constraints::*;
 mod data_structures;
 use algebra::EndoMulCurve;
 pub use data_structures::*;
@@ -26,6 +27,8 @@ pub struct DomainExtendedPolynomialCommitment<
     _projective: PhantomData<G>,
     _pc: PhantomData<PC>,
 }
+
+
 
 // Domain extension beyond the maximum degree `s` is achieved by leveraging linearity.
 // An (arbitrary degree) polynomial p(X) is regarded as sum of "segment polynomials", i.e.

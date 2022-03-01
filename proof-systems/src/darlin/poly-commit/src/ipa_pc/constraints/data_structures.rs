@@ -1,6 +1,6 @@
 use crate::ipa_pc::constraints::InnerProductArgGadget;
 use crate::ipa_pc::{InnerProductArgPC, MultiPointProof, Proof, VerifierKey, VerifierState};
-use crate::{MultiPointProofGadget, PolynomialCommitmentVerifierGadget, VerifierStateGadget};
+use crate::{MultiPointProofGadget, PCVerifierKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, VerifierStateGadget};
 use algebra::{EndoMulCurve, PrimeField, SemanticallyValid};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
@@ -11,15 +11,27 @@ use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::{borrow::Borrow, marker::PhantomData};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IPAVerifierKeyGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>,
 > {
+    segment_size: usize,
     pub(crate) h: GG,
     pub(crate) s: GG,
     _group_phantom: PhantomData<G>,
     _constraint_field_phantom: PhantomData<ConstraintF>,
+}
+
+impl<
+    ConstraintF: PrimeField,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+    GG: EndoMulCurveGadget<G, ConstraintF>,
+> VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG> {
+    fn segment_size(&self) -> usize {
+        self.segment_size
+    }
 }
 
 impl<
@@ -43,6 +55,7 @@ impl<
         let s = GG::alloc(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
         Ok(Self {
+            segment_size: vk.segment_size(),
             h,
             s,
             _group_phantom: PhantomData,
@@ -65,6 +78,7 @@ impl<
         let s = GG::alloc_input(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
         Ok(Self {
+            segment_size: vk.segment_size(),
             h,
             s,
             _group_phantom: PhantomData,
@@ -436,11 +450,11 @@ impl<
     type Commitment = IPACommitment<ConstraintF, G, GG, FS, FSG>;
     type Proof = IPAProof<ConstraintF, G, GG, FS, FSG>;
 
-    fn get_proof(&self) -> Self::Proof {
-        self.proof.clone()
+    fn get_proof(&self) -> &Self::Proof {
+        &self.proof
     }
 
-    fn get_h_commitment(&self) -> Self::Commitment {
-        self.h_commitment.clone()
+    fn get_h_commitment(&self) -> &Self::Commitment {
+        &self.h_commitment
     }
 }

@@ -1,7 +1,4 @@
-use crate::constraints::tests::{
-    multi_poly_multi_point_test, single_poly_multi_point_test, test_single_point_multi_poly_verify,
-    test_succinct_verify_template,
-};
+use crate::constraints::tests::{constant_polynomial_succinct_verify_test, multi_poly_multi_point_test, single_point_multi_poly_test, single_poly_multi_point_test, succinct_verify_single_point_single_poly_test, succinct_verify_with_segmentation_test};
 use crate::ipa_pc::constraints::InnerProductArgGadget;
 use crate::ipa_pc::InnerProductArgPC;
 use algebra::{
@@ -23,20 +20,32 @@ type PCG = InnerProductArgGadget<ConstraintF, FSG>;
 
 #[test]
 fn test_succinct_verify() {
-    test_succinct_verify_template::<ConstraintF, Curve, CurveGadget, PC, PCG>().unwrap()
+    succinct_verify_single_point_single_poly_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
+}
+
+#[test]
+fn test_succinct_verify_with_segmentation() {
+    succinct_verify_with_segmentation_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
 }
 
 #[test]
 fn test_multi_point_succinct_verify() {
-    multi_poly_multi_point_test::<ConstraintF, Curve, CurveGadget, PC, PCG>().unwrap()
+    multi_poly_multi_point_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
 }
 
 #[test]
-fn test_multi_poly_succinct_verify() {
-    test_single_point_multi_poly_verify::<ConstraintF, Curve, CurveGadget, PC, PCG>().unwrap()
+fn test_single_point_multi_poly_succinct_verify() {
+    single_point_multi_poly_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
 }
+
+
 
 #[test]
 fn test_single_poly_multi_point_succinct_verify() {
-    single_poly_multi_point_test::<ConstraintF, Curve, CurveGadget, PC, PCG>().unwrap()
+    single_poly_multi_point_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
+}
+
+#[test]
+fn test_constant_polynomial_succinct_verify() {
+    constant_polynomial_succinct_verify_test::<ConstraintF, Curve, CurveGadget, PC, PCG>()
 }

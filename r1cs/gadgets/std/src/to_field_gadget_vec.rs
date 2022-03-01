@@ -1,7 +1,4 @@
-use algebra::{
-    curves::models::{SWModelParameters, TEModelParameters},
-    PrimeField, FpParameters,
-};
+use algebra::{curves::models::{SWModelParameters, TEModelParameters}, PrimeField, FpParameters, Group};
 
 use crate::{fields::fp::FpGadget, uint8::UInt8, boolean::Boolean, FromBitsGadget};
 use crate::{
@@ -13,6 +10,8 @@ use crate::{
     groups::curves::twisted_edwards::AffineGadget as TEAffineGadget,
 };
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError as Error};
+use crate::groups::group_vec::GroupGadgetVec;
+use crate::groups::GroupGadget;
 
 /// Types that can be converted to a vector of elements that implement the `Field Gadget` trait.
 pub trait ToConstraintFieldGadget<ConstraintF: PrimeField> {
@@ -137,6 +136,24 @@ where
         let y_fe = self.y.to_field_gadget_elements(cs.ns(|| "y"))?;
         x_fe.extend_from_slice(&y_fe);
         Ok(x_fe)
+    }
+}
+
+impl<ConstraintF, G, GG> ToConstraintFieldGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG>
+where
+    ConstraintF: PrimeField,
+    G: Group,
+    GG: GroupGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget=FpGadget<ConstraintF>>
+{
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Vec<Self::FieldGadget>, Error> {
+        let mut res = Vec::new();
+        for (i, el) in self.iter().enumerate() {
+            let el_to_fe = el.to_field_gadget_elements(cs.ns(|| format!("convert element {} to field elements", i)))?;
+            res.extend_from_slice(el_to_fe.as_slice());
+        }
+        Ok(res)
     }
 }
 

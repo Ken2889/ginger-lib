@@ -1,7 +1,4 @@
-use crate::{
-    Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierState, PolynomialCommitment,
-    PolynomialLabel, QueryMap,
-};
+use crate::{Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialLabel, QueryMap};
 use algebra::{EndoMulCurve, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -70,16 +67,24 @@ pub trait MultiPointProofGadget<
     type Proof;
 
     /// get the proof gadget for the combined single-point assertion
-    fn get_proof(&self) -> Self::Proof;
+    fn get_proof(&self) -> &Self::Proof;
 
     /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
-    fn get_h_commitment(&self) -> Self::Commitment;
+    fn get_h_commitment(&self) -> &Self::Commitment;
 }
 
 /// Gadget for the state returned by verifier in case of successful verification
 pub trait VerifierStateGadget<VS: PCVerifierState, ConstraintF: PrimeField>:
     Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
 {
+}
+/// Interface for the gadget representing the verifier key
+pub trait VerifierKeyGadget<VK: PCVerifierKey, ConstraintF: PrimeField>:
+    Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
+{
+    /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
+    /// with `self`
+    fn segment_size(&self) -> usize;
 }
 
 impl From<SynthesisError> for PolyError {
@@ -146,7 +151,7 @@ pub trait PolynomialCommitmentVerifierGadget<
 >: Sized
 {
     /// Gadget for the verifier key
-    type VerifierKey: AllocGadget<PC::VerifierKey, ConstraintF>;
+    type VerifierKey: VerifierKeyGadget<PC::VerifierKey, ConstraintF>;
     /// Gadget for the state returned by verify functions
     type VerifierState: VerifierStateGadget<PC::VerifierState, ConstraintF>; //AllocGadget<PC::VerifierState, ConstraintF>;
     /// Gadget for the commitment
@@ -294,7 +299,7 @@ pub trait PolynomialCommitmentVerifierGadget<
 
         random_oracle.enforce_absorb(
             cs.ns(|| "absorb commitment to polynomial h"),
-            proof.get_h_commitment(),
+            proof.get_h_commitment().clone(),
         )?;
         let evaluation_point_bits = random_oracle.enforce_squeeze_128_bits_challenges(
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
@@ -336,11 +341,6 @@ pub trait PolynomialCommitmentVerifierGadget<
             .inverse(cs.ns(|| "(evaluation_point - point)^-1 for last point"))?;
         let z_i_over_z_bits =
             z_i_over_z_value.to_bits(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
-        println!(
-            "commitment: {:?}, z_i_over_z: {}",
-            commitment.get_value().unwrap(),
-            z_i_over_z_value.get_value().unwrap()
-        );
 
         let mut batched_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
             cs.ns(|| "commitment*z_i_over_z for last point"),
@@ -353,13 +353,8 @@ pub trait PolynomialCommitmentVerifierGadget<
             cs.ns(|| "value*z_i_over_z for last point"),
             &z_i_over_z_value,
         )?;
-        println!(
-            "batched_commitment: {:?}",
-            batched_commitment.get_value().unwrap()
-        );
 
         for ((label, point_label), point) in points_iter {
-            println!("entering loop");
             let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
             let commitment =
                 *commitment_map
@@ -434,23 +429,8 @@ pub trait PolynomialCommitmentVerifierGadget<
                 &to_be_added_value,
             )?;
         }
-        println!(
-            "batched_commitment: {:?}",
-            batched_commitment.get_value().unwrap()
-        );
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;
-        println!(
-            "h-commitment: {:?}, lambda: {}",
-            proof.get_h_commitment().get_value().unwrap(),
-            lambda.get_value().unwrap()
-        );
-        println!(
-            "batched_commitment: {:?}, evaluation_point: {}, batched_value: {}",
-            batched_commitment.get_value().unwrap(),
-            evaluation_point.get_value().unwrap(),
-            batched_value.get_value().unwrap()
-        );
         Self::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,

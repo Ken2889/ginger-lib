@@ -1,8 +1,5 @@
-use crate::{
-    Error as PolyError, Evaluations, LabeledCommitmentGadget, LabeledPolynomial, PCParameters,
-    Polynomial, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap,
-};
-use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, UniformRand};
+use crate::{DomainExtendedPolyCommitVerifierGadget, DomainExtendedPolynomialCommitment, Error as PolyError, Evaluations, LabeledCommitmentGadget, LabeledPolynomial, PCParameters, Polynomial, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap};
+use algebra::{EndoMulCurve, Field, Group, PrimeField, SemanticallyValid, UniformRand};
 use blake2::Blake2s;
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
@@ -13,6 +10,13 @@ use r1cs_std::alloc::AllocGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use rand::{thread_rng, Rng};
+use rand_core::RngCore;
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+enum NegativeTestType {
+    Values,
+    Commitments,
+}
 
 #[derive(Copy, Clone, Default)]
 struct TestInfo {
@@ -28,33 +32,55 @@ struct TestInfo {
     num_polynomials: usize,
     /// the number of query points
     max_num_queries: usize,
+    /// if the polynomials must be segmented or not
+    segmented: bool,
+    /// negative type for the test
+    negative_type: Option<NegativeTestType>,
 }
 
-pub(crate) fn test_succinct_verify_template<
+fn value_for_alloc<F: Field, R: RngCore>(value: &F, negative_type: &Option<NegativeTestType>, rng: &mut R) -> F {
+    if let Some(NegativeTestType::Values) = negative_type {
+        F::rand(rng)
+    } else {
+        value.clone()
+    }
+}
+
+fn commitment_for_alloc<G: EndoMulCurve, PC: PolynomialCommitment<G>>(commitment: &PC::Commitment, negative_type: &Option<NegativeTestType>) -> PC::Commitment {
+    if let Some(NegativeTestType::Commitments) = negative_type {
+        commitment.clone().double()
+    } else {
+        commitment.clone()
+    }
+}
+
+fn test_succinct_verify_template<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
->() -> Result<(), PCG::Error> {
+>( test_conf: TestInfo) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
-    const NUM_RUNS: usize = 10;
-    for _ in 0..NUM_RUNS {
-        let max_degree: usize = rng.gen_range(1..=256);
-        let supported_degree: usize = rng.gen_range(1..=max_degree);
+    for _ in 0..test_conf.num_iters {
+        let max_degree: usize = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
+        let supported_degree: usize = test_conf.supported_degree.unwrap_or(rng.gen_range(1..=max_degree));
         assert!(supported_degree <= max_degree);
 
         let pp = PC::setup::<Blake2s>(max_degree)?;
         let (ck, vk) = pp.trim(supported_degree)?;
-        let poly_degree: usize = rng.gen_range(0..=supported_degree);
-
+        let poly_degree: usize = if test_conf.segmented {
+            rng.gen_range(supported_degree..=10*supported_degree)
+        } else {
+            rng.gen_range(0..=supported_degree)
+        };
         let polynomial = Polynomial::rand(poly_degree, rng);
         let is_hiding: bool = rng.gen();
 
-        let (commitment, randomness) = PC::commit(&ck, &polynomial, is_hiding, Some(rng))?;
+        let (mut commitment, randomness) = PC::commit(&ck, &polynomial, is_hiding, Some(rng))?;
 
         let point = G::ScalarField::rand(rng);
-        let value = polynomial.evaluate(point);
+        let mut value = polynomial.evaluate(point);
         let fs_seed = String::from("TEST_SEED").into_bytes();
         let mut fs_rng =
             PC::RandomOracle::from_seed(fs_seed.clone()).map_err(|err| PolyError::from(err))?;
@@ -74,10 +100,16 @@ pub(crate) fn test_succinct_verify_template<
         if v_state.is_none() {
             Err(PolyError::FailedSuccinctCheck)?
         }
+
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+        match test_conf.negative_type {
+            Some(NegativeTestType::Commitments) => commitment = commitment*&G::ScalarField::rand(rng),
+            Some(NegativeTestType::Values) => value = G::ScalarField::rand(rng),
+            None => {},
+        }
         let vk_gadget = PCG::VerifierKey::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
         let commitment_gadget =
-            PCG::Commitment::alloc(cs.ns(|| "alloc commitment"), || Ok(commitment))?;
+            PCG::Commitment::alloc(cs.ns(|| "alloc commitment"), || Ok(commitment_for_alloc::<G, PC>(&commitment, &test_conf.negative_type)))?;
 
         let point_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
             cs.ns(|| "alloc evaluation point"),
@@ -85,7 +117,7 @@ pub(crate) fn test_succinct_verify_template<
         )?;
         let value_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
             cs.ns(|| "alloc polynomial evaluation on point"),
-            || Ok(value),
+            || Ok(value_for_alloc(&value, &test_conf.negative_type, rng)),
         )?;
         let proof_gadget = PCG::Proof::alloc(cs.ns(|| "alloc opening proof"), || Ok(proof))?;
         let mut fs_gadget = PCG::RandomOracle::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
@@ -98,11 +130,11 @@ pub(crate) fn test_succinct_verify_template<
             &proof_gadget,
             &mut fs_gadget,
         )?;
-        println!("poly degree: {}, is_hiding: {}", poly_degree, is_hiding);
-        if !cs.is_satisfied() {
+        let successful_test = cs.is_satisfied() ^ test_conf.negative_type.is_some();
+        if !successful_test {
             println!("{:?}", cs.which_is_unsatisfied());
         }
-        assert!(cs.is_satisfied());
+        assert!(successful_test);
     }
     Ok(())
 }
@@ -136,7 +168,11 @@ fn test_multi_point_multi_poly_verify<
             let label = format!("Test polynomial {}", i);
             labels.push(label.clone());
 
-            let poly_degree: usize = rng.gen_range(0..=supported_degree);
+            let poly_degree: usize = if test_conf.segmented {
+                rng.gen_range(supported_degree..=10*supported_degree)
+            } else {
+                rng.gen_range(0..=supported_degree)
+            };
             let polynomial = Polynomial::rand(poly_degree, rng);
 
             let is_hiding: bool = rng.gen();
@@ -171,7 +207,7 @@ fn test_multi_point_multi_poly_verify<
                             i, j
                         )
                     }),
-                    || Ok(value),
+                    || Ok(value_for_alloc(&value, &test_conf.negative_type, rng)),
                 )?;
                 points.insert((label.clone(), point_label.clone()), point);
                 point_gadgets.insert((label.clone(), point_label.clone()), point_gadget.clone());
@@ -211,7 +247,7 @@ fn test_multi_point_multi_poly_verify<
             let label = comm.label();
             let comm_gadget = PCG::Commitment::alloc(
                 cs.ns(|| format!("alloc commitment with label {}", label)),
-                || Ok(comm.commitment().clone()),
+                || Ok(commitment_for_alloc::<G, PC>(comm.commitment(), &test_conf.negative_type)),
             )?;
             labeled_comms.push(LabeledCommitmentGadget::new(label.clone(), comm_gadget));
         }
@@ -227,31 +263,32 @@ fn test_multi_point_multi_poly_verify<
             &proof_gadget,
             &mut fs_gadget,
         )?;
-        if !cs.is_satisfied() {
+        let successful_test = cs.is_satisfied() ^ test_conf.negative_type.is_some();
+        if !successful_test {
             println!("{:?}", cs.which_is_unsatisfied());
         }
-        assert!(cs.is_satisfied());
+        assert!(successful_test);
     }
 
     Ok(())
 }
 
-pub(crate) fn test_single_point_multi_poly_verify<
+fn test_single_point_multi_poly_verify<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
->() -> Result<(), PCG::Error> {
+>(test_conf: TestInfo) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
-    const NUM_RUNS: usize = 10;
-    for _ in 0..NUM_RUNS {
-        let max_degree: usize = rng.gen_range(1..=256);
-        let supported_degree: usize = rng.gen_range(1..=max_degree);
+    for _ in 0..test_conf.num_iters {
+        let max_degree = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
+        let supported_degree = test_conf
+            .supported_degree
+            .unwrap_or(rng.gen_range(1..=max_degree));
         assert!(supported_degree <= max_degree);
 
-        let max_num_polynomials = 4;
-        let num_polynomials = rng.gen_range(1..=max_num_polynomials);
+        let num_polynomials = rng.gen_range(1..=test_conf.num_polynomials);
 
         let mut polynomials = Vec::with_capacity(num_polynomials);
         let mut labels = Vec::with_capacity(num_polynomials);
@@ -261,7 +298,11 @@ pub(crate) fn test_single_point_multi_poly_verify<
             let label = format!("Test polynomial {}", i);
             labels.push(label.clone());
 
-            let poly_degree: usize = rng.gen_range(0..=supported_degree);
+            let poly_degree: usize = if test_conf.segmented {
+                rng.gen_range(supported_degree..=10*supported_degree)
+            } else {
+                rng.gen_range(0..=supported_degree)
+            };
             let polynomial = Polynomial::rand(poly_degree, rng);
 
             let is_hiding: bool = rng.gen();
@@ -279,7 +320,7 @@ pub(crate) fn test_single_point_multi_poly_verify<
         for (i, value) in values.iter().enumerate() {
             let value_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
                 cs.ns(|| format!("alloc value for poly {}", i)),
-                || Ok(value.clone()),
+                || Ok(value_for_alloc(value, &test_conf.negative_type, rng)),
             )?;
             value_gadgets.push(value_gadget);
         }
@@ -316,7 +357,7 @@ pub(crate) fn test_single_point_multi_poly_verify<
             let label = comm.label();
             let comm_gadget = PCG::Commitment::alloc(
                 cs.ns(|| format!("alloc commitment with label {}", label)),
-                || Ok(comm.commitment().clone()),
+                || Ok(commitment_for_alloc::<G, PC>(comm.commitment(), &test_conf.negative_type)),
             )?;
             labeled_comms.push(LabeledCommitmentGadget::new(label.clone(), comm_gadget));
         }
@@ -336,13 +377,120 @@ pub(crate) fn test_single_point_multi_poly_verify<
             &proof_gadget,
             &mut fs_gadget,
         )?;
-        if !cs.is_satisfied() {
+        let successful_test = cs.is_satisfied() ^ test_conf.negative_type.is_some();
+        if !successful_test {
             println!("{:?}", cs.which_is_unsatisfied());
         }
-        assert!(cs.is_satisfied());
+        assert!(successful_test, "failed for {:?}", test_conf.negative_type);
     }
 
     Ok(())
+}
+
+fn exec_test<FN: Fn(Option<NegativeTestType>)>(test_fn: FN) {
+    test_fn(None);
+    test_fn(Some(
+        NegativeTestType::Commitments
+    ));
+    test_fn(Some(
+        NegativeTestType::Values
+    ));
+}
+
+pub(crate) fn succinct_verify_single_point_single_poly_test<ConstraintF: PrimeField,
+G: EndoMulCurve<BaseField = ConstraintF>,
+GG: EndoMulCurveGadget<G, ConstraintF>,
+PC: PolynomialCommitment<G>,
+PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+>() {
+    exec_test(|negative_type|
+    test_succinct_verify_template::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+        num_iters: 5,
+        max_degree: None,
+        supported_degree: None,
+        num_polynomials: 1,
+        max_num_queries: 1,
+        segmented: false,
+        negative_type,
+    }).unwrap()
+    )
+}
+
+pub(crate) fn succinct_verify_with_segmentation_test<ConstraintF: PrimeField,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+    GG: EndoMulCurveGadget<G, ConstraintF>,
+    PC: 'static + PolynomialCommitment<G, Commitment=G>,
+    PCG: 'static+ PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+>() {
+    exec_test(|negative_type|
+        {
+            test_succinct_verify_template::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+                num_iters: 5,
+                max_degree: None,
+                supported_degree: None,
+                num_polynomials: 1,
+                max_num_queries: 1,
+                segmented: true,
+                negative_type,
+            }).unwrap();
+            test_single_point_multi_poly_verify::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+                num_iters: 5,
+                max_degree: None,
+                supported_degree: None,
+                num_polynomials: 5,
+                max_num_queries: 1,
+                segmented: true,
+                negative_type,
+            }).unwrap();
+            test_multi_point_multi_poly_verify::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+                num_iters: 5,
+                max_degree: None,
+                supported_degree: None,
+                num_polynomials: 5,
+                max_num_queries: 5,
+                segmented: true,
+                negative_type,
+            }).unwrap()
+        })
+}
+
+pub(crate) fn single_point_multi_poly_test<
+    ConstraintF: PrimeField,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+    GG: EndoMulCurveGadget<G, ConstraintF>,
+    PC: PolynomialCommitment<G>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+>() {
+    exec_test(|negative_type|
+    test_single_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo{
+        num_iters: 5,
+        max_degree: None,
+        supported_degree: None,
+        num_polynomials: 5,
+        max_num_queries: 1,
+        segmented: false,
+        negative_type,
+    }).unwrap()
+    )
+}
+
+pub(crate) fn constant_polynomial_succinct_verify_test<ConstraintF: PrimeField,
+G: EndoMulCurve<BaseField = ConstraintF>,
+GG: EndoMulCurveGadget<G, ConstraintF>,
+PC: PolynomialCommitment<G>,
+PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+>() {
+    exec_test(|negative_type|
+        test_succinct_verify_template::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+            num_iters: 5,
+            max_degree: None,
+            supported_degree: Some(0),
+            num_polynomials: 1,
+            max_num_queries: 1,
+            segmented: false,
+            negative_type,
+        }).unwrap()
+        )
 }
 
 pub(crate) fn multi_poly_multi_point_test<
@@ -351,14 +499,18 @@ pub(crate) fn multi_poly_multi_point_test<
     GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
->() -> Result<(), PCG::Error> {
+>() {
+    exec_test(|negative_type|
     test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
         num_polynomials: 5,
         max_num_queries: 5,
-    })
+        segmented: false,
+        negative_type,
+    }).unwrap()
+    )
 }
 
 pub(crate) fn single_poly_multi_point_test<
@@ -367,12 +519,16 @@ pub(crate) fn single_poly_multi_point_test<
     GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
->() -> Result<(), PCG::Error> {
+>() {
+    exec_test(|negative_type|
     test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
         num_polynomials: 1,
         max_num_queries: 5,
-    })
+        segmented: false,
+        negative_type,
+    }).unwrap()
+    )
 }

@@ -445,12 +445,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         fs_rng: &mut FS,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
         let succinct_verify_time = start_timer!(|| "Succinct verify");
-        println!(
-            "actual commitment: {:?}, actual point: {}, actual value: {}",
-            commitment.normalize(),
-            point,
-            value
-        );
+
         let log_key_len = proof.l_vec.len();
 
         if proof.l_vec.len() != proof.r_vec.len() {

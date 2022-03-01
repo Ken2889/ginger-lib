@@ -9,6 +9,8 @@ pub mod curves;
 #[cfg(feature = "nonnative")]
 pub mod nonnative;
 
+pub mod group_vec;
+
 pub trait GroupGadget<G: Group, ConstraintF: Field>:
     Sized
     + ToBytesGadget<ConstraintF>

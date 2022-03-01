@@ -286,10 +286,10 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
         let mut res = Self::one(cs.ns(|| "alloc result"))?;
         let mut found_one = false;
 
-        for i in BitIterator::new(exp) {
+        for (i, bit) in BitIterator::new(exp).enumerate() {
             // Skip leading zeros
             if !found_one {
-                if i {
+                if bit {
                     found_one = true;
                 } else {
                     continue;
@@ -297,7 +297,7 @@ pub trait FieldGadget<F: Field, ConstraintF: Field>:
             }
             res.square_in_place(cs.ns(|| format!("square_{}", i)))?;
 
-            if i {
+            if bit {
                 res.mul_in_place(cs.ns(|| format!("multiply_{}", i)), self)?;
             }
         }

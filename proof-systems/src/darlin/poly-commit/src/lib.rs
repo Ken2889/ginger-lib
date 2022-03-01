@@ -879,7 +879,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
 
         // lambda
         let lambda = fs_rng.squeeze_128_bits_challenge::<G>()?;
-        println!("actual lambda: {}", lambda);
+
         let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
@@ -922,7 +922,7 @@ pub trait PolynomialCommitment<G: EndoMulCurve>: Sized {
             // z_i(x)/z(x) = 1 / (x - x_i).
             // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
             let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
-            println!("z_i_over_z: {}", z_i_over_z_value);
+
             lc_commitment +=
                 &(labeled_commitment.commitment().clone() * &(z_i_over_z_value * cur_challenge));
 
