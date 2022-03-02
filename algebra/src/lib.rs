@@ -60,6 +60,9 @@ pub use self::rand::*;
 mod to_field_vec;
 pub use to_field_vec::ToConstraintField;
 
+pub mod linear_combination;
+pub use linear_combination::LinearCombination;
+
 #[cfg(feature = "parallel")]
 pub mod msm;
 #[cfg(feature = "parallel")]

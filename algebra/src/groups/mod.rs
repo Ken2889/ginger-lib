@@ -10,9 +10,6 @@ use std::{
 };
 use num_traits::Zero;
 
-mod linear_combination;
-pub use linear_combination::*;
-
 mod group_vec;
 pub use group_vec::*;
 

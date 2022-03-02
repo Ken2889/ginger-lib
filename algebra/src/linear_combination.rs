@@ -78,7 +78,19 @@ where
     /// Combine LC
     pub fn combine(self) -> E {
         let mut combined = E::zero();
-        for (coeff, item) in self.items.into_iter() {
+
+        // Small optimization: check first element, if coeff is one,
+        // then we don't need to perform the addition
+        if !self.items.is_empty(){
+            if self.items[0].0.is_one() {
+                combined = self.items[0].1.clone();
+            } else {
+                combined += self.items[0].1;
+            }
+        } 
+
+        // Compute (c_0 * e_0) + ... + (c_n * e_n) 
+        for (coeff, item) in self.items.into_iter().skip(1) {
             if coeff.is_one() {
                 combined += item;
             } else {
