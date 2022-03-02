@@ -8,6 +8,7 @@ use std::{
     hash::Hash,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
+use num_traits::Zero;
 
 mod linear_combination;
 pub use linear_combination::*;
@@ -34,6 +35,7 @@ pub trait Group:
     + Sync
     + Eq
     + Hash
+    + Zero
     + Neg<Output = Self>
     + Add<Self, Output = Self>
     + Sub<Self, Output = Self>
@@ -47,12 +49,6 @@ pub trait Group:
     + for<'a> MulAssign<&'a <Self as Group>::ScalarField>
 {
     type ScalarField: PrimeField;
-
-    /// Returns the additive identity.
-    fn zero() -> Self;
-
-    /// Returns `self == zero`.
-    fn is_zero(&self) -> bool;
 
     /// Returns `self + self`.
     #[must_use]

@@ -22,6 +22,7 @@ use std::{
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
     marker::PhantomData,
 };
+use num_traits::{Zero, One};
 
 #[derive(Derivative)]
 #[derivative(
@@ -537,9 +538,7 @@ impl<P: Parameters> TryFrom<Projective<P>> for AffineRep<P> {
     }
 }
 
-impl<P: Parameters> Group for Projective<P> {
-    type ScalarField = P::ScalarField;
-
+impl<P: Parameters> Zero for Projective<P> {
     // The point at infinity is conventionally represented as (1:1:0)
     #[inline]
     fn zero() -> Self {
@@ -556,6 +555,10 @@ impl<P: Parameters> Group for Projective<P> {
     fn is_zero(&self) -> bool {
         self.z.is_zero()
     }
+}
+
+impl<P: Parameters> Group for Projective<P> {
+    type ScalarField = P::ScalarField;
 
     fn double_in_place(&mut self) -> &mut Self {
         if self.is_zero() {

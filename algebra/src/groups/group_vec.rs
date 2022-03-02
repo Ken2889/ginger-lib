@@ -11,6 +11,7 @@ use std::{
     vec::IntoIter,
 };
 use core::slice::Iter;
+use num_traits::Zero;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GroupVec<G: Group> (Vec<G>);
@@ -102,6 +103,17 @@ impl<G: Group> Display for GroupVec<G> {
     }
 }
 
+impl<G: Group> Zero for GroupVec<G> {
+    #[inline]
+    fn zero() -> Self {
+        GroupVec(vec![])
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0.len() == 0
+    }
+}
 
 impl<G: Group> Neg for GroupVec<G> {
     type Output = Self;
@@ -210,14 +222,6 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
 
 impl<G: Group> Group for GroupVec<G> {
     type ScalarField = G::ScalarField;
-
-    fn zero() -> Self {
-        GroupVec(vec![])
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.len() == 0
-    }
 
     fn double_in_place(&mut self) -> &mut Self {
         for (i, item) in self.0.clone().iter().enumerate() {

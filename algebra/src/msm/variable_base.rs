@@ -1,5 +1,6 @@
-use crate::{BigInteger, Curve, Error, Field, FpParameters, PrimeField};
+use crate::{BigInteger, Curve, Error, FpParameters, PrimeField};
 use rayon::prelude::*;
+use num_traits::One;
 
 pub struct VariableBaseMSM;
 

@@ -10,10 +10,7 @@ use crate::{
         Field, PrimeField, SquareRootField,
         tweedle::*,
     },
-    groups::{
-        Group,
-        tests::group_test,
-    }
+    groups::tests::group_test,
 };
 use std::ops::{AddAssign, MulAssign, Mul};
 use std::str::FromStr;
@@ -24,6 +21,7 @@ use crate::curves::tweedle::dum::TweedledumParameters;
 use crate::UniformRand;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use num_traits::{Zero, One};
 
 #[test]
 fn test_dee_curve() {

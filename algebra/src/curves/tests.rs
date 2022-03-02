@@ -2,13 +2,13 @@ use crate::UniformRand;
 use crate::{
     curves::Curve,
     fields::{BitIterator, PrimeField},
-    groups::Group,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
     SWModelParameters, /*, TEModelParameters,*/
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::io::Cursor;
+use num_traits::Zero;
 
 pub const ITERATIONS: usize = 10;
 

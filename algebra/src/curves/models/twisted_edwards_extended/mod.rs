@@ -22,6 +22,7 @@ use std::{
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
     marker::PhantomData,
 };
+use num_traits::{Zero, One};
 
 #[cfg(test)]
 pub mod tests;
@@ -526,9 +527,7 @@ impl<P: Parameters> TryFrom<TEExtended<P>> for AffineRep<P> {
     }
 }
 
-impl<P: Parameters> Group for TEExtended<P> {
-    type ScalarField = P::ScalarField;
-
+impl<P: Parameters> Zero for TEExtended<P> {
     // The point at infinity is conventionally represented as (1:1:0)
     #[inline]
     fn zero() -> Self {
@@ -546,6 +545,10 @@ impl<P: Parameters> Group for TEExtended<P> {
     fn is_zero(&self) -> bool {
         self.x.is_zero() && self.y == self.z && !self.y.is_zero() && self.t.is_zero()
     }
+}
+
+impl<P: Parameters> Group for TEExtended<P> {
+    type ScalarField = P::ScalarField;
 
     fn double_in_place(&mut self) -> &mut Self {
         let tmp = *self;

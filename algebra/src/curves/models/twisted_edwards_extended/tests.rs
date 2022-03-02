@@ -3,6 +3,7 @@ use crate::{
     fields::Field,
     MontgomeryModelParameters, TEModelParameters
 };
+use num_traits::One;
 
 #[allow(dead_code)]
 pub(crate) fn montgomery_conversion_test<P>()

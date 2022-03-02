@@ -14,6 +14,7 @@ use std::{
     ops::{Div, DivAssign, Mul, MulAssign},
     str::FromStr,
 };
+use num_traits::{Zero, One};
 
 #[macro_use]
 mod macros;
@@ -88,6 +89,8 @@ pub trait Field:
     + From<u32>
     + From<u16>
     + From<u8>
+    + Zero
+    + One
     + Mul<Self, Output = Self>
     + Div<Self, Output = Self>
     + MulAssign<Self>
@@ -96,16 +99,8 @@ pub trait Field:
     + for<'a> DivAssign<&'a Self>
     + std::iter::Sum<Self>
     + for<'a> std::iter::Sum<&'a Self>
-    + std::iter::Product<Self>
-    + for<'a> std::iter::Product<&'a Self>
 {
     type BasePrimeField: PrimeField;
-
-    /// Returns the one element of the field, a field generator.
-    fn one() -> Self;
-
-    /// Returns true if and only if `self == Self::one()`.
-    fn is_one(&self) -> bool;
 
     /// Returns true iff self is odd
     fn is_odd(&self) -> bool;

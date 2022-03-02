@@ -1,6 +1,7 @@
 use crate::{Field, FromCompressedBits, Group, ToCompressedBits, UniformRand};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
+use num_traits::{Zero, One};
 
 pub fn group_test<G: Group + Copy>(a: G, mut b: G) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
