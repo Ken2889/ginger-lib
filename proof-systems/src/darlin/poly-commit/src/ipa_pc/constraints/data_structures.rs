@@ -7,7 +7,7 @@ use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
-use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget, UInt8};
+use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::{borrow::Borrow, marker::PhantomData};
 use r1cs_std::boolean::Boolean;
@@ -21,7 +21,7 @@ pub struct IPAVerifierKeyGadget<
     segment_size: usize,
     pub(crate) h: GG,
     pub(crate) s: GG,
-    hash: Vec<UInt8>,
+    hash: Vec<u8>,
     _group_phantom: PhantomData<G>,
     _constraint_field_phantom: PhantomData<ConstraintF>,
 }
@@ -35,8 +35,8 @@ impl<
         self.segment_size
     }
 
-    fn get_hash(&self) -> &Vec<UInt8> {
-        &self.hash
+    fn get_hash(&self) -> &[u8] {
+        self.hash.as_slice()
     }
 }
 
@@ -60,13 +60,11 @@ impl<
         let h = GG::alloc(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
         let s = GG::alloc(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
-        let hash = UInt8::alloc_vec(cs.ns(|| "alloc hash of vk"), vk.get_hash())?;
-
         Ok(Self {
             segment_size: vk.segment_size(),
             h,
             s,
-            hash,
+            hash: vk.hash.clone(),
             _group_phantom: PhantomData,
             _constraint_field_phantom: PhantomData,
         })
@@ -86,13 +84,11 @@ impl<
         let h = GG::alloc_input(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
         let s = GG::alloc_input(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
-        let hash = UInt8::alloc_input_vec(cs.ns(|| "alloc hash of vk"), vk.get_hash())?;
-
         Ok(Self {
             segment_size: vk.segment_size(),
             h,
             s,
-            hash,
+            hash: vk.hash.clone(),
             _group_phantom: PhantomData,
             _constraint_field_phantom: PhantomData,
         })

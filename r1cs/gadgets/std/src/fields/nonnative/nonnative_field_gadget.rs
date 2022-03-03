@@ -329,6 +329,22 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
         })
     }
 
+    pub fn to_bits_for_normal_form<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Vec<Boolean>, SynthesisError> {
+        let params = get_params(SimulationF::size_in_bits(), ConstraintF::size_in_bits());
+        let mut bits = Vec::with_capacity(SimulationF::size_in_bits());
+        for (i, limb) in self.limbs.iter().enumerate() {
+            let bits_per_limb = if i == 0 {
+                SimulationF::size_in_bits() - (params.num_limbs-1)*params.bits_per_limb
+            } else {
+                params.bits_per_limb
+            };
+            let limb_bits = Reducer::<SimulationF, ConstraintF>::limb_to_bits(cs.ns(|| format!("limb {} to bits", i)), limb, bits_per_limb)?;
+            bits.extend_from_slice(limb_bits.as_slice());
+        }
+
+        Ok(bits)
+    }
+
     /// checks if a NonNativeFieldGadget is odd, i.e. that its mod `p` reduced 
     /// representation has the least significant bit set to `1`. 
     #[inline]

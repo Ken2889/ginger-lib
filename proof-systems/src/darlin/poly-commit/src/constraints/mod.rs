@@ -5,7 +5,7 @@ use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget};
 use r1cs_std::groups::{EndoMulCurveGadget, GroupGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
-use r1cs_std::{alloc::AllocGadget, FromBitsGadget, ToBitsGadget};
+use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
 use rand::thread_rng;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -15,8 +15,7 @@ pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
-use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
-use r1cs_std::uint8::UInt8;
+use r1cs_std::{prelude::{CondSelectGadget, ConstantGadget}, FromGadget};
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Clone)]
@@ -88,7 +87,7 @@ pub trait VerifierKeyGadget<VK: PCVerifierKey, ConstraintF: PrimeField>:
     fn segment_size(&self) -> usize;
 
     /// Get the gadget for the hash of the verifier key `VK` represented by `self`
-    fn get_hash(&self) -> &Vec<UInt8>;
+    fn get_hash(&self) -> &[u8];
 }
 
 impl From<SynthesisError> for PolyError {
@@ -157,7 +156,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// Gadget for the verifier key
     type VerifierKey: VerifierKeyGadget<PC::VerifierKey, ConstraintF>;
     /// Gadget for the state returned by verify functions
-    type VerifierState: VerifierStateGadget<PC::VerifierState, ConstraintF>; //AllocGadget<PC::VerifierState, ConstraintF>;
+    type VerifierState: VerifierStateGadget<PC::VerifierState, ConstraintF>;
     /// Gadget for the commitment
     type Commitment: EndoMulCurveGadget<G, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
@@ -248,12 +247,13 @@ pub trait PolynomialCommitmentVerifierGadget<
                 commitment.commitment(),
             )?;
 
-            batched_value = batched_value.mul(
+            let batched_value_times_lambda = batched_value.mul_without_prereduce(
                 cs.ns(|| format!("lambda*batched_value_{}", i)),
                 &lambda_non_native,
             )?;
+            let value = FromGadget::from(value, cs.ns(|| format!("value {} to mul result", i)))?;
             batched_value =
-                batched_value.add(cs.ns(|| format!("add value {} to batched_value", i)), value)?;
+                batched_value_times_lambda.add(cs.ns(|| format!("add value {} to batched_value", i)), &value)?.reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
         }
 
         Self::succinct_verify(
@@ -344,15 +344,14 @@ pub trait PolynomialCommitmentVerifierGadget<
             .sub(cs.ns(|| "evaluation_point - point for last point"), &point)?
             .inverse(cs.ns(|| "(evaluation_point - point)^-1 for last point"))?;
         let z_i_over_z_bits =
-            z_i_over_z_value.to_bits(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
+            z_i_over_z_value.to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
 
         let mut batched_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
             cs.ns(|| "commitment*z_i_over_z for last point"),
             &commitment,
             z_i_over_z_bits.iter().rev(),
             false,
-        )?;
-        //let mut batched_commitment = commitment.mul_bits(cs.ns(|| "commitment*z_i_over_z for last point"), z_i_over_z_bits.iter().rev())?; // reverse order of bits since mul_bits requires little endian representation
+        )?; // reverse order of bits since mul_bits requires little endian representation
         let mut batched_value = value.mul(
             cs.ns(|| "value*z_i_over_z for last point"),
             &z_i_over_z_value,
@@ -399,16 +398,14 @@ pub trait PolynomialCommitmentVerifierGadget<
                     )
                 }))?;
             let z_i_over_z_bits = z_i_over_z_value
-                .to_bits(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
-            // z_i_over_z_bits.reverse(); // must be reversed as safe_mul wants bits in little-endian
+                .to_bits_for_normal_form(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
             let to_be_added_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
                 cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
                 &commitment,
-                z_i_over_z_bits.iter().rev(),
+                z_i_over_z_bits.iter().rev(), // must be reversed as safe_mul wants bits in little-endian
                 false,
             )?;
-            //let to_be_added_commitment = commitment.mul_bits(cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)), z_i_over_z_bits.iter().rev())?;
-            let to_be_added_value = value.mul(
+            let to_be_added_value = value.mul_without_prereduce(
                 cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
                 &z_i_over_z_value,
             )?;
@@ -424,14 +421,14 @@ pub trait PolynomialCommitmentVerifierGadget<
                 &to_be_added_commitment,
             )?;
 
-            batched_value = batched_value.mul(
+            let batched_value_times_lambda = batched_value.mul_without_prereduce(
                 cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
                 &lambda,
             )?;
-            batched_value = batched_value.add(
+            batched_value = batched_value_times_lambda.add(
                 cs.ns(|| format!("add value for point for label {}", combined_label)),
                 &to_be_added_value,
-            )?;
+            )?.reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
         }
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;

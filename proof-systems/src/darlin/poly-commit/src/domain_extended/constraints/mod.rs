@@ -10,7 +10,7 @@ use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
-use r1cs_std::{FromBitsGadget, ToBitsGadget};
+use r1cs_std::FromBitsGadget;
 use crate::{DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitmentGadget, MultiPointProofGadget, PCMultiPointProof, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap, safe_mul, VerifierKeyGadget};
 
 /// Gadget for multi-point proof for domain extended poly-commit verifier gadget
@@ -105,7 +105,7 @@ impl<ConstraintF: PrimeField,
     fn combine_commitments<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, vk: &PCG::VerifierKey, commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>>], point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>) -> Result<Vec<LabeledCommitmentGadget<PCG, ConstraintF, G, GG, PC>>, SynthesisError> {
         let s = vk.segment_size()+1;
         let point_to_s = point.pow_by_constant(cs.ns(|| "point^s"), [s as u64])?;
-        let point_to_s_bits = point_to_s.to_bits(cs.ns(|| "point^s to bits"))?;
+        let point_to_s_bits = point_to_s.to_bits_for_normal_form(cs.ns(|| "point^s to bits"))?;
 
         let mut iterators = Vec::new();
         let mut labels = Vec::new();
@@ -235,15 +235,14 @@ impl<ConstraintF: PrimeField,
             .sub(cs.ns(|| "evaluation_point - point for last point"), &point)?
             .inverse(cs.ns(|| "(evaluation_point - point)^-1 for last point"))?;
         let z_i_over_z_bits =
-            z_i_over_z_value.to_bits(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
+            z_i_over_z_value.to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
 
         let mut batched_commitment = safe_mul::<ConstraintF, G, GG, PC, PCG, _, _>(
             cs.ns(|| "commitment*z_i_over_z for last point"),
             &commitment,
             z_i_over_z_bits.iter().rev(),
             false,
-        )?;
-        //let mut batched_commitment = commitment.mul_bits(cs.ns(|| "commitment*z_i_over_z for last point"), z_i_over_z_bits.iter().rev())?; // reverse order of bits since mul_bits requires little endian representation
+        )?; // reverse order of bits since mul_bits requires little endian representation
         let mut batched_value = value.mul(
             cs.ns(|| "value*z_i_over_z for last point"),
             &z_i_over_z_value,
@@ -278,16 +277,14 @@ impl<ConstraintF: PrimeField,
                     )
                 }))?;
             let z_i_over_z_bits = z_i_over_z_value
-                .to_bits(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
-            // z_i_over_z_bits.reverse(); // must be reversed as safe_mul wants bits in little-endian
+                .to_bits_for_normal_form(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
             let to_be_added_commitment = safe_mul::<ConstraintF, G, GG, PC, PCG, _, _>(
                 cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
                 &commitment,
-                z_i_over_z_bits.iter().rev(),
+                z_i_over_z_bits.iter().rev(), // must be reversed as safe_mul wants bits in little-endian
                 false,
             )?;
-            //let to_be_added_commitment = commitment.mul_bits(cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)), z_i_over_z_bits.iter().rev())?;
-            let to_be_added_value = value.mul(
+            let to_be_added_value = value.mul_without_prereduce(
                 cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
                 &z_i_over_z_value,
             )?;
@@ -303,14 +300,14 @@ impl<ConstraintF: PrimeField,
                 &to_be_added_commitment,
             )?;
 
-            batched_value = batched_value.mul(
+            let batched_value_times_lambda = batched_value.mul_without_prereduce(
                 cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
                 &lambda,
             )?;
-            batched_value = batched_value.add(
+            batched_value = batched_value_times_lambda.add(
                 cs.ns(|| format!("add value for point for label {}", combined_label)),
                 &to_be_added_value,
-            )?;
+            )?.reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
         }
         // subtract h-commitment
         let labeled_h_commitment = LabeledCommitmentGadget::<Self, ConstraintF, G, GG,DomainExtendedPolynomialCommitment<G, PC>>::new(String::from("labeled commitment"), proof.get_h_commitment().clone());

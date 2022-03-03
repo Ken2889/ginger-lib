@@ -3,7 +3,7 @@ use crate::ipa_pc::constraints::data_structures::{
 };
 use crate::ipa_pc::InnerProductArgPC;
 use crate::{safe_mul, Error, PolynomialCommitmentVerifierGadget};
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::{EndoMulCurve, Field, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -12,7 +12,7 @@ use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
-use r1cs_std::{FromBitsGadget, FromGadget, ToBitsGadget};
+use r1cs_std::{FromBitsGadget, ToBitsGadget};
 use std::marker::PhantomData;
 
 mod data_structures;
@@ -133,11 +133,14 @@ impl<
                 cs.ns(|| format!("add round_challenge_{}*vec_r_{} to commitment", i + 1, i)),
                 &challenge_times_r,
             )?;
-            //apply endomorphism to round_challenge, as challenge_times_r = r*endomorphism(round_challenge)
+            //apply endomorphism to round_challenge, as challenge_times_r = r*endomorphism(round_challenge),
+            // since endo_mul is employed for the multiplication. Therefore,
+            // the actual challenge to be employed for the bullet polynomial and to be inverted to
+            // be multiplied to l is endomorphism(round_challenge)
             let round_challenge_endo = GG::endo_rep_to_scalar_bits(
                 cs.ns(|| format!("apply endomorphism to round_challenge_{}", i + 1)),
                 round_challenge.to_vec(),
-            )?; //ToDo: is this really needed? Maybe the endomorphism is homomorphic w.r.t. inverse
+            )?;
             let round_challenge_be_bits = round_challenge_endo
                 .iter()
                 .rev()
@@ -156,7 +159,7 @@ impl<
             let round_challenge_inverse = round_challenge_in_scalar_field
                 .inverse(cs.ns(|| format!("invert round_challenge_{}", i + 1)))?;
             let round_challenge_inverse_bits = round_challenge_inverse
-                .to_bits(cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)))?;
+                .to_bits_for_normal_form(cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)))?;
             // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
             let challenge_inv_times_l =
                 safe_mul::<ConstraintF, G, GG, InnerProductArgPC<G, FS>, Self, _, _>(
@@ -183,11 +186,6 @@ impl<
             cs.ns(|| "alloc 1 in scalar field"),
         )?;
         let mut bullet_polynomial_evaluation = one.clone();
-        let one =
-            FromGadget::<&NonNativeFieldGadget<G::ScalarField, ConstraintF>, ConstraintF>::from(
-                &one,
-                cs.ns(|| "alloc 1 in scalar field for addition"),
-            )?;
 
         for (i, round_challenge) in round_challenges.iter().rev().enumerate() {
             let challenge_times_point_power = point_power.mul_without_prereduce(
@@ -200,7 +198,7 @@ impl<
                 }),
                 &round_challenge,
             )?;
-            let current_term = challenge_times_point_power.add(
+            let current_term = challenge_times_point_power.add_constant(
                 cs.ns(|| {
                     format!(
                         "round_challenge_{}*point^(2^{})+1",
@@ -208,7 +206,7 @@ impl<
                         i
                     )
                 }),
-                &one,
+                &G::ScalarField::one(),
             )?;
             let current_term = current_term.reduce(cs.ns(|| {
                 format!(
@@ -250,14 +248,13 @@ impl<
                 proof.c.iter().rev(),
                 false,
             )?;
-        let v_prime_bits = v_prime.to_bits(cs.ns(|| "v' to bits"))?;
+        let v_prime_bits = v_prime.to_bits_for_normal_form(cs.ns(|| "v' to bits"))?;
         let v_prime_times_h_prime =
             h_prime.mul_bits(cs.ns(|| "v'*h'"), v_prime_bits.iter().rev())?;
 
         let final_commitment = c_times_final_comm_key
             .add(cs.ns(|| "compute final commitment"), &v_prime_times_h_prime)?;
 
-        // ToDo: check if it cheaper to check if final_commitment - non_hiding_commitment == 0
         final_commitment.enforce_equal(
             cs.ns(|| "check that final_commitment == non_hiding_commitment"),
             &non_hiding_commitment,
