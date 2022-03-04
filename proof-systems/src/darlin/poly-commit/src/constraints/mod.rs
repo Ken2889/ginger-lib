@@ -1,41 +1,40 @@
 use crate::{Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialLabel, QueryMap};
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::{EndoMulCurve, Group, PrimeField, UniformRand};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget};
-use r1cs_std::groups::{EndoMulCurveGadget, GroupGadget};
+use r1cs_std::groups::GroupGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
-use rand::thread_rng;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use rand::thread_rng;
 
 #[cfg(test)]
 pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
-use r1cs_std::{prelude::{CondSelectGadget, ConstantGadget}, FromGadget};
+use r1cs_std::FromGadget;
+use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Clone)]
 pub struct LabeledCommitmentGadget<
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
 > {
     label: PolynomialLabel,
     commitment: PCG::Commitment,
 }
 
-impl<PCG, ConstraintF, G, GG, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, GG, PC>
+impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
 where
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
 {
     /// Instantiate a new labeled commitment from a label and a commitment gadget.
@@ -57,7 +56,7 @@ where
 /// Define interface for a gadget representing an opening proof for a multi-point assertion
 pub trait MultiPointProofGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: EndoMulCurve<BaseField=ConstraintF>,
     MPP: PCMultiPointProof<G>,
 >: AllocGadget<MPP, ConstraintF>
 {
@@ -96,25 +95,24 @@ impl From<SynthesisError> for PolyError {
     }
 }
 
-pub(crate) fn safe_mul<'a, ConstraintF, G, GG, PC, PCG, CS, IT>(
-    mut cs: CS,
-    base_point: &PCG::Commitment,
-    scalar: IT,
-    endo_mul: bool,
-) -> Result<PCG::Commitment, SynthesisError>
-where
+pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
+        mut cs: CS,
+        base_point: &PCG::Commitment,
+        scalar: IT
+    ) -> Result<PCG::Commitment, SynthesisError>
+    where
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
+    // ToDo: can probably be a Group if we implement rand also for groups
+    G: EndoMulCurve<BaseField=ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     CS: ConstraintSystemAbstract<ConstraintF>,
     IT: Iterator<Item = &'a Boolean>,
 {
     let rng = &mut thread_rng();
-    let mut non_trivial_base_constant = G::rand(rng);
+    let mut non_trivial_base_constant = PC::Commitment::rand(rng);
     while non_trivial_base_constant.is_zero() {
-        non_trivial_base_constant = G::rand(rng);
+        non_trivial_base_constant = PC::Commitment::rand(rng);
     }
     let non_trivial_base_gadget = PCG::Commitment::from_value(
         cs.ns(|| "alloc non trivial base constant"),
@@ -129,14 +127,7 @@ where
         &non_trivial_base_gadget,
         &base_point,
     )?;
-    let safe_mul_res = if endo_mul {
-        non_trivial_base_point.endo_mul(
-            cs.ns(|| "base_point*scalar"),
-            scalar.cloned().collect::<Vec<_>>().as_slice(),
-        )
-    } else {
-        non_trivial_base_point.mul_bits(cs.ns(|| "base_point*scalar"), scalar)
-    }?;
+    let safe_mul_res = non_trivial_base_point.mul_bits(cs.ns(|| "base_point*scalar"), scalar)?;
     PCG::Commitment::conditionally_select(
         cs.ns(|| "select correct result for safe mul"),
         &is_zero,
@@ -148,8 +139,7 @@ where
 /// Gadget for a linear polynomial commitment verifier
 pub trait PolynomialCommitmentVerifierGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
+    G: EndoMulCurve<BaseField=ConstraintF>,
     PC: PolynomialCommitment<G>,
 >: Sized
 {
@@ -158,7 +148,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// Gadget for the state returned by verify functions
     type VerifierState: VerifierStateGadget<PC::VerifierState, ConstraintF>;
     /// Gadget for the commitment
-    type Commitment: EndoMulCurveGadget<G, ConstraintF>
+    type Commitment: GroupGadget<PC::Commitment, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
         + AllocGadget<PC::Commitment, ConstraintF>;
     /// Gadget for the proof
@@ -180,6 +170,16 @@ pub trait PolynomialCommitmentVerifierGadget<
         + From<PolyError>
         + std::error::Error;
 
+    /// this function specifies how to multiply a commitment to a challenge squeezed from the random oracle
+    fn mul_by_challenge<'a, CS: ConstraintSystemAbstract<ConstraintF>,
+    IT: Iterator<Item = &'a Boolean>>(cs: CS, base: &Self::Commitment, challenge: IT) -> Result<Self::Commitment, SynthesisError> {
+        safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(cs, base, challenge)
+    }
+    /// This function specifies how to convert a challenge squeezed from the random oracle to a gadget for `G::ScalarField`
+    fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS, challenge: &[Boolean]) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
+        NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs, challenge.iter().rev().cloned().collect::<Vec<_>>().as_slice())
+    }
+
     /// Succinct check of the verify
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
@@ -196,7 +196,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     fn succinct_verify_single_point_multi_poly<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         vk: &Self::VerifierKey,
-        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, GG, PC>], //ToDo: see if we can take an impl IntoIterator as for the primitive
+        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, PC>], //ToDo: see if we can take an impl IntoIterator as for the primitive
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         values: &[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
         proof: &Self::Proof,
@@ -206,18 +206,9 @@ pub trait PolynomialCommitmentVerifierGadget<
             cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
             1,
         )?[0];
-        // lambda is multiplied to batched_commitment with endo_mul, which implicitly applies an
-        // endomorphism to lambda before multiplication. `lambda_for_endo_mul` is the result of
-        // applying such endomorphism to lambda, which is needed as batched_value is not multiplied
-        // with endo_mul to lambda
-        let mut lambda_for_endo_mul =
-            GG::endo_rep_to_scalar_bits(cs.ns(|| "apply endomorphism to lambda"), lambda.to_vec())?;
-        // endo_rep_to_scalar_bits returns a little-endian bit representation, we need a big-endian
-        // one to correctly instantiate a non-native field gadget
-        lambda_for_endo_mul.reverse();
-        let lambda_non_native = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+        let lambda_non_native = Self::challenge_to_non_native_field_element(
             cs.ns(|| "convert lambda to non native field gadget"),
-            &lambda_for_endo_mul,
+            &lambda,
         )?;
         let default_commitment = LabeledCommitmentGadget::new(
             String::from("default commitment"),
@@ -235,13 +226,11 @@ pub trait PolynomialCommitmentVerifierGadget<
         let mut batched_value = values_iter.next().unwrap_or(&zero_value).clone();
 
         for (i, (commitment, value)) in commitments_iter.zip(values_iter).enumerate() {
-            batched_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
+            batched_commitment = Self::mul_by_challenge(
                 cs.ns(|| format!("lambda*batched_commitment_{}", i)),
                 &batched_commitment,
                 lambda.iter(),
-                true,
             )?;
-            // batched_commitment = batched_commitment.endo_mul(cs.ns(|| format!("lambda*batched_commitment_{}", i)), &lambda)?;
             batched_commitment = batched_commitment.add(
                 cs.ns(|| format!("add commitment {} to batched_commitment", i)),
                 commitment.commitment(),
@@ -272,7 +261,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     fn succinct_verify_multi_poly_multi_point<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         vk: &Self::VerifierKey,
-        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, GG, PC>],
+        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, PC>],
         points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         proof: &Self::MultiPointProof,
@@ -288,17 +277,9 @@ pub trait PolynomialCommitmentVerifierGadget<
             1,
         )?[0];
 
-        // need to apply endo mul endomorphism to lambda, as the random oracle in the opening proof already applies the endomorphism to the squeezed bits
-        let mut lambda_endo_bits = GG::endo_rep_to_scalar_bits(
-            cs.ns(|| "apply endomorphism to lambda"),
-            lambda_bits.to_vec(),
-        )?;
-        // endo_rep_to_scalar_bits returns a little-endian bit representation, we need a big-endian
-        // one to correctly instantiate a non-native field gadget
-        lambda_endo_bits.reverse();
-        let lambda = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+        let lambda = Self::challenge_to_non_native_field_element(
             cs.ns(|| "convert lambda to non native field gadget"),
-            &lambda_endo_bits,
+            &lambda_bits,
         )?;
 
         random_oracle.enforce_absorb(
@@ -309,17 +290,9 @@ pub trait PolynomialCommitmentVerifierGadget<
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
             1,
         )?[0];
-        // need to apply endo mul endomorphism to evaluation point, as the random oracle in the opening proof already applies the endomorphism to the squeezed bits
-        let mut evaluation_point_endo_bits = GG::endo_rep_to_scalar_bits(
-            cs.ns(|| "apply endomorphism to evaluation point"),
-            evaluation_point_bits.to_vec(),
-        )?;
-        // endo_rep_to_scalar_bits returns a little-endian bit representation, we need a big-endian
-        // one to correctly instantiate a non-native field gadget
-        evaluation_point_endo_bits.reverse();
-        let evaluation_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+        let evaluation_point = Self::challenge_to_non_native_field_element(
             cs.ns(|| "evaluation point from squeezed bits"),
-            &evaluation_point_endo_bits,
+            &evaluation_point_bits,
         )?;
 
         let mut points_iter = points.iter().rev();
@@ -346,11 +319,10 @@ pub trait PolynomialCommitmentVerifierGadget<
         let z_i_over_z_bits =
             z_i_over_z_value.to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
 
-        let mut batched_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
+        let mut batched_commitment = safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(
             cs.ns(|| "commitment*z_i_over_z for last point"),
             &commitment,
             z_i_over_z_bits.iter().rev(),
-            false,
         )?; // reverse order of bits since mul_bits requires little endian representation
         let mut batched_value = value.mul(
             cs.ns(|| "value*z_i_over_z for last point"),
@@ -375,7 +347,8 @@ pub trait PolynomialCommitmentVerifierGadget<
                     ))))?;
             // check that evaluation point is different than the current point, as we later need
             // to compute the inverse of `evaluation_point - point`
-            // ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal
+            //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
+            // to be confirmed in review
             evaluation_point.enforce_not_equal(
                 cs.ns(|| {
                     format!(
@@ -399,22 +372,20 @@ pub trait PolynomialCommitmentVerifierGadget<
                 }))?;
             let z_i_over_z_bits = z_i_over_z_value
                 .to_bits_for_normal_form(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
-            let to_be_added_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
+            let to_be_added_commitment = safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(
                 cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
                 &commitment,
-                z_i_over_z_bits.iter().rev(), // must be reversed as safe_mul wants bits in little-endian
-                false,
+                z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
             )?;
             let to_be_added_value = value.mul_without_prereduce(
                 cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
                 &z_i_over_z_value,
             )?;
 
-            batched_commitment = safe_mul::<ConstraintF, G, GG, PC, Self, _, _>(
+            batched_commitment = Self::mul_by_challenge(
                 cs.ns(|| format!("batched_commitment*lambda for label {}", combined_label)),
                 &batched_commitment,
                 lambda_bits.iter(),
-                true,
             )?;
             batched_commitment = batched_commitment.add(
                 cs.ns(|| format!("add commitment for label {}", combined_label)),

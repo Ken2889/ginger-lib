@@ -1,6 +1,6 @@
 //! A polynomial represented in coefficient form.
 
-use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
+use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations, UniformRand};
 use crate::{
     serialize::*, Field, FromBytes, FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBytes,
 };
@@ -158,7 +158,7 @@ impl<F: Field> DensePolynomial<F> {
 
     /// Outputs a polynomial of degree `d` where each coefficient is sampled uniformly at random
     /// from the field `F`.
-    pub fn rand<R: Rng>(d: usize, rng: &mut R) -> Self {
+    pub fn rand<R: Rng + ?Sized>(d: usize, rng: &mut R) -> Self {
         let mut random_coeffs = Vec::new();
         for _ in 0..(d + 1) {
             random_coeffs.push(F::rand(rng));
@@ -484,6 +484,13 @@ impl<F: PrimeField> FromBytesChecked for DensePolynomial<F> {
 impl<F: PrimeField> SemanticallyValid for DensePolynomial<F> {
     fn is_valid(&self) -> bool {
         return true;
+    }
+}
+
+impl<F: PrimeField> UniformRand for DensePolynomial<F> {
+    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        let degree: usize = rng.gen();
+        Self::rand(degree, rng)
     }
 }
 

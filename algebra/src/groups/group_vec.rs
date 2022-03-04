@@ -1,9 +1,5 @@
 use super::Group;
-use crate::{
-    bytes::{FromBytes, ToBytes, FromBytesChecked},
-    serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError},
-    SemanticallyValid, ToConstraintField, Field, Error
-};
+use crate::{bytes::{FromBytes, ToBytes, FromBytesChecked}, serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError}, SemanticallyValid, ToConstraintField, Field, Error, UniformRand};
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
     io::{Read, Write, Error as IoError, ErrorKind, Result as IoResult},
@@ -11,6 +7,7 @@ use std::{
     vec::IntoIter,
 };
 use core::slice::Iter;
+use rand::Rng;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct GroupVec<G: Group> (Vec<G>);
@@ -205,6 +202,18 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
         let mut copy = self;
         copy *= other;
         copy
+    }
+}
+
+impl<G: Group> UniformRand for GroupVec<G> {
+    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        let vec_len: usize = rng.gen();
+        let mut rand_vec = Vec::with_capacity(vec_len);
+        for _ in 0..vec_len {
+            rand_vec.push(G::rand(rng));
+        }
+
+        Self::new(rand_vec)
     }
 }
 

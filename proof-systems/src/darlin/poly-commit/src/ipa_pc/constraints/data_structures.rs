@@ -355,18 +355,16 @@ impl<
 
 // alias for the proof type of InnerProductArgGadget
 type IPAProof<ConstraintF, G, GG, FS, FSG> =
-    <InnerProductArgGadget<ConstraintF, FSG> as PolynomialCommitmentVerifierGadget<
+    <InnerProductArgGadget<ConstraintF, FSG, G, GG> as PolynomialCommitmentVerifierGadget<
         ConstraintF,
         G,
-        GG,
         InnerProductArgPC<G, FS>,
     >>::Proof;
 // alias for the commitment type of InnerProductArgGadget
 type IPACommitment<ConstraintF, G, GG, FS, FSG> =
-    <InnerProductArgGadget<ConstraintF, FSG> as PolynomialCommitmentVerifierGadget<
+    <InnerProductArgGadget<ConstraintF, FSG, G, GG> as PolynomialCommitmentVerifierGadget<
         ConstraintF,
         G,
-        GG,
         InnerProductArgPC<G, FS>,
     >>::Commitment;
 

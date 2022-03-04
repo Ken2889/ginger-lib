@@ -303,3 +303,100 @@ impl<ConstraintF: Field, G: EndoMulCurve, GG: EndoMulCurveGadget<G, ConstraintF>
         Ok(Self::new(res_vec))
     }
 }
+
+impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ConstantGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, value: &GroupVec<G>) -> Self {
+        let mut res_vec = Vec::with_capacity(value.len());
+        for (i, el) in value.iter().enumerate() {
+            res_vec.push(GG::from_value(cs.ns(|| format!("alloc constant element {}", i)), el));
+        }
+
+        Self::new(res_vec)
+    }
+
+    fn get_constant(&self) -> GroupVec<G> {
+        let mut res_vec = Vec::with_capacity(self.len());
+        for el in self.iter() {
+            res_vec.push(el.get_constant());
+        }
+
+        GroupVec::<G>::new(res_vec)
+    }
+}
+
+impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
+    type Value = <Self as GroupGadget<G, ConstraintF>>::Value;
+    type Variable = <Self as GroupGadget<G, ConstraintF>>::Variable;
+
+    fn get_value(&self) -> Option<Self::Value> {
+        <Self as GroupGadget<G, ConstraintF>>::get_value(&self)
+    }
+
+    fn get_variable(&self) -> Self::Variable {
+        <Self as GroupGadget<G, ConstraintF>>::get_variable(&self)
+    }
+
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::zero(cs)
+    }
+
+    fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS) -> Result<Boolean, SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::is_zero(&self, cs)
+    }
+
+    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS, other: &Self) -> Result<Self, SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::add(&self, cs, other)
+    }
+
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &GroupVec<G>) -> Result<Self, SynthesisError> {
+        let mut sum_vec = self.iter()
+            .zip(other.iter())
+            .enumerate()
+            .map(|(i,(el1, el2))| {
+                el1.add_constant(cs.ns(|| format!("self[{}]+other[{}]",i,i)), el2)
+            }).collect::<Result<Vec<_>, SynthesisError>>()?;
+        let self_len = self.len();
+        let other_len = other.len();
+        if self_len > other_len {
+            sum_vec.extend_from_slice(&self.vec.as_slice()[other_len..])
+        } else {
+            let other_vec = other.iter().skip(self_len).enumerate().map(|(i, el)| GG::from_value(cs.ns(|| format!("alloc constant element {} of other", self_len+i)), el)).collect::<Vec<_>>();
+            sum_vec.extend_from_slice(&other_vec.as_slice())
+        }
+        Ok(Self{
+            vec: sum_vec,
+            _field: PhantomData,
+            _group: PhantomData,
+        })
+    }
+
+
+    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS, bits: impl Iterator<Item=&'a Boolean>) -> Result<Self, SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::mul_bits(self, cs, bits)
+    }
+
+    fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(base: &GroupVec<G>, mut cs: CS, bits: &[Boolean]) -> Result<Self, SynthesisError> {
+        let mut res_vec = Vec::with_capacity(base.len());
+        for (i, el) in base.iter().enumerate() {
+            res_vec.push(GG::mul_bits_fixed_base(el, cs.ns(|| format!("mul bits for fixed base {}", i)), bits)?);
+        }
+
+        Ok(Self::new(res_vec))
+    }
+
+    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(&mut self, cs: CS) -> Result<(), SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::double_in_place(self, cs)
+    }
+
+    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS) -> Result<Self, SynthesisError> {
+        <Self as GroupGadget<G, ConstraintF>>::negate(self, cs)
+    }
+
+    fn cost_of_add() -> usize {
+        unimplemented!()
+    }
+
+    fn cost_of_double() -> usize {
+        unimplemented!()
+    }
+}

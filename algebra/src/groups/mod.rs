@@ -1,7 +1,4 @@
-use crate::{
-    bytes::{FromBytes, ToBytes},
-    fields::PrimeField,
-};
+use crate::{bytes::{FromBytes, ToBytes}, fields::PrimeField, UniformRand};
 use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid};
 use std::{
     fmt::{Debug, Display},
@@ -34,6 +31,7 @@ pub trait Group:
     + Sync
     + Eq
     + Hash
+    + UniformRand
     + Neg<Output = Self>
     + Add<Self, Output = Self>
     + Sub<Self, Output = Self>

@@ -8,9 +8,10 @@ use r1cs_core::{
 };
 use r1cs_std::alloc::AllocGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
-use r1cs_std::groups::EndoMulCurveGadget;
 use rand::{thread_rng, Rng};
 use rand_core::RngCore;
+use r1cs_std::boolean::Boolean;
+use r1cs_std::groups::GroupGadget;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum NegativeTestType {
@@ -57,9 +58,8 @@ fn commitment_for_alloc<G: EndoMulCurve, PC: PolynomialCommitment<G>>(commitment
 fn test_succinct_verify_template<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >( test_conf: TestInfo) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
@@ -135,6 +135,11 @@ fn test_succinct_verify_template<
             println!("{:?}", cs.which_is_unsatisfied());
         }
         assert!(successful_test);
+
+        // test mul_bits_fixed_base
+        let native_bits = (0..10).map(|_| rng.gen()).collect::<Vec<bool>>();
+        let bits = Boolean::alloc_input_vec(cs.ns(|| "alloc bits"), native_bits.as_slice())?;
+        PCG::Commitment::mul_bits_fixed_base(&commitment, cs, bits.as_slice())?;
     }
     Ok(())
 }
@@ -142,9 +147,8 @@ fn test_succinct_verify_template<
 fn test_multi_point_multi_poly_verify<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >(
     test_conf: TestInfo,
 ) -> Result<(), PCG::Error> {
@@ -276,9 +280,8 @@ fn test_multi_point_multi_poly_verify<
 fn test_single_point_multi_poly_verify<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >(test_conf: TestInfo) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
@@ -399,12 +402,11 @@ fn exec_test<FN: Fn(Option<NegativeTestType>)>(test_fn: FN) {
 
 pub(crate) fn succinct_verify_single_point_single_poly_test<ConstraintF: PrimeField,
 G: EndoMulCurve<BaseField = ConstraintF>,
-GG: EndoMulCurveGadget<G, ConstraintF>,
 PC: PolynomialCommitment<G>,
-PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
-    test_succinct_verify_template::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+    test_succinct_verify_template::<ConstraintF, G, PC, PCG>(TestInfo {
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
@@ -418,13 +420,12 @@ PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
 
 pub(crate) fn succinct_verify_with_segmentation_test<ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: 'static + PolynomialCommitment<G, Commitment=G>,
-    PCG: 'static+ PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: 'static+ PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
         {
-            test_succinct_verify_template::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+            test_succinct_verify_template::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>>(TestInfo {
                 num_iters: 5,
                 max_degree: None,
                 supported_degree: None,
@@ -433,7 +434,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<ConstraintF: PrimeField,
                 segmented: true,
                 negative_type,
             }).unwrap();
-            test_single_point_multi_poly_verify::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+            test_single_point_multi_poly_verify::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>>(TestInfo {
                 num_iters: 5,
                 max_degree: None,
                 supported_degree: None,
@@ -442,7 +443,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<ConstraintF: PrimeField,
                 segmented: true,
                 negative_type,
             }).unwrap();
-            test_multi_point_multi_poly_verify::<ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, GG, PC, PCG>>(TestInfo {
+            test_multi_point_multi_poly_verify::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>>(TestInfo {
                 num_iters: 5,
                 max_degree: None,
                 supported_degree: None,
@@ -457,12 +458,11 @@ pub(crate) fn succinct_verify_with_segmentation_test<ConstraintF: PrimeField,
 pub(crate) fn single_point_multi_poly_test<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
-    test_single_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo{
+    test_single_point_multi_poly_verify::<ConstraintF, G, PC, PCG>(TestInfo{
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
@@ -476,12 +476,11 @@ pub(crate) fn single_point_multi_poly_test<
 
 pub(crate) fn constant_polynomial_succinct_verify_test<ConstraintF: PrimeField,
 G: EndoMulCurve<BaseField = ConstraintF>,
-GG: EndoMulCurveGadget<G, ConstraintF>,
 PC: PolynomialCommitment<G>,
-PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
-        test_succinct_verify_template::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+        test_succinct_verify_template::<ConstraintF, G, PC, PCG>(TestInfo {
             num_iters: 5,
             max_degree: None,
             supported_degree: Some(0),
@@ -496,12 +495,11 @@ PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
 pub(crate) fn multi_poly_multi_point_test<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
-    test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+    test_multi_point_multi_poly_verify::<ConstraintF, G, PC, PCG>(TestInfo {
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
@@ -516,12 +514,11 @@ pub(crate) fn multi_poly_multi_point_test<
 pub(crate) fn single_poly_multi_point_test<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
     PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, GG, PC>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
     exec_test(|negative_type|
-    test_multi_point_multi_poly_verify::<ConstraintF, G, GG, PC, PCG>(TestInfo {
+    test_multi_point_multi_poly_verify::<ConstraintF, G, PC, PCG>(TestInfo {
         num_iters: 5,
         max_degree: None,
         supported_degree: None,
