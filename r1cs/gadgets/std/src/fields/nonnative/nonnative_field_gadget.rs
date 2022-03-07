@@ -1010,7 +1010,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> TryInto<Boolean> for NonN
 }
 
 impl<SimulationF: PrimeField, ConstraintF: PrimeField> FromGadget<Boolean, ConstraintF> for NonNativeFieldGadget<SimulationF, ConstraintF> {
-    fn from<CS: ConstraintSystemAbstract<ConstraintF>>(other: Boolean, cs: CS) -> Result<Self, SynthesisError> {
+    fn from<CS: ConstraintSystemAbstract<ConstraintF>>(_other: Boolean, _cs: CS) -> Result<Self, SynthesisError> {
         unimplemented!()
     }
 }

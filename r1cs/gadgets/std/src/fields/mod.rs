@@ -757,7 +757,7 @@ pub(crate) mod tests {
             assert!(cs.is_satisfied());
 
             //If a == b but the prover maliciously witness v as False, cs will not be satisfied
-            cs.set("a == b/alloc verdict/boolean", ConstraintF::zero());
+            cs.set("a == b/alloc verdict/alloc", ConstraintF::zero());
             assert!(!cs.is_satisfied());
             assert_eq!(
                 "a == b/1 - v = c * (x - y)",
@@ -765,7 +765,7 @@ pub(crate) mod tests {
             );
 
             //If a == b the prover can freely choose c without invalidating any constraint
-            cs.set("a == b/alloc verdict/boolean", ConstraintF::one()); //Let's bring back v to True
+            cs.set("a == b/alloc verdict/alloc", ConstraintF::one()); //Let's bring back v to True
             assert!(cs.is_satisfied()); //Situation should be back to positive case
             cs.set("a == b/alloc c/alloc", ConstraintF::rand(&mut rng)); //Let's choose a random v
             assert!(cs.is_satisfied());
@@ -789,15 +789,15 @@ pub(crate) mod tests {
             assert!(cs.is_satisfied());
 
             //If a != b but the prover maliciously witness v as True, cs will not be satisfied
-            cs.set("a != b/alloc verdict/boolean", ConstraintF::one());
+            cs.set("a != b/alloc verdict/alloc", ConstraintF::one());
             assert!(!cs.is_satisfied());
             assert_eq!(
-                "a != b/0 = v * (x - y)/conditional_equals",
+                "a != b/0 = v * (x - y)",
                 cs.which_is_unsatisfied().unwrap()
             );
 
             //If a != b the prover is forced to choose c as 1/(a-b)
-            cs.set("a != b/alloc verdict/boolean", ConstraintF::zero()); //Let's bring back v to False
+            cs.set("a != b/alloc verdict/alloc", ConstraintF::zero()); //Let's bring back v to False
             assert!(cs.is_satisfied()); //Situation should be back to normal
             cs.set("a != b/alloc c/alloc", ConstraintF::rand(&mut rng)); //Let's choose a random c
             assert!(!cs.is_satisfied());

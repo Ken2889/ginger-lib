@@ -452,18 +452,25 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
         mut cs: CS,
         other: &Self,
     ) -> Result<Boolean, SynthesisError> {
-        // The Boolean we want to constrain.
-        let v = Boolean::alloc(cs.ns(|| "alloc verdict"), || {
+        // The flag we want to constrain. Can be allocated as field element rather than a Boolean
+        // as the constraints already imposed that v is either 0 or 1
+        let v = Self::alloc(cs.ns(|| "alloc verdict"), || {
             let self_val = self.get_value().get()?;
             let other_val = other.get_value().get()?;
-            Ok(self_val == other_val)
+            Ok(
+                if self_val == other_val {
+                    F::one()
+                } else {
+                    F::zero()
+                }
+            )
         })?;
 
         // We allow the prover to choose c as he wishes when v = 1, but if c != 1/(x-y) when
         // v = 0, then the following constraints will fail
         let c = Self::alloc(cs.ns(|| "alloc c"), || {
             let v_val = v.get_value().get()?;
-            if v_val {
+            if v_val.is_one() {
                 Ok(F::one()) //Just one random value
             } else {
                 let self_val = self.get_value().get()?;
@@ -477,17 +484,17 @@ impl<F: PrimeField> EqGadget<F> for FpGadget<F> {
         // 0 = v * (x - y)
         // 1 - v = c * (x - y)
 
-        self.conditional_enforce_equal(cs.ns(|| "0 = v * (x - y)"), other, &v)?;
-
-        let one = CS::one();
+        //self.conditional_enforce_equal(cs.ns(|| "0 = v * (x - y)"), other, &v)?;
+        cs.enforce(|| "0 = v * (x - y)", |lc| &v.variable + lc, |lc| (&self.variable - &other.variable) + lc, |lc| lc);
+        let not_v = v.negate(cs.ns(|| "-v"))?.add_constant(cs.ns(|| "1-v"), &F::one())?;
         cs.enforce(
             || "1 - v = c * (x - y)",
             |lc| (&self.variable - &other.variable) + lc,
             |lc| &c.variable + lc,
-            |_| v.not().lc(one, F::one()),
+            |lc| &not_v.variable + lc,
         );
 
-        Ok(v)
+        Ok(v.try_into()?)
     }
 
     fn conditional_enforce_equal<CS: ConstraintSystemAbstract<F>>(
