@@ -1,16 +1,19 @@
 use crate::ipa_pc::constraints::InnerProductArgGadget;
 use crate::ipa_pc::{InnerProductArgPC, MultiPointProof, Proof, VerifierKey, VerifierState};
-use crate::{MultiPointProofGadget, PCVerifierKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, VerifierStateGadget};
+use crate::{
+    MultiPointProofGadget, PCVerifierKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget,
+    VerifierStateGadget,
+};
 use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, ToBits};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
+use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::{borrow::Borrow, marker::PhantomData};
-use r1cs_std::boolean::Boolean;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IPAVerifierKeyGadget<
@@ -27,10 +30,11 @@ pub struct IPAVerifierKeyGadget<
 }
 
 impl<
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
-> VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG> {
+        ConstraintF: PrimeField,
+        G: EndoMulCurve<BaseField = ConstraintF>,
+        GG: EndoMulCurveGadget<G, ConstraintF>,
+    > VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
+{
     fn segment_size(&self) -> usize {
         self.segment_size
     }
@@ -211,9 +215,10 @@ impl<
 pub struct IPAProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+    GG: EndoMulCurveGadget<G, ConstraintF>
+        + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     FS: FiatShamirRng,
-    FSG: FiatShamirRngGadget<ConstraintF>
+    FSG: FiatShamirRngGadget<ConstraintF>,
 > {
     pub(crate) vec_l: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
     pub(crate) vec_r: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
@@ -226,9 +231,10 @@ pub struct IPAProofGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        GG: EndoMulCurveGadget<G, ConstraintF>
+            + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
-        FSG: FiatShamirRngGadget<ConstraintF>
+        FSG: FiatShamirRngGadget<ConstraintF>,
     > AllocGadget<Proof<G>, ConstraintF> for IPAProofGadget<ConstraintF, G, GG, FS, FSG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(

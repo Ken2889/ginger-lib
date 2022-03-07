@@ -28,8 +28,6 @@ pub struct DomainExtendedPolynomialCommitment<
     _pc: PhantomData<PC>,
 }
 
-
-
 // Domain extension beyond the maximum degree `s` is achieved by leveraging linearity.
 // An (arbitrary degree) polynomial p(X) is regarded as sum of "segment polynomials", i.e.
 //     p(X) = p_0(X) +  X^s * p_1(X) + ... +  X^{m*s} * p_m(X),

@@ -7,15 +7,15 @@ use algebra::{EndoMulCurve, Field, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
+use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::FromBitsGadget;
-use std::marker::PhantomData;
 use rand::thread_rng;
-use r1cs_std::boolean::Boolean;
+use std::marker::PhantomData;
 
 mod data_structures;
 
@@ -29,13 +29,14 @@ pub(crate) fn safe_mul<'a, ConstraintF, G, GG, CS, IT>(
     scalar: IT,
     endo_mul: bool,
 ) -> Result<GG, SynthesisError>
-    where
-        ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+where
+    ConstraintF: PrimeField,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+    GG: EndoMulCurveGadget<G, ConstraintF>
+        + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
 
-        CS: ConstraintSystemAbstract<ConstraintF>,
-        IT: Iterator<Item = &'a Boolean>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
+    IT: Iterator<Item = &'a Boolean>,
 {
     let rng = &mut thread_rng();
     let mut non_trivial_base_constant = G::rand(rng);
@@ -72,8 +73,13 @@ pub(crate) fn safe_mul<'a, ConstraintF, G, GG, CS, IT>(
 }
 
 /// poly-commit verifier gadget implementation from the inner-product argument ([BCMS20](https://eprint.iacr.org/2020/499))
-pub struct InnerProductArgGadget<ConstraintF: PrimeField, FSG: FiatShamirRngGadget<ConstraintF>, G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>> {
+pub struct InnerProductArgGadget<
+    ConstraintF: PrimeField,
+    FSG: FiatShamirRngGadget<ConstraintF>,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+    GG: EndoMulCurveGadget<G, ConstraintF>
+        + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+> {
     _constraint_field_phantom: PhantomData<ConstraintF>,
     _fiat_shamir_rng_phantom: PhantomData<FSG>,
     _endo_mul_curve: PhantomData<G>,
@@ -98,12 +104,22 @@ impl<
     type RandomOracle = FSG;
     type Error = Error;
 
-    fn mul_by_challenge<'a, CS: ConstraintSystemAbstract<ConstraintF>,
-        IT: Iterator<Item = &'a Boolean>>(cs: CS, base: &Self::Commitment, challenge: IT) -> Result<Self::Commitment, SynthesisError> {
+    fn mul_by_challenge<
+        'a,
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        IT: Iterator<Item = &'a Boolean>,
+    >(
+        cs: CS,
+        base: &Self::Commitment,
+        challenge: IT,
+    ) -> Result<Self::Commitment, SynthesisError> {
         safe_mul::<ConstraintF, G, GG, _, _>(cs, base, challenge, true)
     }
 
-    fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, challenge: &[Boolean]) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
+    fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        challenge: &[Boolean],
+    ) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
         let mut challenge_for_endo_mul =
             GG::endo_rep_to_scalar_bits(cs.ns(|| "apply endomorphism"), challenge.to_vec())?;
         // endo_rep_to_scalar_bits returns a little-endian bit representation, we need a big-endian
@@ -142,20 +158,21 @@ impl<
             //ToDo: conversion to NonNativeFieldGadget is necessary only because hiding_randomness
             // must be absorbed to be compliant with the primitive. Since this absorb may seem
             // unnecessary, we may remove it also from here once it is removed in the primitive
-            let hiding_randomness=
-                NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| "hiding randomness to bits"), &hiding_randomness_bits)?;
+            let hiding_randomness = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+                cs.ns(|| "hiding randomness to bits"),
+                &hiding_randomness_bits,
+            )?;
             random_oracle.enforce_absorb(
                 cs.ns(|| "absorb hiding randomness"),
                 &[hiding_randomness][..],
             )?;
 
-            let comm_times_challenge =
-                safe_mul::<ConstraintF, G, GG, _, _>(
-                    cs.ns(|| "hiding_commitment * hiding_challenge"),
-                    &comm,
-                    hiding_challenge.iter(),
-                    true,
-                )?;
+            let comm_times_challenge = safe_mul::<ConstraintF, G, GG, _, _>(
+                cs.ns(|| "hiding_commitment * hiding_challenge"),
+                &comm,
+                hiding_challenge.iter(),
+                true,
+            )?;
             let rand_times_s = vk.s.mul_bits(
                 cs.ns(|| "vk.s * hiding_randomness"),
                 hiding_randomness_bits.iter().rev(),
@@ -177,8 +194,7 @@ impl<
 
         let h_prime =
             vk.h.endo_mul(cs.ns(|| "h' = vk.h*round_challenge"), &round_challenge)?;
-        let value_times_h_prime =
-            h_prime.mul_bits(cs.ns(|| "value*h'"), value.iter().rev())?;
+        let value_times_h_prime = h_prime.mul_bits(cs.ns(|| "value*h'"), value.iter().rev())?;
         non_hiding_commitment = non_hiding_commitment
             .add(cs.ns(|| "add value*h' to commitment"), &value_times_h_prime)?;
         for (i, (el_vec_l, el_vec_r)) in proof.vec_l.iter().zip(proof.vec_r.iter()).enumerate() {
@@ -191,13 +207,12 @@ impl<
                 1,
             )?[0];
             // compute round_challenge*el_vec_r dealing with the case el_vec_r is zero
-            let challenge_times_r =
-                safe_mul::<ConstraintF, G, GG, _, _>(
-                    cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),
-                    el_vec_r,
-                    round_challenge.iter(),
-                    true,
-                )?;
+            let challenge_times_r = safe_mul::<ConstraintF, G, GG, _, _>(
+                cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),
+                el_vec_r,
+                round_challenge.iter(),
+                true,
+            )?;
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| format!("add round_challenge_{}*vec_r_{} to commitment", i + 1, i)),
                 &challenge_times_r,
@@ -227,16 +242,16 @@ impl<
                 )?;
             let round_challenge_inverse = round_challenge_in_scalar_field
                 .inverse(cs.ns(|| format!("invert round_challenge_{}", i + 1)))?;
-            let round_challenge_inverse_bits = round_challenge_inverse
-                .to_bits_for_normal_form(cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)))?;
+            let round_challenge_inverse_bits = round_challenge_inverse.to_bits_for_normal_form(
+                cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)),
+            )?;
             // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
-            let challenge_inv_times_l =
-                safe_mul::<ConstraintF, G, GG, _, _>(
-                    cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
-                    el_vec_l,
-                    round_challenge_inverse_bits.iter().rev(),
-                    false,
-                )?;
+            let challenge_inv_times_l = safe_mul::<ConstraintF, G, GG, _, _>(
+                cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
+                el_vec_l,
+                round_challenge_inverse_bits.iter().rev(),
+                false,
+            )?;
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| {
                     format!(
@@ -308,15 +323,17 @@ impl<
             point_power.square_in_place(cs.ns(|| format!("compute point^(2^{})", i)))?;
         }
 
-        let c = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| "proof.c from bits"), &proof.c)?;
-        let v_prime =c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
-        let c_times_final_comm_key =
-            safe_mul::<ConstraintF, G, GG, _, _>(
-                cs.ns(|| "c*g_final"),
-                &proof.final_comm_key,
-                proof.c.iter().rev(),
-                false,
-            )?;
+        let c = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+            cs.ns(|| "proof.c from bits"),
+            &proof.c,
+        )?;
+        let v_prime = c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
+        let c_times_final_comm_key = safe_mul::<ConstraintF, G, GG, _, _>(
+            cs.ns(|| "c*g_final"),
+            &proof.final_comm_key,
+            proof.c.iter().rev(),
+            false,
+        )?;
         let v_prime_bits = v_prime.to_bits_for_normal_form(cs.ns(|| "v' to bits"))?;
         let v_prime_times_h_prime =
             h_prime.mul_bits(cs.ns(|| "v'*h'"), v_prime_bits.iter().rev())?;

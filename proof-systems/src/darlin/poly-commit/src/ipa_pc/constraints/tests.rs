@@ -1,4 +1,8 @@
-use crate::constraints::tests::{constant_polynomial_succinct_verify_test, multi_poly_multi_point_test, single_point_multi_poly_test, single_poly_multi_point_test, succinct_verify_single_point_single_poly_test, succinct_verify_with_segmentation_test};
+use crate::constraints::tests::{
+    constant_polynomial_succinct_verify_test, multi_poly_multi_point_test,
+    single_point_multi_poly_test, single_poly_multi_point_test,
+    succinct_verify_single_point_single_poly_test, succinct_verify_with_segmentation_test,
+};
 use crate::ipa_pc::constraints::InnerProductArgGadget;
 use crate::ipa_pc::InnerProductArgPC;
 use algebra::{
@@ -37,8 +41,6 @@ fn test_multi_point_succinct_verify() {
 fn test_single_point_multi_poly_succinct_verify() {
     single_point_multi_poly_test::<ConstraintF, Curve, PC, PCG>()
 }
-
-
 
 #[test]
 fn test_single_poly_multi_point_succinct_verify() {

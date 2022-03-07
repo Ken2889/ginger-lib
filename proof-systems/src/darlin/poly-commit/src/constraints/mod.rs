@@ -1,4 +1,7 @@
-use crate::{Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialLabel, QueryMap};
+use crate::{
+    Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierKey, PCVerifierState,
+    PolynomialCommitment, PolynomialLabel, QueryMap,
+};
 use algebra::{EndoMulCurve, Group, PrimeField, UniformRand};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -6,17 +9,17 @@ use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, 
 use r1cs_std::groups::GroupGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
+use rand::thread_rng;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use rand::thread_rng;
 
 #[cfg(test)]
 pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
-use r1cs_std::FromGadget;
 use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
+use r1cs_std::FromGadget;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Clone)]
@@ -56,7 +59,7 @@ where
 /// Define interface for a gadget representing an opening proof for a multi-point assertion
 pub trait MultiPointProofGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField=ConstraintF>,
+    G: EndoMulCurve<BaseField = ConstraintF>,
     MPP: PCMultiPointProof<G>,
 >: AllocGadget<MPP, ConstraintF>
 {
@@ -96,14 +99,14 @@ impl From<SynthesisError> for PolyError {
 }
 
 pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
-        mut cs: CS,
-        base_point: &PCG::Commitment,
-        scalar: IT
-    ) -> Result<PCG::Commitment, SynthesisError>
-    where
+    mut cs: CS,
+    base_point: &PCG::Commitment,
+    scalar: IT,
+) -> Result<PCG::Commitment, SynthesisError>
+where
     ConstraintF: PrimeField,
     // ToDo: can probably be a Group if we implement rand also for groups
-    G: EndoMulCurve<BaseField=ConstraintF>,
+    G: EndoMulCurve<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     CS: ConstraintSystemAbstract<ConstraintF>,
@@ -139,7 +142,7 @@ pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
 /// Gadget for a linear polynomial commitment verifier
 pub trait PolynomialCommitmentVerifierGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField=ConstraintF>,
+    G: EndoMulCurve<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
 >: Sized
 {
@@ -171,13 +174,31 @@ pub trait PolynomialCommitmentVerifierGadget<
         + std::error::Error;
 
     /// this function specifies how to multiply a commitment to a challenge squeezed from the random oracle
-    fn mul_by_challenge<'a, CS: ConstraintSystemAbstract<ConstraintF>,
-    IT: Iterator<Item = &'a Boolean>>(cs: CS, base: &Self::Commitment, challenge: IT) -> Result<Self::Commitment, SynthesisError> {
+    fn mul_by_challenge<
+        'a,
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        IT: Iterator<Item = &'a Boolean>,
+    >(
+        cs: CS,
+        base: &Self::Commitment,
+        challenge: IT,
+    ) -> Result<Self::Commitment, SynthesisError> {
         safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(cs, base, challenge)
     }
     /// This function specifies how to convert a challenge squeezed from the random oracle to a gadget for `G::ScalarField`
-    fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS, challenge: &[Boolean]) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
-        NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs, challenge.iter().rev().cloned().collect::<Vec<_>>().as_slice())
+    fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(
+        cs: CS,
+        challenge: &[Boolean],
+    ) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
+        NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+            cs,
+            challenge
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
     }
 
     /// Succinct check of the verify
@@ -241,11 +262,16 @@ pub trait PolynomialCommitmentVerifierGadget<
                 &lambda_non_native,
             )?;
             let value = FromGadget::from(value, cs.ns(|| format!("value {} to mul result", i)))?;
-            batched_value =
-                batched_value_times_lambda.add(cs.ns(|| format!("add value {} to batched_value", i)), &value)?.reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
+            batched_value = batched_value_times_lambda
+                .add(
+                    cs.ns(|| format!("add value {} to batched_value", i)),
+                    &value,
+                )?
+                .reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
         }
 
-        let batched_value_bits = batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
+        let batched_value_bits =
+            batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
 
         Self::succinct_verify(
             &mut cs,
@@ -318,8 +344,8 @@ pub trait PolynomialCommitmentVerifierGadget<
         let z_i_over_z_value = evaluation_point
             .sub(cs.ns(|| "evaluation_point - point for last point"), &point)?
             .inverse(cs.ns(|| "(evaluation_point - point)^-1 for last point"))?;
-        let z_i_over_z_bits =
-            z_i_over_z_value.to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
+        let z_i_over_z_bits = z_i_over_z_value
+            .to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
 
         let mut batched_commitment = safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(
             cs.ns(|| "commitment*z_i_over_z for last point"),
@@ -372,8 +398,9 @@ pub trait PolynomialCommitmentVerifierGadget<
                         combined_label
                     )
                 }))?;
-            let z_i_over_z_bits = z_i_over_z_value
-                .to_bits_for_normal_form(cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)))?;
+            let z_i_over_z_bits = z_i_over_z_value.to_bits_for_normal_form(
+                cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)),
+            )?;
             let to_be_added_commitment = safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(
                 cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
                 &commitment,
@@ -398,14 +425,17 @@ pub trait PolynomialCommitmentVerifierGadget<
                 cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
                 &lambda,
             )?;
-            batched_value = batched_value_times_lambda.add(
-                cs.ns(|| format!("add value for point for label {}", combined_label)),
-                &to_be_added_value,
-            )?.reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
+            batched_value = batched_value_times_lambda
+                .add(
+                    cs.ns(|| format!("add value for point for label {}", combined_label)),
+                    &to_be_added_value,
+                )?
+                .reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
         }
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;
-        let batched_value_bits = batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
+        let batched_value_bits =
+            batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
         Self::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,
