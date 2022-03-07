@@ -186,7 +186,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         vk: &Self::VerifierKey,
         commitment: &Self::Commitment,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
-        value: &NonNativeFieldGadget<G::ScalarField, ConstraintF>, //ToDo: maybe this can be defined as Vec<Boolean> for efficiency
+        value: &Vec<Boolean>, // bits of evaluation point in big-endian order
         proof: &Self::Proof,
         random_oracle: &mut Self::RandomOracle,
     ) -> Result<Self::VerifierState, Self::Error>;
@@ -245,12 +245,14 @@ pub trait PolynomialCommitmentVerifierGadget<
                 batched_value_times_lambda.add(cs.ns(|| format!("add value {} to batched_value", i)), &value)?.reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
         }
 
+        let batched_value_bits = batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
+
         Self::succinct_verify(
             &mut cs,
             &vk,
             &batched_commitment,
             point,
-            &batched_value,
+            &batched_value_bits,
             &proof,
             random_oracle,
         )
@@ -403,12 +405,13 @@ pub trait PolynomialCommitmentVerifierGadget<
         }
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;
+        let batched_value_bits = batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
         Self::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,
             &batched_commitment,
             &evaluation_point,
-            &batched_value,
+            &batched_value_bits,
             &proof.get_proof(),
             random_oracle,
         )

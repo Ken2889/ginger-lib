@@ -1,5 +1,5 @@
 use crate::{DomainExtendedPolyCommitVerifierGadget, DomainExtendedPolynomialCommitment, Error as PolyError, Evaluations, LabeledCommitmentGadget, LabeledPolynomial, PCParameters, Polynomial, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap};
-use algebra::{EndoMulCurve, Field, Group, PrimeField, SemanticallyValid, UniformRand};
+use algebra::{EndoMulCurve, Field, Group, PrimeField, SemanticallyValid, ToBits, UniformRand};
 use blake2::Blake2s;
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
@@ -115,10 +115,7 @@ fn test_succinct_verify_template<
             cs.ns(|| "alloc evaluation point"),
             || Ok(point),
         )?;
-        let value_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
-            cs.ns(|| "alloc polynomial evaluation on point"),
-            || Ok(value_for_alloc(&value, &test_conf.negative_type, rng)),
-        )?;
+        let value_gadget = Boolean::alloc_input_vec(cs.ns(|| "alloc polynomial evalauation on point"), value.write_bits().as_slice())?;
         let proof_gadget = PCG::Proof::alloc(cs.ns(|| "alloc opening proof"), || Ok(proof))?;
         let mut fs_gadget = PCG::RandomOracle::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
         let _v_state_gadget = PCG::succinct_verify(

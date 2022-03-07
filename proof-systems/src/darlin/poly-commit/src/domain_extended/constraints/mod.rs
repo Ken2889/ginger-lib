@@ -152,7 +152,7 @@ impl<ConstraintF: PrimeField,
         PCG::challenge_to_non_native_field_element(cs, challenge)
     }
     
-    fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, vk: &Self::VerifierKey, commitment: &Self::Commitment, point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>, value: &NonNativeFieldGadget<G::ScalarField, ConstraintF>, proof: &Self::Proof, random_oracle: &mut Self::RandomOracle) -> Result<Self::VerifierState, Self::Error> {
+    fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, vk: &Self::VerifierKey, commitment: &Self::Commitment, point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>, value: &Vec<Boolean>, proof: &Self::Proof, random_oracle: &mut Self::RandomOracle) -> Result<Self::VerifierState, Self::Error> {
         let labeled_commitment = LabeledCommitmentGadget::<Self, ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>>::new(String::from("labeled commitment"), commitment.clone());
         let labeled_combined_commitment = Self::combine_commitments(cs.ns(|| "combine segmented commitment"), vk, [labeled_commitment].as_ref(), point)?;
         assert_eq!(labeled_combined_commitment.len(), 1);
@@ -305,13 +305,13 @@ impl<ConstraintF: PrimeField,
         let combined_h_commitment = labeled_combined_h_commitment[0].commitment();
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), combined_h_commitment)?;
-
+        let batched_value_bits = batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
         PCG::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,
             &batched_commitment,
             &evaluation_point,
-            &batched_value,
+            &batched_value_bits,
             &proof.get_proof(),
             random_oracle,
         )
