@@ -1,6 +1,6 @@
 //! A sponge-like random oracle for Fiat-Shamir transform usage.
 
-use algebra::{PrimeField, ToConstraintField, CanonicalSerialize, Field, EndoMulCurve, serialize_no_metadata};
+use algebra::{ToConstraintField, CanonicalSerialize, Field, serialize_no_metadata};
 use crate::error::Error;
 use std::{fmt::Debug, convert::TryInto};
 
@@ -16,6 +16,9 @@ pub mod constraints;
 
 /// Error types for FiatShamir
 pub mod error;
+
+#[macro_use]
+extern crate derivative;
 
 /// A trait for serialization of [`FiatShamirRng`] seed material.
 #[derive(Default)]
@@ -87,31 +90,15 @@ pub trait FiatShamirRng: Sized + Default {
     /// Refresh the internal state with new material
     fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
 
-    /// Squeeze a new random field element, changing the internal state.
-    fn squeeze<F: PrimeField>(&mut self) -> Result<F, Error> {
-        Ok(self.squeeze_many(1)?[0])
-    }
-
-    /// Squeeze 'num' many random field elements, changing the internal state.
-    /// Depending on the internal implementation, it might be more
-    /// efficient than calling 'squeeze()' num times.
-    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Result<Vec<F>, Error>;
-
-    /// Squeeze a new random field element having bit length of 128, changing the internal state.
-    /// NOTE: We require the G: EndoMulCurve generic for backward compatibility reasons: we don't
-    ///       want to duplicate code or filling it with ifs to discriminate among circuit-friendly
-    ///       and non circuit-friendly Darlin primitive implementation. This generic will allow us to
-    ///       squeeze a endo scalar in case of circuit friendly implementation and it will be simply
-    ///       ignored by a non circuit friendly implementation.
-    /// TODO: Can we do better ?
-    fn squeeze_128_bits_challenge<G: EndoMulCurve>(&mut self) -> Result<G::ScalarField, Error> {
-        Ok(self.squeeze_many_128_bits_challenges::<G>(1)?[0])
+    /// Squeeze a new random field element having bit length of N, changing the internal state.
+    fn squeeze_challenge<const N: usize>(&mut self) -> Result<[bool; N], Error> {
+        Ok(self.squeeze_many_challenges(1)?[0])
     }
 
     /// Squeeze 'num' many random field elements having bit length of 128, changing the internal state.
     /// Depending on the internal implementation, it might be more efficient than calling
-    /// 'squeeze_128_bits_challenge' num times.
-    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Result<Vec<G::ScalarField>, Error>;
+    /// 'squeeze_challenge' num times.
+    fn squeeze_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error>;
 
     /// Get the internal state in the form of an instance of `Self::Seed`.
     fn get_state(&self) -> Self::State;

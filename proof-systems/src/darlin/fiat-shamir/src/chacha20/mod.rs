@@ -101,13 +101,17 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
         self.r = ChaChaRng::from_seed(r_seed);
     }
 
-    /// Squeeze a new random field element, changing the internal state.
-    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Result<Vec<F>, Error> {
-        Ok((0..num).map(|_| F::rand(self)).collect())
-    }
-
-    /// Squeeze a new random field element having bit length of 128, changing the internal state.
-    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Result<Vec<G::ScalarField>, Error> {
-        Ok((0..num).map(|_| self.gen_range(1u128..=u128::MAX).into()).collect())
+    /// Squeeze a new random field element having bit length of N, changing the internal state.
+    fn squeeze_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error> {
+        let random_bits: Vec<bool> = (0..num * N).map(|_| self.gen::<bool>()).collect();
+        Ok(
+            random_bits
+                .chunks(N)
+                .map(|bit_chunk| bit_chunk
+                    .try_into()
+                    .unwrap() // Cannot fail
+                )
+                .collect()
+        )
     }
 }

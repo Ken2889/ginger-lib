@@ -6,9 +6,7 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{
-    serialize::*, Field, Group, GroupVec, SemanticallyValid, UniformRand, EndoMulCurve,
-};
+use algebra::{serialize::*, EndoMulCurve, Field, Group, GroupVec, SemanticallyValid, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::{
@@ -90,7 +88,12 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let z =
+            G::endo_rep_to_scalar(fs_rng.squeeze_challenge::<128>()?.to_vec()).map_err(|e| {
+                end_timer!(poly_time);
+                end_timer!(succinct_time);
+                PCError::Other(e.to_string())
+            })?;
 
         let comms_values = previous_accumulators
             .into_par_iter()
@@ -267,7 +270,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let z =
+            G::endo_rep_to_scalar(fs_rng.squeeze_challenge::<128>()?.to_vec()).map_err(|e| {
+                end_timer!(accumulate_time);
+                PCError::Other(e.to_string())
+            })?;
 
         // Collect xi_s from the accumulators
         let xi_s = accumulators
@@ -279,13 +286,17 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
 
         // Compute multi-poly single-point opening proof for the G_f's, i.e.
         // the commitments of the item polys.
-        let opening_proof =
-            InnerProductArgPC::<G, FS>::open_reduction_polynomials(&ck, xi_s.iter(), z, &mut fs_rng)
-                .map_err(|e| {
-                    end_timer!(poly_time);
-                    end_timer!(accumulate_time);
-                    e
-                })?;
+        let opening_proof = InnerProductArgPC::<G, FS>::open_reduction_polynomials(
+            &ck,
+            xi_s.iter(),
+            z,
+            &mut fs_rng,
+        )
+        .map_err(|e| {
+            end_timer!(poly_time);
+            end_timer!(accumulate_time);
+            e
+        })?;
 
         end_timer!(poly_time);
 
@@ -350,8 +361,12 @@ pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
     pub(crate) Vec<DLogItem<G2>>,
 );
 
-
-pub struct DualDLogItemAccumulator<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
+pub struct DualDLogItemAccumulator<
+    'a,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'static,
+> {
     _lifetime: PhantomData<&'a ()>,
     _group_1: PhantomData<G1>,
     _group_2: PhantomData<G2>,
@@ -363,7 +378,7 @@ impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
 where
     G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
-    FS: FiatShamirRng + 'static
+    FS: FiatShamirRng + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
     type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
@@ -516,7 +531,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let TestInfo {
             max_degree,       // maximum degree supported by the dlog commitment scheme
@@ -534,7 +549,9 @@ mod test {
         let pp = if pp.is_some() {
             pp.unwrap()
         } else {
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?
+            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+                max_degree,
+            )?
         };
 
         test_canonical_serialize_deserialize(true, &pp);
@@ -641,7 +658,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -654,8 +671,9 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+            max_degree,
+        )?;
 
         test_canonical_serialize_deserialize(true, &pp);
 
@@ -747,7 +765,7 @@ mod test {
     where
         G: EndoMulCurve,
         D: Digest + 'static,
-        FS: FiatShamirRng + 'static
+        FS: FiatShamirRng + 'static,
     {
         let rng = &mut thread_rng();
         let max_degree = rand::distributions::Uniform::from(2..=128).sample(rng);
@@ -760,8 +778,9 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(max_degree)?;
+        let pp = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
+            max_degree,
+        )?;
         let (_, vk) = pp.trim(max_degree)?;
 
         test_canonical_serialize_deserialize(true, &pp);
@@ -808,7 +827,7 @@ mod test {
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
-            )?;
+            ).unwrap();
 
             let accumulators = verifier_state_vec
                 .into_iter()
@@ -839,7 +858,6 @@ mod test {
     };
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-    
     #[test]
     fn test_tweedle_accumulate_verify() {
         accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();

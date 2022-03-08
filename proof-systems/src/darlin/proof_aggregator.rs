@@ -9,12 +9,12 @@ use crate::darlin::{
 };
 use algebra::{EndoMulCurve, Group, ToConstraintField};
 use bench_utils::*;
+use fiat_shamir::FiatShamirRng;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, InnerProductArgPC, VerifierKey as DLogVerifierKey},
-    DomainExtendedPolynomialCommitment
+    DomainExtendedPolynomialCommitment,
 };
-use fiat_shamir::FiatShamirRng;
 use rand::RngCore;
 use rayon::prelude::*;
 

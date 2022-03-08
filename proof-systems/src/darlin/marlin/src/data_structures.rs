@@ -5,7 +5,7 @@
 use crate::iop::indexer::*;
 use crate::{Vec, IOP};
 use algebra::serialize::*;
-use algebra::{EndoMulCurve, Group};
+use algebra::Group;
 use derivative::Derivative;
 use poly_commit::{LabeledRandomness, PolynomialCommitment};
 
@@ -21,7 +21,7 @@ pub type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct VerifierKey<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
+pub struct VerifierKey<G: Group, PC: PolynomialCommitment<G>> {
     /// Stores R1CS metrics as usually supplied by the constraint system.
     pub index_info: IndexInfo<G::ScalarField>,
     /// Commitments to the indexed polynomials.
@@ -30,7 +30,7 @@ pub struct VerifierKey<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
     pub vk_hash: Vec<u8>,
 }
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> VerifierKey<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> VerifierKey<G, PC> {
     /// Iterate over the commitments to indexed polynomials in `self`.
     pub fn iter(&self) -> impl Iterator<Item = &PC::Commitment> {
         self.index_comms.iter()
@@ -54,7 +54,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> VerifierKey<G, PC> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct ProverKey<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
+pub struct ProverKey<G: Group, PC: PolynomialCommitment<G>> {
     /// The index verifier key.
     pub index_vk: VerifierKey<G, PC>,
     /// The randomness for the index polynomial commitments.
@@ -75,7 +75,7 @@ pub struct ProverKey<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
+pub struct Proof<G: Group, PC: PolynomialCommitment<G>> {
     /// Commitments to the polynomials produced by the prover
     pub commitments: Vec<Vec<PC::Commitment>>,
     /// Evaluations of these polynomials.
@@ -84,7 +84,7 @@ pub struct Proof<G: EndoMulCurve, PC: PolynomialCommitment<G>> {
     pub pc_proof: PC::MultiPointProof,
 }
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Proof<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> Proof<G, PC> {
     /// Construct a new proof.
     pub fn new(
         commitments: Vec<Vec<PC::Commitment>>,
@@ -137,7 +137,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Proof<G, PC> {
     Implement SemanticallyValid for VerifierKey, ProverKey, and Proof.
 */
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for VerifierKey<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for VerifierKey<G, PC> {
     fn is_valid(&self) -> bool {
         // Check that the number of commitments is equal to the expected one (i.e. the number
         // of indexer polynomials).
@@ -156,13 +156,13 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid fo
     }
 }
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for ProverKey<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for ProverKey<G, PC> {
     fn is_valid(&self) -> bool {
         self.index_vk.is_valid() && self.index.is_valid()
     }
 }
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof<G, PC> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
@@ -197,7 +197,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> algebra::SemanticallyValid fo
     Serialization and Deserialization utilities.
 */
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize commitments: we know in advance exactly how many polynomials will be
         // committed, so we can skip writing the corresponding sizes.
@@ -298,7 +298,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<
     }
 }
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 3;

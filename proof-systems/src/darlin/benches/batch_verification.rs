@@ -1,4 +1,4 @@
-use algebra::{Group, EndoMulCurve, ToConstraintField};
+use algebra::{EndoMulCurve, Group, ToConstraintField};
 use blake2::{Blake2s, Digest};
 use criterion::*;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
@@ -12,7 +12,12 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: FiatShamirRng + 'static>(
+fn bench_batch_verification<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: Digest,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -72,7 +77,9 @@ fn bench_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest, FS: F
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,

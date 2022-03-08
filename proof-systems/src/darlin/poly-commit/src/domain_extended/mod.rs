@@ -3,7 +3,7 @@
 //! maximum degree supported by it. 
 
 mod data_structures;
-use algebra::EndoMulCurve;
+use algebra::SquareRootField;
 pub use data_structures::*;
 
 use crate::{Error, LinearCombination, Polynomial, PolynomialCommitment};
@@ -19,7 +19,8 @@ use digest::Digest;
 /// The domain extension of a given homomorphic commitment scheme `PC`.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct DomainExtendedPolynomialCommitment<G: EndoMulCurve, PC: PolynomialCommitment<G, Commitment = G>> {
+pub struct DomainExtendedPolynomialCommitment<G: Group, PC: PolynomialCommitment<G, Commitment = G>>
+{
     _projective: PhantomData<G>,
     _pc: PhantomData<PC>,
 }
@@ -31,7 +32,9 @@ pub struct DomainExtendedPolynomialCommitment<G: EndoMulCurve, PC: PolynomialCom
 // degree of the scheme. The commitment of p(X) is the vector of the commitments of its
 // segment polynomials, and evaluation claims on p(X) are reduced to that of a query-point
 // dependent linear combination of the p_i(X).
-impl<G: EndoMulCurve, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G> for DomainExtendedPolynomialCommitment<G, PC>
+impl<G: Group, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G> for DomainExtendedPolynomialCommitment<G, PC>
+where
+    G::ScalarField: SquareRootField // Temporary
 {
     type Parameters = PC::Parameters;
     type CommitterKey = PC::CommitterKey;

@@ -1,21 +1,41 @@
-use std::convert::TryInto;
-
 use algebra::PrimeField;
-use primitives::{PoseidonParameters, PoseidonSponge, PoseidonQuinticSBox};
+use primitives::PoseidonParameters;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
-use r1cs_crypto::{AlgebraicSpongeGadget, density_optimized::{DensityOptimizedPoseidonQuinticSboxSpongeGadget, S}, DensityOptimizedPoseidonQuinticSBoxParameters};
+use r1cs_crypto::{AlgebraicSpongeGadget, density_optimized::DensityOptimizedPoseidonQuinticSboxSpongeGadget, DensityOptimizedPoseidonQuinticSBoxParameters};
 use r1cs_std::{to_field_gadget_vec::ToConstraintFieldGadget, fields::fp::FpGadget, boolean::Boolean, prelude::ConstantGadget};
+use std::{marker::PhantomData, convert::TryInto};
 
 use crate::{constraints::FiatShamirRngGadget, FiatShamirRng};
 
-impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = ""),
+)]
+pub struct PoseidonFSRngGadget<
+    ConstraintF: PrimeField,
+    FS: FiatShamirRng<State = Vec<ConstraintF>>,
+    P: PoseidonParameters<Fr = ConstraintF>,
+    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
+> 
+{
+    sponge_g: DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>,
+    _fs: PhantomData<FS>,
+}
+
+impl<ConstraintF, FS, P, DOP> FiatShamirRngGadget<ConstraintF> for PoseidonFSRngGadget<ConstraintF, FS, P, DOP>
     where
         ConstraintF: PrimeField,
+        FS:          FiatShamirRng<State = Vec<ConstraintF>>,
         P:           PoseidonParameters<Fr = ConstraintF>,
         DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
 {
     fn init<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
-        Self::new(cs)
+        Ok(
+            Self {
+                sponge_g: DensityOptimizedPoseidonQuinticSboxSpongeGadget::<ConstraintF, P, DOP>::new(cs)?,
+               _fs: PhantomData
+            }
+        )
     }
 
     fn init_from_seed<CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -23,7 +43,7 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
         seed: Vec<u8>
     ) -> Result<Self, SynthesisError> {
         // Create primitive instance from seed and get the state afterwards
-        let primitive_fs_rng = PoseidonSponge::<ConstraintF, P, PoseidonQuinticSBox<ConstraintF, P>>::from_seed(seed)
+        let primitive_fs_rng = FS::from_seed(seed)
             .map_err(|e| SynthesisError::Other(e.to_string()))?;
         let state = primitive_fs_rng.get_state();
         
@@ -37,7 +57,7 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
         );
 
         // Set state
-        gadget_fs_rng.set_state(state);
+        gadget_fs_rng.sponge_g.set_state(state);
 
         // Return new instance
         Ok(gadget_fs_rng) 
@@ -53,50 +73,65 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
         AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
     {
         
-        <Self as AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>>::enforce_absorb(self, cs, to_absorb)
+        self.sponge_g.enforce_absorb(cs, to_absorb)
     }
 
-    fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        cs: CS,
-        num: usize
-    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> {
-        <Self as AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>>::enforce_squeeze(self, cs, num)
-    }
-
-    fn enforce_squeeze_128_bits_challenges<CS: ConstraintSystemAbstract<ConstraintF>>(
+    fn enforce_squeeze_challenges<CS: ConstraintSystemAbstract<ConstraintF>, const N: usize>(
         &mut self,
         mut cs: CS,
         num: usize
-    ) -> Result<Vec<[Boolean; 128]>, SynthesisError> {
-        let chal_bits = <Self as AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>>::enforce_squeeze_bits(
-            self,
-            cs.ns(|| format!("squeeze {} 128 bits chals", num)),
-            128 * num
+    ) -> Result<Vec<[Boolean; N]>, SynthesisError> {
+        let chal_bits = self.sponge_g.enforce_squeeze_bits(
+            cs.ns(|| format!("squeeze {} N bits chals", num)),
+            N * num
         )?;
 
         Ok(
             chal_bits
-                .chunks_exact(128)
+                .chunks_exact(N)
                 .map(|chunk| chunk.to_vec().try_into().unwrap())
                 .collect()
         )
-    }
+    }   
 }
+
+use algebra::fields::tweedle::Fr as TweedleFr;
+use primitives::crh::poseidon::parameters::tweedle_dee::TweedleFrPoseidonParameters;
+use crate::poseidon::TweedleFrPoseidonFSRng;
+use r1cs_crypto::dee::TweedleFrDensityOptimizedPoseidonParameters;
+
+pub type TweedleFrPoseidonFSRngGadget = PoseidonFSRngGadget<
+    TweedleFr,
+    TweedleFrPoseidonFSRng,
+    TweedleFrPoseidonParameters,
+    TweedleFrDensityOptimizedPoseidonParameters
+>;
+
+use algebra::fields::tweedle::Fq as TweedleFq;
+use primitives::crh::poseidon::parameters::tweedle_dum::TweedleFqPoseidonParameters;
+use crate::poseidon::TweedleFqPoseidonFSRng;
+use r1cs_crypto::dum::TweedleFqDensityOptimizedPoseidonParameters;
+
+pub type TweedleFqPoseidonFSRngGadget = PoseidonFSRngGadget<
+    TweedleFq,
+    TweedleFqPoseidonFSRng,
+    TweedleFqPoseidonParameters,
+    TweedleFqDensityOptimizedPoseidonParameters
+>;
 
 #[cfg(test)]
 mod test {
-    use algebra::{EndoMulCurve, UniformRand};
+    use algebra::{Curve, UniformRand};
     use r1cs_core::{ConstraintSystem, ConstraintSystemAbstract, SynthesisMode, ConstraintSystemDebugger};
-    use r1cs_std::{fields::{fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget}, alloc::AllocGadget, prelude::UInt8};
+    use r1cs_std::{fields::{fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget}, alloc::AllocGadget, prelude::UInt8};
     use rand::{RngCore, Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
     use crate::FiatShamirRng;
 
-    use super::FiatShamirRngGadget;
+    use super::*;
 
     fn test_native_result<
-        G: EndoMulCurve,
+        G:   Curve,
         FS:  FiatShamirRng,
         FSG: FiatShamirRngGadget<G::BaseField>,
         R: RngCore
@@ -160,23 +195,18 @@ mod test {
 
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
-            (
-                fs_rng.squeeze().unwrap(),
-                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
-            ),
-            (
-                fs_rng_g.enforce_squeeze(
-                    cs.ns(||"squeeze native given non native absorb"), 1
-                ).unwrap()[0].get_value().unwrap(),
-                G::endo_rep_to_scalar(
-                    fs_rng_g.enforce_squeeze_128_bits_challenges(
-                        cs.ns(|| "squeeze 128 bits given non native absorb"), 1
-                    ).unwrap()[0]
-                    .iter()
-                    .map(|bit_g| bit_g.get_value().unwrap())
-                    .collect::<Vec<_>>()
-                ).unwrap(),
+            fs_rng
+                .squeeze_challenge::<128>()
+                .unwrap()
+                .to_vec()
+            ,
+            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
+                cs.ns(|| "squeeze 128 bits given non native absorb"), 1
             )
+                .unwrap()[0]
+                .iter()
+                .map(|bit_g| bit_g.get_value().unwrap())
+                .collect::<Vec<_>>()
         );
 
         // Test Native inputs
@@ -199,23 +229,18 @@ mod test {
 
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
-            (
-                fs_rng.squeeze().unwrap(),
-                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
-            ),
-            (
-                fs_rng_g.enforce_squeeze(
-                    cs.ns(||"squeeze native given native absorb"), 1
-                ).unwrap()[0].get_value().unwrap(),
-                G::endo_rep_to_scalar(
-                    fs_rng_g.enforce_squeeze_128_bits_challenges(
-                        cs.ns(|| "squeeze 128 bits given native absorb"), 1
-                    ).unwrap()[0]
-                    .iter()
-                    .map(|bit_g| bit_g.get_value().unwrap())
-                    .collect::<Vec<_>>()
-                ).unwrap(),
+            fs_rng
+                .squeeze_challenge::<128>()
+                .unwrap()
+                .to_vec()
+            ,
+            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
+                cs.ns(|| "squeeze 128 bits given native absorb"), 1
             )
+                .unwrap()[0]
+                .iter()
+                .map(|bit_g| bit_g.get_value().unwrap())
+                .collect::<Vec<_>>()
         );
 
         // Test byte inputs
@@ -238,23 +263,18 @@ mod test {
 
         // Squeeze from primitive and circuit FS rng and assert equality
         assert_eq!(
-            (
-                fs_rng.squeeze().unwrap(),
-                fs_rng.squeeze_128_bits_challenge::<G>().unwrap(),
-            ),
-            (
-                fs_rng_g.enforce_squeeze(
-                    cs.ns(||"squeeze native given byte absorb"), 1
-                ).unwrap()[0].get_value().unwrap(),
-                G::endo_rep_to_scalar(
-                    fs_rng_g.enforce_squeeze_128_bits_challenges(
-                        cs.ns(|| "squeeze 128 bits given byte absorb"), 1
-                    ).unwrap()[0]
-                    .iter()
-                    .map(|bit_g| bit_g.get_value().unwrap())
-                    .collect::<Vec<_>>()
-                ).unwrap(),
+            fs_rng
+                .squeeze_challenge::<128>()
+                .unwrap()
+                .to_vec()
+            ,
+            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
+                cs.ns(|| "squeeze 128 bits given byte absorb"), 1
             )
+                .unwrap()[0]
+                .iter()
+                .map(|bit_g| bit_g.get_value().unwrap())
+                .collect::<Vec<_>>()
         );
 
         if !cs.is_satisfied(){
@@ -265,30 +285,28 @@ mod test {
     }
 
     #[test]
-    fn test_tweedle_dee() {
-        use algebra::curves::tweedle::dee::DeeJacobian as TweedleDee;
-        use primitives::crh::poseidon::TweedleFqPoseidonSponge;
-        use r1cs_crypto::crh::poseidon::TweedleFqDensityOptimizedPoseidonSpongeGadget;
+    fn test_tweedle_dum() {
+        use algebra::curves::tweedle::dum::DumJacobian as TweedleDum;
+        use super::*;
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
             for i in 1..=5 {
-                test_native_result::<TweedleDee, TweedleFqPoseidonSponge, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
+                test_native_result::<TweedleDum, TweedleFrPoseidonFSRng, TweedleFrPoseidonFSRngGadget, _>(rng, i, seed.clone());
             }
         }
         
     }
 
     #[test]
-    fn test_tweedle_dum() {
-        use algebra::curves::tweedle::dum::DumJacobian as TweedleDum;
-        use primitives::crh::poseidon::TweedleFrPoseidonSponge;
-        use r1cs_crypto::crh::poseidon::TweedleFrDensityOptimizedPoseidonSpongeGadget;
+    fn test_tweedle_dee() {
+        use algebra::curves::tweedle::dee::DeeJacobian as TweedleDee;
+        use super::*;
 
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
             for i in 1..=5 {
-                test_native_result::<TweedleDum, TweedleFrPoseidonSponge, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, i, seed.clone());
+                test_native_result::<TweedleDee, TweedleFqPoseidonFSRng, TweedleFqPoseidonFSRngGadget, _>(rng, i, seed.clone());
             }
         }
     }

@@ -615,6 +615,7 @@ impl<P: Parameters> FromCompressedBits for Jacobian<P> {
 }
 
 impl<P: Parameters> Group for Jacobian<P> {
+    type BaseField = P::BaseField;
     type ScalarField = P::ScalarField;
 
     // The point at infinity is conventionally represented as (1:1:0)
@@ -704,7 +705,6 @@ impl<P: Parameters> Group for Jacobian<P> {
 }
 
 impl<P: Parameters> Curve for Jacobian<P> {
-    type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {

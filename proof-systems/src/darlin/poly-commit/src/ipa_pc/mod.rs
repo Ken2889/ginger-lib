@@ -10,7 +10,9 @@ use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    BitIterator, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata, EndoMulCurve
+    Field, Group, PrimeField, SemanticallyValid, UniformRand,
+    CanonicalSerialize, serialize_no_metadata, EndoMulCurve,
+    FromBits
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -95,7 +97,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .for_each(|(z_l, z_r)| *z_l += &(round_challenge * z_r));
 
         k_l.par_iter_mut().zip(k_r).for_each(|(k_l, k_r)| {
-            *k_l += G::mul_bits_affine(&k_r, BitIterator::new(round_challenge.into_repr()))
+            *k_l += G::mul_bits_affine(&k_r, algebra::BitIterator::new(round_challenge.into_repr()))
         });
     }
 
@@ -134,7 +136,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         fs_rng.absorb(values)?;
 
         // Sample new batching challenge
-        let random_scalar = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let random_scalar = Self::challenge_to_scalar(
+            fs_rng
+                .squeeze_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -244,6 +250,23 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         Ok(pp)
     }
 
+    fn challenge_to_scalar(mut chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        let scalar = if cfg!(feature = "circuit-friendly") {
+            G::endo_rep_to_scalar(chal)
+        } else {
+            // Pad before reversing if necessary
+            if chal.len() < G::ScalarField::size_in_bits() {
+                chal.append(&mut vec![false; G::ScalarField::size_in_bits() - chal.len()])
+            }
+
+            // Reverse and read (as read_bits read in BE)
+            chal.reverse();
+            G::ScalarField::read_bits(chal)
+        }.map_err(|e| Error::Other(e.to_string()))?;
+
+        Ok(scalar)
+    } 
+
     fn commit(
         ck: &Self::CommitterKey,
         polynomial: &Polynomial<G::ScalarField>,
@@ -316,8 +339,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // the deterministically derived combined_commitment and its combined_v.
             fs_rng.absorb(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
-
+            let hiding_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .squeeze_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
             polynomial += (hiding_challenge, &hiding_polynomial);
@@ -334,7 +360,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let mut round_challenge = Self::challenge_to_scalar(
+            fs_rng
+                .squeeze_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -390,9 +420,16 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // no need to absorb it
             fs_rng.absorb([lr[0], lr[1]])?;
 
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+            round_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .squeeze_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
+
             // round_challenge is guaranteed to be non-zero by squeeze function
-            let round_challenge_inv = round_challenge.inverse().unwrap();
+            let round_challenge_inv = round_challenge
+                .inverse()
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::SqueezeError("Squeezed 0 challenge !".to_string())))?;
 
             Self::round_reduce(
                 round_challenge,
@@ -468,7 +505,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             let rand = proof.rand.unwrap();
 
             fs_rng.absorb(hiding_comm)?;
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+            let hiding_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .squeeze_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
             fs_rng.absorb(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
@@ -477,7 +518,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let mut round_challenge = Self::challenge_to_scalar(
+            fs_rng
+                .squeeze_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -488,13 +533,22 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.absorb([*l, *r])?;
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+
+            round_challenge = Self::challenge_to_scalar(
+            fs_rng
+                .squeeze_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
+            
+            let round_challenge_inv = round_challenge
+                .inverse()
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::SqueezeError("Squeezed 0 challenge !".to_string())))?;
 
             round_challenges.push(round_challenge);
 
             // round_challenge is guaranteed to be non-zero by squeeze function
             round_commitment_proj +=
-                &(l.mul(&round_challenge.inverse().unwrap()) + &r.mul(&round_challenge));
+                &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
         }
 
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )

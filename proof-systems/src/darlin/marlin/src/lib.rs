@@ -31,7 +31,8 @@
 #[macro_use]
 extern crate bench_utils;
 
-use algebra::{CanonicalSerialize, EndoMulCurve, serialize_no_metadata};
+use algebra::Group;
+use algebra::{CanonicalSerialize, serialize_no_metadata};
 use digest::Digest;
 use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
@@ -67,12 +68,12 @@ mod test;
 /// Coboundary Marlin is an argument for satifiability of an R1CS over a prime
 /// field `F` and uses a polynomial commitment scheme `PC` for
 /// polynomials over that field and a digest `D` for the Fiat-Shamir transform.
-pub struct Marlin<G: EndoMulCurve, PC: PolynomialCommitment<G>>(
+pub struct Marlin<G: Group, PC: PolynomialCommitment<G>>(
     #[doc(hidden)] PhantomData<G>,
     #[doc(hidden)] PhantomData<PC>,
 );
 
-impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
+impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"COBOUNDARY-MARLIN-2021";
@@ -191,7 +192,7 @@ impl<G: EndoMulCurve, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         end_timer!(first_round_comm_time);
 
         // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(first_comms
+        fs_rng.absorb::<G::BaseField, _>(first_comms
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()

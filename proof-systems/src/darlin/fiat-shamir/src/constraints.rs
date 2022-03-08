@@ -26,17 +26,10 @@ pub trait FiatShamirRngGadget<ConstraintF: PrimeField>:
         CS: ConstraintSystemAbstract<ConstraintF>,
         AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>;
 
-    /// Output field elements
-    fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
+    /// Output N bits challenges
+    fn enforce_squeeze_challenges<CS: ConstraintSystemAbstract<ConstraintF>, const N: usize>(
         &mut self,
         cs: CS,
         num: usize
-    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError>;
-
-    /// Output non-native field elements of 128 bits
-    fn enforce_squeeze_128_bits_challenges<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        cs: CS,
-        num: usize
-    ) -> Result<Vec<[Boolean; 128]>, SynthesisError>;
+    ) -> Result<Vec<[Boolean; N]>, SynthesisError>;
 }

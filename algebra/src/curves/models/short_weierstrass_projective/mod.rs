@@ -538,6 +538,7 @@ impl<P: Parameters> TryFrom<Projective<P>> for AffineRep<P> {
 }
 
 impl<P: Parameters> Group for Projective<P> {
+    type BaseField = P::BaseField;
     type ScalarField = P::ScalarField;
 
     // The point at infinity is conventionally represented as (1:1:0)
@@ -596,7 +597,6 @@ impl<P: Parameters> Group for Projective<P> {
 }
 
 impl<P: Parameters> Curve for Projective<P> {
-    type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {

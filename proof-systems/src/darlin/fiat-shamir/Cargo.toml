@@ -20,6 +20,7 @@ digest = { version = "=0.8.1" }
 rand = { version = "=0.8.4", default-features = false }
 rand_chacha = { version = "=0.3.1", default-features = false }
 rand_core = { version = "=0.6.3", default-features = false }
+derivative = { version = "=2.2.0", features = ["use_core"] }
 
 [dev-dependencies]
 rand_xorshift = "0.3.0"

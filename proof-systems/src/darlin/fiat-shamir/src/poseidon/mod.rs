@@ -1,13 +1,27 @@
-use algebra::{PrimeField, ToConstraintField, Field, EndoMulCurve};
-use primitives::{PoseidonSponge, PoseidonParameters, SBox, check_field_equals, AlgebraicSponge};
+use algebra::{PrimeField, ToConstraintField, Field};
+use primitives::{PoseidonSponge, PoseidonParameters, SBox, AlgebraicSponge};
 use crate::Absorbable;
 
 use super::{FiatShamirRng, Error};
+use std::convert::TryInto;
 
 /// Circuit implementation of this RNG
 pub mod constraints;
+ 
+#[derive(Derivative)]
+#[derivative(
+    Default(bound = ""),
+)]
+pub struct PoseidonFSRng<
+    SpongeF: PrimeField,
+    P: PoseidonParameters<Fr = SpongeF>,
+    SB: SBox<Field = SpongeF, Parameters = P>,
+> 
+{
+    sponge: PoseidonSponge<SpongeF, P, SB>,
+}
 
-impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
+impl<SpongeF, P, SB> FiatShamirRng for PoseidonFSRng<SpongeF, P, SB>
     where
         SpongeF: PrimeField,
         P: PoseidonParameters<Fr = SpongeF>,
@@ -17,14 +31,14 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
 
     fn from_seed(seed: Vec<u8>) -> Result<Self, Error> {
         // Initialize Poseidon sponge
-        let mut sponge = Self::init();
+        let mut sponge = PoseidonSponge::<SpongeF, P, SB>::init();
 
         // Absorb seed elements into the sponge
         let seed_fes: Vec<SpongeF> = seed
             .to_field_elements()
             .map_err(|e| Error::BadFiatShamirInitialization(format!("Unable to convert seed to field elements: {:?}", e)))?;
 
-        <Self as AlgebraicSponge<SpongeF>>::absorb(&mut sponge, seed_fes)
+        PoseidonSponge::<SpongeF, P, SB>::absorb(&mut sponge, seed_fes)
             .map_err(|e| Error::BadFiatShamirInitialization(e.to_string()))?;
 
         // If there are pending elements, add them to the state and apply a permutation
@@ -33,44 +47,44 @@ impl<SpongeF, P, SB> FiatShamirRng for PoseidonSponge<SpongeF, P, SB>
         }
 
         // Return the sponge
-        Ok(sponge)
+        Ok(Self { sponge })
     }
 
     fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error> {
-        <Self as AlgebraicSponge<SpongeF>>::absorb(self, to_absorb)
+        self.sponge.absorb(to_absorb)
             .map_err(|e| Error::AbsorptionError(e.to_string()))?;
 
         Ok(self)
     }
 
-    fn squeeze_many<F: PrimeField>(&mut self, num: usize) -> Result<Vec<F>, Error>
-    {
-        // We allow only squeezing native field elements
-        assert!(check_field_equals::<F, SpongeF>());
-
-        // Squeeze field elements
-        let fes = <Self as AlgebraicSponge<SpongeF>>::squeeze(self, num)
+    fn squeeze_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error> {
+        // Squeeze N bits from the sponge
+        let bits = self.sponge.squeeze_bits(num * N)
             .map_err(|e| Error::SqueezeError(e.to_string()))?;
 
-
-        // Cast to SpongeF and return
-        Ok(unsafe { std::mem::transmute::<Vec<SpongeF>, Vec<F>>(fes) })
-    }
-
-    fn squeeze_many_128_bits_challenges<G: EndoMulCurve>(&mut self, num: usize) -> Result<Vec<G::ScalarField>, Error> {
-        // Squeeze 128 bits from the sponge
-        let bits = self.squeeze_bits(num * 128)
-            .map_err(|e| Error::SqueezeError(e.to_string()))?;
-
-        // Return an endo scalar out of them
-        Ok(bits.chunks(128).flat_map(|bits| G::endo_rep_to_scalar(bits.to_vec())).collect())
+        Ok(
+            bits
+                .chunks_exact(N)
+                .map(|bit_chunk| bit_chunk.try_into().unwrap())
+                .collect()
+        )
     }
 
     fn get_state(&self) -> Self::State {
-        <Self as AlgebraicSponge<SpongeF>>::get_state(self)
+        self.sponge.get_state()
     }
 
     fn set_state(&mut self, new_state: Self::State) {
-        <Self as AlgebraicSponge<SpongeF>>::set_state(self, new_state)
+        self.sponge.set_state(new_state)
     }
 }
+
+use algebra::fields::tweedle::Fr as TweedleFr;
+use primitives::crh::poseidon::parameters::tweedle_dee::{TweedleFrPoseidonParameters, TweedleFrQuinticSbox};
+
+pub type TweedleFrPoseidonFSRng = PoseidonFSRng<TweedleFr, TweedleFrPoseidonParameters, TweedleFrQuinticSbox>;
+
+use algebra::fields::tweedle::Fq as TweedleFq;
+use primitives::crh::poseidon::parameters::tweedle_dum::{TweedleFqPoseidonParameters, TweedleFqQuinticSbox};
+
+pub type TweedleFqPoseidonFSRng = PoseidonFSRng<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;

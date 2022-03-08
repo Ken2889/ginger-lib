@@ -182,7 +182,9 @@ pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRn
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid for FinalDarlinProof<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid
+    for FinalDarlinProof<G1, G2, FS>
+{
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }

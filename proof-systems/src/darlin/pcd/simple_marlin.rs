@@ -8,12 +8,12 @@ use crate::darlin::{
 };
 use algebra::{serialize::*, EndoMulCurve, SemanticallyValid};
 use bench_utils::*;
+use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
-use fiat_shamir::FiatShamirRng;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -109,7 +109,9 @@ pub struct SimpleMarlinPCDVerifierKey<'a, G: EndoMulCurve, FS: FiatShamirRng + '
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: EndoMulCurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>> for SimpleMarlinPCDVerifierKey<'a, G, FS> {
+impl<'a, G: EndoMulCurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
+    for SimpleMarlinPCDVerifierKey<'a, G, FS>
+{
     fn as_ref(&self) -> &DLogVerifierKey<G> {
         &self.1
     }
@@ -145,12 +147,10 @@ where
         })?;
 
         // Absorb evaluations and sample new challenge
-        fs_rng
-            .absorb(self.proof.evaluations.clone())
-            .map_err(|e| {
-                end_timer!(succinct_time);
-                PCDError::FailedSuccinctVerification(format!("{:?}", e))
-            })?;
+        fs_rng.absorb(self.proof.evaluations.clone()).map_err(|e| {
+            end_timer!(succinct_time);
+            PCDError::FailedSuccinctVerification(format!("{:?}", e))
+        })?;
 
         // Succinct verify DLOG proof
         let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, FS>>::succinct_multi_point_multi_poly_verify(

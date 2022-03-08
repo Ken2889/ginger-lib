@@ -1,4 +1,4 @@
-use algebra::{serialize::*, Group, EndoMulCurve, ToConstraintField};
+use algebra::{serialize::*, EndoMulCurve, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -11,13 +11,18 @@ use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
 use proof_systems::darlin::tests::{
-    final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys
+    final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys,
 };
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
+fn bench_succinct_part_batch_verification<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -80,7 +85,12 @@ fn bench_succinct_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D:
     group.finish();
 }
 
-fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
+fn bench_hard_part_batch_verification<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -126,7 +136,8 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
 
         // Get accumulators from pcds
         let (accs_g1, accs_g2) =
-            get_accumulators::<G1, G2, FS>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2).unwrap();
+            get_accumulators::<G1, G2, FS>(&pcds, &vks, &verifier_key_g1, &verifier_key_g2)
+                .unwrap();
 
         group.bench_with_input(
             BenchmarkId::from_parameter(num_constraints),
@@ -151,7 +162,12 @@ fn bench_hard_part_batch_verification<G1: EndoMulCurve, G2: EndoMulCurve, D: Dig
     group.finish();
 }
 
-fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Digest + 'static, FS: FiatShamirRng + 'static>(
+fn bench_batch_verification_complete<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -221,13 +237,20 @@ fn bench_batch_verification_complete<G1: EndoMulCurve, G2: EndoMulCurve, D: Dige
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_batch_verification_complete::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
+        bench_batch_verification_complete::<
+            TweedleDee,
+            TweedleDum,
+            Blake2s,
+            FiatShamirChaChaRng<Blake2s>,
+        >(
             c,
             format!(
                 "tweedle-dee, segment_size = 1 << {}, num_constraints",
@@ -247,13 +270,20 @@ fn bench_batch_verification_complete_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_succinct_part_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
+        bench_succinct_part_batch_verification::<
+            TweedleDee,
+            TweedleDum,
+            Blake2s,
+            FiatShamirChaChaRng<Blake2s>,
+        >(
             c,
             format!(
                 "succinct_part, tweedle-dee, segment_size = 1 << {}, num_constraints",
@@ -273,13 +303,20 @@ fn bench_succinct_part_batch_verification_tweedle(c: &mut Criterion) {
 // Segment size: [1 << 14, ... , 1 << 18]
 // Num constraints: [1 << 10, ..., 1 << 20]
 fn bench_hard_part_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     let num_proofs = 100;
     let num_constraints = (10..=20).map(|pow| 1 << pow).collect::<Vec<_>>();
 
     for log_segment_size in 14..=18 {
-        bench_hard_part_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
+        bench_hard_part_batch_verification::<
+            TweedleDee,
+            TweedleDum,
+            Blake2s,
+            FiatShamirChaChaRng<Blake2s>,
+        >(
             c,
             format!(
                 "hard_part, tweedle-dee, segment_size = 1 << {}, num_constraints",
