@@ -60,7 +60,7 @@ impl<F: PrimeField> IOP<F> {
 
         let alpha = F::read_bits(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -72,7 +72,7 @@ impl<F: PrimeField> IOP<F> {
 
         let eta = F::read_bits(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -97,7 +97,7 @@ impl<F: PrimeField> IOP<F> {
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
         let beta = F::read_bits(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -121,7 +121,7 @@ impl<F: PrimeField> IOP<F> {
     ) -> Result<VerifierState<F>, Error> {
         let gamma = F::read_bits(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
 

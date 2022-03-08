@@ -132,13 +132,13 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
 
-        // Absorb evaluations
-        fs_rng.absorb(values)?;
+        // record evaluations
+        fs_rng.record(values)?;
 
         // Sample new batching challenge
         let random_scalar = Self::challenge_to_scalar(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -337,18 +337,18 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // We assume that the commitments, the query point, and the evaluations are already
             // bound to the internal state of the Fiat-Shamir rng. Hence the same is true for
             // the deterministically derived combined_commitment and its combined_v.
-            fs_rng.absorb(hiding_commitment)?;
+            fs_rng.record(hiding_commitment)?;
             // the random coefficient `rho`
             let hiding_challenge = Self::challenge_to_scalar(
                 fs_rng
-                    .squeeze_challenge::<128>()?
+                    .get_challenge::<128>()?
                     .to_vec()
                 ).map_err(|e| Error::Other(e.to_string()))?;
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
             polynomial += (hiding_challenge, &hiding_polynomial);
             rand += &(hiding_challenge * &hiding_randomness);
-            fs_rng.absorb(rand)?;
+            fs_rng.record(rand)?;
 
             end_timer!(hiding_time);
 
@@ -362,7 +362,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         // 0-th challenge
         let mut round_challenge = Self::challenge_to_scalar(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -417,19 +417,18 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             r_vec.push(lr[1]);
 
             // the previous challenge is bound to the internal state, hence
-            // no need to absorb it
-            fs_rng.absorb([lr[0], lr[1]])?;
+            // no need to record it
+            fs_rng.record([lr[0], lr[1]])?;
 
             round_challenge = Self::challenge_to_scalar(
                 fs_rng
-                    .squeeze_challenge::<128>()?
+                    .get_challenge::<128>()?
                     .to_vec()
                 ).map_err(|e| Error::Other(e.to_string()))?;
 
-            // round_challenge is guaranteed to be non-zero by squeeze function
             let round_challenge_inv = round_challenge
                 .inverse()
-                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::SqueezeError("Squeezed 0 challenge !".to_string())))?;
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::GetChallengeError("sampled a 0 challenge !".to_string())))?;
 
             Self::round_reduce(
                 round_challenge,
@@ -504,13 +503,13 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             let hiding_comm = proof.hiding_comm.unwrap();
             let rand = proof.rand.unwrap();
 
-            fs_rng.absorb(hiding_comm)?;
+            fs_rng.record(hiding_comm)?;
             let hiding_challenge = Self::challenge_to_scalar(
                 fs_rng
-                    .squeeze_challenge::<128>()?
+                    .get_challenge::<128>()?
                     .to_vec()
                 ).map_err(|e| Error::Other(e.to_string()))?;
-            fs_rng.absorb(rand)?;
+            fs_rng.record(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
         }
@@ -520,7 +519,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
         let mut round_challenge = Self::challenge_to_scalar(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
 
@@ -532,21 +531,20 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let r_iter = proof.r_vec.iter();
 
         for (l, r) in l_iter.zip(r_iter) {
-            fs_rng.absorb([*l, *r])?;
+            fs_rng.record([*l, *r])?;
 
             round_challenge = Self::challenge_to_scalar(
             fs_rng
-                .squeeze_challenge::<128>()?
+                .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
             
             let round_challenge_inv = round_challenge
                 .inverse()
-                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::SqueezeError("Squeezed 0 challenge !".to_string())))?;
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::GetChallengeError("sampled a 0 challenge !".to_string())))?;
 
             round_challenges.push(round_challenge);
 
-            // round_challenge is guaranteed to be non-zero by squeeze function
             round_commitment_proj +=
                 &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
         }

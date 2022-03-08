@@ -1,13 +1,13 @@
 use std::marker::PhantomData;
 
-use crate::{FieldBasedHashGadget, AlgebraicSpongeGadget};
+use crate::FieldBasedHashGadget;
 use algebra::fields::PrimeField;
-use primitives::{crh::PoseidonParameters, PoseidonQuinticSBox, PoseidonHash, PoseidonSponge, SpongeMode, AlgebraicSponge};
+use primitives::{crh::PoseidonParameters, PoseidonQuinticSBox, PoseidonHash};
 use r1cs_core::{ConstraintSystemAbstract, ConstraintVar, LinearCombination, SynthesisError};
 use r1cs_std::{
     alloc::{AllocGadget, ConstantGadget},
     fields::{fp::FpGadget, FieldGadget},
-    Assignment, to_field_gadget_vec::ToConstraintFieldGadget,
+    Assignment,
 };
 
 pub mod constants;
@@ -391,7 +391,7 @@ where
         Ok(())
     }
 
-    fn poseidon_perm<CS: ConstraintSystemAbstract<ConstraintF>>(
+    pub fn poseidon_perm<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         state: &mut [FpGadget<ConstraintF>],
     ) -> Result<(), SynthesisError> {
@@ -424,26 +424,12 @@ where
 
         Ok(())
     }
-}
 
-// Type aliases for sake of readability
-type QSB<ConstraintF, P> = PoseidonQuinticSBox<ConstraintF, P>;
-type H<ConstraintF, P> = PoseidonHash<ConstraintF, P, QSB<ConstraintF, P>>;
-
-// FieldBasedHashGadget trait implementation
-impl<ConstraintF, P, DOP> FieldBasedHashGadget<H<ConstraintF, P>, ConstraintF>
-    for DensityOptimizedPoseidonQuinticSboxHashGadget<ConstraintF, P, DOP>
-where
-    ConstraintF: PrimeField,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
-{
-    type DataGadget = FpGadget<ConstraintF>;
-
-    fn enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
+    pub fn _enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        input: &[Self::DataGadget],
-    ) -> Result<Self::DataGadget, SynthesisError>
+        input: &[FpGadget<ConstraintF>],
+        state: &mut [FpGadget<ConstraintF>],
+    ) -> Result<(), SynthesisError>
     // Assumption:
     //     capacity c = 1
     {
@@ -455,15 +441,6 @@ where
             return Err(SynthesisError::Other(
                 "Input data array does not contain any data".to_owned(),
             ));
-        }
-
-        let mut state = Vec::new();
-        for i in 0..P::T {
-            let elem = FpGadget::<ConstraintF>::from_value(
-                cs.ns(|| format!("hardcode_state_{}", i)),
-                &P::AFTER_ZERO_PERM[i],
-            );
-            state.push(elem);
         }
 
         // calculate the number of cycles to process the input dividing in portions of rate elements
@@ -494,7 +471,7 @@ where
                 input_idx += 1;
             }
             // apply permutation after adding the input vector
-            Self::poseidon_perm(cs.ns(|| format!("poseidon_perm_{}", i)), &mut state)?;
+            Self::poseidon_perm(cs.ns(|| format!("poseidon_perm_{}", i)), state)?;
         }
 
         // in case the input is not a multiple of the rate, process the remainder part padding zeros
@@ -515,280 +492,54 @@ where
                 input_idx += 1;
             }
             // apply permutation after adding the input vector
-            Self::poseidon_perm(cs.ns(|| "poseidon_padding_perm"), &mut state)?;
+            Self::poseidon_perm(cs.ns(|| "poseidon_padding_perm"), state)?;
         }
 
         // return the first element of the state vector as the hash digest
-        Ok(state[0].clone())
+        Ok(())
     }
 }
-
-//  TODO: Currently, below, it's just an adapted copy paste of the code from poseidon/sponge.rs
-//        We can maybe save more code by defining additional traits in poseidon/sponge.rs and
-//        providing default implementation.
 
 // Type aliases for sake of readability
-pub type S<ConstraintF, P> = PoseidonSponge<ConstraintF, P, QSB<ConstraintF, P>>;
+type QSB<ConstraintF, P> = PoseidonQuinticSBox<ConstraintF, P>;
+type H<ConstraintF, P> = PoseidonHash<ConstraintF, P, QSB<ConstraintF, P>>;
 
-/// Poseidon Sponge implementation optimized for densities, in this
-/// very particular use case (e.g. SBox = x^5, R_F = 8 and R_P = 56).
-/// TODO: Generalize this in terms of number of rounds.
-#[derive(Clone)]
-pub struct DensityOptimizedPoseidonQuinticSboxSpongeGadget<
-    ConstraintF: PrimeField,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
-> {
-    pub(crate) mode: SpongeMode,
-    pub(crate) state: Vec<FpGadget<ConstraintF>>,
-    pub(crate) pending: Vec<FpGadget<ConstraintF>>,
-    _parameters: PhantomData<P>,
-    _density_optimized_params: PhantomData<DOP>,
-}
-
-impl<ConstraintF, P, DOP> DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
+// FieldBasedHashGadget trait implementation
+impl<ConstraintF, P, DOP> FieldBasedHashGadget<H<ConstraintF, P>, ConstraintF>
+    for DensityOptimizedPoseidonQuinticSboxHashGadget<ConstraintF, P, DOP>
 where
     ConstraintF: PrimeField,
     P: PoseidonParameters<Fr = ConstraintF>,
     DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
 {
-    fn enforce_permutation<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        mut cs: CS
-    ) -> Result<(), SynthesisError>
-    {
-        // add the elements to the state vector. Add rate elements
-        for (i, (input, state)) in self.pending.iter().zip(self.state.iter_mut()).enumerate() {
-            state.add_in_place(cs.ns(|| format!("add_input_{}_to_state", i)), input)?;
-        }
+    type DataGadget = FpGadget<ConstraintF>;
 
-        // apply permutation after adding the input vector
-        DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::poseidon_perm(
-            cs.ns(|| "poseidon_perm"),
-            &mut self.state
-        )?;
-
-        self.pending.clear();
-
-        Ok(())
-    }
-
-    fn enforce_update<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        cs: CS,
-        input: FpGadget<ConstraintF>,
-    ) -> Result<(), SynthesisError>
-    {
-        self.pending.push(input);
-        if self.pending.len() == P::R {
-            self.enforce_permutation(cs)?;
-        }
-        Ok(())
-    }
-
-    fn _enforce_absorb<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
+    fn enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        elems: Vec<FpGadget<ConstraintF>>,
-    ) -> Result<(), SynthesisError>
+        input: &[Self::DataGadget],
+    ) -> Result<Self::DataGadget, SynthesisError>
+    // Assumption:
+    //     capacity c = 1
     {
-        match self.mode {
-            SpongeMode::Absorbing => {
-                // If we were absorbing keep doing it
-                elems.iter().enumerate().map(|(i, f)| {
-                    self.enforce_update(cs.ns(|| format!("update_{}", i)), f.clone())
-                }).collect::<Result<(), SynthesisError>>()?;
-            },
-
-            SpongeMode::Squeezing => {
-                // If we were squeezing, change the mode into absorbing
-                self.mode = SpongeMode::Absorbing;
-                self._enforce_absorb(cs, elems)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn _enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        mut cs: CS,
-        num: usize
-    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> 
-    {
-        let mut outputs = Vec::with_capacity(num);
-
-        if num > 0 {
-            match self.mode {
-                SpongeMode::Absorbing => {
-                    // If pending is empty and we were in absorbing, it means that a Poseidon
-                    // permutation was applied just before calling squeeze(), (unless you absorbed
-                    // nothing, but that is handled) therefore it's wasted to apply another
-                    // permutation, and we can directly add state[0] to the outputs
-                    // If pending is not empty and we were absorbing, then we need to add the
-                    // pending elements to the state and then apply a permutation
-                    if !self.pending.is_empty() {
-                        self.enforce_permutation(
-                            cs.ns(|| "permutation")
-                        )?;
-                    }
-                    outputs.push(self.state[0].clone());
-                    
-                    self.mode = SpongeMode::Squeezing;
-                    outputs.append(&mut self._enforce_squeeze(
-                        cs.ns(|| "squeeze remaining elements"),
-                        num - 1
-                    )?);
-                },
-
-                // If we were squeezing, then squeeze the required number of field elements
-                SpongeMode::Squeezing => {
-                    debug_assert!(self.pending.is_empty());
-
-                    for i in 0..num {
-                        DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::poseidon_perm(
-                            cs.ns(|| format!("poseidon_perm_{}", i)),
-                            &mut self.state
-                        )?;
-                        outputs.push(self.state[0].clone());
-                    }
-                }
-            }
-        }
-        Ok(outputs)
-    }
-}
-
-// AlgebraicSpongeGadget trait implementation
-impl<ConstraintF, P, DOP> AlgebraicSpongeGadget<ConstraintF, S<ConstraintF, P>>
-    for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
-where
-    ConstraintF: PrimeField,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
-{
-    type StateGadget = FpGadget<ConstraintF>;
-
-    fn new<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
-        let mut state = Vec::with_capacity(P::T);
+        // Initialize state
+        let mut state = Vec::new();
         for i in 0..P::T {
             let elem = FpGadget::<ConstraintF>::from_value(
-                cs.ns(|| format!("hardcode_state_{}",i)),
-                &P::AFTER_ZERO_PERM[i]
+                cs.ns(|| format!("hardcode_state_{}", i)),
+                &P::AFTER_ZERO_PERM[i],
             );
             state.push(elem);
         }
 
-        Ok(Self {
-            mode: SpongeMode::Absorbing,
-            state,
-            pending: Vec::with_capacity(P::R),
-            _parameters: PhantomData,
-            _density_optimized_params: PhantomData,
-        })
-    }
+        // Apply permutations
+        Self::_enforce_hash_constant_length(
+            cs.ns(|| "apply permutations"),
+            input,
+            &mut state
+        )?;
 
-    fn get_state(&self) -> Vec<FpGadget<ConstraintF>> {
-        self.state.clone()
-    }
-
-    fn set_state(&mut self, state: Vec<FpGadget<ConstraintF>>) {
-        assert_eq!(state.len(), P::T);
-        self.state = state;
-    }
-
-    fn get_mode(&self) -> &SpongeMode {
-        &self.mode
-    }
-
-    fn set_mode(&mut self, mode: SpongeMode) {
-        self.mode = mode;
-    }
-
-    fn enforce_absorb<CS, AG>(
-        &mut self,
-        mut cs: CS,
-        to_absorb: AG
-    ) -> Result<(), SynthesisError>
-    where
-        CS: ConstraintSystemAbstract<ConstraintF>,
-        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
-    {
-        let elems = to_absorb.to_field_gadget_elements(cs.ns(|| "absorbable to fes"))?;
-        
-        if elems.is_empty() {
-            return Err(SynthesisError::Other("Noting to absorb !".to_string()));
-        }
-
-        self._enforce_absorb(cs, elems)
-    }
-
-    fn enforce_squeeze<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &mut self,
-        cs: CS,
-        num: usize
-    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> 
-    {
-        if num == 0 {
-            return Err(SynthesisError::Other("Nothing to squeeze !".to_string()));
-        }
-
-        self._enforce_squeeze(cs, num)
-    }
-}
-
-impl<ConstraintF, P, DOP> ConstantGadget<S<ConstraintF, P>, ConstraintF>
-    for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
-where
-    ConstraintF: PrimeField,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
-{
-    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, value: &S<ConstraintF, P>) -> Self {
-        let state_g = Vec::<FpGadget<ConstraintF>>::from_value(
-            cs.ns(|| "hardcode state"),
-            &value.get_state().to_vec()
-        );
-
-        let pending_g = Vec::<FpGadget<ConstraintF>>::from_value(
-            cs.ns(|| "hardcode pending"),
-            &value.get_pending().to_vec()
-        );
-
-        Self {
-            mode: value.get_mode().clone(),
-            state: state_g,
-            pending: pending_g,
-            _parameters: PhantomData,
-            _density_optimized_params: PhantomData,
-        }
-    }
-
-    fn get_constant(&self) -> S<ConstraintF, P> {
-        S::<ConstraintF, P>::new(
-            self.mode.clone(),
-            self.state.get_constant(),
-            self.pending.get_constant(),
-        )
-    }
-}
-
-impl<ConstraintF, P, DOP> From<Vec<FpGadget<ConstraintF>>>
-for DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>
-    where
-    ConstraintF: PrimeField,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
-{
-    fn from(other: Vec<FpGadget<ConstraintF>>) -> Self {
-        assert_eq!(other.len(), P::T);
-        Self {
-            mode: SpongeMode::Absorbing,
-            state: other,
-            pending: Vec::with_capacity(P::R),
-            _parameters: PhantomData,
-            _density_optimized_params: PhantomData,
-        }
+        // Return output
+        Ok(state[0].clone())
     }
 }
 
@@ -799,62 +550,15 @@ use crate::crh::poseidon::{
 };
 
 pub type TweedleFrDensityOptimizedPoseidonHashGadget = DensityOptimizedPoseidonQuinticSboxHashGadget<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters>;
-pub type TweedleFrDensityOptimizedPoseidonSpongeGadget = DensityOptimizedPoseidonQuinticSboxSpongeGadget<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters>;
 pub type TweedleFqDensityOptimizedPoseidonHashGadget = DensityOptimizedPoseidonQuinticSboxHashGadget<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters>;
-pub type TweedleFqDensityOptimizedPoseidonSpongeGadget = DensityOptimizedPoseidonQuinticSboxSpongeGadget<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters>;
 
 #[cfg(test)]
 mod test {
-    use primitives::FieldBasedHashParameters;
-    use r1cs_core::ConstraintSystem;
-    use rand::{SeedableRng, RngCore};
+    use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use crate::crh::test::{constant_length_field_based_hash_gadget_native_test, algebraic_sponge_gadget_test};
+    use crate::crh::test::constant_length_field_based_hash_gadget_native_test;
 
     use super::*;
-
-    // TODO: Is the behavior of this implementation of Sponge consistent with its specifications as crypto primitive ?
-    //       Maybe it has to do with definition of state: the whole Sponge state should include also the pending elements
-    //       formally.
-    fn poseidon_sponge_gadget_test<ConstraintF, P, DOP, R>(rate: usize, rng: &mut R)
-    where
-        ConstraintF: PrimeField,
-        P:           PoseidonParameters<Fr = ConstraintF>,
-        DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
-        R:           RngCore,
-    {
-        let mut cs = ConstraintSystem::<ConstraintF>::new(r1cs_core::SynthesisMode::Debug);
-        let mut sponge = DensityOptimizedPoseidonQuinticSboxSpongeGadget::<ConstraintF, P, DOP>::new(cs.ns(|| "init sponge")).unwrap();
-        let mut prev_state = sponge.get_state();
-
-        let fes = (0..rate)
-            .map(|i| FpGadget::alloc(
-                cs.ns(|| format!("alloc random fe {}", i)),
-                || Ok(ConstraintF::rand(rng))
-            ).unwrap()).collect::<Vec<_>>();
-
-        // Assert that, before absorbing rate elements, state doesn't change.
-        sponge.enforce_absorb(cs.ns(|| "absorb rate - 1 elems"), fes[..rate-1].to_vec()).unwrap();
-        assert_eq!(sponge.get_state(), prev_state.clone());
-        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
-        prev_state = sponge.get_state();
-
-        // After having absorbed rate elements a permutation is triggered and the state changes
-        sponge.enforce_absorb(cs.ns(|| "absorb one more element to reach rate many"), fes[rate - 1].clone()).unwrap();
-        assert_ne!(sponge.get_state(), prev_state.clone());
-        assert!(matches!(sponge.get_mode(), SpongeMode::Absorbing));
-        prev_state = sponge.get_state();
-
-        // Assert that, calling squeeze() after absorbing rate elements doesn't change the state.
-        sponge.enforce_squeeze(cs.ns(|| "squeeze after permutation"), 1).unwrap();
-        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
-        assert_eq!(prev_state.clone(), sponge.get_state());
-
-        // Assert that the next squeeze() should instead change the state
-        sponge.enforce_squeeze(cs.ns(|| "squeeze one more"), 1).unwrap();
-        assert!(matches!(sponge.get_mode(), SpongeMode::Squeezing));
-        assert_ne!(prev_state, sponge.get_state());
-    }
 
     #[test]
     fn test_density_optimized_tweedle_fr_poseidon() {
@@ -862,13 +566,7 @@ mod test {
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrDensityOptimizedPoseidonHashGadget, _>(rng, ins);
-            algebraic_sponge_gadget_test::<Fq, Fr, _, TweedleFrDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
         }
-
-        poseidon_sponge_gadget_test::<Fr, TweedleFrPoseidonParameters, TweedleFrDensityOptimizedPoseidonParameters, _>(
-            TweedleFrPoseidonParameters::R,
-            rng
-        );
     }
 
     #[test]
@@ -877,12 +575,6 @@ mod test {
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqDensityOptimizedPoseidonHashGadget, _>(rng, ins);
-            algebraic_sponge_gadget_test::<Fr, Fq, _, TweedleFqDensityOptimizedPoseidonSpongeGadget, _>(rng, ins);
         }
-
-        poseidon_sponge_gadget_test::<Fq, TweedleFqPoseidonParameters, TweedleFqDensityOptimizedPoseidonParameters, _>(
-            TweedleFqPoseidonParameters::R,
-            rng
-        );
     }
 }

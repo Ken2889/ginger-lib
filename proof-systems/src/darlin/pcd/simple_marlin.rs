@@ -146,8 +146,8 @@ where
             PCDError::FailedSuccinctVerification(format!("{:?}", e))
         })?;
 
-        // Absorb evaluations and sample new challenge
-        fs_rng.absorb(self.proof.evaluations.clone()).map_err(|e| {
+        // record evaluations and sample new challenge
+        fs_rng.record(self.proof.evaluations.clone()).map_err(|e| {
             end_timer!(succinct_time);
             PCDError::FailedSuccinctVerification(format!("{:?}", e))
         })?;

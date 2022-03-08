@@ -1,4 +1,4 @@
-use crate::{crh::{poseidon::PoseidonHashGadget, sbox::QuinticSBoxGadget}, PoseidonSpongeGadget};
+use crate::crh::{poseidon::PoseidonHashGadget, sbox::QuinticSBoxGadget};
 use algebra::fields::tweedle::{Fq, Fr};
 use primitives::crh::parameters::{
     TweedleFqPoseidonParameters, TweedleFqQuinticSbox, TweedleFrPoseidonParameters,
@@ -12,12 +12,6 @@ pub type TweedleFqPoseidonHashGadget = PoseidonHashGadget<
     TweedleFqQuinticSbox,
     TweedleFqQuinticSboxGadget,
 >;
-pub type TweedleFqPoseidonSpongeGadget = PoseidonSpongeGadget<
-    Fq,
-    TweedleFqPoseidonParameters,
-    TweedleFqQuinticSbox,
-    TweedleFqQuinticSboxGadget
->;
 
 type TweedleFrQuinticSboxGadget = QuinticSBoxGadget<Fr, TweedleFrQuinticSbox>;
 pub type TweedleFrPoseidonHashGadget = PoseidonHashGadget<
@@ -25,12 +19,6 @@ pub type TweedleFrPoseidonHashGadget = PoseidonHashGadget<
     TweedleFrPoseidonParameters,
     TweedleFrQuinticSbox,
     TweedleFrQuinticSboxGadget,
->;
-pub type TweedleFrPoseidonSpongeGadget = PoseidonSpongeGadget<
-    Fr,
-    TweedleFrPoseidonParameters,
-    TweedleFrQuinticSbox,
-    TweedleFrQuinticSboxGadget
 >;
 
 pub mod density_optimized;

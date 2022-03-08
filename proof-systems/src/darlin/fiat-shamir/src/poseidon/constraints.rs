@@ -1,41 +1,151 @@
-use algebra::PrimeField;
+use crate::poseidon::PoseidonFSRng;
+use primitives::PoseidonQuinticSBox;
+use algebra::{FpParameters, PrimeField};
 use primitives::PoseidonParameters;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
-use r1cs_crypto::{AlgebraicSpongeGadget, density_optimized::DensityOptimizedPoseidonQuinticSboxSpongeGadget, DensityOptimizedPoseidonQuinticSBoxParameters};
+use r1cs_crypto::{DensityOptimizedPoseidonQuinticSboxHashGadget, DensityOptimizedPoseidonQuinticSBoxParameters};
 use r1cs_std::{to_field_gadget_vec::ToConstraintFieldGadget, fields::fp::FpGadget, boolean::Boolean, prelude::ConstantGadget};
 use std::{marker::PhantomData, convert::TryInto};
 
 use crate::{constraints::FiatShamirRngGadget, FiatShamirRng};
 
 #[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-)]
-pub struct PoseidonFSRngGadget<
+#[derivative(Clone(bound = ""))]
+pub struct DensityOptimizedPoseidonQuinticSBoxFSRngGadget
+<
     ConstraintF: PrimeField,
-    FS: FiatShamirRng<State = Vec<ConstraintF>>,
-    P: PoseidonParameters<Fr = ConstraintF>,
-    DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
-> 
+    P:           PoseidonParameters<Fr = ConstraintF>,
+    DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
+>
 {
-    sponge_g: DensityOptimizedPoseidonQuinticSboxSpongeGadget<ConstraintF, P, DOP>,
-    _fs: PhantomData<FS>,
+    pub(crate) state: Vec<FpGadget<ConstraintF>>,
+    pub(crate) pending_inputs: Vec<FpGadget<ConstraintF>>,
+    pub(crate) pending_outputs: Vec<FpGadget<ConstraintF>>,
+    capacity: usize,
+    _parameters: PhantomData<P>,
+    _density_optimized_parameters: PhantomData<DOP>,
 }
 
-impl<ConstraintF, FS, P, DOP> FiatShamirRngGadget<ConstraintF> for PoseidonFSRngGadget<ConstraintF, FS, P, DOP>
+impl<ConstraintF, P, DOP> DensityOptimizedPoseidonQuinticSBoxFSRngGadget<ConstraintF, P, DOP>
     where
         ConstraintF: PrimeField,
-        FS:          FiatShamirRng<State = Vec<ConstraintF>>,
         P:           PoseidonParameters<Fr = ConstraintF>,
-        DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>
+        DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
 {
-    fn init<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
-        Ok(
-            Self {
-                sponge_g: DensityOptimizedPoseidonQuinticSboxSpongeGadget::<ConstraintF, P, DOP>::new(cs)?,
-               _fs: PhantomData
-            }
-        )
+    fn enforce_permutations<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        mut cs: CS
+    ) -> Result<(), SynthesisError>
+    {
+        if !self.pending_inputs.is_empty() {
+            // Permute inputs
+            DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::_enforce_hash_constant_length(
+                cs.ns(|| "apply permutations to inputs"),
+                self.pending_inputs.as_slice(),
+                &mut self.state,
+            )?;
+
+            // Clear input buffer
+            self.pending_inputs.clear();
+        } else {
+            // apply permutation to state
+            DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::poseidon_perm(
+                cs.ns(|| "permute state"),
+                &mut self.state
+            )?;
+        }
+
+        // Push RATE many elements from the state into the output buffer
+        self.pending_outputs.extend_from_slice(&self.state[..self.capacity]);
+
+        Ok(())
+    }
+
+    fn enforce_get_element<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        cs: CS,
+    ) -> Result<FpGadget<ConstraintF>, SynthesisError>
+    {
+        if self.pending_outputs.is_empty() {
+            self.enforce_permutations(cs)?;
+        }
+
+        Ok(self.pending_outputs.pop().unwrap())
+    }
+
+    /// Enforce squeezing of 'num_bits' Booleans.
+    fn enforce_get_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &mut self,
+        mut cs: CS,
+        num_bits: usize
+    ) -> Result<Vec<Boolean>, SynthesisError> 
+    {
+        if num_bits == 0 {
+            Err(SynthesisError::Other("No challenge to get !".to_string()))?;
+        }
+
+        // We return a certain amount of bits by retrieving field elements instead,
+        // serialize them and return their bits.
+
+        // Smallest number of field elements to retrieve to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
+        // This is done to achieve uniform distribution over the output space, and it also
+        // comes handy as in the circuit we don't need to enforce range proofs for them.
+        let usable_bits = ConstraintF::Params::CAPACITY as usize; 
+        let num_elements = (num_bits + usable_bits - 1) / usable_bits;
+        let mut src_elements = Vec::with_capacity(num_elements);
+
+        // Apply as many permutations as needed to get the required number of field elements
+        let mut i = 0;
+        while src_elements.len() != num_elements {
+            src_elements.push(
+                self.enforce_get_element(
+                    cs.ns(|| format!("Get elem {}", i))
+                )?
+            );
+            i += 1;
+        }
+
+        // Serialize field elements into bits and return them
+        let mut dest_bits: Vec<Boolean> = Vec::with_capacity(usable_bits * num_elements);
+    
+        // discard modulus - capacity bits
+        let to_skip =  ConstraintF::Params::MODULUS_BITS as usize - usable_bits; 
+        for (i, elem) in src_elements.into_iter().enumerate() {
+            let mut elem_bits = elem.to_bits_with_length_restriction(
+                cs.ns(|| format!("elem {} to bits", i)),
+                to_skip
+            )?;
+            dest_bits.append(&mut elem_bits);
+        }
+        Ok(dest_bits[..num_bits].to_vec())
+    }
+}
+
+impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedPoseidonQuinticSBoxFSRngGadget<ConstraintF, P, DOP>
+    where
+    ConstraintF: PrimeField,
+    P:           PoseidonParameters<Fr = ConstraintF>,
+    DOP:         DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
+{
+    fn init<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS) -> Result<Self, SynthesisError> {
+        let mut state = Vec::with_capacity(P::T);
+        for i in 0..P::T {
+            let elem = FpGadget::<ConstraintF>::from_value(
+                cs.ns(|| format!("hardcode_state_{}",i)),
+                &P::AFTER_ZERO_PERM[i]
+            );
+            state.push(elem);
+        }
+        let capacity = P::T - P::R;
+
+        Ok(Self {
+            state,
+            pending_inputs: Vec::new(),
+            pending_outputs: Vec::with_capacity(capacity),
+            capacity,
+            _parameters: PhantomData,
+            _density_optimized_parameters: PhantomData
+        })
     }
 
     fn init_from_seed<CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -43,12 +153,11 @@ impl<ConstraintF, FS, P, DOP> FiatShamirRngGadget<ConstraintF> for PoseidonFSRng
         seed: Vec<u8>
     ) -> Result<Self, SynthesisError> {
         // Create primitive instance from seed and get the state afterwards
-        let primitive_fs_rng = FS::from_seed(seed)
+        let primitive_fs_rng = PoseidonFSRng::<ConstraintF, P, PoseidonQuinticSBox<ConstraintF, P>>::from_seed(seed)
             .map_err(|e| SynthesisError::Other(e.to_string()))?;
-        let state = primitive_fs_rng.get_state();
         
-        // Create new circuit instance
-        let mut gadget_fs_rng = Self::init(cs.ns(|| "create new instance"))?;
+        // We can ignore the rest as they should be empty
+        let (state, _, _) = primitive_fs_rng.get_state();
 
         // Hardcode inital state
         let state = Vec::<FpGadget<ConstraintF>>::from_value(
@@ -56,33 +165,57 @@ impl<ConstraintF, FS, P, DOP> FiatShamirRngGadget<ConstraintF> for PoseidonFSRng
             &state
         );
 
-        // Set state
-        gadget_fs_rng.sponge_g.set_state(state);
+        let capacity = P::T - P::R;
 
-        // Return new instance
-        Ok(gadget_fs_rng) 
+        Ok(Self {
+            state,
+            pending_inputs: Vec::new(),
+            pending_outputs: Vec::with_capacity(capacity),
+            capacity,
+            _parameters: PhantomData,
+            _density_optimized_parameters: PhantomData
+        })
     }
 
-    fn enforce_absorb<CS, AG>(
+    fn enforce_record<CS, RG>(
         &mut self,
-        cs: CS,
-        to_absorb: AG
+        mut cs: CS,
+        data: RG
     ) -> Result<(), SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
-        AG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
+        RG: ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
     {
+        // Get field gadgets
+        let mut elems = data.to_field_gadget_elements(cs.ns(|| "data to fes"))?;
         
-        self.sponge_g.enforce_absorb(cs, to_absorb)
+        if elems.is_empty() {
+            return Err(SynthesisError::Other("Noting to record !".to_string()));
+        }
+
+        // They refer to an old state, so we cannot use them anymore
+        self.pending_outputs.clear();
+        
+        // Save new inputs to be processed
+        self.pending_inputs.append(&mut elems);
+
+        Ok(())
     }
 
-    fn enforce_squeeze_challenges<CS: ConstraintSystemAbstract<ConstraintF>, const N: usize>(
+    fn enforce_get_challenge<CS: ConstraintSystemAbstract<ConstraintF>, const N: usize>(
+        &mut self,
+        cs: CS,
+    ) -> Result<[Boolean; N], SynthesisError> {
+        Ok(self.enforce_get_many_challenges(cs, 1)?[0])
+    }
+
+    fn enforce_get_many_challenges<CS: ConstraintSystemAbstract<ConstraintF>, const N: usize>(
         &mut self,
         mut cs: CS,
         num: usize
     ) -> Result<Vec<[Boolean; N]>, SynthesisError> {
-        let chal_bits = self.sponge_g.enforce_squeeze_bits(
-            cs.ns(|| format!("squeeze {} N bits chals", num)),
+        let chal_bits = self.enforce_get_bits(
+            cs.ns(|| format!("get {} N bits chals", num)),
             N * num
         )?;
 
@@ -97,192 +230,30 @@ impl<ConstraintF, FS, P, DOP> FiatShamirRngGadget<ConstraintF> for PoseidonFSRng
 
 use algebra::fields::tweedle::Fr as TweedleFr;
 use primitives::crh::poseidon::parameters::tweedle_dee::TweedleFrPoseidonParameters;
-use crate::poseidon::TweedleFrPoseidonFSRng;
 use r1cs_crypto::dee::TweedleFrDensityOptimizedPoseidonParameters;
 
-pub type TweedleFrPoseidonFSRngGadget = PoseidonFSRngGadget<
+pub type TweedleFrPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     TweedleFr,
-    TweedleFrPoseidonFSRng,
     TweedleFrPoseidonParameters,
     TweedleFrDensityOptimizedPoseidonParameters
 >;
 
 use algebra::fields::tweedle::Fq as TweedleFq;
 use primitives::crh::poseidon::parameters::tweedle_dum::TweedleFqPoseidonParameters;
-use crate::poseidon::TweedleFqPoseidonFSRng;
 use r1cs_crypto::dum::TweedleFqDensityOptimizedPoseidonParameters;
 
-pub type TweedleFqPoseidonFSRngGadget = PoseidonFSRngGadget<
+pub type TweedleFqPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     TweedleFq,
-    TweedleFqPoseidonFSRng,
     TweedleFqPoseidonParameters,
     TweedleFqDensityOptimizedPoseidonParameters
 >;
 
 #[cfg(test)]
 mod test {
-    use algebra::{Curve, UniformRand};
-    use r1cs_core::{ConstraintSystem, ConstraintSystemAbstract, SynthesisMode, ConstraintSystemDebugger};
-    use r1cs_std::{fields::{fp::FpGadget, nonnative::nonnative_field_gadget::NonNativeFieldGadget}, alloc::AllocGadget, prelude::UInt8};
-    use rand::{RngCore, Rng, SeedableRng};
+    use crate::constraints::test::{test_native_result, fs_rng_consistency_test};
+    use crate::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
+    use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use crate::FiatShamirRng;
-
-    use super::*;
-
-    fn test_native_result<
-        G:   Curve,
-        FS:  FiatShamirRng,
-        FSG: FiatShamirRngGadget<G::BaseField>,
-        R: RngCore
-    >(rng: &mut R, num_inputs: usize, initial_seed: Option<Vec<u8>>)
-    {
-        // Generate test data
-        let native_inputs: Vec<G::BaseField> = (0..num_inputs).map(|_| G::BaseField::rand(rng)).collect();
-        let nonnative_inputs: Vec<G::ScalarField> = (0..num_inputs).map(|_| G::ScalarField::rand(rng)).collect();
-        let byte_inputs: Vec<u8> = (0..num_inputs * 10).map(|_| rng.gen()).collect();
-
-        let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
-
-        // Alloc data
-        let native_inputs_g = native_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, fe)| 
-                FpGadget::<G::BaseField>::alloc(
-                    cs.ns(|| format!("alloc native input {}", i)),
-                    || Ok(fe)
-                ).unwrap()
-            ).collect::<Vec<_>>();
-
-        let nonnative_inputs_g = nonnative_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, fe)| 
-                NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc(
-                    cs.ns(|| format!("alloc nonnative input {}", i)),
-                    || Ok(fe)
-                ).unwrap()
-            ).collect::<Vec<_>>();
-
-        let byte_inputs_g = byte_inputs
-        .iter()
-        .enumerate()
-        .map(|(i, fe)| 
-            UInt8::alloc(
-                cs.ns(|| format!("alloc byte input {}", i)),
-                || Ok(fe)
-            ).unwrap()
-        ).collect::<Vec<_>>();
-
-        // Test Non Native inputs
-
-        // Create a primitive FS rng and absorb nonnative inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng.absorb(nonnative_inputs).unwrap();
-
-        // Create a circuit FS rng and absorb nonnative inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
-            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for non native inputs"), seed).unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for non native inputs")).unwrap()
-        };
-        fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb non native field elements"), nonnative_inputs_g.as_slice()).unwrap();
-
-        // Squeeze from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng
-                .squeeze_challenge::<128>()
-                .unwrap()
-                .to_vec()
-            ,
-            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
-                cs.ns(|| "squeeze 128 bits given non native absorb"), 1
-            )
-                .unwrap()[0]
-                .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
-
-        // Test Native inputs
-
-        // Create a primitive FS rng and absorb native inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng.absorb(native_inputs).unwrap();   
-
-        // Create a circuit FS rng and absorb native inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
-            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for native inputs"), seed).unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for native inputs")).unwrap()
-        };
-        fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb native field elements"), native_inputs_g).unwrap();
-
-        // Squeeze from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng
-                .squeeze_challenge::<128>()
-                .unwrap()
-                .to_vec()
-            ,
-            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
-                cs.ns(|| "squeeze 128 bits given native absorb"), 1
-            )
-                .unwrap()[0]
-                .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
-
-        // Test byte inputs
-
-        // Create a primitive FS rng and absorb byte inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng.absorb::<G::BaseField, _>(byte_inputs.as_slice()).unwrap();
-
-        // Create a circuit FS rng and absorb byte inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed {
-            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for byte inputs"), seed).unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for byte inputs")).unwrap()
-        };
-        fs_rng_g.enforce_absorb(cs.ns(|| "enforce absorb byte elements"), byte_inputs_g.as_slice()).unwrap();
-
-        // Squeeze from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng
-                .squeeze_challenge::<128>()
-                .unwrap()
-                .to_vec()
-            ,
-            fs_rng_g.enforce_squeeze_challenges::<_, 128>(
-                cs.ns(|| "squeeze 128 bits given byte absorb"), 1
-            )
-                .unwrap()[0]
-                .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
-
-        if !cs.is_satisfied(){
-            println!("{:?}", cs.which_is_unsatisfied());
-        }
-
-        assert!(cs.is_satisfied());
-    }
 
     #[test]
     fn test_tweedle_dum() {
@@ -292,10 +263,10 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
             for i in 1..=5 {
-                test_native_result::<TweedleDum, TweedleFrPoseidonFSRng, TweedleFrPoseidonFSRngGadget, _>(rng, i, seed.clone());
+                test_native_result::<TweedleDum, TweedleFrPoseidonFSRng, TweedleFrPoseidonFSRngGadget, _, 128>(rng, i, seed.clone());
             }
         }
-        
+        fs_rng_consistency_test::<TweedleDum, TweedleFrPoseidonFSRngGadget, _, 128>(rng);   
     }
 
     #[test]
@@ -306,8 +277,9 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         for seed in vec![None, Some(b"TEST_SEED".to_vec())] {
             for i in 1..=5 {
-                test_native_result::<TweedleDee, TweedleFqPoseidonFSRng, TweedleFqPoseidonFSRngGadget, _>(rng, i, seed.clone());
+                test_native_result::<TweedleDee, TweedleFqPoseidonFSRng, TweedleFqPoseidonFSRngGadget, _, 128>(rng, i, seed.clone());
             }
         }
+        fs_rng_consistency_test::<TweedleDee, TweedleFqPoseidonFSRngGadget, _, 128>(rng);
     }
 }

@@ -1,4 +1,4 @@
-//! A sponge-like random oracle for Fiat-Shamir transform usage.
+//! A fs_rng-like random oracle for Fiat-Shamir transform usage.
 
 use algebra::{ToConstraintField, CanonicalSerialize, Field, serialize_no_metadata};
 use crate::error::Error;
@@ -8,7 +8,7 @@ use std::{fmt::Debug, convert::TryInto};
 /// [rand_chacha](https://crates.io/crates/rand_chacha).
 pub mod chacha20;
 
-/// An implementation using Poseidon Sponge.
+/// An implementation using Poseidon fs_rng.
 pub mod poseidon;
 
 /// Traits definition for circuitizing FiatShamirRng. 
@@ -75,34 +75,214 @@ impl FiatShamirRngSeed {
 }
 
 /// Thin wrapper around a type which is ToConstraintField + CanonicalSerialize
-pub trait Absorbable<F: Field>: ToConstraintField<F> + CanonicalSerialize {}
+pub trait Recordable<F: Field>: ToConstraintField<F> + CanonicalSerialize {}
 
-impl<F: Field, T: ToConstraintField<F> + CanonicalSerialize> Absorbable<F> for T {}
+impl<F: Field, T: ToConstraintField<F> + CanonicalSerialize> Recordable<F> for T {}
 
-/// General trait for Fiat-Shamir transform, designed as a Sponge-based construction.
+/// General trait for Fiat-Shamir transform, designed as a fs_rng-based construction.
 pub trait FiatShamirRng: Sized + Default {
     /// Internal State
-    type State: Clone + Debug;
+    type State: Clone + Debug + Eq + PartialEq;
 
     /// Create a new `Self` by initializing its internal state with a fresh `seed`.
     fn from_seed(seed: Vec<u8>) -> Result<Self, Error>;
 
-    /// Refresh the internal state with new material
-    fn absorb<F: Field, A: Absorbable<F>>(&mut self, to_absorb: A) -> Result<&mut Self, Error>;
+    /// Record new data as part of this Fiat-Shamir transform
+    fn record<F: Field, R: Recordable<F>>(&mut self, data: R) -> Result<&mut Self, Error>;
 
-    /// Squeeze a new random field element having bit length of N, changing the internal state.
-    fn squeeze_challenge<const N: usize>(&mut self) -> Result<[bool; N], Error> {
-        Ok(self.squeeze_many_challenges(1)?[0])
+    /// Get a new N bits challenge
+    fn get_challenge<const N: usize>(&mut self) -> Result<[bool; N], Error>;
+
+    /// Get 'num' many N bits challenges.
+    /// It might be more efficient than calling 'get_challenge::<N>' num many times.
+    fn get_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error> {
+        (0..num).map(|_| self.get_challenge()).collect()
     }
 
-    /// Squeeze 'num' many random field elements having bit length of 128, changing the internal state.
-    /// Depending on the internal implementation, it might be more efficient than calling
-    /// 'squeeze_challenge' num times.
-    fn squeeze_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error>;
-
-    /// Get the internal state in the form of an instance of `Self::Seed`.
+    /// Get the internal state.
     fn get_state(&self) -> Self::State;
 
-    /// Set interal state according to the specified `new_seed`
-    fn set_state(&mut self, new_state: Self::State);
+    /// Set the internal state.
+    /// Return Error if the passed state is invalid.
+    fn set_state(&mut self, state: Self::State) -> Result<(), Error>;
+
+    /// Initialize a new instance from a given state.
+    fn from_state(state: Self::State) -> Result<Self, Error> {
+        let mut new = Self::default();
+        new.set_state(state)?;
+        Ok(new)
+    }
+
+    /// Reset internal state
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test {
+    use rand::{Rng, RngCore};
+    use crate::{FiatShamirRngSeed, FiatShamirRng};
+    use algebra::PrimeField;
+
+    pub(crate) fn fs_rng_seed_builder_test<F: PrimeField, FS: FiatShamirRng, const N: usize>() {
+        // Empty test
+        {
+            let mut rng1 = FS::from_seed(
+                FiatShamirRngSeed::new().finalize().unwrap(),
+            ).unwrap();
+            let mut rng2 = FS::from_seed(
+                FiatShamirRngSeed::new().finalize().unwrap(),
+            ).unwrap();
+
+            assert_eq!(rng1.get_state(), rng2.get_state());
+
+            let a = rng1.get_challenge::<N>().unwrap();
+            let b = rng2.get_challenge::<N>().unwrap();
+
+            assert_eq!(a, b);
+            assert_eq!(rng1.get_state(), rng2.get_state());
+
+            rng1.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+            rng2.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+
+            assert_eq!(rng1.get_state(), rng2.get_state());
+
+            let a = rng1.get_challenge::<N>().unwrap();
+            let b = rng2.get_challenge::<N>().unwrap();
+
+            assert_eq!(a, b);
+            assert_eq!(rng1.get_state(), rng2.get_state());
+        }
+
+        // No cross protocol attacks possible
+        {
+            let fs_rng_seed = {
+                let mut seed_builder = FiatShamirRngSeed::new();
+                seed_builder.add_bytes(b"TEST_SEED").unwrap();
+                seed_builder.finalize().unwrap()
+            };
+
+            let malicious_fs_rng_seed = {
+                let mut seed_builder = FiatShamirRngSeed::new();
+                seed_builder.add_bytes(b"TEST_").unwrap();
+                seed_builder.add_bytes(b"SEED").unwrap();
+                seed_builder.finalize().unwrap()
+            };
+
+            let mut fs_rng = FS::from_seed(fs_rng_seed).unwrap();
+            let mut malicious_fs_rng = FS::from_seed(malicious_fs_rng_seed).unwrap();
+
+            assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
+
+            let a = fs_rng.get_challenge::<N>().unwrap();
+            let b = malicious_fs_rng.get_challenge::<N>().unwrap();
+
+            assert_ne!(a, b);
+            assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
+
+            fs_rng.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+            malicious_fs_rng.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+
+            assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
+
+            let a = fs_rng.get_challenge::<N>().unwrap();
+            let b = malicious_fs_rng.get_challenge::<N>().unwrap();
+
+            assert_ne!(a, b);
+            assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
+        }
+
+        // set_state test
+        {
+            let fs_rng_seed = {
+                let mut seed_builder = FiatShamirRngSeed::new();
+                seed_builder.add_bytes(b"TEST_SEED").unwrap();
+                seed_builder.finalize().unwrap()
+            };
+            let mut fs_rng = FS::from_seed(fs_rng_seed).unwrap();
+
+            let mut fs_rng_copy = FS::default();
+            fs_rng_copy.set_state(fs_rng.get_state()).unwrap();
+
+            assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
+
+            fs_rng.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+            fs_rng_copy.record::<F, _>("ABSORBABLE_ELEM").unwrap();
+
+            assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
+
+            let a = fs_rng.get_challenge::<N>().unwrap();
+            let b = fs_rng_copy.get_challenge::<N>().unwrap();
+
+            assert_eq!(a, b);
+            assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
+        }
+    }
+
+    pub(crate) fn fs_rng_consistency_test<
+        FS: FiatShamirRng,
+        F1: PrimeField,
+        F2: PrimeField,
+        R: RngCore,
+        const N: usize,
+    >(rng: &mut R)
+    {
+        let mut fs_rng = FS::default();
+    
+        // record random F1 field elements and check everything is fine
+        let to_record = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+        fs_rng.record(to_record).unwrap();
+    
+        // record random F2 field elements and check everything is fine
+        let to_record = (0..10).map(|_| F2::rand(rng)).collect::<Vec<_>>();
+        fs_rng.record(to_record).unwrap();
+    
+        // record random bytes and check everything is fine
+        let to_record = (0..100).map(|_| rng.gen()).collect::<Vec<u8>>();
+        fs_rng.record::<F1, _>(to_record.as_slice()).unwrap();
+    
+        // Check that calling get_challenge::<N>() multiple times without recording
+        // changes the output
+        let out = fs_rng.get_challenge::<N>().unwrap();
+        let mut prev = out;
+        for _ in 0..100 {
+            let curr = fs_rng.get_challenge::<N>().unwrap();
+            assert!(prev != curr);
+            prev = curr;
+        }
+    
+        // Record field elements and check that get_challenge:
+        // -  outputs the correct number of challenges all different from each other
+        // -  outputs challenges different from the previous ones if more data has been recorded
+        fs_rng.reset();
+        let mut set = std::collections::HashSet::new();
+        set.insert(fs_rng.get_challenge::<N>().unwrap());
+        let random_fes = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+
+        for i in 1..=10 {
+            fs_rng.reset();
+            let random_fes = random_fes[..i].to_vec();
+            fs_rng.record(random_fes).unwrap();
+    
+            // Native get_many_challenges::<N> test
+            let outs = fs_rng.get_many_challenges::<N>(i).unwrap();
+            assert_eq!(i, outs.len());
+
+            // Bits shouldn't be all 0 with overwhelming probability
+            outs
+                .iter()
+                .for_each(|out_bits| { assert!(!out_bits.iter().all(|bit| !bit)); });
+
+            // Bits shouldn't be all 1 with overwhelming probability
+            outs
+                .iter()
+                .for_each(|out_bits| { assert!(!out_bits.iter().all(|&bit| bit)); });
+    
+            // HashSet::insert(val) returns false if val was already present, so to check
+            // that all the elements output by the fs_rng are different, we assert insert()
+            // returning always true
+            outs.into_iter().for_each(|f| assert!(set.insert(f)));
+        }
+    }
 }

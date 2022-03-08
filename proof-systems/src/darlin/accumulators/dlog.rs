@@ -89,7 +89,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         // Sample a new challenge z
         let z =
-            G::endo_rep_to_scalar(fs_rng.squeeze_challenge::<128>()?.to_vec()).map_err(|e| {
+            G::endo_rep_to_scalar(fs_rng.get_challenge::<128>()?.to_vec()).map_err(|e| {
                 end_timer!(poly_time);
                 end_timer!(succinct_time);
                 PCError::Other(e.to_string())
@@ -132,7 +132,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
 
-        fs_rng.absorb(values.clone())?;
+        fs_rng.record(values.clone())?;
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
@@ -271,7 +271,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
 
         // Sample a new challenge z
         let z =
-            G::endo_rep_to_scalar(fs_rng.squeeze_challenge::<128>()?.to_vec()).map_err(|e| {
+            G::endo_rep_to_scalar(fs_rng.get_challenge::<128>()?.to_vec()).map_err(|e| {
                 end_timer!(accumulate_time);
                 PCError::Other(e.to_string())
             })?;

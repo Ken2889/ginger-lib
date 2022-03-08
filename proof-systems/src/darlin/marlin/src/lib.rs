@@ -173,8 +173,8 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         };
 
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
-        fs_rng.absorb::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
-        fs_rng.absorb(public_input)?;
+        fs_rng.record::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
+        fs_rng.record(public_input)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -191,8 +191,8 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
                 .map_err(Error::from_pc_err)?;
         end_timer!(first_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb::<G::BaseField, _>(first_comms
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record::<G::BaseField, _>(first_comms
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
@@ -218,8 +218,8 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
                 .map_err(Error::from_pc_err)?;
         end_timer!(second_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(second_comms
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(second_comms
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
@@ -243,8 +243,8 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
                 .map_err(Error::from_pc_err)?;
         end_timer!(third_round_comm_time);
 
-        // again, absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(third_comms
+        // again, record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(third_comms
             .iter()
             .map(|labeled_comm| labeled_comm.commitment().clone())
             .collect::<Vec<_>>()
@@ -307,8 +307,8 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect::<Vec<G::ScalarField>>();
         end_timer!(eval_time);
 
-        // absorb the evalution claims.
-        fs_rng.absorb(evaluations.clone())?;
+        // record the evalution claims.
+        fs_rng.record(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
@@ -416,13 +416,13 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         };
 
         let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
-        fs_rng.absorb::<G::BaseField, _>(index_vk.get_hash())?;
-        fs_rng.absorb(public_input.clone())?;
+        fs_rng.record::<G::BaseField, _>(index_vk.get_hash())?;
+        fs_rng.record(public_input.clone())?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let first_comms = &proof.commitments[0];
-        fs_rng.absorb(first_comms.clone())?;
+        fs_rng.record(first_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_first_round::<_, G>(index_vk.index_info, &mut fs_rng)?;
 
@@ -430,7 +430,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         The verification of the outer sumcheck equation is postponed to below
         */
         let second_comms = &proof.commitments[1];
-        fs_rng.absorb(second_comms.clone())?;
+        fs_rng.record(second_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
 
@@ -439,7 +439,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         */
 
         let third_comms = &proof.commitments[2];
-        fs_rng.absorb(third_comms.clone())?;
+        fs_rng.record(third_comms.clone())?;
 
         let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng)?;
 
@@ -491,7 +491,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");
 
-        fs_rng.absorb(proof.evaluations.clone())?;
+        fs_rng.record(proof.evaluations.clone())?;
 
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,

@@ -13,9 +13,6 @@ pub mod tweedle;
 #[cfg(feature = "tweedle")]
 pub use self::tweedle::*;
 
-pub mod sponge;
-pub use sponge::*;
-
 use primitives::SBox;
 
 pub struct PoseidonHashGadget<
