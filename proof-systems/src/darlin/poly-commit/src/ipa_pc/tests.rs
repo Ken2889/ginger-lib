@@ -212,14 +212,14 @@ mod chacha_fs {
 #[cfg(feature = "circuit-friendly")]
 mod poseidon_fs {
     use super::*;
-    use fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
+    use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
 
-    type POSEIDON_TWEEDLE_FQ_FS_RNG = TweedleFqPoseidonFSRng;
-    type PC_DEE_POSEIDON = PC<TweedleDee, TweedleFqPoseidonFSRng>;
+    // The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
+    type PC_DEE<FS> = PC<TweedleDee, FS>;
     // its domain extended variant
-    type PC_DEE_POSEIDON_DE = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_POSEIDON>;
+    type PC_DEE_DE<FS> = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE<FS>>;
     
-    generate_pc_tests!(pc_dee, PC_DEE_POSEIDON, PC_DEE_POSEIDON_DE, Blake2s, POSEIDON_TWEEDLE_FQ_FS_RNG);
+    generate_pc_tests!(pc_dee_tweedle_fq_poseidon_fs, PC_DEE::<TweedleFqPoseidonFSRng>, PC_DEE_DE::<TweedleFqPoseidonFSRng>, Blake2s, TweedleFqPoseidonFSRng);
+    generate_pc_tests!(pc_dee_tweedle_fr_poseidon_fs, PC_DEE::<TweedleFrPoseidonFSRng>, PC_DEE_DE::<TweedleFrPoseidonFSRng>, Blake2s, TweedleFrPoseidonFSRng);
 }
-// The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
 

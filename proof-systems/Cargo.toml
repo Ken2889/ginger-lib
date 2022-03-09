@@ -55,6 +55,8 @@ r1cs-crypto = { path = "../r1cs/gadgets/crypto" }
 print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
 darlin = ["marlin", "poly-commit", "fiat-shamir", "digest", "derivative", "r1cs-std"]
 llvm_asm = ["algebra/llvm_asm", "marlin/asm", "poly-commit/asm"]
+# circuit-friendly = ["marlin/circuit-friendly", "poly-commit/circuit-friendly"]
+circuit-friendly = []
 
 [[bench]]
 name = "darlin_batch_verification_bench"

@@ -18,6 +18,7 @@
 #![deny(unused_imports)]
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
+#![allow(unused_assignments)]
 #![allow(
     clippy::upper_case_acronyms,
     clippy::too_many_arguments,
@@ -859,6 +860,8 @@ pub trait PolynomialCommitment<G: Group>: Sized {
                 .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
+        println!("Succinct verify batching challenge: {:?}", lambda);
+        
         let mut cur_challenge = G::ScalarField::one();
 
         let labeled_commitments_iter = labeled_commitments.into_iter();

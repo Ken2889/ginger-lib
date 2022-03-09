@@ -308,11 +308,12 @@ mod marlin {
     #[cfg(feature = "circuit-friendly")]
     mod poseidon_fs {
         use super::*;
-        use fiat_shamir::poseidon::TweedleFrPoseidonFSRng;
+        use fiat_shamir::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
 
-        type MultiPCPoseidon =
-            DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, TweedleFrPoseidonFSRng>>;
+        type MultiPCPoseidon<FS> =
+            DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FS>>;
 
-        generate_tests!(dum_poseidon, DumJacobian, MultiPCPoseidon, Blake2s);
+        generate_tests!(dum_tweedle_fr_poseidon_fs, DumJacobian, MultiPCPoseidon::<TweedleFrPoseidonFSRng>, Blake2s);
+        generate_tests!(dum_tweedle_fq_poseidon_fs, DumJacobian, MultiPCPoseidon::<TweedleFqPoseidonFSRng>, Blake2s);
     }
 }

@@ -110,7 +110,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     // No segmentation here: Reduction polys are at most as big as the committer key.
     pub fn open_reduction_polynomials<'a>(
         ck: &CommitterKey<G>,
-        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G::ScalarField>>,
+        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G>>,
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
@@ -131,7 +131,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .par_iter()
             .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
-
+        println!("Accumulate values: {:?}", values);
         // record evaluations
         fs_rng.record(values)?;
 
@@ -141,6 +141,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
                 .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
+        println!("Accumulate batching chal: {:?}", random_scalar);
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -250,20 +251,9 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         Ok(pp)
     }
 
-    fn challenge_to_scalar(mut chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
-        let scalar = if cfg!(feature = "circuit-friendly") {
-            G::endo_rep_to_scalar(chal)
-        } else {
-            // Pad before reversing if necessary
-            if chal.len() < G::ScalarField::size_in_bits() {
-                chal.append(&mut vec![false; G::ScalarField::size_in_bits() - chal.len()])
-            }
-
-            // Reverse and read (as read_bits read in BE)
-            chal.reverse();
-            G::ScalarField::read_bits(chal)
-        }.map_err(|e| Error::Other(e.to_string()))?;
-
+    #[cfg(feature = "circuit-friendly")]
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        let scalar = G::endo_rep_to_scalar(chal).map_err(|e| Error::Other(e.to_string()))?;
         Ok(scalar)
     } 
 
@@ -516,6 +506,9 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
+        
+        #[cfg(feature = "circuit-friendly")]
+        let mut endo_round_challenges = Vec::with_capacity(log_key_len);
 
         let mut round_challenge = Self::challenge_to_scalar(
             fs_rng
@@ -533,24 +526,47 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.record([*l, *r])?;
 
-            round_challenge = Self::challenge_to_scalar(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
-            ).map_err(|e| Error::Other(e.to_string()))?;
+            // Save always round challenge as a normal 128 bits G::ScalarField element
+            let chal = fs_rng.get_challenge::<128>()?;
+            let raw_round_chal = {
+                let mut chal = chal.to_vec();
+                // Pad before reversing if necessary
+                if chal.len() < G::ScalarField::size_in_bits() {
+                    chal.append(&mut vec![false; G::ScalarField::size_in_bits() - chal.len()])
+                }
+
+                // Reverse and read (as read_bits read in BE)
+                chal.reverse();
+                G::ScalarField::read_bits(chal)
+                    .map_err(|e| Error::Other(e.to_string()))?
+            };
+            round_challenges.push(raw_round_chal);
+            round_challenge = raw_round_chal;
+
+            // If in circuit-friendly mode, let's transform it to an endo scalar and save it
+            #[cfg(feature = "circuit-friendly")]
+            {
+                let endo_chal = Self::challenge_to_scalar(chal.to_vec())
+                    .map_err(|e| Error::Other(e.to_string()))?;
+                endo_round_challenges.push(endo_chal);
+                round_challenge = endo_chal;
+            }
             
             let round_challenge_inv = round_challenge
                 .inverse()
                 .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::GetChallengeError("sampled a 0 challenge !".to_string())))?;
-
-            round_challenges.push(round_challenge);
 
             round_commitment_proj +=
                 &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
         }
 
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-        let check_poly = SuccinctCheckPolynomial::<G::ScalarField>(round_challenges);
+        #[cfg(feature = "circuit-friendly")]
+        let check_poly = SuccinctCheckPolynomial::<G> { chals: round_challenges, endo_chals: endo_round_challenges };
+
+        #[cfg(not(feature = "circuit-friendly"))]
+        let check_poly = SuccinctCheckPolynomial::<G> { chals: round_challenges };
+            
         let v_prime = check_poly.evaluate(point) * &proof.c;
 
         let check_commitment_elem: G = Self::inner_commit(

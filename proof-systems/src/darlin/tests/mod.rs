@@ -47,7 +47,6 @@ mod test {
         UniformRand,
     };
     use blake2::Blake2s;
-    use fiat_shamir::chacha20::FiatShamirChaChaRng;
     use fiat_shamir::FiatShamirRng;
     use marlin::VerifierKey as MarlinVerifierKey;
     use poly_commit::{
@@ -351,13 +350,25 @@ mod test {
         }
     }
 
+    #[cfg(not(feature = "circuit-friendly"))]
+    type FsRngDee = fiat_shamir::chacha20::FiatShamirChaChaRng<Blake2s>;
+
+    #[cfg(not(feature = "circuit-friendly"))]
+    type FsRngDum = FsRngDee;
+
+    #[cfg(feature = "circuit-friendly")]
+    type FsRngDee = fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
+
+    #[cfg(feature = "circuit-friendly")]
+    type FsRngDum = fiat_shamir::poseidon::TweedleFrPoseidonFSRng;
+
     type TestIPAPCDee = DomainExtendedPolynomialCommitment<
         DeeJacobian,
-        InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>,
+        InnerProductArgPC<DeeJacobian, FsRngDee>,
     >;
     type TestIPAPCDum = DomainExtendedPolynomialCommitment<
         DumJacobian,
-        InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>,
+        InnerProductArgPC<DumJacobian, FsRngDum>,
     >;
 
     #[test]
@@ -437,7 +448,7 @@ mod test {
         let mut simple_marlin_pcds = pcds
             .into_iter()
             .map(|simple_marlin_pcd| {
-                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>>(
+                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FsRngDee>(
                     simple_marlin_pcd,
                 )
             })
@@ -449,7 +460,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             simple_marlin_pcds.clone().as_mut_slice(),
             simple_marlin_vks.clone().as_mut_slice(),
             &committer_key_g1,
@@ -462,7 +473,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             simple_marlin_pcds.as_mut_slice(),
             simple_marlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -566,7 +577,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             final_darlin_pcds.clone().as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &committer_key_g1,
@@ -579,7 +590,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             final_darlin_pcds.as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -724,7 +735,7 @@ mod test {
         }
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             pcds.clone().as_mut_slice(),
             vks.as_mut_slice(),
             &committer_key_g1,
@@ -737,7 +748,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             pcds.as_mut_slice(),
             vks.as_mut_slice(),
             &verifier_key_g1,
@@ -767,7 +778,7 @@ mod test {
         if Path::new(file_path).exists() {
             let fs = File::open(file_path).unwrap();
             proof =
-                FinalDarlinProof::<_, _, FiatShamirChaChaRng<Blake2s>>::deserialize(fs).unwrap();
+                FinalDarlinProof::<_, _, FsRngDee>::deserialize(fs).unwrap();
         } else {
             let (iteration_pcds, _) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
                 num_constraints - 1,

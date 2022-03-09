@@ -90,7 +90,7 @@ pub trait PCParameters<G: Group>:
 /// verify part.
 /// This state is returned by the succinct verifier and contains everything
 /// that is needed to complete verification.
-pub trait PCVerifierState: Clone + Debug + Eq + PartialEq {}
+pub trait PCVerifierState: Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize {}
 
 /// Defines the minimal interface for opening proofs for a polynomial commitment
 pub trait PCProof:

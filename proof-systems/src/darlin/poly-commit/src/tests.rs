@@ -104,7 +104,6 @@ where
         // from 5 up to 15.
         let seg_mul = rand::distributions::Uniform::from(5..=15).sample(rng);
         let mut labels = Vec::new();
-        println!("Sampled supported degree");
 
         // sample `max_num_queries` query points
         let num_points_in_query_set =
@@ -160,7 +159,6 @@ where
         assert!(ck.is_valid());
         assert!(vk.is_valid());
 
-        println!("Trimmed");
 
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
@@ -191,11 +189,8 @@ where
                 }
             }
         }
-        println!("Generated query set");
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
-
-        println!("FS RNG initialized");
         
         let proof = PC::multi_point_multi_poly_open(
             &ck,
@@ -213,7 +208,7 @@ where
 
         // Assert success using the same key
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
-        let result = PC::multi_point_multi_poly_verify(
+        let verifier_state = PC::succinct_multi_point_multi_poly_verify(
             &vk,
             &comms,
             &query_set,
@@ -221,6 +216,22 @@ where
             &proof,
             &mut fs_rng,
         )?;
+        if verifier_state.is_none() {
+            println!(
+                "Failed succinct check with {} polynomials, num_points_in_query_set: {:?}",
+                num_polynomials, num_points_in_query_set
+            );
+            println!("Degree of polynomials:",);
+            for poly in polynomials {
+                println!("Degree: {:?}", poly.degree());
+            }
+            return Err(Error::FailedSuccinctCheck.into());
+        }
+
+        let verifier_state = verifier_state.unwrap();
+        test_canonical_serialize_deserialize(true, &verifier_state);
+
+        let result = PC::hard_verify(&vk, &verifier_state)?;
         if !result {
             println!(
                 "Failed with {} polynomials, num_points_in_query_set: {:?}",
