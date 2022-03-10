@@ -860,7 +860,6 @@ pub trait PolynomialCommitment<G: Group>: Sized {
                 .get_challenge::<128>()?
                 .to_vec()
         ).map_err(|e| Error::Other(e.to_string()))?;
-        println!("Succinct verify batching challenge: {:?}", lambda);
         
         let mut cur_challenge = G::ScalarField::one();
 

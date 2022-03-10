@@ -11,6 +11,8 @@ use crate::{constraints::FiatShamirRngGadget, FiatShamirRng};
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
+/// A Poseidon-based Fiat-shamir RNG, designed as a duplex Sponge construction.
+/// It internally uses a highly specific DensityOptimizedPoseidonQuinticSBoxHash gadget.
 pub struct DensityOptimizedPoseidonQuinticSBoxFSRngGadget
 <
     ConstraintF: PrimeField,
@@ -228,27 +230,34 @@ impl<ConstraintF, P, DOP> FiatShamirRngGadget<ConstraintF> for DensityOptimizedP
     }   
 }
 
-use algebra::fields::tweedle::Fr as TweedleFr;
-use primitives::crh::poseidon::parameters::tweedle_dee::TweedleFrPoseidonParameters;
-use r1cs_crypto::dee::TweedleFrDensityOptimizedPoseidonParameters;
+#[cfg(feature = "tweedle")]
+use {
+    algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq},
+    primitives::crh::poseidon::parameters::{
+        tweedle_dee::TweedleFrPoseidonParameters,
+        tweedle_dum::TweedleFqPoseidonParameters
+    },
+    r1cs_crypto::{
+        dee::TweedleFrDensityOptimizedPoseidonParameters,
+        dum::TweedleFqDensityOptimizedPoseidonParameters
+    }
+};
 
+#[cfg(feature = "tweedle")]
 pub type TweedleFrPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     TweedleFr,
     TweedleFrPoseidonParameters,
     TweedleFrDensityOptimizedPoseidonParameters
 >;
 
-use algebra::fields::tweedle::Fq as TweedleFq;
-use primitives::crh::poseidon::parameters::tweedle_dum::TweedleFqPoseidonParameters;
-use r1cs_crypto::dum::TweedleFqDensityOptimizedPoseidonParameters;
-
+#[cfg(feature = "tweedle")]
 pub type TweedleFqPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     TweedleFq,
     TweedleFqPoseidonParameters,
     TweedleFqDensityOptimizedPoseidonParameters
 >;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
     use crate::constraints::test::{test_native_result, fs_rng_consistency_test};
     use crate::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};

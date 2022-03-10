@@ -206,4 +206,8 @@ where
             vs,
         )
     }
+
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        PC::challenge_to_scalar(chal)
+    } 
 }

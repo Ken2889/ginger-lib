@@ -85,7 +85,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
             seed_builder.add_bytes(&previous_accumulators)?;
             seed_builder.finalize()?
         };
-        println!("Succinct verify seed: {:?}", fs_rng_init_seed);
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
@@ -98,7 +97,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
                 end_timer!(succinct_time);
                 PCError::Other(e.to_string())
         })?;
-        println!("Succinct verify z: {:?}", z);
 
         let comms_values = previous_accumulators
             .into_par_iter()
@@ -136,7 +134,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         end_timer!(poly_time);
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
-        println!("Succinct verify values: {:?}", values);
 
         fs_rng.record(values.clone())?;
 
@@ -273,7 +270,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
             seed_builder.add_bytes(&accumulators)?;
             seed_builder.finalize()?
         };
-        println!("Accumulate seed: {:?}", fs_rng_init_seed);
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
@@ -285,7 +281,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
             end_timer!(accumulate_time);
             PCError::Other(e.to_string())
         })?;
-        println!("Accumulate z: {:?}", z);
 
         // Collect xi_s from the accumulators
         let xi_s = accumulators
@@ -691,7 +686,6 @@ mod test {
         test_canonical_serialize_deserialize(true, &vk);
 
         for num_proofs in 1..20 {
-            println!("Num proofs: {}", num_proofs);
             let mut verifier_data_vec = Vec::with_capacity(num_proofs);
 
             // Generate all proofs and the data needed by the verifier to verify them

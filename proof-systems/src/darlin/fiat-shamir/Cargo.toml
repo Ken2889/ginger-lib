@@ -10,11 +10,11 @@ license = "MIT/Apache-2.0"
 edition = "2018"
 
 [dependencies]
-algebra = { path = "../../../../algebra", features = ["parallel", "derive", "tweedle"] }
+algebra = { path = "../../../../algebra", features = ["parallel", "derive"] }
 primitives = { path = "../../../../primitives" }
-r1cs-core = { path = "../../../../r1cs/core"}
-r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["nonnative"]}
-r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto", features = ["tweedle"]}
+r1cs-core = { path = "../../../../r1cs/core" }
+r1cs-std = { path = "../../../../r1cs/gadgets/std" }
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto" }
 
 digest = { version = "=0.8.1" }
 rand = { version = "=0.8.4", default-features = false }
@@ -25,3 +25,6 @@ derivative = { version = "=2.2.0", features = ["use_core"] }
 [dev-dependencies]
 rand_xorshift = "0.3.0"
 blake2 = { version = "0.8.1", default-features = false }
+algebra = { path = "../../../../algebra", features = ["tweedle"] }
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto", features = ["tweedle"]}
+r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["nonnative"]}

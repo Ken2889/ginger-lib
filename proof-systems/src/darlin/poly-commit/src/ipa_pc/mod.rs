@@ -131,7 +131,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .par_iter()
             .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
-        println!("Accumulate values: {:?}", values);
         // record evaluations
         fs_rng.record(values)?;
 
@@ -141,7 +140,6 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
                 .get_challenge::<128>()?
                 .to_vec()
             ).map_err(|e| Error::Other(e.to_string()))?;
-        println!("Accumulate batching chal: {:?}", random_scalar);
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();

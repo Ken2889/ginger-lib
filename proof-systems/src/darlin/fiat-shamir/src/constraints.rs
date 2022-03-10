@@ -68,6 +68,7 @@ pub(crate) mod test {
     use super::*;
     use algebra::{UniformRand, Group};
 
+    #[allow(unused)]
     pub(crate) fn test_native_result<
         G:   Group,
         FS:  FiatShamirRng,
@@ -227,6 +228,7 @@ pub(crate) mod test {
         assert!(cs.is_satisfied());
     }
 
+    #[allow(unused)]
     pub(crate) fn fs_rng_consistency_test<
         G: Group,
         FSG: FiatShamirRngGadget<G::BaseField>,

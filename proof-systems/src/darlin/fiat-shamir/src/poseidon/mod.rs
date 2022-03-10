@@ -19,6 +19,7 @@ pub fn check_field_equals<F1: Field, F2: Field>() -> bool {
     Clone(bound = ""),
     Debug(bound = "")
 )]
+/// A Poseidon-based Fiat-shamir RNG, designed as a duplex Sponge construction.
 pub struct PoseidonFSRng<
     F: PrimeField,
     P: PoseidonParameters<Fr = F>,
@@ -233,6 +234,7 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
 
     fn get_many_challenges<const N: usize>(&mut self, num: usize) -> Result<Vec<[bool; N]>, Error> {
         let bits = self.get_bits(num * N)?;
+        debug_assert!(self.pending_inputs.is_empty());
 
         Ok(
             bits
@@ -260,17 +262,22 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
     }
 }
 
-use algebra::fields::tweedle::Fr as TweedleFr;
-use primitives::crh::poseidon::parameters::tweedle_dee::{TweedleFrPoseidonParameters, TweedleFrQuinticSbox};
+#[cfg(feature = "tweedle")]
+use {
+    algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq},
+    primitives::crh::poseidon::parameters::{
+        tweedle_dee::{TweedleFrPoseidonParameters, TweedleFrQuinticSbox},
+        tweedle_dum::{TweedleFqPoseidonParameters, TweedleFqQuinticSbox}
+    }
+};
 
+#[cfg(feature = "tweedle")]
 pub type TweedleFrPoseidonFSRng = PoseidonFSRng<TweedleFr, TweedleFrPoseidonParameters, TweedleFrQuinticSbox>;
 
-use algebra::fields::tweedle::Fq as TweedleFq;
-use primitives::crh::poseidon::parameters::tweedle_dum::{TweedleFqPoseidonParameters, TweedleFqQuinticSbox};
-
+#[cfg(feature = "tweedle")]
 pub type TweedleFqPoseidonFSRng = PoseidonFSRng<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
     use super::*;
     use algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq};
