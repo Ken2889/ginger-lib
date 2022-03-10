@@ -257,7 +257,7 @@ pub type TweedleFqPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRng
     TweedleFqDensityOptimizedPoseidonParameters
 >;
 
-#[cfg(all(test, feature = "tweedle"))]
+#[cfg(test)]
 mod test {
     use crate::constraints::test::{test_native_result, fs_rng_consistency_test};
     use crate::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};

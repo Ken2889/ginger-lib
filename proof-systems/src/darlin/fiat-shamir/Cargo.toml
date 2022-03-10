@@ -22,9 +22,11 @@ rand_chacha = { version = "=0.3.1", default-features = false }
 rand_core = { version = "=0.6.3", default-features = false }
 derivative = { version = "=2.2.0", features = ["use_core"] }
 
+[features]
+tweedle = ["algebra/tweedle", "r1cs-crypto/tweedle"]
+
 [dev-dependencies]
 rand_xorshift = "0.3.0"
 blake2 = { version = "0.8.1", default-features = false }
-algebra = { path = "../../../../algebra", features = ["tweedle"] }
-r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto", features = ["tweedle"]}
+fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"]}
 r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["nonnative"]}

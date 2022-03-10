@@ -33,6 +33,7 @@ derivative = { version = "2" }
 
 [dev-dependencies]
 algebra = { path = "../../../../algebra", features = ["tweedle"] }
+fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
 criterion = "0.3"
 rand_xorshift = "0.3.0"

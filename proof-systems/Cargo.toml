@@ -30,6 +30,7 @@ bench-utils = { path = "../bench-utils" }
 marlin = { path = "./src/darlin/marlin", optional = true }
 poly-commit = { path = "./src/darlin/poly-commit", optional = true }
 fiat-shamir = { path = "./src/darlin/fiat-shamir", optional = true }
+r1cs-std = { path = "../r1cs/gadgets/std", optional = true }
 
 rand = { version = "=0.8.4" }
 rayon = { version = "=1.5.1" }
@@ -46,7 +47,8 @@ rand_xorshift = { version = "=0.3.0" }
 blake2 = { version = "=0.8.1", default-features = false }
 
 algebra = { path = "../algebra", features = ["full"] }
-r1cs-std = { path = "../r1cs/gadgets/std" }
+fiat-shamir = { path = "./src/darlin/fiat-shamir", features = ["tweedle"] }
+proof-systems = { path = "../proof-systems", features = ["darlin", "r1cs-std"]}
 
 [features]
 print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
@@ -59,7 +61,7 @@ name = "darlin_batch_verification_bench"
 path = "src/darlin/benches/batch_verification.rs"
 harness = false
 required-features = [
-   "darlin", "llvm_asm",
+   "llvm_asm",
 ]
 
 [[bench]]
@@ -67,7 +69,7 @@ name = "darlin_batch_verification_detailed_bench"
 path = "src/darlin/benches/batch_verification_detailed.rs"
 harness = false
 required-features = [
-    "darlin", "llvm_asm",
+    "llvm_asm",
 ]
 
 [[bench]]
@@ -75,5 +77,5 @@ name = "darlin_accumulate_verify_bench"
 path = "src/darlin/benches/accumulate_verify.rs"
 harness = false
 required-features = [
-   "darlin", "llvm_asm",
+   "llvm_asm",
 ]
