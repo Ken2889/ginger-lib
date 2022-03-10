@@ -1,10 +1,10 @@
+use super::*;
 use crate::error::Error;
 use digest::{generic_array::GenericArray, Digest};
 use rand::Rng;
 use rand_chacha::ChaChaRng;
 use rand_core::{RngCore, SeedableRng};
 use std::{convert::TryInto, marker::PhantomData};
-use super::*;
 
 const EMPTY_INIT_STRING: &'static [u8] = b"EMPTY_SEED";
 const GET_CHALLENGE_PREFIX: &'static [u8] = b"GET_CHALLENGE";
@@ -19,7 +19,6 @@ pub struct FiatShamirChaChaRng<D: Digest> {
 }
 
 impl<D: Digest> FiatShamirChaChaRng<D> {
-
     /// Create a new `Self` by initializing with a fresh seed.
     #[inline]
     fn _from_seed(seed: Vec<u8>) -> Self {
@@ -40,7 +39,11 @@ impl<D: Digest> FiatShamirChaChaRng<D> {
     fn _record(&mut self, mut data: Vec<u8>) {
         data.extend_from_slice(&self.seed);
         self.seed = D::digest(data.as_slice());
-        let seed: [u8; 32] = self.seed.as_ref().try_into().expect("failed to get [u32; 8]");
+        let seed: [u8; 32] = self
+            .seed
+            .as_ref()
+            .try_into()
+            .expect("failed to get [u32; 8]");
         self.r = ChaChaRng::from_seed(seed);
     }
 }
@@ -86,7 +89,8 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     /// `self.seed = H(self.seed || new_seed)`.
     fn record<F: Field, R: Recordable<F>>(&mut self, data: R) -> Result<&mut Self, Error> {
         let mut bytes = Vec::new();
-        data.serialize_without_metadata(&mut bytes).expect("failed to convert to bytes");
+        data.serialize_without_metadata(&mut bytes)
+            .expect("failed to convert to bytes");
         self._record(bytes);
         Ok(self)
     }
@@ -94,22 +98,22 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     /// Get a new challenge
     fn get_challenge<const N: usize>(&mut self) -> Result<[bool; N], Error> {
         self._record(GET_CHALLENGE_PREFIX.to_vec());
-        Ok(
-            (0..N)
+        Ok((0..N)
             .map(|_| self.gen::<bool>())
             .collect::<Vec<bool>>()
             .try_into()
-            .unwrap()
-        )
+            .unwrap())
     }
 
     fn get_state(&self) -> Self::State {
         self.seed.as_ref().to_vec()
     }
 
-    fn set_state(&mut self, state: Vec<u8>) -> Result<(), Error> { 
+    fn set_state(&mut self, state: Vec<u8>) -> Result<(), Error> {
         if state.len() != D::output_size() {
-            return Err(Error::BadFiatShamirInitialization("State length and digest output length are not the same".to_string()));
+            return Err(Error::BadFiatShamirInitialization(
+                "State length and digest output length are not the same".to_string(),
+            ));
         }
         self.seed = GenericArray::<u8, D::OutputSize>::clone_from_slice(state.as_slice());
         let r_seed: [u8; 32] = state.try_into().unwrap(); // Cannot fail at this point
@@ -120,9 +124,9 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
 
 #[cfg(test)]
 mod test {
-    use algebra::fields::tweedle::{Fr, Fq};
-    use crate::test::{fs_rng_seed_builder_test, fs_rng_consistency_test};
     use super::FiatShamirChaChaRng;
+    use crate::test::{fs_rng_consistency_test, fs_rng_seed_builder_test};
+    use algebra::fields::tweedle::{Fq, Fr};
     use blake2::Blake2s;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;

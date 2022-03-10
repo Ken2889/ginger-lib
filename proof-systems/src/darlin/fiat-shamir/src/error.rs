@@ -17,7 +17,9 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::BadFiatShamirInitialization(e) => write!(f, "Failed to compute seed for FiatShamir RNG: {}", e),
+            Error::BadFiatShamirInitialization(e) => {
+                write!(f, "Failed to compute seed for FiatShamir RNG: {}", e)
+            }
             Error::RecordError(e) => write!(f, "Unable to record data: {}", e),
             Error::GetChallengeError(e) => write!(f, "Unable to get challenge(s): {}", e),
             Error::Other(e) => write!(f, "{}", e),

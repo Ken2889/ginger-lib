@@ -1,8 +1,8 @@
 //! A fs_rng-like random oracle for Fiat-Shamir transform usage.
 
-use algebra::{ToConstraintField, CanonicalSerialize, Field, serialize_no_metadata};
 use crate::error::Error;
-use std::{fmt::Debug, convert::TryInto};
+use algebra::{serialize_no_metadata, CanonicalSerialize, Field, ToConstraintField};
+use std::{convert::TryInto, fmt::Debug};
 
 /// An implementation using the ChaCha20 based pseudo random number generator from
 /// [rand_chacha](https://crates.io/crates/rand_chacha).
@@ -11,7 +11,7 @@ pub mod chacha20;
 /// An implementation using Poseidon fs_rng.
 pub mod poseidon;
 
-/// Traits definition for circuitizing FiatShamirRng. 
+/// Traits definition for circuitizing FiatShamirRng.
 pub mod constraints;
 
 /// Error types for FiatShamir
@@ -38,7 +38,10 @@ impl FiatShamirRngSeed {
         Self::default()
     }
 
-    pub fn add_bytes<'a, T: 'a + CanonicalSerialize>(&mut self, elem: &'a T) -> Result<&mut Self, Error> {
+    pub fn add_bytes<'a, T: 'a + CanonicalSerialize>(
+        &mut self,
+        elem: &'a T,
+    ) -> Result<&mut Self, Error> {
         // Check we have not reached the maximum allowed seed size
         if self.num_elements == u64::MAX {
             return Err(Error::BadFiatShamirInitialization(format!(
@@ -65,11 +68,9 @@ impl FiatShamirRngSeed {
         Ok(self)
     }
 
-    pub fn finalize(self) -> Result<Vec<u8>, Error> 
-    {
-        serialize_no_metadata![self.num_elements, self.elements_len, self.seed_bytes]
-            .map_err(|e| {
-                Error::BadFiatShamirInitialization(format!("Unable to finalize seed: {:?}", e))
+    pub fn finalize(self) -> Result<Vec<u8>, Error> {
+        serialize_no_metadata![self.num_elements, self.elements_len, self.seed_bytes].map_err(|e| {
+            Error::BadFiatShamirInitialization(format!("Unable to finalize seed: {:?}", e))
         })
     }
 }
@@ -121,19 +122,15 @@ pub trait FiatShamirRng: Sized + Default {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use rand::{Rng, RngCore};
-    use crate::{FiatShamirRngSeed, FiatShamirRng};
+    use crate::{FiatShamirRng, FiatShamirRngSeed};
     use algebra::PrimeField;
+    use rand::{Rng, RngCore};
 
     pub(crate) fn fs_rng_seed_builder_test<F: PrimeField, FS: FiatShamirRng, const N: usize>() {
         // Empty test
         {
-            let mut rng1 = FS::from_seed(
-                FiatShamirRngSeed::new().finalize().unwrap(),
-            ).unwrap();
-            let mut rng2 = FS::from_seed(
-                FiatShamirRngSeed::new().finalize().unwrap(),
-            ).unwrap();
+            let mut rng1 = FS::from_seed(FiatShamirRngSeed::new().finalize().unwrap()).unwrap();
+            let mut rng2 = FS::from_seed(FiatShamirRngSeed::new().finalize().unwrap()).unwrap();
 
             assert_eq!(rng1.get_state(), rng2.get_state());
 
@@ -226,22 +223,23 @@ pub(crate) mod test {
         F2: PrimeField,
         R: RngCore,
         const N: usize,
-    >(rng: &mut R)
-    {
+    >(
+        rng: &mut R,
+    ) {
         let mut fs_rng = FS::default();
-    
+
         // record random F1 field elements and check everything is fine
         let to_record = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
         fs_rng.record(to_record).unwrap();
-    
+
         // record random F2 field elements and check everything is fine
         let to_record = (0..10).map(|_| F2::rand(rng)).collect::<Vec<_>>();
         fs_rng.record(to_record).unwrap();
-    
+
         // record random bytes and check everything is fine
         let to_record = (0..100).map(|_| rng.gen()).collect::<Vec<u8>>();
         fs_rng.record::<F1, _>(to_record.as_slice()).unwrap();
-    
+
         // Check that calling get_challenge::<N>() multiple times without recording
         // changes the output
         let out = fs_rng.get_challenge::<N>().unwrap();
@@ -251,7 +249,7 @@ pub(crate) mod test {
             assert!(prev != curr);
             prev = curr;
         }
-    
+
         // Record field elements and check that get_challenge:
         // -  outputs the correct number of challenges all different from each other
         // -  outputs challenges different from the previous ones if more data has been recorded
@@ -264,21 +262,21 @@ pub(crate) mod test {
             fs_rng.reset();
             let random_fes = random_fes[..i].to_vec();
             fs_rng.record(random_fes).unwrap();
-    
+
             // Native get_many_challenges::<N> test
             let outs = fs_rng.get_many_challenges::<N>(i).unwrap();
             assert_eq!(i, outs.len());
 
             // Bits shouldn't be all 0 with overwhelming probability
-            outs
-                .iter()
-                .for_each(|out_bits| { assert!(!out_bits.iter().all(|bit| !bit)); });
+            outs.iter().for_each(|out_bits| {
+                assert!(!out_bits.iter().all(|bit| !bit));
+            });
 
             // Bits shouldn't be all 1 with overwhelming probability
-            outs
-                .iter()
-                .for_each(|out_bits| { assert!(!out_bits.iter().all(|&bit| bit)); });
-    
+            outs.iter().for_each(|out_bits| {
+                assert!(!out_bits.iter().all(|&bit| bit));
+            });
+
             // HashSet::insert(val) returns false if val was already present, so to check
             // that all the elements output by the fs_rng are different, we assert insert()
             // returning always true

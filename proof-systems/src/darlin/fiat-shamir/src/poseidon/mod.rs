@@ -1,49 +1,44 @@
-use primitives::PoseidonHash;
-use algebra::{PrimeField, FpParameters, ToConstraintField, Field};
-use primitives::{PoseidonParameters, SBox};
 use crate::Recordable;
+use algebra::{Field, FpParameters, PrimeField, ToConstraintField};
+use primitives::PoseidonHash;
+use primitives::{PoseidonParameters, SBox};
 
-use super::{FiatShamirRng, Error};
-use std::{marker::PhantomData, convert::TryInto};
+use super::{Error, FiatShamirRng};
+use std::{convert::TryInto, marker::PhantomData};
 
 /// Circuit implementation of this RNG
 pub mod constraints;
- 
+
 /// Return true if F1 and F2 are of the same type, false otherwise
 pub fn check_field_equals<F1: Field, F2: Field>() -> bool {
     std::any::TypeId::of::<F1>() == std::any::TypeId::of::<F2>()
 }
 
 #[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-    Debug(bound = "")
-)]
+#[derivative(Clone(bound = ""), Debug(bound = ""))]
 /// A Poseidon-based Fiat-shamir RNG, designed as a duplex Sponge construction.
 pub struct PoseidonFSRng<
     F: PrimeField,
     P: PoseidonParameters<Fr = F>,
-    SB: SBox<Field = F, Parameters = P>
-> 
-{
+    SB: SBox<Field = F, Parameters = P>,
+> {
     state: Vec<F>,
     pending_inputs: Vec<F>,
     pending_outputs: Vec<F>,
     capacity: usize,
     _parameters: PhantomData<P>,
-    _sbox: PhantomData<SB>
+    _sbox: PhantomData<SB>,
 }
 
-impl<F, P, SB> PoseidonFSRng<F, P, SB> 
-    where
-        F: PrimeField,
-        P: PoseidonParameters<Fr = F>,
-        SB: SBox<Field = F, Parameters = P>,
+impl<F, P, SB> PoseidonFSRng<F, P, SB>
+where
+    F: PrimeField,
+    P: PoseidonParameters<Fr = F>,
+    SB: SBox<Field = F, Parameters = P>,
 {
     pub(crate) fn apply_permutations(&mut self) {
         // Process the inputs rate by rate
         if !self.pending_inputs.is_empty() {
-
             // calculate the number of cycles to process the input dividing in portions of rate elements
             let num_cycles = self.pending_inputs.len() / P::R;
             // check if the input is a multiple of the rate by calculating the remainder of the division
@@ -83,7 +78,8 @@ impl<F, P, SB> PoseidonFSRng<F, P, SB>
         }
 
         // Push RATE many elements from the state into the output buffer
-        self.pending_outputs.extend_from_slice(&self.state[..self.capacity]);
+        self.pending_outputs
+            .extend_from_slice(&self.state[..self.capacity]);
     }
 
     pub(crate) fn get_element(&mut self) -> F {
@@ -96,7 +92,9 @@ impl<F, P, SB> PoseidonFSRng<F, P, SB>
     // Get 'num_bits' from this sponge
     fn get_bits(&mut self, num_bits: usize) -> Result<Vec<bool>, Error> {
         if num_bits == 0 {
-            return Err(Error::GetChallengeError("No challenge to get !".to_string()));
+            return Err(Error::GetChallengeError(
+                "No challenge to get !".to_string(),
+            ));
         }
 
         // We return a certain amount of bits by getting field elements instead,
@@ -105,7 +103,7 @@ impl<F, P, SB> PoseidonFSRng<F, P, SB>
         // Smallest number of field elements to retrieve to reach 'num_bits' is ceil(num_bits/FIELD_CAPACITY).
         // This is done to achieve uniform distribution over the output space, and it also
         // comes in handy as in the circuit we don't need to enforce range proofs for them.
-        let usable_bits = F::Params::CAPACITY as usize; 
+        let usable_bits = F::Params::CAPACITY as usize;
         let num_elements = (num_bits + usable_bits - 1) / usable_bits;
         let mut src_elements = Vec::with_capacity(num_elements);
 
@@ -116,9 +114,9 @@ impl<F, P, SB> PoseidonFSRng<F, P, SB>
 
         // Serialize field elements into bits and return them
         let mut dest_bits: Vec<bool> = Vec::with_capacity(num_bits);
-    
+
         // discard leading zeros + 1 bit below modulus bits
-        let skip = F::Params::MODULUS_BITS as usize - usable_bits; 
+        let skip = F::Params::MODULUS_BITS as usize - usable_bits;
         for elem in src_elements {
             let elem_bits = elem.write_bits();
             dest_bits.extend_from_slice(&elem_bits[skip..]);
@@ -127,11 +125,11 @@ impl<F, P, SB> PoseidonFSRng<F, P, SB>
     }
 }
 
-impl<F, P, SB> Default for PoseidonFSRng<F, P, SB> 
-    where
-        F: PrimeField,
-        P: PoseidonParameters<Fr = F>,
-        SB: SBox<Field = F, Parameters = P>,
+impl<F, P, SB> Default for PoseidonFSRng<F, P, SB>
+where
+    F: PrimeField,
+    P: PoseidonParameters<Fr = F>,
+    SB: SBox<Field = F, Parameters = P>,
 {
     fn default() -> Self {
         let mut state = Vec::with_capacity(P::T);
@@ -151,10 +149,10 @@ impl<F, P, SB> Default for PoseidonFSRng<F, P, SB>
 }
 
 impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
-    where
-        F: PrimeField,
-        P: PoseidonParameters<Fr = F>,
-        SB: SBox<Field = F, Parameters = P>,
+where
+    F: PrimeField,
+    P: PoseidonParameters<Fr = F>,
+    SB: SBox<Field = F, Parameters = P>,
 {
     type State = (Vec<F>, Vec<F>, Vec<F>);
 
@@ -164,15 +162,16 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
         // Update instance with seed elements
         new_inst
             .pending_inputs
-            .append(
-                &mut seed
-                    .to_field_elements()
-                    .map_err(|e| Error::BadFiatShamirInitialization(format!("Unable to convert seed to field elements: {:?}", e)))?
-            );
+            .append(&mut seed.to_field_elements().map_err(|e| {
+                Error::BadFiatShamirInitialization(format!(
+                    "Unable to convert seed to field elements: {:?}",
+                    e
+                ))
+            })?);
 
         // Apply permutations
         new_inst.apply_permutations();
-        
+
         // Clear outputs as we are only interested in keeping the state
         new_inst.pending_outputs.clear();
 
@@ -184,8 +183,10 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
     }
 
     /// Record new data as part of this Fiat-Shamir transform
-    fn record<RecordF: Field, R: Recordable<RecordF>>(&mut self, data: R) -> Result<&mut Self, Error> {
-
+    fn record<RecordF: Field, R: Recordable<RecordF>>(
+        &mut self,
+        data: R,
+    ) -> Result<&mut Self, Error> {
         // Get field elements
         let fes = data
             .to_field_elements()
@@ -200,7 +201,6 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
 
         // Convert data to native field, if needed
         let mut elems = {
-
             // We are recording items belonging to native field
             if check_field_equals::<RecordF, F>() {
                 // Safe casting, since we checked that the two types are the same
@@ -216,8 +216,7 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
                     .collect::<Vec<_>>();
 
                 // Read native field elements out of them in F::CAPACITY chunks
-                bits            
-                    .to_field_elements()
+                bits.to_field_elements()
                     .map_err(|e| Error::RecordError(e.to_string()))?
             }
         };
@@ -236,52 +235,58 @@ impl<F, P, SB> FiatShamirRng for PoseidonFSRng<F, P, SB>
         let bits = self.get_bits(num * N)?;
         debug_assert!(self.pending_inputs.is_empty());
 
-        Ok(
-            bits
-                .chunks_exact(N)
-                .map(|bit_chunk| bit_chunk.try_into().unwrap())
-                .collect()
-        )
+        Ok(bits
+            .chunks_exact(N)
+            .map(|bit_chunk| bit_chunk.try_into().unwrap())
+            .collect())
     }
 
     fn get_state(&self) -> Self::State {
-        (self.state.clone(), self.pending_inputs.clone(), self.pending_outputs.clone())
+        (
+            self.state.clone(),
+            self.pending_inputs.clone(),
+            self.pending_outputs.clone(),
+        )
     }
 
     fn set_state(&mut self, state: Self::State) -> Result<(), Error> {
         let (state, pending_inputs, pending_outputs) = state;
         if state.len() != P::T || pending_outputs.len() > self.capacity {
-            return Err(Error::BadFiatShamirInitialization("Attempt to set an invalid state".to_string()));
+            return Err(Error::BadFiatShamirInitialization(
+                "Attempt to set an invalid state".to_string(),
+            ));
         }
 
         self.state = state;
         self.pending_inputs = pending_inputs;
         self.pending_outputs = pending_outputs;
-        
+
         Ok(())
     }
 }
 
 #[cfg(feature = "tweedle")]
 use {
-    algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq},
+    algebra::fields::tweedle::{Fq as TweedleFq, Fr as TweedleFr},
     primitives::crh::poseidon::parameters::{
         tweedle_dee::{TweedleFrPoseidonParameters, TweedleFrQuinticSbox},
-        tweedle_dum::{TweedleFqPoseidonParameters, TweedleFqQuinticSbox}
-    }
+        tweedle_dum::{TweedleFqPoseidonParameters, TweedleFqQuinticSbox},
+    },
 };
 
 #[cfg(feature = "tweedle")]
-pub type TweedleFrPoseidonFSRng = PoseidonFSRng<TweedleFr, TweedleFrPoseidonParameters, TweedleFrQuinticSbox>;
+pub type TweedleFrPoseidonFSRng =
+    PoseidonFSRng<TweedleFr, TweedleFrPoseidonParameters, TweedleFrQuinticSbox>;
 
 #[cfg(feature = "tweedle")]
-pub type TweedleFqPoseidonFSRng = PoseidonFSRng<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;
+pub type TweedleFqPoseidonFSRng =
+    PoseidonFSRng<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox>;
 
 #[cfg(all(test, feature = "tweedle"))]
 mod test {
     use super::*;
-    use algebra::fields::tweedle::{Fr as TweedleFr, Fq as TweedleFq};
-    use crate::test::{fs_rng_seed_builder_test, fs_rng_consistency_test};
+    use crate::test::{fs_rng_consistency_test, fs_rng_seed_builder_test};
+    use algebra::fields::tweedle::{Fq as TweedleFq, Fr as TweedleFr};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -290,12 +295,8 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         fs_rng_seed_builder_test::<TweedleFr, TweedleFrPoseidonFSRng, 128>();
         fs_rng_seed_builder_test::<TweedleFq, TweedleFrPoseidonFSRng, 128>();
-        fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(
-            rng,
-        );
-        fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(
-            rng,
-        );
+        fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(rng);
+        fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(rng);
     }
 
     #[test]
@@ -303,11 +304,7 @@ mod test {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
         fs_rng_seed_builder_test::<TweedleFq, TweedleFqPoseidonFSRng, 128>();
         fs_rng_seed_builder_test::<TweedleFr, TweedleFqPoseidonFSRng, 128>();
-        fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(
-            rng,
-        );
-        fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(
-            rng,
-        );
+        fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(rng);
+        fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(rng);
     }
 }
