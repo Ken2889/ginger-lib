@@ -89,9 +89,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .collect();
 
         // Compute the commitments of the Lagrange polynomials over the input domain.
-        // They are included into the verifier key in order to help the verifier check that the
-        // polynomial behind the commitment of the input poly provided by the prover is indeed the
-        // input poly.
+        // They are included into the verifier key in order to help the circuit verifier not to
+        // perform a lagrange kernel evaluation in non native arithmetic.
         let domain_x = get_best_evaluation_domain(index.index_info.num_inputs).unwrap();
         let lagrange_comms: Vec<_> = domain_x
             .elements()
