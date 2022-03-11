@@ -124,10 +124,12 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .map(|c| c.commitment().clone())
             .collect();
 
-        let vk_hash = serialize_no_metadata![index.index_info, index_comms]
+        let vk_hash = D::digest(&serialize_no_metadata![index.index_info, index_comms]
             .map_err(|e| {
                 Error::Other(format!("Unable to serialize vk elements: {:?}", e))
-            })?;
+            })?)
+            .as_ref()
+            .to_vec();
 
         let index_vk = VerifierKey {
             index_info: index.index_info,
