@@ -1,7 +1,7 @@
 extern crate rand;
 extern crate rayon;
 
-use algebra::{Group, PrimeField};
+use algebra::PrimeField;
 
 use std::{marker::PhantomData, ops::Mul};
 
@@ -302,7 +302,7 @@ mod test {
         FieldBasedHash, SBox,
     };
     use crate::{FieldBasedHashParameters, PoseidonHash, PoseidonParameters};
-    use algebra::{Group, PrimeField};
+    use algebra::PrimeField;
 
     fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
         let mut inputs = Vec::with_capacity(num);
@@ -371,6 +371,7 @@ mod test {
             TweedleFrPoseidonHash, TweedleFrPoseidonParameters, TweedleFrQuinticSbox,
         };
         use algebra::{biginteger::BigInteger256, fields::tweedle::Fr as TweedleFr};
+        use num_traits::Zero;
 
         // Test vectors are computed via the script in ./parameters/scripts/permutation_deefr.sage
         let start_states = vec![
@@ -575,6 +576,7 @@ mod test {
             TweedleFqPoseidonHash, TweedleFqPoseidonParameters, TweedleFqQuinticSbox,
         };
         use algebra::{biginteger::BigInteger256, fields::tweedle::Fq as TweedleFq};
+        use num_traits::Zero;
 
         // Test vectors are computed via the script in ./parameters/scripts/permutation_dumfr.sage
         let start_states = vec![

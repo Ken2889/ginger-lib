@@ -1,11 +1,11 @@
 use primitives::crh::{
-    injective_map::{InjectiveMap, PedersenCRHCompressor, TECompressor},
-    pedersen::PedersenWindow,
+    injective_map::{InjectiveMap, BoweHopwoodPedersenCRHCompressor, TECompressor},
+    bowe_hopwood::PedersenWindow,
 };
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::crh::{
-    pedersen::{PedersenCRHGadget, PedersenCRHGadgetParameters},
+    bowe_hopwood::{BoweHopwoodPedersenCRHGadget, BoweHopwoodPedersenCRHGadgetParameters},
     FixedLengthCRHGadget,
 };
 
@@ -78,10 +78,10 @@ where
 {
     _compressor: PhantomData<I>,
     _compressor_gadget: PhantomData<IG>,
-    _crh: PedersenCRHGadget<G, ConstraintF, GG>,
+    _crh: BoweHopwoodPedersenCRHGadget<G, ConstraintF, GG>,
 }
 
-impl<G, I, ConstraintF, GG, IG, W> FixedLengthCRHGadget<PedersenCRHCompressor<G, I, W>, ConstraintF>
+impl<G, I, ConstraintF, GG, IG, W> FixedLengthCRHGadget<BoweHopwoodPedersenCRHCompressor<G, I, W>, ConstraintF>
     for PedersenCRHCompressorGadget<G, I, ConstraintF, GG, IG>
 where
     G: Curve,
@@ -92,14 +92,14 @@ where
     W: PedersenWindow,
 {
     type OutputGadget = IG::OutputGadget;
-    type ParametersGadget = PedersenCRHGadgetParameters<G, W, ConstraintF, GG>;
+    type ParametersGadget = BoweHopwoodPedersenCRHGadgetParameters<G, W, ConstraintF, GG>;
 
     fn check_evaluation_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
     ) -> Result<Self::OutputGadget, SynthesisError> {
-        let result = PedersenCRHGadget::<G, ConstraintF, GG>::check_evaluation_gadget(
+        let result = BoweHopwoodPedersenCRHGadget::<G, ConstraintF, GG>::check_evaluation_gadget(
             cs.ns(|| "PedCRH"),
             parameters,
             input,

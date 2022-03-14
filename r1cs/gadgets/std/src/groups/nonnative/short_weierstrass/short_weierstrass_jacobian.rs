@@ -31,6 +31,7 @@ use std::{
     marker::PhantomData,
     ops::{Add, Mul, Neg},
 };
+use num_traits::{Zero, One};
 
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]

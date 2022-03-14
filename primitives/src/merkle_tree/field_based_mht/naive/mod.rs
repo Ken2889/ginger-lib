@@ -237,10 +237,11 @@ mod test {
         FieldBasedHash,
     };
     use algebra::{
-        fields::tweedle::Fr as Fr, to_bytes, Group, FromBytes, ToBytes, UniformRand,
+        fields::tweedle::Fr as Fr, to_bytes, FromBytes, ToBytes, UniformRand,
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
 
     const TEST_HEIGHT: usize = 5;
 
@@ -350,7 +351,7 @@ mod test {
     ) {
         let mut tree = NaiveMerkleTree::<P>::new(height);
         tree.append(&leaves).unwrap();
-        let root = <P::Data as Group>::zero();
+        let root = P::Data::zero();
         for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.generate_proof(i, leaf).unwrap();
             assert!(!proof.verify(tree.height(), &leaf, &root).unwrap());

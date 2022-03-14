@@ -115,8 +115,8 @@ fn random_multiplication_test<G: Curve>() {
         tmp2.add_assign(&b);
 
         // Affine multiplication
-        let mut tmp3 = G::from_affine(&a_affine).mul_bits(BitIterator::new(s.into_repr()));
-        tmp3.add_assign(&G::from_affine(&b_affine).mul_bits(BitIterator::new(s.into_repr())));
+        let mut tmp3 = G::mul_bits_affine(&a_affine, BitIterator::new(s.into_repr()));
+        tmp3.add_assign(&G::mul_bits_affine(&b_affine, BitIterator::new(s.into_repr())));
 
         assert_eq!(tmp1, tmp2);
         assert_eq!(tmp1, tmp3);
@@ -197,7 +197,7 @@ fn random_transformation_test<G: Curve>() {
             .collect::<Vec<_>>();
 
         for i in &v {
-            assert!(!i.is_normalized());
+            assert!(i.is_normalized());
         }
 
         use rand::distributions::{Distribution, Uniform};

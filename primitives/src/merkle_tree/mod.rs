@@ -426,7 +426,7 @@ pub(crate) fn hash_empty<H: FixedLengthCRH>(
 #[cfg(test)]
 mod test {
     use crate::{
-        crh::{pedersen::*, *},
+        crh::{bowe_hopwood::*, *},
         merkle_tree::*,
     };
     use algebra::curves::tweedle::dee::DeeJacobian;
@@ -434,13 +434,13 @@ mod test {
     use rand_xorshift::XorShiftRng;
 
     #[derive(Clone)]
-    pub(super) struct Window8x256;
-    impl PedersenWindow for Window8x256 {
-        const WINDOW_SIZE: usize = 8;
-        const NUM_WINDOWS: usize = 256;
+    pub(super) struct TestWindow;
+    impl PedersenWindow for TestWindow {
+        const WINDOW_SIZE: usize = 59;
+        const NUM_WINDOWS: usize = 3;
     }
 
-    type H = PedersenCRH<DeeJacobian, Window8x256>;
+    type H = BoweHopwoodPedersenCRH<DeeJacobian, TestWindow>;
 
     struct DeeJacobianMerkleTreeParams;
 

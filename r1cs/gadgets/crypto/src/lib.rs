@@ -16,11 +16,6 @@ extern crate derivative;
 pub mod crh;
 pub use self::crh::*;
 
-#[cfg(feature = "commitment")]
-pub mod commitment;
-#[cfg(feature = "commitment")]
-pub use self::commitment::*;
-
 #[cfg(feature = "merkle_tree")]
 pub mod merkle_tree;
 #[cfg(feature = "merkle_tree")]

@@ -28,6 +28,7 @@ primitives = {path = "../../../primitives"}
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
 r1cs-std = { path = "../std"}
 bench-utils = { path = "../../../bench-utils" }
+num-traits = { version = "0.2", default-features = false }
 
 digest = { version = "0.8", optional = true }
 blake2 = { version = "0.8.1", optional = true }
@@ -40,7 +41,6 @@ derivative = "2.2.0"
 rayon = "1"
 
 [features]
-commitment = ["primitives/commitment", "prf"]
 merkle_tree = ["primitives/merkle_tree"]
 prf = ["digest", "blake2", "ripemd160", "sha2", "hex", "primitives/prf"]
 signature = ["primitives/signature", "digest"]

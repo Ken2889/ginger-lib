@@ -372,10 +372,11 @@ mod test {
     use algebra::{
         biginteger::BigInteger256,
         fields::{tweedle::Fq, tweedle::Fr},
-        to_bytes, FromBytes, Group, SemanticallyValid, ToBytes, UniformRand,
+        to_bytes, FromBytes, SemanticallyValid, ToBytes, UniformRand,
     };
     use rand::{thread_rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
 
     use crate::{
         crh::parameters::{

@@ -95,7 +95,13 @@ pub trait Curve:
     fn add_in_place_affine_many(to_add: &mut [Vec<Self::AffineRep>]);
 
     /// Multiply `self` by the scalar represented by `bits`. 
-    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
+    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self {
+        if self.is_zero() {
+            *self
+        } else {
+            Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
+        }
+    }
 
     /// Multiply an affine point `affine` by the scalar represented by `bits`. 
     fn mul_bits_affine<'a, S: AsRef<[u64]>>(

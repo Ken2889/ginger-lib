@@ -6,12 +6,16 @@ use std::{
     marker::PhantomData,
 };
 
-use super::pedersen::{PedersenCRH, PedersenWindow};
 use crate::crh::FixedLengthCRH;
-use algebra::{biginteger::BigInteger, curves::Curve, fields::PrimeField};
+use algebra::{curves::Curve, fields::{PrimeField, FpParameters}};
 use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: usize = 3;
+
+pub trait PedersenWindow: Clone {
+    const WINDOW_SIZE: usize;
+    const NUM_WINDOWS: usize;
+}
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(bound(deserialize = "G: Curve"))]
@@ -43,24 +47,16 @@ impl<G: Curve, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
 }
 
 impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W> {
-    const INPUT_SIZE_BITS: usize = PedersenCRH::<G, W>::INPUT_SIZE_BITS;
+    const INPUT_SIZE_BITS: usize = W::WINDOW_SIZE * W::NUM_WINDOWS * CHUNK_SIZE;
     type Output = G;
     type Parameters = BoweHopwoodPedersenParameters<G>;
 
     fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, Error> {
-        fn calculate_num_chunks_in_segment<F: PrimeField>() -> usize {
-            let upper_limit = F::modulus_minus_one_div_two();
-            let mut c = 0;
-            let mut range = F::BigInt::from(2u64);
-            while range < upper_limit {
-                range.muln(2);
-                c += 1;
-            }
+        assert_eq!(CHUNK_SIZE, 3);
 
-            c
-        }
-
-        let maximum_num_chunks_in_segment = calculate_num_chunks_in_segment::<G::ScalarField>();
+        // Rough approximation (safe though, as it's an overestimate) of the bound on WINDOW_SIZE described
+        // in section 5.4.1.7 of the Zcash protocol specification.
+        let maximum_num_chunks_in_segment = <G::ScalarField as PrimeField>::Params::CAPACITY as usize/4;
         if W::WINDOW_SIZE > maximum_num_chunks_in_segment {
             return Err(format!(
                 "Bowe-Hopwood hash must have a window size resulting in scalars < (p-1)/2, \
@@ -82,13 +78,17 @@ impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
     }
 
     fn evaluate(parameters: &Self::Parameters, input: &[u8]) -> Result<Self::Output, Error> {
+        assert_eq!(CHUNK_SIZE, 3);
+
         let eval_time = start_timer!(|| "BoweHopwoodPedersenCRH::Eval");
 
-        if (input.len() * 8) > W::WINDOW_SIZE * W::NUM_WINDOWS * CHUNK_SIZE {
+        let input_len = input.len() * 8;
+
+        if input_len > Self::INPUT_SIZE_BITS {
             return Err(Box::new(CryptoError::Other(
                 format!(
-                    "incorrect input length {:?} for window params {:?}x{:?}x{}",
-                    input.len(),
+                    "incorrect input length of {:?} bits for window params {:?}x{:?}x{}",
+                    input_len,
                     W::WINDOW_SIZE,
                     W::NUM_WINDOWS,
                     CHUNK_SIZE,
@@ -97,26 +97,10 @@ impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
             )));
         }
 
-        let mut padded_input = Vec::with_capacity(input.len());
-        let input = bytes_to_bits(input);
         // Pad the input if it is not the current length.
-        padded_input.extend_from_slice(&input);
-        if input.len() % CHUNK_SIZE != 0 {
-            let current_length = input.len();
-            for _ in 0..(CHUNK_SIZE - current_length % CHUNK_SIZE) {
-                padded_input.push(false);
-            }
-        }
-
-        if padded_input.len() % CHUNK_SIZE != 0 {
-            Err(Box::new(CryptoError::Other(
-                format!(
-                    "Input is not multiple of the chunk size. Input len: {}, chunk size: {}",
-                    padded_input.len(),
-                    CHUNK_SIZE,
-                )
-                .to_owned(),
-            )))?
+        let mut padded_input = bytes_to_bits(input);
+        if input_len < Self::INPUT_SIZE_BITS {
+            padded_input.append(&mut vec![false; Self::INPUT_SIZE_BITS - input_len]);
         }
 
         if parameters.generators.len() != W::NUM_WINDOWS {
@@ -140,8 +124,6 @@ impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
                 ))))?
             }
         }
-
-        assert_eq!(CHUNK_SIZE, 3);
 
         // Compute sum of h_i^{sum of (1-2*c_{i,j,2})*(1+c_{i,j,0}+2*c_{i,j,1})*2^{4*(j-1)} for all j in segment} for all i.
         // Described in section 5.4.1.7 in the Zcash protocol specification.
@@ -205,10 +187,7 @@ impl<G: Curve> BoweHopwoodPedersenParameters<G> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        crh::{bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow},
-        FixedLengthCRH,
-    };
+    use super::*;
     use algebra::curves::tweedle::dee::DeeJacobian;
     use rand::thread_rng;
 
@@ -217,8 +196,8 @@ mod test {
         #[derive(Clone)]
         struct TestWindow {}
         impl PedersenWindow for TestWindow {
-            const WINDOW_SIZE: usize = 90;
-            const NUM_WINDOWS: usize = 8;
+            const WINDOW_SIZE: usize = 3;
+            const NUM_WINDOWS: usize = 3;
         }
 
         let rng = &mut thread_rng();

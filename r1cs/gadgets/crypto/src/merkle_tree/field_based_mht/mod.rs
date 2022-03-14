@@ -406,7 +406,7 @@ where
 mod test {
     use super::*;
     use crate::crh::TweedleFrPoseidonHashGadget;
-    use algebra::{fields::tweedle::Fr, Group};
+    use algebra::fields::tweedle::Fr;
     use primitives::crh::TweedleFrPoseidonHash;
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
@@ -414,6 +414,7 @@ mod test {
     use r1cs_std::instantiated::tweedle::FrGadget;
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
 
     #[derive(Clone)]
     struct TweedleDeeFieldBasedMerkleTreeParams;

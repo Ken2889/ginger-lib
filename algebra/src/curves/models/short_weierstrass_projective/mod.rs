@@ -745,13 +745,6 @@ impl<P: Parameters> Curve for Projective<P> {
     /// Be sure to use it in applications where timing (or similar) attacks
     /// are not possible.
     /// TODO: Add a side-channel secure variant.
-    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self {
-        if self.is_zero() {
-            return *self;
-        }
-        Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
-    }
-
     fn mul_bits_affine<'a, S: AsRef<[u64]>>(
         affine: &'a Self::AffineRep,
         bits: BitIterator<S>,

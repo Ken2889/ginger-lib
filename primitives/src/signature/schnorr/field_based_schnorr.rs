@@ -2,7 +2,7 @@ use crate::{
     compute_truncation_size, crh::FieldBasedHash, signature::FieldBasedSignatureScheme, Error,
 };
 use algebra::{
-    convert, leading_zeros, serialize::*, FromBytes, FromBytesChecked, Group, PrimeField,
+    convert, leading_zeros, serialize::*, FromBytes, FromBytesChecked, PrimeField,
     Curve, SemanticallyValid, ToBits, ToBytes, ToConstraintField, UniformRand,
 };
 use rand::distributions::{Distribution, Standard};

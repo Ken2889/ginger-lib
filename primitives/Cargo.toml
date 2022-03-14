@@ -40,7 +40,6 @@ serde = { version = "1.0.117", features = ["derive"]}
 [features]
 llvm_asm = ["algebra/llvm_asm"]
 
-commitment = ["digest", "blake2"]
 merkle_tree = ["algebra/derive"]
 prf = ["digest", "blake2"]
 signature = ["digest", "blake2", "algebra/derive"]

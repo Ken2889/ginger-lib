@@ -4,7 +4,7 @@ use rand::Rng;
 use std::{fmt::Debug, hash::Hash, marker::PhantomData};
 
 use super::{
-    pedersen::{PedersenCRH, PedersenParameters, PedersenWindow},
+    bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters, PedersenWindow},
     FixedLengthCRH,
 };
 use algebra::{
@@ -35,29 +35,29 @@ impl<P: TEModelParameters> InjectiveMap<TEExtended<P>> for TECompressor {
     }
 }
 
-pub struct PedersenCRHCompressor<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> {
+pub struct BoweHopwoodPedersenCRHCompressor<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> {
     _group: PhantomData<G>,
     _compressor: PhantomData<I>,
-    _crh: PedersenCRH<G, W>,
+    _crh: BoweHopwoodPedersenCRH<G, W>,
 }
 
 impl<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> FixedLengthCRH
-    for PedersenCRHCompressor<G, I, W>
+    for BoweHopwoodPedersenCRHCompressor<G, I, W>
 {
-    const INPUT_SIZE_BITS: usize = PedersenCRH::<G, W>::INPUT_SIZE_BITS;
+    const INPUT_SIZE_BITS: usize = BoweHopwoodPedersenCRH::<G, W>::INPUT_SIZE_BITS;
     type Output = I::Output;
-    type Parameters = PedersenParameters<G>;
+    type Parameters = BoweHopwoodPedersenParameters<G>;
 
     fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, Error> {
-        let time = start_timer!(|| format!("PedersenCRHCompressor::Setup"));
-        let params = PedersenCRH::<G, W>::setup(rng);
+        let time = start_timer!(|| format!("BoweHopwoodPedersenCRHCompressor::Setup"));
+        let params = BoweHopwoodPedersenCRH::<G, W>::setup(rng);
         end_timer!(time);
         params
     }
 
     fn evaluate(parameters: &Self::Parameters, input: &[u8]) -> Result<Self::Output, Error> {
-        let eval_time = start_timer!(|| "PedersenCRHCompressor::Eval");
-        let result = I::injective_map(&PedersenCRH::<G, W>::evaluate(parameters, input)?)?;
+        let eval_time = start_timer!(|| "BoweHopwoodPedersenCRHCompressor::Eval");
+        let result = I::injective_map(&BoweHopwoodPedersenCRH::<G, W>::evaluate(parameters, input)?)?;
         end_timer!(eval_time);
         Ok(result)
     }
