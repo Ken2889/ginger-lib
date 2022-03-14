@@ -949,11 +949,12 @@ mod test {
     use super::{AllocatedBit, Boolean};
     use crate::prelude::*;
     use algebra::{
-        fields::tweedle::Fr, BitIterator, Field, Group, PrimeField, ToBits, UniformRand,
+        fields::tweedle::Fr, BitIterator, Field, PrimeField, ToBits, UniformRand,
     };
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use num_traits::{Zero, One};
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
     use std::str::FromStr;

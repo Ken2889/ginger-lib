@@ -586,10 +586,10 @@ mod test {
 
     fn get_test_fs_rng<G: Curve, D: Digest + 'static>(
     ) -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle {
-        let mut seed_builder = <<DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
+        let mut seed_builder = <<DomainExtendedIpaPc<G, D> as PolynomialCommitment<G>>::RandomOracle as FiatShamirRng>::Seed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize();
-        <DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>> as PolynomialCommitment<
+        <DomainExtendedIpaPc<G, D> as PolynomialCommitment<
             G,
         >>::RandomOracle::from_seed(fs_rng_seed)
     }

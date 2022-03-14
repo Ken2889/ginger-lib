@@ -26,11 +26,11 @@ use std::ops::{Deref, DerefMut};
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MarlinProof<G: Curve, D: Digest + 'static>(
-    pub Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
+    pub Proof<G, DomainExtendedIpaPc<G, D>>,
 );
 
 impl<G: Curve, D: Digest> Deref for MarlinProof<G, D> {
-    type Target = Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>;
+    type Target = Proof<G, DomainExtendedIpaPc<G, D>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -105,7 +105,7 @@ where
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
 pub struct SimpleMarlinPCDVerifierKey<'a, G: Curve, D: Digest + 'static>(
-    pub &'a MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
+    pub &'a MarlinVerifierKey<G, DomainExtendedIpaPc<G, D>>,
     pub &'a DLogVerifierKey<G>,
 );
 
@@ -132,7 +132,7 @@ where
         // Verify the IOP/AHP
         let (query_set, evaluations, labeled_comms, mut fs_rng) = Marlin::<
             G,
-            DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>,
+            DomainExtendedIpaPc<G, D>,
             D,
         >::verify_iop(
             &vk.1,

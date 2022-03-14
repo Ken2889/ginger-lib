@@ -10,6 +10,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::marker::PhantomData;
+use num_traits::Zero;
 
 #[allow(dead_code)]
 pub struct FieldBasedSchnorrSignatureScheme<F: PrimeField, G: Curve, H: FieldBasedHash> {
@@ -214,13 +215,11 @@ impl<F: PrimeField, G: Curve + ToConstraintField<F>, H: FieldBasedHash<Data = F>
                 break (r);
             }
         };
-        // TODO: check if normalization should be performed here
         let public_key = G::prime_subgroup_generator().mul(&secret_key).normalize();
         (FieldBasedSchnorrPk(public_key), secret_key)
     }
 
     fn get_public_key(sk: &Self::SecretKey) -> Self::PublicKey {
-        // TODO: check if normalization should be performed here
         FieldBasedSchnorrPk(G::prime_subgroup_generator().mul(sk).normalize())
     }
 

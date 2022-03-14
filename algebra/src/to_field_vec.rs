@@ -3,13 +3,14 @@ use crate::{
         Field, FpParameters, PrimeField,
     },
     curves::{
-        Curve,
         models::{SWModelParameters, TEModelParameters},
         short_weierstrass_jacobian::Jacobian,
         short_weierstrass_projective::Projective,
         twisted_edwards_extended::TEExtended,
-    },
+        Curve,
+    }
 };
+use std::convert::TryInto;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -47,7 +48,8 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?;
+        // TODO: Fix this as the into_affine() calls results in an error if called on Self::zero()
+        let affine: <Jacobian<M> as Curve>::AffineRep = (*self).try_into()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);
@@ -61,7 +63,8 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?; // Affine coordinates are defined even if `self` is the neutral elements
+        // TODO: Fix this as the into_affine() calls results in an error if called on Self::zero()
+        let affine: <Projective<M> as Curve>::AffineRep = (*self).try_into()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);
@@ -75,7 +78,7 @@ where
 {
     #[inline]
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        let affine = self.into_affine()?;
+        let affine: <TEExtended<M> as Curve>::AffineRep = (*self).try_into()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);

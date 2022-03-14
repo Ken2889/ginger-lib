@@ -43,6 +43,8 @@ use poly_commit::{
 use rand::RngCore;
 use std::marker::PhantomData;
 
+pub(crate) type DomainExtendedIpaPc<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>;
+
 /// FinalDarlin proof system. It is simply a (coboundary) Marlin SNARK of a dedicated
 /// recursive `PCDCircuit`.
 pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;

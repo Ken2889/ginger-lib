@@ -69,10 +69,10 @@ rustc_version = "0.4.0"
 name = "fft_tweedle"
 path = "benches/criterion_fft/fft_tweedle.rs"
 harness = false
-required-features = ["parallel", "fft", "bench-utils"]
+required-features = ["parallel", "fft", "bench-utils", "tweedle"]
 
 [[bench]]
 name = "variable_msm_tweedle"
 path = "benches/criterion_msm/variable_msm_tweedle.rs"
 harness = false
-required-features = ["parallel", "fft", "bench-utils"]
+required-features = ["parallel", "fft", "bench-utils", "tweedle"]

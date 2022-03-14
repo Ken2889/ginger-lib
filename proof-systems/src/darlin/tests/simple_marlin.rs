@@ -87,7 +87,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 #[allow(dead_code)]
 pub fn generate_test_pcd<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
-    marlin_pk: &MarlinProverKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>,
+    marlin_pk: &MarlinProverKey<G, DomainExtendedIpaPc<G, D>>,
     num_constraints: usize,
     zk: bool,
     rng: &mut R,
@@ -107,7 +107,7 @@ pub fn generate_test_pcd<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     };
 
     let proof =
-        Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>, D>::prove(
+        Marlin::<G, DomainExtendedIpaPc<G, D>, D>::prove(
             marlin_pk,
             pc_ck,
             circ,
@@ -130,7 +130,7 @@ pub fn generate_test_data<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     rng: &mut R,
 ) -> (
     Vec<SimpleMarlinPCD<'a, G, D>>,
-    Vec<MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>>>,
+    Vec<MarlinVerifierKey<G, DomainExtendedIpaPc<G, D>>>,
 ) {
     // Trim committer key and verifier key
     let config = PCDParameters { segment_size };
@@ -146,7 +146,7 @@ pub fn generate_test_data<'a, G: Curve, D: Digest + 'a, R: RngCore>(
 
     let (index_pk, index_vk) = Marlin::<
         G,
-        DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>,
+        DomainExtendedIpaPc<G, D>,
         D,
     >::circuit_specific_setup(&committer_key, circ.clone())
     .unwrap();

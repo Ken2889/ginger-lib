@@ -1,7 +1,7 @@
 use crate::crh::FieldBasedHash;
 use crate::merkle_tree::*;
 use crate::Error;
-use algebra::Group;
+use num_traits::Zero;
 
 /// Merkle Tree whose leaves are field elements, best with hash functions
 /// that works with field elements, such as Poseidon. This implementation
@@ -226,7 +226,7 @@ pub(crate) fn hash_inner_node<H: FieldBasedHash>(
 }
 
 pub(crate) fn hash_empty<H: FieldBasedHash>() -> Result<H::Data, Error> {
-    Ok(<H::Data as Group>::zero())
+    Ok(H::Data::zero())
 }
 
 #[cfg(test)]

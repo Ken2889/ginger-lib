@@ -14,6 +14,7 @@ use std::{
     io::{Result as IoResult, Write},
     marker::PhantomData,
 };
+use num_traits::{Zero, One};
 
 pub mod field_based_schnorr;
 

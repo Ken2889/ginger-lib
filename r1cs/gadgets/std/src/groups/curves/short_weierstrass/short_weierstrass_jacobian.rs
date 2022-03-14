@@ -9,6 +9,7 @@ use algebra::{
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};
+use num_traits::{Zero, One};
 
 use crate::{
     groups::{check_mul_bits_fixed_base_inputs, check_mul_bits_inputs},

@@ -14,6 +14,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::marker::PhantomData;
+use num_traits::Zero;
 
 pub struct FieldBasedEcVrf<F: PrimeField, G: Curve, FH: FieldBasedHash, GH: FixedLengthCRH> {
     _field: PhantomData<F>,

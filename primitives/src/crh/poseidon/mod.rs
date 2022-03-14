@@ -10,6 +10,8 @@ use crate::{
     CryptoError, Error,
 };
 
+use num_traits::Zero;
+
 pub mod batched_crh;
 
 pub mod parameters;

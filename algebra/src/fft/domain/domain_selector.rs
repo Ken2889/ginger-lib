@@ -44,41 +44,42 @@ pub fn get_best_evaluation_domain<F: PrimeField>(
     }
 }
 
-#[cfg(test)]
-mod test {
+// TODO: Uncomment this test when we will have a field with mixed FFT params defined
+// #[cfg(test)]
+// mod test {
 
-    #[cfg(feature = "tweedle")]
-    #[test]
-    fn test_tweedle_best_evaluation_domain() {
-        use crate::domain::*;
-        use crate::fields::tweedle::fr::Fr;
-        //The basic domain size increases with 2^k, with k <= 15, while
-        //the mixed domain increases with 2^k * 5^s, with k <= 15 and s <= 2
+//     #[cfg(feature = "tweedle")]
+//     #[test]
+//     fn test_tweedle_best_evaluation_domain() {
+//         use crate::domain::*;
+//         use crate::fields::tweedle::fr::Fr;
+//         //The basic domain size increases with 2^k, with k <= 15, while
+//         //the mixed domain increases with 2^k * 5^s, with k <= 15 and s <= 2
 
-        let mut domain_size = 2048;
-        let mut domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
+//         let mut domain_size = 2048;
+//         let mut domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
 
-        //Expected Basic to be chosen
-        assert_eq!(domain.size(), 2048, "Unexpected domain size");
+//         //Expected Basic to be chosen
+//         assert_eq!(domain.size(), 2048, "Unexpected domain size");
 
-        domain_size = 5000;
-        domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        //Expected Mixed to be chosen
-        assert_eq!(domain.size(), 8192, "Unexpected domain size");
+//         domain_size = 5000;
+//         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
+//         //Expected Mixed to be chosen
+//         assert_eq!(domain.size(), 8192, "Unexpected domain size");
 
-        //Limit for the basic radix2 domain support
-        domain_size = 32768;
-        domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        assert_eq!(domain.size(), 32768, "Unexpected domain size");
+//         //Limit for the basic radix2 domain support
+//         domain_size = 32768;
+//         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
+//         assert_eq!(domain.size(), 32768, "Unexpected domain size");
 
-        domain_size = 32769;
-        //Expected Mixed to be chosen
-        domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        assert_eq!(domain.size(), 65536, "Unexpected domain size");
+//         domain_size = 32769;
+//         //Expected Mixed to be chosen
+//         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
+//         assert_eq!(domain.size(), 65536, "Unexpected domain size");
 
-        //Limit for the mixed radix2 domain support
-        domain_size = 819200;
-        domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
-        assert_eq!(domain.size(), 1048576, "Unexpected domain size");
-    }
-}
+//         //Limit for the mixed radix2 domain support
+//         domain_size = 819200;
+//         domain = get_best_evaluation_domain::<Fr>(domain_size).unwrap();
+//         assert_eq!(domain.size(), 1048576, "Unexpected domain size");
+//     }
+// }

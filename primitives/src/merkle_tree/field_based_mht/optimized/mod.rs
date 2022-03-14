@@ -3,8 +3,9 @@ use crate::{
     FieldBasedHash, FieldBasedHashParameters, FieldBasedMHTPath, FieldBasedMerkleTree,
     FieldBasedMerkleTreePath, MerkleTreeError,
 };
-use algebra::{serialize::*, Group};
+use algebra::serialize::*;
 use std::marker::PhantomData;
+use num_traits::Zero;
 
 /// An implementation of FieldBasedMerkleTree, optimized in time and memory,
 /// and able to support any BatchFieldBasedHash and Merkle arity.
@@ -97,7 +98,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedOptimizedMHT<T> {
         // Initialize to zero all tree nodes
         let mut array_nodes = Vec::with_capacity(tree_size);
         for _i in 0..tree_size {
-            array_nodes.push(<T::Data as Group>::zero());
+            array_nodes.push(T::Data::zero());
         }
 
         // Decide optimal processing block size based on the number of available
@@ -118,7 +119,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedOptimizedMHT<T> {
         }
 
         Ok(Self {
-            root: { <T::Data as Group>::zero() },
+            root: { T::Data::zero() },
             array_nodes: { array_nodes },
             processing_step: { processing_block_size },
             initial_pos: { initial_pos },
@@ -214,7 +215,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedOptimizedMHT<T> {
 
         // Compute the hash of the non-all-empty chunks
         if to_hash.len() != 0 {
-            let mut to_hash_out = vec![<T::Data as Group>::zero(); to_hash.len() / T::MERKLE_ARITY];
+            let mut to_hash_out = vec![T::Data::zero(); to_hash.len() / T::MERKLE_ARITY];
             <T::BH as BatchFieldBasedHash>::batch_evaluate_in_place(
                 to_hash.as_mut_slice(),
                 to_hash_out.as_mut_slice(),
@@ -300,7 +301,7 @@ impl<T: BatchFieldBasedMerkleTreeParameters> FieldBasedMerkleTree for FieldBased
         // Reset all nodes values
         self.array_nodes
             .iter_mut()
-            .for_each(|leaf| *leaf = <T::Data as Group>::zero());
+            .for_each(|leaf| *leaf = T::Data::zero());
 
         // Reset finalized value
         self.finalized = false;
@@ -631,7 +632,7 @@ mod test {
 
             // Push them in a Naive Poseidon Merkle Tree and get the root
             leaves.extend_from_slice(
-                vec![<T::Data as Group>::zero(); max_leaves - num_leaves].as_slice(),
+                vec![T::Data::zero(); max_leaves - num_leaves].as_slice(),
             );
             let mut naive_mt = NaiveMerkleTree::<T>::new(max_height);
             naive_mt.append(leaves.as_slice()).unwrap();
@@ -653,7 +654,7 @@ mod test {
             // Make half of the added leaves empty
             let mut leaves = Vec::with_capacity(num_leaves);
             for _ in 0..num_leaves / 2 {
-                leaves.push(<T::Data as Group>::zero())
+                leaves.push(T::Data::zero())
             }
             for _ in num_leaves / 2..num_leaves {
                 leaves.push(T::Data::rand(&mut rng))
@@ -661,7 +662,7 @@ mod test {
 
             // Push them in a Naive Poseidon Merkle Tree and get the root
             leaves.extend_from_slice(
-                vec![<T::Data as Group>::zero(); max_leaves - num_leaves].as_slice(),
+                vec![T::Data::zero(); max_leaves - num_leaves].as_slice(),
             );
             let mut naive_mt = NaiveMerkleTree::<T>::new(max_height);
             naive_mt.append(leaves.as_slice()).unwrap();
@@ -715,7 +716,7 @@ mod test {
             leaves.push(leaf);
         }
         for _ in num_leaves / 2..num_leaves {
-            let leaf = <T::Data as Group>::zero();
+            let leaf = T::Data::zero();
             leaves.push(leaf);
         }
 

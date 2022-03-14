@@ -3,6 +3,7 @@ use algebra::{BigInteger, Field, FpParameters, Group, PrimeField};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use std::{borrow::Borrow, fmt::Debug};
+use num_traits::{Zero, One};
 
 pub mod curves;
 
