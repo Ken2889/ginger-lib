@@ -25,6 +25,7 @@ pub mod tests;
 
 pub use self::models::*;
 
+/// Projective representation of an elliptic curve point.
 pub trait Curve:
     Group
     + Copy
@@ -34,7 +35,10 @@ pub trait Curve:
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
+    /// The finite field over which this curve is defined.
     type BaseField: Field + SquareRootField;
+
+    /// The affine representation of points on this curve.
     type AffineRep: Sized
         + Sync
         + Copy
@@ -50,28 +54,35 @@ pub trait Curve:
         + Neg<Output = Self::AffineRep>
         + TryFrom<Self, Error = Error>;
 
+    /// Convert, if possible, `self` to its affine equivalent.
     #[inline]
     fn into_affine(&self) -> Result<Self::AffineRep, Error> {
         TryInto::<Self::AffineRep>::try_into(*self)
     }
 
+
+    /// Construct a `self` point from its affine representation.
     #[inline]
     fn from_affine<'a>(other: &'a Self::AffineRep) -> Self {
         Into::<Self>::into(*other)
     }
 
-    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
-        vec_affine
-            .iter()
-            .map(|&affine| affine.into())
-            .collect::<Vec<_>>()
-    }
-
+    /// Convert, if possible, a batch of `self` points to their affine equivalent.
+    #[inline]
     fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error> {
         vec_self
             .iter()
             .map(|&projective| projective.into_affine())
             .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Construct `self` points from a batch of their affine representation.
+    #[inline]
+    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
+        vec_affine
+            .iter()
+            .map(|&affine| affine.into())
+            .collect::<Vec<_>>()
     }
 
     /// Add an affine point `other` to `self`, using mixed addition formulas.
@@ -92,21 +103,25 @@ pub trait Curve:
         bits: BitIterator<S>,
     ) -> Self;
 
-    /// Multiplies this element by the cofactor.
+    /// Multiply `self` by the cofactor.
     fn scale_by_cofactor(&self) -> Self;
 
-    /// Multiplies this element by the inverse of the cofactor in
-    /// `Self::ScalarField`.
+    /// Multiply `self` by the inverse of the cofactor in `Self::ScalarField`.
     fn scale_by_cofactor_inv(&self) -> Self;
 
-    fn is_normalized(&self) -> bool;
-
+    /// Normalize `self` so that conversion to affine is cheap. Output the normalized point.
     fn normalize(&self) -> Self;
 
+    /// Normalize `self` so that conversion to affine is cheap.
     fn normalize_assign(&mut self);
 
+    /// Return true if `self` is normalized, false otherwise.
+    fn is_normalized(&self) -> bool;
+
+    /// Normalize a slice of projective elements so that conversion to affine is cheap.
     fn batch_normalization(v: &mut [Self]);
 
+    /// Normalize a slice of projective elements and outputs a vector containing the affine equivalents.
     fn batch_normalization_into_affine(mut v: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
         Self::batch_normalization(v.as_mut_slice());
         Self::batch_into_affine(v.as_slice())
@@ -148,12 +163,17 @@ pub trait Curve:
     fn from_random_bytes(bytes: &[u8]) -> Option<Self>;
 }
 
+/// The `EndoMulCurve` trait for curves that have a non-trivial endomorphism
+/// `Phi` of the form `Phi(x,y) = (zeta*x,y)`.
 pub trait EndoMulCurve: Curve {
 
+    /// The curve parameters relevant for the endomorphism.
     type Params: EndoMulParameters<BaseField = Self::BaseField, ScalarField = Self::ScalarField>;
 
+    /// Apply `Phi`
     fn apply_endomorphism(&self) -> Self;
 
+    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent scalar
     fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error> {
         let mut a: Self::ScalarField = 2u64.into();
         let mut b: Self::ScalarField = 2u64.into();
@@ -186,8 +206,8 @@ pub trait EndoMulCurve: Curve {
         Ok(a.mul(Self::Params::ENDO_SCALAR) + &b)
     }
 
-    /// Endomorphism-based multiplication of a curve point
-    /// with a scalar in little-endian endomorphism representation.
+    /// Endomorphism-based multiplication of a curve point with a scalar
+    /// in little-endian endomorphism representation.
     fn endo_mul(&self, bits: Vec<bool>) -> Result<Self, Error> {
         let mut bits = bits;
         if bits.len() % 2 == 1 {
