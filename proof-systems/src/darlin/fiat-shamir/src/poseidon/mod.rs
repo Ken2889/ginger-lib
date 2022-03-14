@@ -22,10 +22,9 @@ pub struct PoseidonFSRng<
     P: PoseidonParameters<Fr = F>,
     SB: SBox<Field = F, Parameters = P>,
 > {
-    state: Vec<F>,
-    pending_inputs: Vec<F>,
-    pending_outputs: Vec<F>,
-    capacity: usize,
+    pub(crate) state: Vec<F>,
+    pub(crate) pending_inputs: Vec<F>,
+    pub(crate) pending_outputs: Vec<F>,
     _parameters: PhantomData<P>,
     _sbox: PhantomData<SB>,
 }
@@ -79,7 +78,7 @@ where
 
         // Push RATE many elements from the state into the output buffer
         self.pending_outputs
-            .extend_from_slice(&self.state[..self.capacity]);
+            .extend_from_slice(&self.state[..P::R]);
     }
 
     pub(crate) fn get_element(&mut self) -> F {
@@ -136,12 +135,10 @@ where
         for i in 0..P::T {
             state.push(P::AFTER_ZERO_PERM[i]);
         }
-        let capacity = P::T - P::R;
         Self {
             state,
             pending_inputs: Vec::new(),
-            pending_outputs: Vec::with_capacity(capacity),
-            capacity,
+            pending_outputs: Vec::with_capacity(P::R),
             _parameters: PhantomData,
             _sbox: PhantomData,
         }
@@ -251,7 +248,7 @@ where
 
     fn set_state(&mut self, state: Self::State) -> Result<(), Error> {
         let (state, pending_inputs, pending_outputs) = state;
-        if state.len() != P::T || pending_outputs.len() > self.capacity {
+        if state.len() != P::T || pending_outputs.len() > P::R {
             return Err(Error::BadFiatShamirInitialization(
                 "Attempt to set an invalid state".to_string(),
             ));
@@ -290,6 +287,50 @@ mod test {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
+    fn test_permutation_with_poseidon_fs<F, P, SB, const N: usize>()
+    where
+        F: PrimeField,
+        P: PoseidonParameters<Fr = F>,
+        SB: SBox<Field = F, Parameters = P>,
+    {
+        assert!(P::R > 1);
+        // Initialize Poseidon
+        let mut fs_rng = PoseidonFSRng::<F, P, SB>::default();
+        let mut prev = fs_rng.state.clone();
+
+        // Get a challenge and trigger a permutation
+        fs_rng.get_challenge::<N>().unwrap();
+        let mut curr = fs_rng.state.clone();
+        assert_ne!(prev, curr); // State has changed
+        prev = curr;
+        assert_eq!(fs_rng.pending_outputs.len(), P::R - 1);
+
+        for i in 1..P::R {
+            fs_rng.get_challenge::<N>().unwrap();
+            curr = fs_rng.state.clone();
+            // State shouldn't change as when we call get_challenge() we save
+            // up to RATE elements from the state to be used for subsequent
+            // get_challenge() calls
+            assert_eq!(prev, curr);
+            prev = curr;
+            assert_eq!(fs_rng.pending_outputs.len(), P::R - (i + 1));
+        }
+
+        assert_eq!(fs_rng.pending_outputs.len(), 0);
+
+        // When the buffered RATE outputs are over, a new permutation is triggered
+        // when we ask for further challenges
+        fs_rng.get_challenge::<N>().unwrap();
+        curr = fs_rng.state.clone();
+        assert_ne!(prev, curr);
+        assert_eq!(fs_rng.pending_outputs.len(), P::R - 1);
+
+        // However, when we record new data, pending outputs are cleared
+        fs_rng.record::<F, _>("TEST_RECORD").unwrap();
+        assert!(fs_rng.pending_outputs.is_empty());
+        assert_eq!(fs_rng.pending_inputs.len(), 1);
+    }
+
     #[test]
     fn test_poseidon_sponge_tweedle_fr() {
         let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
@@ -297,6 +338,7 @@ mod test {
         fs_rng_seed_builder_test::<TweedleFq, TweedleFrPoseidonFSRng, 128>();
         fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(rng);
         fs_rng_consistency_test::<TweedleFrPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(rng);
+        test_permutation_with_poseidon_fs::<TweedleFr, TweedleFrPoseidonParameters, TweedleFrQuinticSbox, 128>();
     }
 
     #[test]
@@ -306,5 +348,6 @@ mod test {
         fs_rng_seed_builder_test::<TweedleFr, TweedleFqPoseidonFSRng, 128>();
         fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFq, TweedleFr, _, 128>(rng);
         fs_rng_consistency_test::<TweedleFqPoseidonFSRng, TweedleFr, TweedleFq, _, 128>(rng);
+        test_permutation_with_poseidon_fs::<TweedleFq, TweedleFqPoseidonParameters, TweedleFqQuinticSbox, 128>();
     }
 }

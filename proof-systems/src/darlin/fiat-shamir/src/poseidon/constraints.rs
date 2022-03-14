@@ -26,7 +26,6 @@ pub struct DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     pub(crate) state: Vec<FpGadget<ConstraintF>>,
     pub(crate) pending_inputs: Vec<FpGadget<ConstraintF>>,
     pub(crate) pending_outputs: Vec<FpGadget<ConstraintF>>,
-    capacity: usize,
     _parameters: PhantomData<P>,
     _density_optimized_parameters: PhantomData<DOP>,
 }
@@ -61,7 +60,7 @@ where
 
         // Push RATE many elements from the state into the output buffer
         self.pending_outputs
-            .extend_from_slice(&self.state[..self.capacity]);
+            .extend_from_slice(&self.state[..P::R]);
 
         Ok(())
     }
@@ -136,13 +135,11 @@ where
             );
             state.push(elem);
         }
-        let capacity = P::T - P::R;
 
         Ok(Self {
             state,
             pending_inputs: Vec::new(),
-            pending_outputs: Vec::with_capacity(capacity),
-            capacity,
+            pending_outputs: Vec::with_capacity(P::R),
             _parameters: PhantomData,
             _density_optimized_parameters: PhantomData,
         })
@@ -164,13 +161,10 @@ where
         let state =
             Vec::<FpGadget<ConstraintF>>::from_value(cs.ns(|| "hardcode initial state"), &state);
 
-        let capacity = P::T - P::R;
-
         Ok(Self {
             state,
             pending_inputs: Vec::new(),
-            pending_outputs: Vec::with_capacity(capacity),
-            capacity,
+            pending_outputs: Vec::with_capacity(P::T - P::R),
             _parameters: PhantomData,
             _density_optimized_parameters: PhantomData,
         })
@@ -247,10 +241,61 @@ pub type TweedleFqPoseidonFSRngGadget = DensityOptimizedPoseidonQuinticSBoxFSRng
 
 #[cfg(test)]
 mod test {
+    use r1cs_core::{ConstraintSystem, SynthesisMode};
+    use r1cs_std::fields::FieldGadget;
     use crate::constraints::test::{fs_rng_consistency_test, test_native_result};
     use crate::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use super::*;
+
+    fn test_permutation_with_poseidon_fs<ConstraintF, P, DOP, const N: usize>()
+    where
+        ConstraintF: PrimeField,
+        P: PoseidonParameters<Fr = ConstraintF>,
+        DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
+    {
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+
+        // Initialize Poseidon
+        let mut fs_rng = DensityOptimizedPoseidonQuinticSBoxFSRngGadget::<ConstraintF, P, DOP>::init(
+            cs.ns(|| "init poseidon fs_rng")
+        ).unwrap();
+        let mut prev = fs_rng.state.clone();
+
+        // Get a challenge and trigger a permutation
+        fs_rng.enforce_get_challenge::<_, N>(cs.ns(|| "get challenge 0")).unwrap();
+        let mut curr = fs_rng.state.clone();
+        assert_ne!(prev, curr); // State has changed
+        prev = curr;
+        assert_eq!(fs_rng.pending_outputs.len(), P::R - 1);
+
+        for i in 1..P::R {
+            fs_rng.enforce_get_challenge::<_, N>(cs.ns(|| format!("get challenge {}", i))).unwrap();
+            curr = fs_rng.state.clone();
+            // State shouldn't change as when we call get_challenge() we save
+            // up to RATE elements from the state to be used for subsequent
+            // get_challenge() calls
+            assert_eq!(prev, curr);
+            prev = curr;
+            assert_eq!(fs_rng.pending_outputs.len(), P::R - (i + 1));
+        }
+
+        assert_eq!(fs_rng.pending_outputs.len(), 0);
+
+        // When the buffered RATE outputs are over, a new permutation is triggered
+        // when we ask for further challenges
+        fs_rng.enforce_get_challenge::<_, N>(cs.ns(|| format!("get challenge {}", P::R))).unwrap();
+        curr = fs_rng.state.clone();
+        assert_ne!(prev, curr);
+        assert_eq!(fs_rng.pending_outputs.len(), P::R - 1);
+
+        // However, when we record new data, pending outputs are cleared
+        let test_record = FpGadget::<ConstraintF>::one(cs.ns(|| "alloc one as test fe to record")).unwrap();
+        fs_rng.enforce_record(cs.ns(|| "test record"), test_record).unwrap();
+        assert!(fs_rng.pending_outputs.is_empty());
+        assert_eq!(fs_rng.pending_inputs.len(), 1);
+    }
 
     #[test]
     fn test_tweedle_dum() {
@@ -270,6 +315,12 @@ mod test {
             }
         }
         fs_rng_consistency_test::<TweedleDum, TweedleFrPoseidonFSRngGadget, _, 128>(rng);
+        test_permutation_with_poseidon_fs::<
+            TweedleFr,
+            TweedleFrPoseidonParameters,
+            TweedleFrDensityOptimizedPoseidonParameters,
+            128
+        >()
     }
 
     #[test]
@@ -290,5 +341,11 @@ mod test {
             }
         }
         fs_rng_consistency_test::<TweedleDee, TweedleFqPoseidonFSRngGadget, _, 128>(rng);
+        test_permutation_with_poseidon_fs::<
+            TweedleFq,
+            TweedleFqPoseidonParameters,
+            TweedleFqDensityOptimizedPoseidonParameters,
+            128
+        >()
     }
 }
