@@ -193,11 +193,17 @@ fn random_transformation_test<G: Curve>() {
     // Batch normalization
     for _ in 0..10 {
         let mut v = (0..ITERATIONS)
-            .map(|_| G::rand(&mut rng))
+            .map(|_| {
+                let mut r = G::rand(&mut rng);
+                while r.is_normalized() {
+                    r.double_in_place();
+                }
+                r
+            })
             .collect::<Vec<_>>();
 
         for i in &v {
-            assert!(i.is_normalized());
+            assert!(!i.is_normalized());
         }
 
         use rand::distributions::{Distribution, Uniform};
@@ -208,9 +214,7 @@ fn random_transformation_test<G: Curve>() {
         }
         for _ in 0..5 {
             let s = between.sample(&mut rng);
-            if v[s].is_zero() {
-                assert!(v[s].try_into().is_err());
-            } else {
+            if !v[s].is_zero() {
                 v[s] = G::from_affine(&v[s].try_into().unwrap());
             }
         }

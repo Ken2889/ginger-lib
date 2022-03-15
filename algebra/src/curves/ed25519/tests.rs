@@ -23,24 +23,15 @@ fn test_sw_conversion() {
 mod twisted_edwards {
     use super::*;
     #[test]
-    fn test_projective_curve() {
+    fn test_curve() {
         curve_tests::<TEEd25519>();
         edwards_tests::<Ed25519Parameters>()
     }
 
     #[test]
-    fn test_projective_group() {
+    fn test_group() {
         let a = rand::random();
         let b = rand::random();
-        for _i in 0..100 {
-            group_test::<TEEd25519>(a, b);
-        }
-    }
-
-    #[test]
-    fn test_affine_group() {
-        let a: TEEd25519 = rand::random();
-        let b: TEEd25519 = rand::random();
         for _i in 0..100 {
             group_test::<TEEd25519>(a, b);
         }
@@ -56,13 +47,13 @@ mod twisted_edwards {
 mod short_weierstrass {
     use super::*;
     #[test]
-    fn test_projective_curve() {
+    fn test_curve() {
         curve_tests::<SWEd25519>();
         sw_jacobian_tests::<Ed25519Parameters>()
     }
 
     #[test]
-    fn test_projective_group() {
+    fn test_group() {
         let a = rand::random();
         let b = rand::random();
         for _i in 0..100 {
