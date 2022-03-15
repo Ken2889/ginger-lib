@@ -473,7 +473,36 @@ mod projective_impl {
             ))
         }
 
-        fn precomputed_base_scalar_mul<'a, CS, I, B>(
+        fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
+            &self,
+            mut cs: CS,
+            bits: impl Iterator<Item = &'a Boolean>,
+        ) -> Result<Self, SynthesisError> {
+            let mut power = self.clone();
+            let mut acc = Self::zero(cs.ns(|| "alloc acc"))?;
+            for (i, bit) in bits.enumerate() {
+                let new_encoded = acc.add(&mut cs.ns(|| format!("Add {}-th power", i)), &power)?;
+                acc = Self::conditionally_select(
+                    &mut cs.ns(|| format!("Select {}", i)),
+                    bit.borrow(),
+                    &new_encoded,
+                    &acc,
+                )?;
+                power.double_in_place(&mut cs.ns(|| format!("{}-th Doubling", i)))?;
+            }
+            Ok(acc)
+        }
+
+        fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(
+            _base: &TEExtended<P>,
+            _cs: CS,
+            _bits: &[Boolean],
+        ) -> Result<Self, SynthesisError> 
+        {
+            todo!()
+        }
+
+        fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(
             &mut self,
             mut cs: CS,
             scalar_bits_with_base_powers: I,
@@ -529,7 +558,7 @@ mod projective_impl {
             Ok(())
         }
 
-        fn precomputed_base_3_bit_signed_digit_scalar_mul<'a, CS, I, J, B>(
+        fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(
             mut cs: CS,
             bases: &[B],
             scalars: &[J],
@@ -650,6 +679,62 @@ mod projective_impl {
                 process_segment_result(cs.ns(|| "leftover"), &result.unwrap())?;
             }
             Ok(edwards_result.unwrap())
+        }
+
+        fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(
+            mut cs: CS,
+            bases: &[B],
+            scalars: I,
+        ) -> Result<Self, SynthesisError>
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+            I: Iterator<Item = &'a T>,
+            B: Borrow<[TEExtended<P>]>,
+        {
+            // Pre - check
+            let scalars_len = scalars
+                .size_hint()
+                .1
+                .expect("Scalars iterator size should be known at this point");
+            
+            let bases_len = bases.len();
+
+            if bases_len <  scalars_len || bases_len == 0 {
+                return Err(SynthesisError::Other(
+                    format!(
+                        "Unable to enforce MSM. Bases are not enough for scalars. Number of bases: {}, number of scalars: {}",
+                        bases_len,
+                        scalars_len
+                    )
+                ));
+            }
+
+            let mut result = Self::zero(&mut cs.ns(|| "Declare Result"))?;
+            // Compute ∏(h_i^{m_i}) for all i.
+            for (i, (bits, base_powers)) in scalars.zip(bases).enumerate() {
+                let base_powers = base_powers.borrow();
+                let bits = bits.to_bits(&mut cs.ns(|| format!("Convert Scalar {} to bits", i)))?;
+                result.mul_bits_fixed_base_with_precomputed_base_powers(
+                    cs.ns(|| format!("Chunk {}", i)),
+                    bits.iter().zip(base_powers),
+                )?;
+            }
+            Ok(result)
+        }
+
+        fn fixed_base_msm<'a, CS, T, IS, IB>(
+            _cs: CS,
+            _bases: IB,
+            _scalars: IS,
+        ) -> Result<Self, SynthesisError>
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+            IS: Iterator<Item = &'a T>,
+            IB: Iterator<Item = &'a TEExtended<P>>
+        {
+            todo!()
         }
 
         fn cost_of_add() -> usize {

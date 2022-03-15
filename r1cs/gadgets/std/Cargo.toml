@@ -49,5 +49,5 @@ density-optimized = []
 paste = "1.0"
 rand = { version = "0.8.4" }
 rand_xorshift = { version = "0.3.0" }
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }
+algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle", "parallel"] }
 r1cs-std = { path = "../std", features = ["tweedle", "secp256k1"] }

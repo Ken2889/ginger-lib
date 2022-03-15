@@ -78,7 +78,7 @@ where
             .chunks(W::WINDOW_SIZE * CHUNK_SIZE)
             .map(|x| x.chunks(CHUNK_SIZE).into_iter().collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        let result = GG::precomputed_base_3_bit_signed_digit_scalar_mul(
+        let result = GG::mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers(
             cs,
             &parameters.params.generators,
             &input_in_bits,
