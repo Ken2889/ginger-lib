@@ -1,6 +1,6 @@
 [package]
 name = "algebra"
-version = "0.3.0"
+version = "0.4.0"
 authors = [
     "Sean Bowe",
     "Alessandro Chiesa",
@@ -13,7 +13,10 @@ authors = [
     "Ulrich Haboeck <ulrich@horizenlabs.io>",
     "Maksym Vereshchak <phoinic@gmail.com>",
     "Luigi Varriale <luigi@horizenlabs.io>",
-    "cronicc <cronic@horizenlabs.io>"
+    "cronicc <cronic@horizenlabs.io>",
+    "Luca Giussani <lucagiussani@horizenlabs.io>",
+    "Daniele Di Tullio <danieled@horizenlabs.io>",
+    "Nicholas Mainardi <nicholas@horizenlabs.io>"
 ]
 description = "A library for finite fields, elliptic curves and FFTs evaluation over prime finite fields"
 include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
@@ -26,27 +29,29 @@ build = "build.rs"
 
 [dependencies]
 algebra-derive = { path = "algebra-derive", optional = true }
+num-bigint = { version = "=0.4.3", default-features = false }
 
 bench-utils = { path = "../bench-utils", optional = true }
-byteorder = { version = "1" }
-rand = { version = "0.8.4" }
-derivative = { version = "2", features = ["use_core"] }
+byteorder = { version = "=1.4.3" }
+rand = { version = "=0.8.4" }
+derivative = { version = "=2.2.0", features = ["use_core"] }
 num-traits = { version = "=0.2.14", default-features = false }
+colored = { version = "=2.0.0", optional = true }
+rayon = { version = "=1.5.1", optional = true }
+clippy = { version = "=0.0.302", optional = true }
 
-colored = { version = "2.0.0", optional = true }
-rayon = { version = "1", optional = true }
-clippy = { version = "*", optional = true }
+unroll = "=0.1.5"
 
-unroll = "0.1.4"
-
-serde = { version = "1.0.117", features = ["derive"]}
+serde = { version = "=1.0.130", features = ["derive"]}
 
 [dev-dependencies]
-blake2 = "0.8.1"
-rand_xorshift = { version = "0.3.0" }
-paste = "1.0"
-criterion = "0.3"
-hex-literal = "0.3.3"
+blake2 = "=0.8.1"
+rand_xorshift = { version = "=0.3.0" }
+paste = "=1.0.6"
+criterion = "=0.3.5"
+hex-literal = "=0.3.4"
+num-traits = { version = "=0.2.14", default-features = false }
+num-bigint = { version = "=0.4.3", features = ["rand"] }
 
 [features]
 default = [ "derive" ]
@@ -58,8 +63,9 @@ derive = ["algebra-derive"]
 
 tweedle = []
 secp256k1 = []
+ed25519 = []
 
-full = [ "tweedle", "secp256k1" ]
+full = [ "tweedle", "secp256k1", "ed25519" ]
 
 [build-dependencies]
 field-assembly = { path = "./field-assembly" }

@@ -511,6 +511,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn even_odd_fp_gadget_test<ConstraintF: PrimeField>() {
         let rng = &mut thread_rng();
 

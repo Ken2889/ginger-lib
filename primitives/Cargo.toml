@@ -1,6 +1,6 @@
 [package]
 name = "primitives"
-version = "0.3.0"
+version = "0.4.0"
 authors = [
     "Sean Bowe",
     "Alessandro Chiesa",
@@ -13,7 +13,10 @@ authors = [
     "Ulrich Haboeck <ulrich@horizenlabs.io>",
     "Maksym Vereshchak <phoinic@gmail.com>",
     "Luigi Varriale <luigi@horizenlabs.io>",
-    "cronicc <cronic@horizenlabs.io>"
+    "cronicc <cronic@horizenlabs.io>",
+    "Luca Giussani <lucagiussani@horizenlabs.io>",
+    "Daniele Di Tullio <danieled@horizenlabs.io>",
+    "Nicholas Mainardi <nicholas@horizenlabs.io>"
 ]
 description = "A library of cryptographic primitives"
 include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
@@ -26,16 +29,16 @@ edition = "2018"
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["parallel"] }
 bench-utils = { path = "../bench-utils" }
 
-digest = { version = "0.8", optional = true }
-blake2 = { version = "0.8.1", optional = true }
+digest = { version = "=0.8.1", optional = true }
+blake2 = { version = "=0.8.1", optional = true }
 
-rand = { version = "0.8.4" }
-derivative = "2.2.0"
-rayon = "1"
-hex = "0.4.0"
+rand = { version = "=0.8.4" }
+derivative = "=2.2.0"
+rayon = "=1.5.1"
+hex = "=0.4.3"
 num-traits = { version = "=0.2.14", default-features = false }
 
-serde = { version = "1.0.117", features = ["derive"]}
+serde = { version = "=1.0.130", features = ["derive"]}
 
 [features]
 llvm_asm = ["algebra/llvm_asm"]
@@ -52,8 +55,8 @@ tweedle = ["algebra/tweedle"]
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }
 primitives = { path = "../primitives", features = ["tweedle"] }
 
-criterion = "0.3.2"
-rand_xorshift = { version = "0.3.0" }
+criterion = "=0.3.5"
+rand_xorshift = { version = "=0.3.0" }
 
 ################################# Benchmarks ##################################
 
@@ -61,34 +64,40 @@ rand_xorshift = { version = "0.3.0" }
 name = "bowe_hopwood_crh"
 path = "benches/crypto_primitives/crh.rs"
 harness = false
-required-features = ["tweedle"]
+required-features = ["tweedle", "llvm_asm"]
 
 [[bench]]
 name = "blake2s_prf"
 path = "benches/crypto_primitives/prf.rs"
 harness = false
-required-features = ["prf"]
+required-features = ["prf", "llvm_asm"]
 
 [[bench]]
 name = "schnorr_sig"
 path = "benches/crypto_primitives/signature.rs"
 harness = false
-required-features = ["signature", "tweedle"]
+required-features = ["signature", "tweedle", "llvm_asm"]
 
 [[bench]]
 name = "ecvrf"
 path = "benches/crypto_primitives/ecvrf.rs"
 harness = false
-required-features = ["vrf", "tweedle"]
+required-features = ["vrf", "tweedle", "llvm_asm"]
 
 [[bench]]
 name = "poseidon_crh"
 path = "benches/crypto_primitives/poseidon_crh.rs"
 harness = false
-required-features = ["tweedle"]
+required-features = ["tweedle", "llvm_asm"]
 
 [[bench]]
-name = "poseidon_mht"
+name = "in_memory_optimized_poseidon_mht_benches"
 path = "benches/crypto_primitives/poseidon_mht.rs"
 harness = false
-required-features = ["merkle_tree", "tweedle"]
+required-features = ["merkle_tree", "tweedle", "llvm_asm"]
+
+[[bench]]
+name = "in_memory_smt_benches"
+path = "benches/crypto_primitives/smt.rs"
+harness = false
+required-features = ["merkle_tree", "tweedle", "llvm_asm"]

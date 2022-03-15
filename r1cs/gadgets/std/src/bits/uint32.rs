@@ -420,7 +420,7 @@ impl<ConstraintF: Field> EqGadget<ConstraintF> for UInt32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bls12_381"))]
 mod test {
     use super::UInt32;
     use crate::{bits::boolean::Boolean, eq::MultiEq};

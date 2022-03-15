@@ -163,7 +163,10 @@ impl<P: FieldBasedMerkleTreeParameters> NaiveMerkleTree<P> {
 
         // Check that index is not bigger than num_leaves
         if index >= 1 << self.height {
-            Err(MerkleTreeError::IncorrectLeafIndex(index, format!("Index: {}, Num leaves: {}", index, 1 << self.height)))?
+            Err(MerkleTreeError::IncorrectLeafIndex(
+                index,
+                format!("Leaf index out of range. Max: {}", (1 << self.height) - 1),
+            ))?
         }
 
         let prove_time = start_timer!(|| "MerkleTree::GenProof");
@@ -174,7 +177,10 @@ impl<P: FieldBasedMerkleTreeParameters> NaiveMerkleTree<P> {
 
         // Check that the given index corresponds to the correct leaf.
         if *leaf != self.tree[tree_index] {
-            Err(MerkleTreeError::IncorrectLeafIndex(tree_index, "Index and leaf mismatch".to_string()))?
+            Err(MerkleTreeError::IncorrectLeafIndex(
+                tree_index,
+                "Leaf and index mismatch".to_string(),
+            ))?
         }
 
         // Iterate from the leaf up to the root, storing all intermediate hash values.
@@ -322,7 +328,7 @@ mod test {
     }
 
     type TweedleDeeFieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
-    type TweedleDeePoseidonMHT = FieldBasedOptimizedMHT<TweedleDeeFieldBasedMerkleTreeParams>;
+    type TweedleDeePoseidonMHT = FieldBasedAppendOnlyMHT<TweedleDeeFieldBasedMerkleTreeParams>;
 
     fn generate_merkle_tree<P: FieldBasedMerkleTreeParameters>(leaves: &[P::Data], height: usize) {
         let mut tree = NaiveMerkleTree::<P>::new(height);

@@ -3,5 +3,5 @@
 
 set -xeo pipefail
 
-cd r1cs/gadgets/std
-cargo $CARGOARGS test --features="full"
+cd proof-systems
+cargo $CARGOARGS test

@@ -6,7 +6,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion};
 use primitives::{
     crh::{TweedleFrBatchPoseidonHash as BatchFieldHash, TweedleFrPoseidonHash as FieldHash},
     merkle_tree::{
-        BatchFieldBasedMerkleTreeParameters, FieldBasedOptimizedMHT,
+        BatchFieldBasedMerkleTreeParameters, FieldBasedAppendOnlyMHT,
         FieldBasedMerkleTreeParameters, FieldBasedMerkleTreePrecomputedZeroConstants,
         TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS as MHT_POSEIDON_PARAMETERS,
     },
@@ -67,7 +67,7 @@ fn _bench_in_memory_optimized_poseidon_mht(
                 };
 
                 // Create tree
-                let tree = FieldBasedOptimizedMHT::<FieldBasedMerkleTreeParams>::init(
+                let tree = FieldBasedAppendOnlyMHT::<FieldBasedMerkleTreeParams>::init(
                     BENCH_HEIGHT,
                     num_leaves,
                 )
@@ -115,7 +115,7 @@ fn batch_poseidon_mht_tune_processing_step(c: &mut Criterion) {
                             .collect::<Vec<_>>();
 
                         // Create tree
-                        let tree = FieldBasedOptimizedMHT::<FieldBasedMerkleTreeParams>::init(
+                        let tree = FieldBasedAppendOnlyMHT::<FieldBasedMerkleTreeParams>::init(
                             BENCH_HEIGHT,
                             *processing_step,
                         )
