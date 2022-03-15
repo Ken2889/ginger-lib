@@ -459,7 +459,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -517,7 +517,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test_with_incomplete_add<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -651,7 +651,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_native_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -659,7 +659,7 @@ pub(crate) mod test {
 
         // Sample random base
         let g: G = UniformRand::rand(rng);
-        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g)).unwrap();
+        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g.clone())).unwrap();
 
         // Sample random scalar
         let a = G::ScalarField::rand(rng);
@@ -680,7 +680,7 @@ pub(crate) mod test {
         // Fixed base scalar multiplication
         let x = cs.num_constraints();
         let a_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
         println!(
             "Fixed base SM exponent len {}, num_constraints: {}",
             a_bits.len(),
@@ -688,7 +688,7 @@ pub(crate) mod test {
         );
 
         // Compare with native results
-        assert_eq!(a_times_gg_vb.get_value().unwrap(), g.mul(&a));
+        assert_eq!(a_times_gg_vb.get_value().unwrap(), g.clone().mul(&a));
         assert_eq!(a_times_gg_fb.get_value().unwrap(), g.mul(&a));
 
         assert!(cs.is_satisfied());
@@ -697,14 +697,14 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_additivity_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
         let rng = &mut thread_rng();
 
         let g: G = UniformRand::rand(rng);
-        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g)).unwrap();
+        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g.clone())).unwrap();
 
         let a = G::ScalarField::rand(rng);
         let b = G::ScalarField::rand(rng);
@@ -725,11 +725,11 @@ pub(crate) mod test {
         // Additivity test: a * G + b * G = (a + b) * G
         let a_times_gg_vb = gg.mul_bits(cs.ns(|| "a * G"), a_bits.iter()).unwrap();
         let a_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
 
         let b_times_gg_vb = gg.mul_bits(cs.ns(|| "b * G"), b_bits.iter()).unwrap();
         let b_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb b * G"), b_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb b * G"), b_bits.as_slice()).unwrap();
 
         let a_plus_b_times_gg_vb = gg
             .mul_bits(cs.ns(|| "(a + b) * G"), a_plus_b_bits.iter())
@@ -761,7 +761,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         for _ in 0..10 {

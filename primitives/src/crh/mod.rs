@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 pub mod bowe_hopwood;
-pub mod injective_map;
 
 pub mod sbox;
 pub use self::sbox::*;

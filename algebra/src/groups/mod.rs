@@ -1,6 +1,6 @@
 use crate::{
     bytes::{FromBytes, ToBytes},
-    fields::PrimeField,
+    fields::PrimeField, UniformRand
 };
 use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid};
 use std::{
@@ -9,6 +9,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use num_traits::Zero;
+use serde::*;
 
 mod group_vec;
 pub use group_vec::*;
@@ -24,6 +25,8 @@ pub trait Group:
     + SemanticallyValid
     + CanonicalSerialize
     + CanonicalDeserialize
+    + Serialize
+    + for<'a> Deserialize<'a>
     + Clone
     + Debug
     + Display
@@ -32,6 +35,7 @@ pub trait Group:
     + Sync
     + Eq
     + Hash
+    + UniformRand
     + Zero
     + Neg<Output = Self>
     + Add<Self, Output = Self>

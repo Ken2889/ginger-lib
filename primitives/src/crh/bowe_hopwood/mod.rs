@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::crh::FixedLengthCRH;
-use algebra::{curves::Curve, fields::{PrimeField, FpParameters}};
+use algebra::{Group, fields::{PrimeField, FpParameters}};
 use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: usize = 3;
@@ -18,24 +18,24 @@ pub trait PedersenWindow: Clone {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(bound(deserialize = "G: Curve"))]
-pub struct BoweHopwoodPedersenParameters<G: Curve> {
+#[serde(bound(deserialize = "G: Group"))]
+pub struct BoweHopwoodPedersenParameters<G: Group> {
     pub generators: Vec<Vec<G>>,
 }
 
-pub struct BoweHopwoodPedersenCRH<G: Curve, W: PedersenWindow> {
+pub struct BoweHopwoodPedersenCRH<G: Group, W: PedersenWindow> {
     group: PhantomData<G>,
     window: PhantomData<W>,
 }
 
-impl<G: Curve, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
+impl<G: Group, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
     pub fn create_generators<R: Rng>(rng: &mut R) -> Vec<Vec<G>> {
         let mut generators = Vec::new();
         for _ in 0..W::NUM_WINDOWS {
             let mut generators_for_segment = Vec::new();
             let mut base = G::rand(rng);
             for _ in 0..W::WINDOW_SIZE {
-                generators_for_segment.push(base);
+                generators_for_segment.push(base.clone());
                 for _ in 0..4 {
                     base.double_in_place();
                 }
@@ -46,7 +46,7 @@ impl<G: Curve, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
     }
 }
 
-impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W> {
+impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W> {
     const INPUT_SIZE_BITS: usize = W::WINDOW_SIZE * W::NUM_WINDOWS * CHUNK_SIZE;
     type Output = G;
     type Parameters = BoweHopwoodPedersenParameters<G>;
@@ -156,7 +156,7 @@ impl<G: Curve, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
     }
 }
 
-impl<G: Curve> Debug for BoweHopwoodPedersenParameters<G> {
+impl<G: Group> Debug for BoweHopwoodPedersenParameters<G> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "Bowe-Hopwood Pedersen Hash Parameters {{\n")?;
         for (i, g) in self.generators.iter().enumerate() {
@@ -166,7 +166,7 @@ impl<G: Curve> Debug for BoweHopwoodPedersenParameters<G> {
     }
 }
 
-impl<G: Curve> BoweHopwoodPedersenParameters<G> {
+impl<G: Group> BoweHopwoodPedersenParameters<G> {
     pub fn check_consistency(&self) -> bool {
         for (i, p1) in self.generators.iter().enumerate() {
             if p1[0] == G::zero() {
@@ -176,7 +176,7 @@ impl<G: Curve> BoweHopwoodPedersenParameters<G> {
                 if p1[0] == p2[0] {
                     return false; // duplicate generator
                 }
-                if p1[0] == p2[0].neg() {
+                if p1[0] == p2[0].clone().neg() {
                     return false; // inverse generator
                 }
             }

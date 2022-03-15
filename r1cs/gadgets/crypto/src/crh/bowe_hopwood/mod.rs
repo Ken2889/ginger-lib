@@ -1,5 +1,5 @@
 use crate::crh::FixedLengthCRHGadget;
-use algebra::{Curve, Field};
+use algebra::{Group, Field};
 use std::hash::Hash;
 
 use primitives::crh::{FixedLengthCRH, bowe_hopwood::*};
@@ -11,10 +11,10 @@ use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
 #[derivative(Clone(
-    bound = "G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"
+    bound = "G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"
 ))]
 pub struct BoweHopwoodPedersenCRHGadgetParameters<
-    G: Curve,
+    G: Group,
     W: PedersenWindow,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
@@ -26,7 +26,7 @@ pub struct BoweHopwoodPedersenCRHGadgetParameters<
 }
 
 pub struct BoweHopwoodPedersenCRHGadget<
-    G: Curve,
+    G: Group,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
 > {
@@ -39,7 +39,7 @@ impl<ConstraintF, G, GG, W> FixedLengthCRHGadget<BoweHopwoodPedersenCRH<G, W>, C
     for BoweHopwoodPedersenCRHGadget<G, ConstraintF, GG>
 where
     ConstraintF: Field,
-    G: Curve + Hash,
+    G: Group + Hash,
     GG: GroupGadget<G, ConstraintF>,
     W: PedersenWindow,
 {
@@ -88,7 +88,7 @@ where
     }
 }
 
-impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
+impl<G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
     AllocGadget<BoweHopwoodPedersenParameters<G>, ConstraintF>
     for BoweHopwoodPedersenCRHGadgetParameters<G, W, ConstraintF, GG>
 {

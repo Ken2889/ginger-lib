@@ -1,7 +1,7 @@
 use crate::{
     fields::{BitIterator, Field, SquareRootField},
     groups::Group,
-    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand,
+    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,10 +28,9 @@ pub use self::models::*;
 /// Projective representation of an elliptic curve point.
 pub trait Curve:
     Group
-    + Copy
+    + Copy // TODO: Let's consider removing this
     + Serialize
     + for<'a> Deserialize<'a>
-    + UniformRand
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
