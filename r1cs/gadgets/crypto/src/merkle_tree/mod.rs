@@ -1,14 +1,12 @@
-use algebra::{Field, PrimeField};
+use algebra::{Field, FpParameters, PrimeField};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
-use r1cs_std::prelude::*;
+use r1cs_std::{fields::fp::FpGadget, prelude::*};
 
-use crate::{FieldBasedHashGadget, FixedLengthCRHGadget};
-use primitives::{crh::FixedLengthCRH, merkle_tree::*, FieldBasedHash};
+use crate::crh::FieldBasedHashGadget;
+use primitives::{crh::FieldBasedHash,merkle_tree::*};
 
-use r1cs_std::fields::fp::FpGadget;
 use std::borrow::Borrow;
-
-pub mod field_based_mht;
+use std::marker::PhantomData;
 
 pub trait FieldBasedMerkleTreePathGadget<
     P: FieldBasedMerkleTreePath<H = H>,
@@ -76,61 +74,82 @@ pub trait FieldBasedMerkleTreePathGadget<
     ) -> Result<(), SynthesisError>;
 }
 
-pub struct MerkleTreePathGadget<P, HGadget, ConstraintF>
+#[derive(Derivative)]
+#[derivative(
+    PartialEq(bound = "P: FieldBasedMerkleTreeParameters"),
+    Eq(bound = "P: FieldBasedMerkleTreeParameters"),
+    Clone(bound = "P: FieldBasedMerkleTreeParameters")
+)]
+pub struct FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
 where
-    P: MerkleTreeConfig,
-    HGadget: FixedLengthCRHGadget<P::H, ConstraintF>,
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: Field,
 {
-    path: Vec<(HGadget::OutputGadget, Boolean)>,
+    path: Vec<(HGadget::DataGadget, Boolean)>,
 }
 
-impl<P, CRHGadget, ConstraintF> MerkleTreePathGadget<P, CRHGadget, ConstraintF>
+impl<P, HGadget, ConstraintF> FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
 where
-    P: MerkleTreeConfig,
-    ConstraintF: Field,
-    CRHGadget: FixedLengthCRHGadget<P::H, ConstraintF>,
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: PrimeField,
 {
-    pub fn check_membership<CS: ConstraintSystemAbstract<ConstraintF>>(
+    pub fn enforce_leaf_index_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
-        parameters: &CRHGadget::ParametersGadget,
-        root: &CRHGadget::OutputGadget,
-        leaf: impl ToBytesGadget<ConstraintF>,
+        leaf_index_bits: &[Boolean],
     ) -> Result<(), SynthesisError> {
-        self.conditionally_check_membership(cs, parameters, root, leaf, &Boolean::Constant(true))
+        self.conditionally_enforce_leaf_index_bits(cs, leaf_index_bits, &Boolean::Constant(true))
     }
 
-    pub fn conditionally_check_membership<CS: ConstraintSystemAbstract<ConstraintF>>(
+    pub fn conditionally_enforce_leaf_index_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
-        parameters: &CRHGadget::ParametersGadget,
-        root: &CRHGadget::OutputGadget,
-        leaf: impl ToBytesGadget<ConstraintF>,
+        leaf_index_bits: &[Boolean],
         should_enforce: &Boolean,
     ) -> Result<(), SynthesisError> {
-        if self.path.len() != P::HEIGHT {
-            return Err(SynthesisError::Other(format!(
-                "Path length must be equal to height. Path len: {}, Height: {}",
-                self.path.len(),
-                P::HEIGHT
-            )));
+        for (i, ((_, path_bit), leaf_index_bit)) in self
+            .path
+            .iter()
+            .zip(leaf_index_bits.iter().rev())
+            .enumerate()
+        {
+            path_bit.conditional_enforce_equal(
+                cs.ns(|| format!("index_equality_{}", i)),
+                leaf_index_bit,
+                should_enforce,
+            )?;
         }
 
-        // Check that the hash of the given leaf matches the leaf hash in the membership
-        // proof.
-        let leaf_bits = leaf.to_bytes(&mut cs.ns(|| "leaf_to_bytes"))?;
-        let leaf_hash = CRHGadget::check_evaluation_gadget(
-            cs.ns(|| "check_evaluation_gadget"),
-            parameters,
-            &leaf_bits,
-        )?;
+        Ok(())
+    }
+}
 
-        // Check levels between leaf level and root.
-        let mut previous_hash = leaf_hash;
+impl<P, HGadget, ConstraintF>
+    FieldBasedMerkleTreePathGadget<FieldBasedBinaryMHTPath<P>, P::H, HGadget, ConstraintF>
+    for FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
+where
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: PrimeField,
+{
+    fn length(&self) -> usize {
+        self.path.len()
+    }
+
+    /// Enforces correct reconstruction of the root of the Merkle Tree
+    /// from `self` and `leaf`.
+    fn enforce_root_from_leaf<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        leaf: &HGadget::DataGadget,
+    ) -> Result<HGadget::DataGadget, SynthesisError> {
+        let mut previous_hash = (*leaf).clone();
+
         for (i, &(ref sibling_hash, ref direction)) in self.path.iter().enumerate() {
             //Select left hash based on direction
-            let lhs = CRHGadget::OutputGadget::conditionally_select(
+            let lhs = HGadget::DataGadget::conditionally_select(
                 cs.ns(|| format!("Choose left hash {}", i)),
                 direction,
                 &sibling_hash,
@@ -138,54 +157,144 @@ where
             )?;
 
             //Select right hash based on direction
-            let rhs = CRHGadget::OutputGadget::conditionally_select(
+            let rhs = HGadget::DataGadget::conditionally_select(
                 cs.ns(|| format!("Choose right hash {}", i)),
                 direction,
                 &previous_hash,
                 &sibling_hash,
             )?;
 
-            previous_hash = hash_inner_node_gadget::<P::H, CRHGadget, ConstraintF, _>(
+            previous_hash = hash_inner_node_gadget::<P::H, HGadget, ConstraintF, _>(
                 &mut cs.ns(|| format!("hash_inner_node_{}", i)),
-                parameters,
-                &lhs,
-                &rhs,
+                lhs,
+                rhs,
             )?;
         }
 
+        Ok(previous_hash)
+    }
+
+    /// Given a field element `leaf_index` representing the position of a leaf in a
+    /// Merkle Tree, enforce that the leaf index corresponding to `self` path is the
+    /// same of `leaf_index`.
+    fn conditionally_enforce_leaf_index<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        leaf_index: &FpGadget<ConstraintF>,
+        should_enforce: &Boolean,
+    ) -> Result<(), SynthesisError> {
+        let leaf_index_bits = leaf_index.to_bits_with_length_restriction(
+            cs.ns(|| "get leaf index bits"),
+            (ConstraintF::Params::MODULUS_BITS as usize) - self.path.len(),
+        )?;
+
+        self.conditionally_enforce_leaf_index_bits(
+            cs.ns(|| "enforce leaf index bits"),
+            leaf_index_bits.as_slice(),
+            should_enforce,
+        )?;
+
+        Ok(())
+    }
+}
+
+pub struct FieldBasedMerkleTreeGadget<P, HGadget, ConstraintF>
+where
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: PrimeField,
+{
+    _params: PhantomData<P>,
+    _hash_gadget: PhantomData<HGadget>,
+    _field: PhantomData<ConstraintF>,
+}
+
+impl<P, HGadget, ConstraintF> FieldBasedMerkleTreeGadget<P, HGadget, ConstraintF>
+where
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: PrimeField,
+{
+    pub fn check_leaves<CS: ConstraintSystemAbstract<ConstraintF>>(
+        cs: CS,
+        leaves: &[HGadget::DataGadget],
+        root: &HGadget::DataGadget,
+        height: usize,
+    ) -> Result<(), SynthesisError> {
+        Self::conditionally_check_leaves(cs, leaves, root, &Boolean::Constant(true), height)
+    }
+
+    /// Starting from all the leaves in the Merkle Tree, reconstructs and enforces
+    /// the Merkle Root. NOTE: This works iff Merkle Tree has been created by passing
+    /// all leaves (i.e. padding_tree = null).
+    pub fn conditionally_check_leaves<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        leaves: &[HGadget::DataGadget],
+        root: &HGadget::DataGadget,
+        should_enforce: &Boolean,
+        height: usize,
+    ) -> Result<(), SynthesisError> {
+        if leaves.len() != 2_usize.pow(height as u32) {
+            return Err(SynthesisError::Other(
+                "Leaves number must be a power of 2".to_owned(),
+            ));
+        }
+
+        let mut prev_level_nodes = leaves.to_vec();
+        //Iterate over all levels except the root
+        for level in 0..height {
+            let mut curr_level_nodes = vec![];
+
+            //Iterate over all nodes in a level. We assume their number to be even (e.g a power of two)
+
+            for (i, nodes) in prev_level_nodes.chunks(2).enumerate() {
+                //Compute parent hash
+                let mut children = vec![];
+                children.push(nodes[0].clone());
+                children.push(nodes[1].clone());
+                let parent_hash = HGadget::enforce_hash_constant_length(
+                    cs.ns(|| format!("hash_children_pair_{}_of_level_{}", i, level)),
+                    children.as_slice(),
+                )?;
+                curr_level_nodes.push(parent_hash);
+            }
+            prev_level_nodes = curr_level_nodes;
+        }
+        //At this point, we should have only the root in prev_level_nodes
+        //Enforce equality with the root
+        debug_assert!(prev_level_nodes.len() == 1);
+
+        //Enforce equality with the root
+
         root.conditional_enforce_equal(
             &mut cs.ns(|| "root_is_last"),
-            &previous_hash,
+            &prev_level_nodes[0],
             should_enforce,
-        )
+        )?;
+
+        Ok(())
     }
 }
 
 pub(crate) fn hash_inner_node_gadget<H, HG, ConstraintF, CS>(
-    mut cs: CS,
-    parameters: &HG::ParametersGadget,
-    left_child: &HG::OutputGadget,
-    right_child: &HG::OutputGadget,
-) -> Result<HG::OutputGadget, SynthesisError>
+    cs: CS,
+    left_child: HG::DataGadget,
+    right_child: HG::DataGadget,
+) -> Result<HG::DataGadget, SynthesisError>
 where
     ConstraintF: Field,
     CS: ConstraintSystemAbstract<ConstraintF>,
-    H: FixedLengthCRH,
-    HG: FixedLengthCRHGadget<H, ConstraintF>,
+    H: FieldBasedHash<Data = ConstraintF>,
+    HG: FieldBasedHashGadget<H, ConstraintF>,
 {
-    let left_bytes = left_child.to_bytes(&mut cs.ns(|| "left_to_bytes"))?;
-    let right_bytes = right_child.to_bytes(&mut cs.ns(|| "right_to_bytes"))?;
-    let mut bytes = left_bytes;
-    bytes.extend_from_slice(&right_bytes);
-
-    HG::check_evaluation_gadget(cs, parameters, &bytes)
+    HG::enforce_hash_constant_length(cs, &[left_child, right_child])
 }
 
-impl<P, HGadget, ConstraintF> AllocGadget<MerkleTreePath<P>, ConstraintF>
-    for MerkleTreePathGadget<P, HGadget, ConstraintF>
+impl<P, HGadget, ConstraintF> AllocGadget<FieldBasedBinaryMHTPath<P>, ConstraintF>
+    for FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
 where
-    P: MerkleTreeConfig,
-    HGadget: FixedLengthCRHGadget<P::H, ConstraintF>,
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
     ConstraintF: Field,
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -194,19 +303,19 @@ where
     ) -> Result<Self, SynthesisError>
     where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<MerkleTreePath<P>>,
+        T: Borrow<FieldBasedBinaryMHTPath<P>>,
     {
         let mut path = Vec::new();
-        for (i, &(ref sibling, ref d)) in value_gen()?.borrow().path.iter().enumerate() {
+        for (i, &(ref sibling, ref d)) in value_gen()?.borrow().get_raw_path().iter().enumerate() {
             let sibling_hash =
-                HGadget::OutputGadget::alloc(&mut cs.ns(|| format!("sibling_hash_{}", i)), || {
+                HGadget::DataGadget::alloc(&mut cs.ns(|| format!("sibling_hash_{}", i)), || {
                     Ok(sibling)
                 })?;
             let direction =
                 Boolean::alloc(&mut cs.ns(|| format!("direction_bit_{}", i)), || Ok(d))?;
             path.push((sibling_hash, direction));
         }
-        Ok(MerkleTreePathGadget { path })
+        Ok(FieldBasedBinaryMerkleTreePathGadget { path })
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -215,11 +324,11 @@ where
     ) -> Result<Self, SynthesisError>
     where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<MerkleTreePath<P>>,
+        T: Borrow<FieldBasedBinaryMHTPath<P>>,
     {
         let mut path = Vec::new();
-        for (i, &(ref sibling, ref d)) in value_gen()?.borrow().path.iter().enumerate() {
-            let sibling_hash = HGadget::OutputGadget::alloc_input(
+        for (i, &(ref sibling, ref d)) in value_gen()?.borrow().get_raw_path().iter().enumerate() {
+            let sibling_hash = HGadget::DataGadget::alloc_input(
                 &mut cs.ns(|| format!("sibling_hash_{}", i)),
                 || Ok(sibling),
             )?;
@@ -227,197 +336,347 @@ where
                 Boolean::alloc_input(&mut cs.ns(|| format!("direction_bit_{}", i)), || Ok(d))?;
             path.push((sibling_hash, direction));
         }
-        Ok(MerkleTreePathGadget { path })
+        Ok(FieldBasedBinaryMerkleTreePathGadget { path })
     }
 }
 
-// TODO: no curves for TE representation
-// #[cfg(test)]
-// mod test {
-//     use std::rc::Rc;
-//
-//     use super::*;
-//     use crate::crh::{
-//         injective_map::{PedersenCRHCompressorGadget, TECompressorGadget},
-//         FixedLengthCRHGadget,
-//     };
-//     use algebra::{curves::tweedle::dee::DeeJacobian, fields::tweedle::Fq};
-//     use primitives::crh::{
-//         injective_map::{PedersenCRHCompressor, TECompressor},
-//         pedersen::PedersenWindow,
-//         FixedLengthCRH,
-//     };
-//     use r1cs_core::{
-//         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
-//     };
-//     use r1cs_std::instantiated::tweedle::TweedleDeeGadget;
-//     use rand::SeedableRng;
-//     use rand_xorshift::XorShiftRng;
-//
-//     #[derive(Clone)]
-//     pub(super) struct Window4x128;
-//     impl PedersenWindow for Window4x128 {
-//         const WINDOW_SIZE: usize = 4;
-//         const NUM_WINDOWS: usize = 128;
-//     }
-//
-//     type H = PedersenCRHCompressor<DeeJacobian, TECompressor, Window4x128>;
-//     type HG = PedersenCRHCompressorGadget<
-//         DeeJacobian,
-//         TECompressor,
-//         Fq,
-//         TweedleDeeGadget,
-//         TECompressorGadget,
-//     >;
-//
-//     struct DeeJacobianMerkleTreeParams;
-//
-//     impl MerkleTreeConfig for DeeJacobianMerkleTreeParams {
-//         const HEIGHT: usize = 3;
-//         type H = H;
-//     }
-//
-//     type DeeJacobianMerkleTree = MerkleHashTree<DeeJacobianMerkleTreeParams>;
-//
-//     fn generate_merkle_tree(leaves: &[[u8; 8]], use_bad_root: bool) -> bool {
-//         let mut rng = XorShiftRng::seed_from_u64(9174123u64);
-//
-//         let crh_parameters = Rc::new(H::setup(&mut rng).unwrap());
-//         let tree = DeeJacobianMerkleTree::new(crh_parameters.clone(), leaves).unwrap();
-//         let root = tree.root().unwrap();
-//         let mut satisfied = true;
-//         for (i, leaf) in leaves.iter().enumerate() {
-//             let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
-//             let proof = tree.generate_proof(i, &leaf).unwrap();
-//             assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
-//
-//             // Allocate Merkle Tree Root
-//             let root = <HG as FixedLengthCRHGadget<H, _>>::OutputGadget::alloc(
-//                 &mut cs.ns(|| format!("new_digest_{}", i)),
-//                 || {
-//                     if use_bad_root {
-//                         Ok(<H as FixedLengthCRH>::Output::default())
-//                     } else {
-//                         Ok(root)
-//                     }
-//                 },
-//             )
-//             .unwrap();
-//
-//             let constraints_from_digest = cs.num_constraints();
-//             println!("constraints from digest: {}", constraints_from_digest);
-//
-//             // Allocate Parameters for CRH
-//             let crh_parameters = <HG as FixedLengthCRHGadget<H, Fq>>::ParametersGadget::alloc(
-//                 &mut cs.ns(|| format!("new_parameters_{}", i)),
-//                 || Ok(crh_parameters.clone()),
-//             )
-//             .unwrap();
-//
-//             let constraints_from_parameters = cs.num_constraints() - constraints_from_digest;
-//             println!(
-//                 "constraints from parameters: {}",
-//                 constraints_from_parameters
-//             );
-//
-//             // Allocate Leaf
-//             let leaf_g = UInt8::constant_vec(leaf);
-//
-//             let constraints_from_leaf =
-//                 cs.num_constraints() - constraints_from_parameters - constraints_from_digest;
-//             println!("constraints from leaf: {}", constraints_from_leaf);
-//
-//             // Allocate Merkle Tree Path
-//             let cw = MerkleTreePathGadget::<_, HG, _>::alloc(
-//                 &mut cs.ns(|| format!("new_witness_{}", i)),
-//                 || Ok(proof),
-//             )
-//             .unwrap();
-//
-//             let constraints_from_path = cs.num_constraints()
-//                 - constraints_from_parameters
-//                 - constraints_from_digest
-//                 - constraints_from_leaf;
-//             println!("constraints from path: {}", constraints_from_path);
-//             let leaf_g: &[UInt8] = leaf_g.as_slice();
-//             cw.check_membership(
-//                 &mut cs.ns(|| format!("new_witness_check_{}", i)),
-//                 &crh_parameters,
-//                 &root,
-//                 &leaf_g,
-//             )
-//             .unwrap();
-//             if !cs.is_satisfied() {
-//                 satisfied = false;
-//                 println!(
-//                     "Unsatisfied constraint: {}",
-//                     cs.which_is_unsatisfied().unwrap()
-//                 );
-//             }
-//             let setup_constraints = constraints_from_leaf
-//                 + constraints_from_digest
-//                 + constraints_from_parameters
-//                 + constraints_from_path;
-//             println!(
-//                 "number of constraints: {}",
-//                 cs.num_constraints() - setup_constraints
-//             );
-//         }
-//
-//         satisfied
-//     }
-//
-//     #[test]
-//     fn good_root_test() {
-//         //Test #leaves << 2^HEIGHT
-//         let mut leaves = Vec::new();
-//         for i in 0..2u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(generate_merkle_tree(&leaves, false));
-//
-//         //Test #leaves = 2^HEIGHT - 1
-//         let mut leaves = Vec::new();
-//         for i in 0..4u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(generate_merkle_tree(&leaves, false));
-//
-//         //Test #leaves = 2^HEIGHT
-//         let mut leaves = Vec::new();
-//         for i in 0..8u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(generate_merkle_tree(&leaves, false));
-//     }
-//
-//     #[test]
-//     fn bad_root_test() {
-//         //Test #leaves << 2^HEIGHT
-//         let mut leaves = Vec::new();
-//         for i in 0..2u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(!generate_merkle_tree(&leaves, true));
-//
-//         //Test #leaves = 2^HEIGHT - 1
-//         let mut leaves = Vec::new();
-//         for i in 0..4u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(!generate_merkle_tree(&leaves, true));
-//
-//         //Test #leaves = 2^HEIGHT
-//         let mut leaves = Vec::new();
-//         for i in 0..8u8 {
-//             let input = [i; 8];
-//             leaves.push(input);
-//         }
-//         assert!(!generate_merkle_tree(&leaves, true));
-//     }
-// }
+impl<P, HGadget, ConstraintF> ConstantGadget<FieldBasedBinaryMHTPath<P>, ConstraintF>
+    for FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
+where
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: Field,
+{
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        value: &FieldBasedBinaryMHTPath<P>,
+    ) -> Self {
+        let mut path = Vec::new();
+        for (i, (sibling, d)) in value.get_raw_path().iter().enumerate() {
+            let sibling_hash = HGadget::DataGadget::from_value(
+                cs.ns(|| format!("hardcode sibling {}", i)),
+                sibling,
+            );
+            let direction = Boolean::Constant(*d);
+            path.push((sibling_hash, direction));
+        }
+        Self { path }
+    }
+
+    fn get_constant(&self) -> FieldBasedBinaryMHTPath<P> {
+        let mut path = Vec::new();
+        for (sibling_g, d_g) in self.path.iter() {
+            let sibling = sibling_g.get_constant();
+            let d = d_g.get_value().unwrap();
+            path.push((sibling, d))
+        }
+        FieldBasedBinaryMHTPath::<P>::new(path)
+    }
+}
+
+impl<P, HGadget, ConstraintF> EqGadget<ConstraintF>
+    for FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>
+where
+    P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+    HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+    ConstraintF: Field,
+{
+    fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        other: &Self,
+    ) -> Result<Boolean, SynthesisError> {
+        let mut v = Vec::new();
+        let len = self.path.len();
+        if self.path.len() != other.path.len() {
+            return Err(SynthesisError::Other(format!(
+                "Paths length must be the same. Self len:{}, Other len: {}",
+                self.path.len(),
+                other.path.len()
+            )));
+        }
+        for i in 0..len {
+            let b1_i = &self.path[i]
+                .0
+                .is_eq(cs.ns(|| format!("b1_{}", i)), &other.path[i].0)?;
+            let b2_i = &self.path[i]
+                .1
+                .is_eq(cs.ns(|| format!("b2_{}", i)), &other.path[i].1)?;
+            let b_i = Boolean::and(cs.ns(|| format!("b1_{} && b2_{}", i, i)), &b1_i, &b2_i)?;
+            v.push(b_i);
+        }
+        Boolean::kary_and(cs.ns(|| "is eq final"), v.as_slice())
+    }
+
+    fn conditional_enforce_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        other: &Self,
+        should_enforce: &Boolean,
+    ) -> Result<(), SynthesisError> {
+        let len = self.path.len();
+        if self.path.len() != other.path.len() {
+            return Err(SynthesisError::Other(format!(
+                "Paths length must be the same. Self len:{}, Other len: {}",
+                self.path.len(),
+                other.path.len()
+            )));
+        }
+        for i in 0..len {
+            self.path[i].0.conditional_enforce_equal(
+                cs.ns(|| format!("conditional_eq_1_{}", i)),
+                &other.path[i].0,
+                should_enforce,
+            )?;
+            self.path[i].1.conditional_enforce_equal(
+                cs.ns(|| format!("conditional_eq_2_{}", i)),
+                &other.path[i].1,
+                should_enforce,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn conditional_enforce_not_equal<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        other: &Self,
+        should_enforce: &Boolean,
+    ) -> Result<(), SynthesisError> {
+        let len = self.path.len();
+        if self.path.len() != other.path.len() {
+            return Err(SynthesisError::Other(format!(
+                "Paths length must be the same. Self len:{}, Other len: {}",
+                self.path.len(),
+                other.path.len()
+            )));
+        }
+        for i in 0..len {
+            self.path[i].0.conditional_enforce_not_equal(
+                cs.ns(|| format!("conditional_neq_1_{}", i)),
+                &other.path[i].0,
+                should_enforce,
+            )?;
+            self.path[i].1.conditional_enforce_not_equal(
+                cs.ns(|| format!("conditional_neq_2_{}", i)),
+                &other.path[i].1,
+                should_enforce,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::crh::TweedleFrPoseidonHashGadget;
+    use algebra::fields::tweedle::Fr;
+    use primitives::crh::TweedleFrPoseidonHash;
+    use r1cs_core::{
+        ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    };
+    use r1cs_std::instantiated::tweedle::FrGadget;
+    use rand::{Rng, SeedableRng};
+    use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
+
+    #[derive(Clone)]
+    struct TweedleDeeFieldBasedMerkleTreeParams;
+
+    impl FieldBasedMerkleTreeParameters for TweedleDeeFieldBasedMerkleTreeParams {
+        type Data = Fr;
+        type H = TweedleFrPoseidonHash;
+        const MERKLE_ARITY: usize = 2;
+        const ZERO_NODE_CST: Option<
+            FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>,
+        > = None;
+    }
+
+    type TweedleDeeFieldBasedMerkleTree = NaiveMerkleTree<TweedleDeeFieldBasedMerkleTreeParams>;
+
+    type HG = TweedleFrPoseidonHashGadget;
+
+    const TEST_HEIGHT: usize = 5;
+
+    fn check_merkle_paths(leaves: &[Fr], use_bad_root: bool) -> bool {
+        let mut tree = TweedleDeeFieldBasedMerkleTree::new(TEST_HEIGHT);
+        tree.append(leaves).unwrap();
+        let root = tree.root().unwrap();
+        let mut satisfied = true;
+
+        //Merkle Path Gadget test
+        for (i, leaf) in leaves.iter().enumerate() {
+            let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+            let proof = tree.generate_proof(i, leaf).unwrap();
+            assert!(proof.verify(TEST_HEIGHT, &leaf, &root).unwrap());
+
+            // Allocate Merkle Tree Root
+            let root = FrGadget::alloc(&mut cs.ns(|| format!("new_digest_{}", i)), || {
+                if use_bad_root {
+                    Ok(Fr::zero())
+                } else {
+                    Ok(root)
+                }
+            })
+            .unwrap();
+
+            // Allocate Leaf
+            let leaf_g = FrGadget::alloc(cs.ns(|| "alloc leaf"), || Ok(leaf)).unwrap();
+
+            // Allocate Merkle Tree Path
+            let cw = FieldBasedBinaryMerkleTreePathGadget::<_, HG, _>::alloc(
+                &mut cs.ns(|| format!("new_witness_{}", i)),
+                || Ok(proof),
+            )
+            .unwrap();
+
+            // Check_membership test
+            cw.check_membership(
+                &mut cs.ns(|| format!("check_membership_{}", i)),
+                &root,
+                &leaf_g,
+            )
+            .unwrap();
+
+            // Enforce Merkle Path test
+            let root_1 = cw
+                .enforce_root_from_leaf(
+                    &mut cs.ns(|| format!("enforce_root_from_leaf_{}", i)),
+                    &leaf_g,
+                )
+                .unwrap();
+
+            root.enforce_equal(
+                &mut cs.ns(|| format!("check_{} root == root_1", i)),
+                &root_1,
+            )
+            .unwrap();
+
+            // Enforce leaf_index check
+            let fe_index = Fr::from(i as u32);
+            let fe_index_g =
+                FrGadget::alloc(cs.ns(|| format!("alloc_index_{}", i)), || Ok(fe_index)).unwrap();
+
+            cw.enforce_leaf_index(
+                &mut cs.ns(|| format!("enforce_leaf_index_{}", i)),
+                &fe_index_g,
+            )
+            .unwrap();
+
+            if !cs.is_satisfied() {
+                satisfied = false;
+                println!(
+                    "Unsatisfied constraint: {}",
+                    cs.which_is_unsatisfied().unwrap()
+                );
+            }
+        }
+
+        satisfied
+    }
+
+    fn check_leaves(leaves: &[Fr], use_bad_root: bool) -> bool {
+        let mut tree = TweedleDeeFieldBasedMerkleTree::new(TEST_HEIGHT);
+        tree.append(leaves).unwrap();
+        let root = tree.root().unwrap();
+
+        //Merkle Tree Gadget test
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+
+        // Allocate Merkle Tree Root
+        let root = FrGadget::alloc(&mut cs.ns(|| "root_digest_{}"), || {
+            if use_bad_root {
+                Ok(Fr::zero())
+            } else {
+                Ok(root)
+            }
+        })
+        .unwrap();
+
+        //Alloc leaves
+        let mut leaves_g = vec![];
+        for (i, leaf) in leaves.iter().enumerate() {
+            leaves_g
+                .push(FrGadget::alloc(cs.ns(|| format!("alloc leaf_{}", i)), || Ok(leaf)).unwrap());
+        }
+
+        //Check MR from leaves
+        FieldBasedMerkleTreeGadget::<TweedleDeeFieldBasedMerkleTreeParams, HG, Fr>::check_leaves(
+            &mut cs.ns(|| "check all leaves belong to MT"),
+            &leaves_g,
+            &root,
+            TEST_HEIGHT,
+        )
+        .unwrap();
+
+        if !cs.is_satisfied() {
+            println!(
+                "Unsatisfied constraint: {}",
+                cs.which_is_unsatisfied().unwrap()
+            );
+        }
+
+        cs.is_satisfied()
+    }
+
+    #[test]
+    fn good_root_test() {
+        let mut rng = XorShiftRng::seed_from_u64(9174123u64);
+
+        //Test #leaves << 2^HEIGHT
+        let mut leaves = Vec::new();
+        for _ in 0..4 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(check_merkle_paths(&leaves, false));
+
+        //Test #leaves = 2^HEIGHT - 1
+        let mut leaves = Vec::new();
+        for _ in 0..16 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(check_merkle_paths(&leaves, false));
+
+        //Test #leaves == 2^HEIGHT
+        let mut leaves = Vec::new();
+        for _ in 0..32 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(check_merkle_paths(&leaves, false));
+        assert!(check_leaves(&leaves, false));
+    }
+
+    #[test]
+    fn bad_root_test() {
+        let mut rng = XorShiftRng::seed_from_u64(9174123u64);
+
+        //Test #leaves << 2^HEIGHT
+        let mut leaves = Vec::new();
+        for _ in 0..4 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(!check_merkle_paths(&leaves, true));
+
+        //Test #leaves = 2^HEIGHT - 1
+        let mut leaves = Vec::new();
+        for _ in 0..16 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(!check_merkle_paths(&leaves, true));
+
+        //Test #leaves == 2^HEIGHT
+        let mut leaves = Vec::new();
+        for _ in 0..32 {
+            let f: Fr = rng.gen();
+            leaves.push(f);
+        }
+        assert!(!check_merkle_paths(&leaves, true));
+        assert!(!check_leaves(&leaves, true));
+    }
+}

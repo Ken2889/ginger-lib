@@ -3,7 +3,7 @@ use algebra::fields::tweedle::Fq;
 use algebra::UniformRand;
 use criterion::Criterion;
 use primitives::{
-    crh::{bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, TweedleFqPoseidonHash},
+    crh::{bowe_hopwood::*, TweedleFqPoseidonHash},
     vrf::{ecvrf::FieldBasedEcVrf, FieldBasedVrf},
     FixedLengthCRH,
 };

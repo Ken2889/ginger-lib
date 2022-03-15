@@ -383,7 +383,7 @@ mod test {
             TweedleFqBatchPoseidonHash, TweedleFqPoseidonHash, TweedleFrBatchPoseidonHash,
             TweedleFrPoseidonHash,
         },
-        merkle_tree::field_based_mht::{
+       merkle_tree::{
             parameters::{
                 TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS, TWEEDLE_DUM_MHT_POSEIDON_PARAMETERS,
             },

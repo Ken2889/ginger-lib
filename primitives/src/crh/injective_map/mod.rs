@@ -10,8 +10,10 @@ use super::{
 use algebra::{
     curves::{
         Curve,
-        models::{ModelParameters, TEModelParameters},
+        models::{ModelParameters, TEModelParameters, SWModelParameters},
         twisted_edwards_extended::TEExtended,
+        short_weierstrass_jacobian::Jacobian,
+        short_weierstrass_projective::Projective,
     },
 };
 
@@ -34,6 +36,43 @@ impl<P: TEModelParameters> InjectiveMap<TEExtended<P>> for TECompressor {
         Ok(ge.x)
     }
 }
+
+pub struct SWJacobianCompressor;
+impl<P: SWModelParameters> InjectiveMap<Jacobian<P>> for SWJacobianCompressor {
+    type Output = <P as ModelParameters>::BaseField;
+
+    fn injective_map(ge: &Jacobian<P>) -> Result<Self::Output, CryptoError> {
+        
+        if !ge.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(CryptoError::InvalidElement(format!("{}", ge)));
+        }
+
+        let affine = ge
+            .into_affine()
+            .map_err(|e| CryptoError::InvalidElement(format!("Unable to convert to affine: {}", e.to_string())))?;
+
+        Ok(affine.x)
+    }
+}
+
+pub struct SWProjectiveCompressor;
+impl<P: SWModelParameters> InjectiveMap<Projective<P>> for SWProjectiveCompressor {
+    type Output = <P as ModelParameters>::BaseField;
+
+    fn injective_map(ge: &Projective<P>) -> Result<Self::Output, CryptoError> {
+        
+        if !ge.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(CryptoError::InvalidElement(format!("{}", ge)));
+        }
+
+        let affine = ge
+            .into_affine()
+            .map_err(|e| CryptoError::InvalidElement(format!("Unable to convert to affine: {}", e.to_string())))?;
+            
+        Ok(affine.x)
+    }
+}
+
 
 pub struct BoweHopwoodPedersenCRHCompressor<G: Curve, I: InjectiveMap<G>, W: PedersenWindow> {
     _group: PhantomData<G>,

@@ -7,7 +7,6 @@ use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::prelude::*;
 
 pub mod bowe_hopwood;
-pub mod injective_map;
 
 pub mod sbox;
 pub use self::sbox::*;

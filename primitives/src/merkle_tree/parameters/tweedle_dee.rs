@@ -307,7 +307,7 @@ mod test {
     use super::{TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS, TWEEDLE_DEE_PHANTOM_MERKLE_ROOT};
     use crate::{
         crh::TweedleFrPoseidonHash,
-        merkle_tree::field_based_mht::parameters::{
+       merkle_tree::parameters::{
             generate_mht_empty_nodes, generate_phantom_merkle_root_from_magic_string,
         },
         FieldBasedMerkleTreePrecomputedZeroConstants,

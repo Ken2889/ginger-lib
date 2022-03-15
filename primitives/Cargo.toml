@@ -58,16 +58,10 @@ rand_xorshift = { version = "0.3.0" }
 ################################# Benchmarks ##################################
 
 [[bench]]
-name = "pedersen_crh"
+name = "bowe_hopwood_crh"
 path = "benches/crypto_primitives/crh.rs"
 harness = false
 required-features = ["tweedle"]
-
-[[bench]]
-name = "pedersen_comm"
-path = "benches/crypto_primitives/comm.rs"
-harness = false
-required-features = ["commitment", "tweedle"]
 
 [[bench]]
 name = "blake2s_prf"
