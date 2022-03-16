@@ -157,10 +157,9 @@ fn test_succinct_verify_template<
         }
         assert!(successful_test);
 
-        // test mul_bits_fixed_base
-        let native_bits = (0..10).map(|_| rng.gen()).collect::<Vec<bool>>();
-        let bits = Boolean::alloc_input_vec(cs.ns(|| "alloc bits"), native_bits.as_slice())?;
-        PCG::Commitment::mul_bits_fixed_base(&commitment, cs, bits.as_slice())?;
+        // test mul_bits_fixed_base for commitments
+        let bits = fs_gadget.enforce_get_challenge::<_, 128>(cs.ns(|| "get random bits for mul_bits_fixed_base"))?;
+        PCG::Commitment::mul_bits_fixed_base(&commitment, cs, &bits[..])?;
     }
     Ok(())
 }
