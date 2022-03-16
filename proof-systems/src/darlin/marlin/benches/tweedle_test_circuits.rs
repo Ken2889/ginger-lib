@@ -664,10 +664,10 @@ mod benches {
 #[cfg(feature = "circuit-friendly")]
 mod benches {
     use super::*;
-    use primitives::TweedleFqPoseidonSponge;
+    use fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
 
     type IPAPCPoseidon =
-        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, TweedleFqPoseidonSponge>>;
+        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, TweedleFqPoseidonFSRng>>;
 
     pub(crate) fn bench_prover_circuits(c: &mut Criterion) {
         for circ_type in CircuitType::get_variants() {

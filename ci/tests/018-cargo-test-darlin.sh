@@ -15,4 +15,5 @@ cargo $CARGOARGS test
 cargo $CARGOARGS test --features="circuit-friendly"
 
 cd ..
-cargo $CARGOARGS test --features="darlin"
+cargo $CARGOARGS test
+cargo $CARGOARGS test --features="circuit-friendly"

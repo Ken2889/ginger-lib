@@ -13,8 +13,8 @@ pub mod tweedle;
 #[cfg(feature = "tweedle")]
 pub use self::tweedle::*;
 
-pub mod sponge;
-pub use sponge::*;
+pub mod density_optimized;
+pub use density_optimized::*;
 
 use primitives::SBox;
 
@@ -275,6 +275,7 @@ mod test {
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget, _>(rng, ins);
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrDensityOptimizedPoseidonHashGadget, _>(rng, ins);
         }
     }
 
@@ -284,6 +285,7 @@ mod test {
 
         for ins in 1..=5 {
             constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget, _>(rng, ins);
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqDensityOptimizedPoseidonHashGadget, _>(rng, ins);
         }
     }
 }

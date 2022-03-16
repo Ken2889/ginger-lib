@@ -151,20 +151,13 @@ impl<
         let mut non_hiding_commitment = commitment.clone();
 
         if let Some(comm) = &proof.hiding_comm {
-            random_oracle.enforce_absorb(cs.ns(|| "absorb hiding commitment"), comm.clone())?;
+            random_oracle.enforce_record(cs.ns(|| "absorb hiding commitment"), comm.clone())?;
             let hiding_challenge = random_oracle
-                .enforce_squeeze_128_bits_challenges(cs.ns(|| "squeeze hiding challenge"), 1)?[0];
+                .enforce_get_challenge::<_, 128>(cs.ns(|| "squeeze hiding challenge"))?;
             let hiding_randomness_bits = proof.rand.as_ref().unwrap();
-            //ToDo: conversion to NonNativeFieldGadget is necessary only because hiding_randomness
-            // must be absorbed to be compliant with the primitive. Since this absorb may seem
-            // unnecessary, we may remove it also from here once it is removed in the primitive
-            let hiding_randomness = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
-                cs.ns(|| "hiding randomness to bits"),
-                &hiding_randomness_bits,
-            )?;
-            random_oracle.enforce_absorb(
+            random_oracle.enforce_record(
                 cs.ns(|| "absorb hiding randomness"),
-                &[hiding_randomness][..],
+                hiding_randomness_bits.as_slice(),
             )?;
 
             let comm_times_challenge = safe_mul::<ConstraintF, G, GG, _, _>(
@@ -188,7 +181,7 @@ impl<
         }
 
         let round_challenge = random_oracle
-            .enforce_squeeze_128_bits_challenges(cs.ns(|| "squeeze round-0 challenge"), 1)?[0];
+            .enforce_get_challenge::<_, 128>(cs.ns(|| "squeeze round-0 challenge"))?;
 
         let mut round_challenges = Vec::with_capacity(proof.vec_l.len());
 
@@ -198,14 +191,13 @@ impl<
         non_hiding_commitment = non_hiding_commitment
             .add(cs.ns(|| "add value*h' to commitment"), &value_times_h_prime)?;
         for (i, (el_vec_l, el_vec_r)) in proof.vec_l.iter().zip(proof.vec_r.iter()).enumerate() {
-            random_oracle.enforce_absorb(
+            random_oracle.enforce_record(
                 cs.ns(|| format!("absorb commitments for round {}", i + 1)),
                 [el_vec_l.clone(), el_vec_r.clone()],
             )?;
-            let round_challenge = random_oracle.enforce_squeeze_128_bits_challenges(
+            let round_challenge = random_oracle.enforce_get_challenge::<_, 128>(
                 cs.ns(|| format!("squeeze round-{} challenge", i + 1)),
-                1,
-            )?[0];
+               )?;
             // compute round_challenge*el_vec_r dealing with the case el_vec_r is zero
             let challenge_times_r = safe_mul::<ConstraintF, G, GG, _, _>(
                 cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),

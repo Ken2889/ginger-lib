@@ -9,17 +9,16 @@ use algebra::{
     curves::tweedle::dee::{DeeJacobian, TweedledeeParameters},
     fields::tweedle::fq::Fq as tweedleFq,
 };
-use primitives::TweedleFqPoseidonSponge;
-use r1cs_crypto::TweedleFqDensityOptimizedPoseidonSpongeGadget;
+use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, constraints::TweedleFqPoseidonFSRngGadget};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::groups::curves::short_weierstrass::AffineGadget;
 
 type ConstraintF = tweedleFq;
 type Curve = DeeJacobian;
 type CurveGadget = AffineGadget<TweedledeeParameters, ConstraintF, FpGadget<ConstraintF>>;
-type FS = TweedleFqPoseidonSponge;
+type FS = TweedleFqPoseidonFSRng;
 type PC = InnerProductArgPC<Curve, FS>;
-type FSG = TweedleFqDensityOptimizedPoseidonSpongeGadget;
+type FSG = TweedleFqPoseidonFSRngGadget;
 type PCG = InnerProductArgGadget<ConstraintF, FSG, Curve, CurveGadget>;
 
 #[test]

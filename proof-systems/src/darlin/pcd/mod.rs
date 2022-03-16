@@ -15,13 +15,13 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{Group, ToConstraintField, UniformRand, EndoMulCurve};
+use algebra::{EndoMulCurve, Group, ToConstraintField, UniformRand};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use poly_commit::{
     ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
     Error as PCError, PCParameters,
 };
-use fiat_shamir::FiatShamirRng;
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
@@ -152,7 +152,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng
+    FS: FiatShamirRng,
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
         match self {
@@ -199,7 +199,7 @@ where
         + ToConstraintField<<G2 as Group>::ScalarField>,
     G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    FS: FiatShamirRng + 'static
+    FS: FiatShamirRng + 'static,
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
     type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, FS>;

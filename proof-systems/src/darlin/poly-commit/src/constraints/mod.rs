@@ -223,10 +223,9 @@ pub trait PolynomialCommitmentVerifierGadget<
         proof: &Self::Proof,
         random_oracle: &mut Self::RandomOracle,
     ) -> Result<Self::VerifierState, Self::Error> {
-        let lambda = random_oracle.enforce_squeeze_128_bits_challenges(
+        let lambda = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
-            1,
-        )?[0];
+            )?;
         let lambda_non_native = Self::challenge_to_non_native_field_element(
             cs.ns(|| "convert lambda to non native field gadget"),
             &lambda,
@@ -300,24 +299,22 @@ pub trait PolynomialCommitmentVerifierGadget<
             .map(|commitment| (commitment.label(), commitment.commitment()))
             .collect();
 
-        let lambda_bits = random_oracle.enforce_squeeze_128_bits_challenges(
+        let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
-            1,
-        )?[0];
+            )?;
 
         let lambda = Self::challenge_to_non_native_field_element(
             cs.ns(|| "convert lambda to non native field gadget"),
             &lambda_bits,
         )?;
 
-        random_oracle.enforce_absorb(
+        random_oracle.enforce_record(
             cs.ns(|| "absorb commitment to polynomial h"),
             proof.get_h_commitment().clone(),
         )?;
-        let evaluation_point_bits = random_oracle.enforce_squeeze_128_bits_challenges(
+        let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
-            1,
-        )?[0];
+            )?;
         let evaluation_point = Self::challenge_to_non_native_field_element(
             cs.ns(|| "evaluation point from squeezed bits"),
             &evaluation_point_bits,

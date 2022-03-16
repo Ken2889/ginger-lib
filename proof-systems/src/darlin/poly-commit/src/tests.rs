@@ -6,7 +6,7 @@ use rand::{distributions::Distribution, thread_rng};
 
 fn setup_test_fs_rng<G, PC>() -> PC::RandomOracle
 where
-    G: EndoMulCurve,
+    G: Group,
     PC: PolynomialCommitment<G>,
 {
     let mut fs_rng_seed_builder = FiatShamirRngSeed::new();
@@ -61,7 +61,7 @@ impl<G: Group> TestUtils for LabeledCommitment<G> {
 /// of size `max_num_queries`, and verifies MultiPointProofs for these.
 fn test_template<G, PC, D>(info: TestInfo) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
@@ -160,7 +160,6 @@ where
         assert!(ck.is_valid());
         assert!(vk.is_valid());
 
-        println!("Trimmed");
 
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
@@ -192,11 +191,8 @@ where
                 }
             }
         }
-        println!("Generated query set");
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
-
-        println!("FS RNG initialized");
 
         let proof = PC::multi_point_multi_poly_open(
             &ck,
@@ -214,7 +210,7 @@ where
 
         // Assert success using the same key
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
-        let result = PC::multi_point_multi_poly_verify(
+        let verifier_state = PC::succinct_multi_point_multi_poly_verify(
             &vk,
             &comms,
             &query_map,
@@ -222,6 +218,22 @@ where
             &proof,
             &mut fs_rng,
         )?;
+        if verifier_state.is_none() {
+            println!(
+                "Failed succinct check with {} polynomials, num_points_in_query_set: {:?}",
+                num_polynomials, num_points_in_query_map
+            );
+            println!("Degree of polynomials:",);
+            for poly in polynomials {
+                println!("Degree: {:?}", poly.degree());
+            }
+            return Err(Error::FailedSuccinctCheck.into());
+        }
+
+        let verifier_state = verifier_state.unwrap();
+        test_canonical_serialize_deserialize(true, &verifier_state);
+
+        let result = PC::hard_verify(&vk, &verifier_state)?;
         if !result {
             println!(
                 "Failed with {} polynomials, num_points_in_query_map: {:?}",
@@ -257,7 +269,7 @@ pub(crate) fn constant_poly_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
@@ -279,7 +291,7 @@ pub(crate) fn single_poly_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
@@ -301,7 +313,7 @@ pub(crate) fn two_poly_four_points_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
@@ -323,7 +335,7 @@ pub(crate) fn full_end_to_end_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
@@ -343,7 +355,7 @@ where
 
 pub(crate) fn segmented_test<G, PC, D>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
 where
-    G: EndoMulCurve,
+    G: Group,
     D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,

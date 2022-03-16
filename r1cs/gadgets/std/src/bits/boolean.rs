@@ -6,6 +6,7 @@ use r1cs_core::{
     ConstraintSystemAbstract, ConstraintVar, LinearCombination, SynthesisError, Variable,
 };
 use std::borrow::Borrow;
+use crate::to_field_gadget_vec::ToConstraintFieldGadget;
 
 /// Represents a variable in the constraint system which is guaranteed
 /// to be either zero or one.
@@ -958,6 +959,21 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for Boolean {
 
     fn cost() -> usize {
         1
+    }
+}
+
+impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for &[Boolean] {
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS)
+        -> Result<Vec<Self::FieldGadget>, SynthesisError> {
+        let capacity = ConstraintF::Params::CAPACITY as usize;
+        let mut fes = Vec::with_capacity(self.len() + capacity - 1/capacity); // ceil(self.len(capacity))
+        for (i, bits) in self.chunks(capacity).enumerate() {
+            fes.push(Self::FieldGadget::from_bits(cs.ns(|| format!("packing chunk {} of bits to fe", i)), bits)?);
+        }
+
+        Ok(fes)
     }
 }
 

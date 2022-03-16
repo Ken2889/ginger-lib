@@ -160,8 +160,8 @@ impl<
         let t = f()?;
         let verifier_state = t.borrow();
 
-        let mut check_poly = Vec::with_capacity(verifier_state.check_poly.0.len());
-        for (i, challenge) in verifier_state.check_poly.0.iter().enumerate() {
+        let mut check_poly = Vec::with_capacity(verifier_state.check_poly.get_chals().len());
+        for (i, challenge) in verifier_state.check_poly.get_chals().iter().enumerate() {
             check_poly.push(NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
                 cs.ns(|| format!("alloc {}-th challenge for bullet polynomial", i + 1)),
                 || Ok(challenge),
@@ -189,8 +189,8 @@ impl<
         let t = f()?;
         let verifier_state = t.borrow();
 
-        let mut check_poly = Vec::with_capacity(verifier_state.check_poly.0.len());
-        for (i, challenge) in verifier_state.check_poly.0.iter().enumerate() {
+        let mut check_poly = Vec::with_capacity(verifier_state.check_poly.get_chals().len());
+        for (i, challenge) in verifier_state.check_poly.get_chals().iter().enumerate() {
             check_poly.push(
                 NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc_input(
                     cs.ns(|| format!("alloc {}-th challenge for bullet polynomial", i + 1)),

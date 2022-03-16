@@ -106,7 +106,7 @@ use algebra::curves::tweedle::{dee::DeeJacobian, dum::DumJacobian};
 #[cfg(not(feature = "circuit-friendly"))]
 mod benches {
     use super::*;
-    use poly_commit::fiat_shamir::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
     pub(crate) fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
         for n in 16..22 {
@@ -132,7 +132,7 @@ mod benches {
 #[cfg(feature = "circuit-friendly")]
 mod benches {
     use super::*;
-    use primitives::{TweedleFqPoseidonSponge, TweedleFrPoseidonSponge};
+    use fiat_shamir::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
 
     pub(crate) fn bench_open_proof_tweedle_dee(c: &mut Criterion) {
         for n in 16..22 {

@@ -24,12 +24,12 @@ pub struct DLogItem<G: EndoMulCurve> {
     pub(crate) g_final: G,
 
     /// Challenges of the DLOG reduction.
-    pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
+    pub(crate) xi_s: SuccinctCheckPolynomial<G>,
 }
 
 impl<G: EndoMulCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
-        self.g_final.is_valid() && self.xi_s.0.is_valid()
+        self.g_final.is_valid() && self.xi_s.is_valid()
     }
 }
 
@@ -37,7 +37,7 @@ impl<G: EndoMulCurve> Default for DLogItem<G> {
     fn default() -> Self {
         Self {
             g_final: G::default(),
-            xi_s: SuccinctCheckPolynomial(vec![]),
+            xi_s: SuccinctCheckPolynomial::from_chals(vec![]),
         }
     }
 }
@@ -88,7 +88,15 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| {
+                end_timer!(poly_time);
+                end_timer!(succinct_time);
+                PCError::Other(e.to_string())
+        })?;
 
         let comms_values = previous_accumulators
             .into_par_iter()
@@ -127,7 +135,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         let check_time = start_timer!(|| "Succinct check IPA proof");
 
-        fs_rng.absorb(values.clone())?;
+        fs_rng.record(values.clone())?;
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
@@ -265,7 +273,14 @@ impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemA
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| {
+            end_timer!(accumulate_time);
+            PCError::Other(e.to_string())
+        })?;
 
         // Collect xi_s from the accumulators
         let xi_s = accumulators
@@ -560,6 +575,7 @@ mod test {
 
         // random degree multiplier when using segementation
         let seg_mul = rand::distributions::Uniform::from(5..=15).sample(rng);
+
         let mut poly_labels = Vec::new();
         println!("Sampled supported degree");
 
@@ -590,7 +606,6 @@ mod test {
         println!("supported degree: {:?}", supported_degree);
         println!("num_points_in_query_map: {:?}", num_points_in_query_map);
         let (ck, vk) = pp.trim(supported_degree)?;
-        println!("Trimmed");
 
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
@@ -616,7 +631,6 @@ mod test {
                 values.insert(eval_label, value);
             }
         }
-        println!("Generated query set");
 
         let mut fs_rng = get_test_fs_rng::<G, FS>();
         let proof = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, FS>>::multi_point_multi_poly_open(
@@ -819,7 +833,7 @@ mod test {
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
-            )?;
+            ).unwrap();
 
             let accumulators = verifier_state_vec
                 .into_iter()
@@ -848,17 +862,40 @@ mod test {
     use algebra::curves::tweedle::{
         dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
     };
-    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-    #[test]
-    fn test_tweedle_accumulate_verify() {
-        accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-        accumulation_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+    #[cfg(not(feature = "circuit-friendly"))]
+    mod chacha_fs {
+        use fiat_shamir::chacha20::FiatShamirChaChaRng;
+        use super::*;
+
+        #[test]
+        fn test_tweedle_accumulate_verify() {
+            accumulation_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+            accumulation_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+        }
+    
+        #[test]
+        fn test_tweedle_batch_verify() {
+            batch_verification_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+            batch_verification_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+        }
     }
 
-    #[test]
-    fn test_tweedle_batch_verify() {
-        batch_verification_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-        batch_verification_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
+    #[cfg(feature = "circuit-friendly")]
+    mod poseidon_fs {
+        use fiat_shamir::poseidon::{TweedleFrPoseidonFSRng, TweedleFqPoseidonFSRng};
+        use super::*;
+
+        #[test]
+        fn test_tweedle_accumulate_verify() {
+            accumulation_test::<TweedleDee, Blake2s, TweedleFqPoseidonFSRng>().unwrap();
+            accumulation_test::<TweedleDum, Blake2s, TweedleFrPoseidonFSRng>().unwrap();
+        }
+    
+        #[test]
+        fn test_tweedle_batch_verify() {
+            batch_verification_test::<TweedleDee, Blake2s, TweedleFqPoseidonFSRng>().unwrap();
+            batch_verification_test::<TweedleDum, Blake2s, TweedleFrPoseidonFSRng>().unwrap();
+        }
     }
 }

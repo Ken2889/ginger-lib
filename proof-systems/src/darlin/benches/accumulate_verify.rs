@@ -1,4 +1,4 @@
-use algebra::{EndoMulCurve, ToConstraintField, Group};
+use algebra::{EndoMulCurve, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -13,7 +13,12 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
+fn bench_verify<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: 'static + Digest,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -82,7 +87,12 @@ fn bench_verify<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: Fia
     group.finish();
 }
 
-fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
+fn bench_accumulate<
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    D: 'static + Digest,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -141,7 +151,9 @@ fn bench_accumulate<G1: EndoMulCurve, G2: EndoMulCurve, D: 'static + Digest, FS:
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_verify_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     bench_verify::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
@@ -166,7 +178,9 @@ fn bench_verify_tweedle(c: &mut Criterion) {
 }
 
 fn bench_accumulate_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
     bench_accumulate::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,

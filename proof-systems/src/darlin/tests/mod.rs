@@ -47,9 +47,8 @@ mod test {
         UniformRand,
     };
     use blake2::Blake2s;
-    use marlin::VerifierKey as MarlinVerifierKey;
-    use fiat_shamir::chacha20::FiatShamirChaChaRng;
     use fiat_shamir::FiatShamirRng;
+    use marlin::VerifierKey as MarlinVerifierKey;
     use poly_commit::{
         ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PolynomialCommitment,
     };
@@ -115,7 +114,7 @@ mod test {
         // Change one element in proof_g1
         let mut wrong_proof_g1 = proof_g1.clone().unwrap();
         wrong_proof_g1.pc_proof.c = G1::ScalarField::rand(rng);
-        assert!(!verify_aggregated_proofs::<G1, G2,FS, R>(
+        assert!(!verify_aggregated_proofs::<G1, G2, FS, R>(
             pcds,
             vks,
             &Some(wrong_proof_g1),
@@ -228,7 +227,13 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng, R: RngCore>(
+    fn test_batch_verification<
+        'a,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
+        FS: FiatShamirRng,
+        R: RngCore,
+    >(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
         vks: &mut [MarlinVerifierKey<
             G1,
@@ -345,10 +350,26 @@ mod test {
         }
     }
 
-    type TestIPAPCDee =
-        DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>>;
-    type TestIPAPCDum =
-        DomainExtendedPolynomialCommitment<DumJacobian, InnerProductArgPC<DumJacobian, FiatShamirChaChaRng<Blake2s>>>;
+    #[cfg(not(feature = "circuit-friendly"))]
+    type FsRngDee = fiat_shamir::chacha20::FiatShamirChaChaRng<Blake2s>;
+
+    #[cfg(not(feature = "circuit-friendly"))]
+    type FsRngDum = FsRngDee;
+
+    #[cfg(feature = "circuit-friendly")]
+    type FsRngDee = fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
+
+    #[cfg(feature = "circuit-friendly")]
+    type FsRngDum = fiat_shamir::poseidon::TweedleFrPoseidonFSRng;
+
+    type TestIPAPCDee = DomainExtendedPolynomialCommitment<
+        DeeJacobian,
+        InnerProductArgPC<DeeJacobian, FsRngDee>,
+    >;
+    type TestIPAPCDum = DomainExtendedPolynomialCommitment<
+        DumJacobian,
+        InnerProductArgPC<DumJacobian, FsRngDum>,
+    >;
 
     #[test]
     fn test_simple_marlin_proof_aggregator() {
@@ -394,13 +415,14 @@ mod test {
             generated_proofs += iteration_num_proofs;
             let iteration_segment_size = 1 << (generation_rng.gen_range(5..max_pow));
             let iteration_num_constraints = iteration_segment_size;
-            let (mut iteration_pcds, mut iteration_vks) = generate_simple_marlin_test_data::<Blake2s, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                &params_g1,
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds, mut iteration_vks) =
+                generate_simple_marlin_test_data::<Blake2s, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    &params_g1,
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             assert!(&iteration_pcds[0].proof.is_valid());
             test_canonical_serialize_deserialize(true, &iteration_pcds[0].proof);
@@ -426,7 +448,9 @@ mod test {
         let mut simple_marlin_pcds = pcds
             .into_iter()
             .map(|simple_marlin_pcd| {
-                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>>(simple_marlin_pcd)
+                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FsRngDee>(
+                    simple_marlin_pcd,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -436,7 +460,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             simple_marlin_pcds.clone().as_mut_slice(),
             simple_marlin_vks.clone().as_mut_slice(),
             &committer_key_g1,
@@ -449,7 +473,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             simple_marlin_pcds.as_mut_slice(),
             simple_marlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -510,14 +534,15 @@ mod test {
             generated_proofs += iteration_num_proofs;
             let iteration_segment_size = 1 << (generation_rng.gen_range(5..max_pow));
             let iteration_num_constraints = iteration_segment_size;
-            let (mut iteration_pcds, mut iteration_vks) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                &params_g1,
-                &params_g2,
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds, mut iteration_vks) =
+                generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    &params_g1,
+                    &params_g2,
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             assert!(&iteration_pcds[0].final_darlin_proof.is_valid());
             test_canonical_serialize_deserialize(true, &iteration_pcds[0].final_darlin_proof);
@@ -526,14 +551,15 @@ mod test {
             pcds.append(&mut iteration_pcds);
             final_darlin_vks.append(&mut iteration_vks);
 
-            let (mut iteration_pcds_fake, mut iteration_vks_fake) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                &params_g1_fake,
-                &params_g2_fake,
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds_fake, mut iteration_vks_fake) =
+                generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    &params_g1_fake,
+                    &params_g2_fake,
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             pcds_fake.append(&mut iteration_pcds_fake);
             final_darlin_vks_fake.append(&mut iteration_vks_fake);
@@ -551,7 +577,7 @@ mod test {
             .collect::<Vec<_>>();
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             final_darlin_pcds.clone().as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &committer_key_g1,
@@ -564,7 +590,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             final_darlin_pcds.as_mut_slice(),
             final_darlin_vks.as_mut_slice(),
             &verifier_key_g1,
@@ -628,13 +654,14 @@ mod test {
             // Randomly choose if to generate a SimpleMarlinProof or a FinalDarlinProof
             let simple: bool = generation_rng.gen();
             if simple {
-                let (iteration_pcds, mut iteration_vks) = generate_simple_marlin_test_data::<Blake2s, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    &params_g1,
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds, mut iteration_vks) =
+                    generate_simple_marlin_test_data::<Blake2s, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        &params_g1,
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 assert!(&iteration_pcds[0].proof.is_valid());
                 test_canonical_serialize_deserialize(true, &iteration_pcds[0].proof);
@@ -665,14 +692,15 @@ mod test {
                 pcds_fake.append(&mut iteration_pcds_fake);
                 vks_fake.append(&mut iteration_vks_fake);
             } else {
-                let (iteration_pcds, mut iteration_vks) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    &params_g1,
-                    &params_g2,
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds, mut iteration_vks) =
+                    generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        &params_g1,
+                        &params_g2,
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 assert!(&iteration_pcds[0].final_darlin_proof.is_valid());
                 test_canonical_serialize_deserialize(true, &iteration_pcds[0].final_darlin_proof);
@@ -686,14 +714,15 @@ mod test {
                 pcds.append(&mut iteration_pcds);
                 vks.append(&mut iteration_vks);
 
-                let (iteration_pcds_fake, mut iteration_vks_fake) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    &params_g1_fake,
-                    &params_g2_fake,
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds_fake, mut iteration_vks_fake) =
+                    generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        &params_g1_fake,
+                        &params_g2_fake,
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 let mut iteration_pcds_fake = iteration_pcds_fake
                     .into_iter()
@@ -706,7 +735,7 @@ mod test {
         }
 
         println!("Test accumulation");
-        test_accumulation::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_accumulation::<DeeJacobian, DumJacobian, FsRngDee, _>(
             pcds.clone().as_mut_slice(),
             vks.as_mut_slice(),
             &committer_key_g1,
@@ -719,7 +748,7 @@ mod test {
         );
 
         println!("Test batch verification");
-        test_batch_verification::<DeeJacobian, DumJacobian, FiatShamirChaChaRng<Blake2s>, _>(
+        test_batch_verification::<DeeJacobian, DumJacobian, FsRngDee, _>(
             pcds.as_mut_slice(),
             vks.as_mut_slice(),
             &verifier_key_g1,
@@ -748,7 +777,8 @@ mod test {
 
         if Path::new(file_path).exists() {
             let fs = File::open(file_path).unwrap();
-            proof = FinalDarlinProof::<_, _, FiatShamirChaChaRng<Blake2s>>::deserialize(fs).unwrap();
+            proof =
+                FinalDarlinProof::<_, _, FsRngDee>::deserialize(fs).unwrap();
         } else {
             let (iteration_pcds, _) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
                 num_constraints - 1,

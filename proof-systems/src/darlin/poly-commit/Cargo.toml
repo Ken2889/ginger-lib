@@ -21,9 +21,8 @@ license = "MIT/Apache-2.0"
 edition = "2018"
 
 [dependencies]
-algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive", "tweedle"] }
+algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive"] }
 bench-utils = {  path = "../../../../bench-utils" }
-primitives = { path = "../../../../primitives", features = ["tweedle"], optional = true }
 fiat-shamir = { path = "../fiat-shamir" }
 r1cs-std = { path =  "../../../../r1cs/gadgets/std", features = ["nonnative"]}
 r1cs-core = { path = "../../../../r1cs/core" }
@@ -37,6 +36,8 @@ rayon = { version = "1" }
 derivative = { version = "2" }
 
 [dev-dependencies]
+algebra = { path = "../../../../algebra", features = ["tweedle"] }
+fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
 criterion = "0.3"
 rand_xorshift = "0.3.0"
@@ -45,7 +46,7 @@ blake2 = { version = "0.8.1", default-features = false }
 [features]
 asm = [ "algebra/llvm_asm" ]
 print-trace = [ "bench-utils/print-trace" ]
-circuit-friendly = [ "primitives" ]
+circuit-friendly = []
 
 [[bench]]
 name = "tweedle_open_proof"

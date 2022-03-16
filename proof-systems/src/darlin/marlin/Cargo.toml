@@ -21,12 +21,10 @@ edition = "2018"
 
 [dependencies]
 algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive"] }
-primitives = { path = "../../../../primitives", features = ["tweedle"], optional = true }
 fiat-shamir = { path = "../fiat-shamir" }
 bench-utils = {  path = "../../../../bench-utils" }
 r1cs-core = {  path = "../../../../r1cs/core" }
 poly-commit = {path = "../poly-commit" }
-r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"], optional = true }
 
 rand = "0.8.4"
 rand_core = { version = "0.6.3" }
@@ -36,8 +34,9 @@ derivative = { version = "2", features = ["use_core"] }
 
 [dev-dependencies]
 algebra = { path = "../../../../algebra", features = ["tweedle", "derive"]}
+fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
-
+r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"] }
 blake2 = { version = "0.8.1", default-features = false }
 criterion = "0.3"
 rand_xorshift = "0.3.0"
@@ -45,10 +44,10 @@ rand_xorshift = "0.3.0"
 [features]
 print-trace = [ "bench-utils/print-trace", "poly-commit/print-trace" ]
 asm = [ "poly-commit/asm", "algebra/llvm_asm" ]
-circuit-friendly = ["primitives"]
+circuit-friendly = ["poly-commit/circuit-friendly"]
 
 [[bench]]
 name = "tweedle_test_circuits"
 path = "benches/tweedle_test_circuits.rs"
 harness = false
-required-features = ["asm", "r1cs-std"]
+required-features = ["asm"]
