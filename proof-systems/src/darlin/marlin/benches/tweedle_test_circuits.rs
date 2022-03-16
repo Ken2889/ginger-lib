@@ -201,7 +201,6 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit1b<F> {
             )?;
 
             a_k_minus_2 = a_k_minus_1;
-            //b_k_minus_2 = b_k_minus_1;
             a_k_minus_1 = a_k;
             b_k_minus_1 = b_k;
         }

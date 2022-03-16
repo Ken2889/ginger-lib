@@ -412,19 +412,6 @@ impl<F: Field> ConstraintSystem<F> {
         }
     }
 
-    /// Get density
-    pub fn num_non_zero(&self) -> usize {
-        let a_density = self.at.iter().map(|row| row.len()).sum();
-        let b_density = self.bt.iter().map(|row| row.len()).sum();
-        let c_density = self.ct.iter().map(|row| row.len()).sum();
-    
-        let max = *[a_density, b_density, c_density]
-            .iter()
-            .max()
-            .expect("iterator is not empty");
-        max
-    }
-
     /// Check whether `self.mode == SynthesisMode::Setup`.
     pub fn is_in_setup_mode(&self) -> bool {
         self.mode == SynthesisMode::Setup

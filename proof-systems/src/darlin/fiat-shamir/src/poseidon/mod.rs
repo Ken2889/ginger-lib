@@ -22,9 +22,9 @@ pub struct PoseidonFSRng<
     P: PoseidonParameters<Fr = F>,
     SB: SBox<Field = F, Parameters = P>,
 > {
-    pub(crate) state: Vec<F>,
-    pub(crate) pending_inputs: Vec<F>,
-    pub(crate) pending_outputs: Vec<F>,
+    state: Vec<F>,
+    pending_inputs: Vec<F>,
+    pending_outputs: Vec<F>,
     _parameters: PhantomData<P>,
     _sbox: PhantomData<SB>,
 }
@@ -107,12 +107,10 @@ where
         let mut src_elements = Vec::with_capacity(num_elements);
 
         // Apply as many permutations as needed to get the required number of field elements
-        while src_elements.len() != num_elements {
-            src_elements.push(self.get_element())
-        }
+        (0..num_elements).for_each(|_| src_elements.push(self.get_element()));
 
         // Serialize field elements into bits and return them
-        let mut dest_bits: Vec<bool> = Vec::with_capacity(num_bits);
+        let mut dest_bits: Vec<bool> = Vec::with_capacity(usable_bits * num_elements);
 
         // discard leading zeros + 1 bit below modulus bits
         let skip = F::Params::MODULUS_BITS as usize - usable_bits;

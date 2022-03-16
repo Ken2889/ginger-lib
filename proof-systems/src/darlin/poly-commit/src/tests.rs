@@ -264,7 +264,6 @@ where
     Ok(())
 }
 
-// TODO: what is the difference to `single_poly_test()`?
 pub(crate) fn constant_poly_test<G, PC, D>(
     negative_type: Option<NegativeType>,
 ) -> Result<(), PC::Error>
@@ -278,7 +277,7 @@ where
     let info = TestInfo {
         num_iters: 100,
         max_degree: None,
-        supported_degree: None,
+        supported_degree: Some(0),
         num_polynomials: 1,
         max_num_queries: 1,
         negative_type,

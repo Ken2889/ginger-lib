@@ -29,7 +29,11 @@ pub trait ToConstraintField<F: Field> {
 
 impl<F: Field, T: ToConstraintField<F> + Clone, const N: usize> ToConstraintField<F> for [T; N] {
     fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        self.to_vec().to_field_elements()
+        let mut fes = Vec::with_capacity(self.len());
+        for elem in self.iter() {
+            fes.append(&mut elem.to_field_elements()?);
+        }
+        Ok(fes)
     }
 }
 

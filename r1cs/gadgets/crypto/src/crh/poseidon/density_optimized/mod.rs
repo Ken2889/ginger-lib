@@ -465,7 +465,7 @@ where
         Ok(())
     }
 
-    pub fn _enforce_hash_constant_length<CS: ConstraintSystemAbstract<ConstraintF>>(
+    pub fn apply_inputs_to_state<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         input: &[FpGadget<ConstraintF>],
         state: &mut [FpGadget<ConstraintF>],
@@ -572,7 +572,7 @@ where
         }
 
         // Apply permutations
-        Self::_enforce_hash_constant_length(
+        Self::apply_inputs_to_state(
             cs.ns(|| "apply permutations"),
             input,
             &mut state

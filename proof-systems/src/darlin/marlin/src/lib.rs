@@ -201,7 +201,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         )?;
 
         let (verifier_first_msg, verifier_state) =
-            IOP::verifier_first_round::<_, G>(index_pk.index_vk.index_info, &mut fs_rng)?;
+            IOP::verifier_first_round(index_pk.index_vk.index_info, &mut fs_rng)?;
 
         /*  Second round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -228,7 +228,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         )?;
 
         let (verifier_second_msg, verifier_state) =
-            IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
+            IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
 
         /*  Third round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -255,7 +255,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         /* Preparations before entering the batch evaluation proof
          */
 
-        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng)?;
+        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_pk
@@ -309,7 +309,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect::<Vec<G::ScalarField>>();
         end_timer!(eval_time);
 
-        // record the evalution claims.
+        // record the evaluation claims.
         fs_rng.record(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
@@ -426,7 +426,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let first_comms = &proof.commitments[0];
         fs_rng.record(first_comms.clone())?;
 
-        let (_, verifier_state) = IOP::verifier_first_round::<_, G>(index_vk.index_info, &mut fs_rng)?;
+        let (_, verifier_state) = IOP::verifier_first_round(index_vk.index_info, &mut fs_rng)?;
 
         /*  Second round of the compiled and Fiat-Shamir transformed oracle proof-
         The verification of the outer sumcheck equation is postponed to below
@@ -434,7 +434,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let second_comms = &proof.commitments[1];
         fs_rng.record(second_comms.clone())?;
 
-        let (_, verifier_state) = IOP::verifier_second_round::<_, G>(verifier_state, &mut fs_rng)?;
+        let (_, verifier_state) = IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
 
         /*  Third round of the compiled and Fiat-Shamir transformed oracle proof
         The verification of the inner sumcheck equation is postponed to below
@@ -443,7 +443,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let third_comms = &proof.commitments[2];
         fs_rng.record(third_comms.clone())?;
 
-        let verifier_state = IOP::verifier_third_round::<_, G>(verifier_state, &mut fs_rng)?;
+        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
 
         // Gather commitments in one vector.
         let commitments: Vec<_> = index_vk

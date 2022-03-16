@@ -70,171 +70,174 @@ pub(crate) mod test {
         num_inputs: usize,
         initial_seed: Option<Vec<u8>>,
     ) {
-        // Generate test data
-        let native_inputs: Vec<G::BaseField> =
-            (0..num_inputs).map(|_| G::BaseField::rand(rng)).collect();
-        let nonnative_inputs: Vec<G::ScalarField> =
-            (0..num_inputs).map(|_| G::ScalarField::rand(rng)).collect();
-        let byte_inputs: Vec<u8> = (0..num_inputs * 10).map(|_| rng.gen()).collect();
+        for iter_num_inputs in 1..=num_inputs {
+            let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-        let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
-
-        // Alloc data
-        let native_inputs_g = native_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, fe)| {
-                FpGadget::<G::BaseField>::alloc(
-                    cs.ns(|| format!("alloc native input {}", i)),
-                    || Ok(fe),
+            // Create a primitive FS rng
+            let mut fs_rng = if let Some(seed) = initial_seed.clone() {
+                FS::from_seed(seed).unwrap()
+            } else {
+                FS::default()
+            };
+    
+            // Create a circuit FS rng
+            let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
+                FSG::init_from_seed(
+                    cs.ns(|| "new fs_rng_g from seed for non native inputs"),
+                    seed,
                 )
                 .unwrap()
-            })
-            .collect::<Vec<_>>();
+            } else {
+                FSG::init(cs.ns(|| "new fs_rng_g for non native inputs")).unwrap()
+            };
 
-        let nonnative_inputs_g = nonnative_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, fe)| {
-                NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc(
-                    cs.ns(|| format!("alloc nonnative input {}", i)),
-                    || Ok(fe),
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
+            // Generate test data
+            let native_inputs: Vec<G::BaseField> =
+                (0..iter_num_inputs).map(|_| G::BaseField::rand(rng)).collect();
+            let nonnative_inputs: Vec<G::ScalarField> =
+                (0..iter_num_inputs).map(|_| G::ScalarField::rand(rng)).collect();
+            let byte_inputs: Vec<u8> = (0..iter_num_inputs * 10).map(|_| rng.gen()).collect();
 
-        let byte_inputs_g = byte_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, fe)| {
-                UInt8::alloc(cs.ns(|| format!("alloc byte input {}", i)), || Ok(fe)).unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        // Test Non Native inputs
-
-        // Create a primitive FS rng and record nonnative inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng.record(nonnative_inputs).unwrap();
-
-        // Create a circuit FS rng and record nonnative inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
-            FSG::init_from_seed(
-                cs.ns(|| "new fs_rng_g from seed for non native inputs"),
-                seed,
-            )
-            .unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for non native inputs")).unwrap()
-        };
-        fs_rng_g
-            .enforce_record(
-                cs.ns(|| "enforce record non native field elements"),
-                nonnative_inputs_g.as_slice(),
-            )
-            .unwrap();
-
-        // Get challenge from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng.get_challenge::<N>().unwrap().to_vec(),
-            fs_rng_g
-                .enforce_get_many_challenges::<_, N>(
-                    cs.ns(|| "Get N bits challenges given non native record"),
-                    1
-                )
-                .unwrap()[0]
+            // Alloc data
+            let native_inputs_g = native_inputs
                 .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
+                .enumerate()
+                .map(|(i, fe)| {
+                    FpGadget::<G::BaseField>::alloc(
+                        cs.ns(|| format!("alloc native input {}", i)),
+                        || Ok(fe),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>();
 
-        // Test Native inputs
-
-        // Create a primitive FS rng and record native inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng.record(native_inputs).unwrap();
-
-        // Create a circuit FS rng and record native inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed.clone() {
-            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for native inputs"), seed).unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for native inputs")).unwrap()
-        };
-        fs_rng_g
-            .enforce_record(
-                cs.ns(|| "enforce record native field elements"),
-                native_inputs_g,
-            )
-            .unwrap();
-
-        // Get challenge from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng.get_challenge::<N>().unwrap().to_vec(),
-            fs_rng_g
-                .enforce_get_many_challenges::<_, N>(
-                    cs.ns(|| "Get N bits challenges given native record"),
-                    1
-                )
-                .unwrap()[0]
+            let nonnative_inputs_g = nonnative_inputs
                 .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
+                .enumerate()
+                .map(|(i, fe)| {
+                    NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc(
+                        cs.ns(|| format!("alloc nonnative input {}", i)),
+                        || Ok(fe),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>();
 
-        // Test byte inputs
-
-        // Create a primitive FS rng and record byte inputs
-        let mut fs_rng = if let Some(seed) = initial_seed.clone() {
-            FS::from_seed(seed).unwrap()
-        } else {
-            FS::default()
-        };
-        fs_rng
-            .record::<G::BaseField, _>(byte_inputs.as_slice())
-            .unwrap();
-
-        // Create a circuit FS rng and record byte inputs
-        let mut fs_rng_g = if let Some(seed) = initial_seed {
-            FSG::init_from_seed(cs.ns(|| "new fs_rng_g from seed for byte inputs"), seed).unwrap()
-        } else {
-            FSG::init(cs.ns(|| "new fs_rng_g for byte inputs")).unwrap()
-        };
-        fs_rng_g
-            .enforce_record(
-                cs.ns(|| "enforce record byte elements"),
-                byte_inputs_g.as_slice(),
-            )
-            .unwrap();
-
-        // Get challenges from primitive and circuit FS rng and assert equality
-        assert_eq!(
-            fs_rng.get_challenge::<N>().unwrap().to_vec(),
-            fs_rng_g
-                .enforce_get_many_challenges::<_, N>(
-                    cs.ns(|| "Get N bits challenges given byte record"),
-                    1
-                )
-                .unwrap()[0]
+            let byte_inputs_g = byte_inputs
                 .iter()
-                .map(|bit_g| bit_g.get_value().unwrap())
-                .collect::<Vec<_>>()
-        );
+                .enumerate()
+                .map(|(i, fe)| {
+                    UInt8::alloc(cs.ns(|| format!("alloc byte input {}", i)), || Ok(fe)).unwrap()
+                })
+                .collect::<Vec<_>>();
+            
+            // Test Non Native inputs
+            fs_rng.record(nonnative_inputs).unwrap();
+            fs_rng_g
+                .enforce_record(
+                    cs.ns(|| "enforce record non native field elements"),
+                    nonnative_inputs_g.as_slice(),
+                )
+                .unwrap();
 
-        if !cs.is_satisfied() {
-            println!("{:?}", cs.which_is_unsatisfied());
+            // Get challenge from primitive and circuit FS rng and assert equality
+            assert_eq!(
+                fs_rng
+                    .get_many_challenges::<N>(iter_num_inputs)
+                    .unwrap()
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect::<Vec<bool>>(),
+                fs_rng_g
+                    .enforce_get_many_challenges::<_, N>(
+                        cs.ns(|| "Get N bits challenges given non native record"),
+                        iter_num_inputs
+                    )
+                    .unwrap()
+                    .iter()
+                    .flat_map(|bits_g|
+                        bits_g
+                            .iter()
+                            .map(|bit_g| bit_g.get_value().unwrap())
+                    ).collect::<Vec<bool>>()
+            );
+
+            // Test Native inputs
+            fs_rng.record(native_inputs).unwrap();
+            fs_rng_g
+                .enforce_record(
+                    cs.ns(|| "enforce record native field elements"),
+                    native_inputs_g,
+                )
+                .unwrap();
+
+            // Get challenge from primitive and circuit FS rng and assert equality
+            assert_eq!(
+                fs_rng
+                    .get_many_challenges::<N>(iter_num_inputs)
+                    .unwrap()
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect::<Vec<bool>>(),
+                fs_rng_g
+                    .enforce_get_many_challenges::<_, N>(
+                        cs.ns(|| "Get N bits challenges given native record"),
+                        iter_num_inputs
+                    )
+                    .unwrap()
+                    .iter()
+                    .flat_map(|bits_g|
+                        bits_g
+                            .iter()
+                            .map(|bit_g| bit_g.get_value().unwrap())
+                    ).collect::<Vec<bool>>()
+            );
+
+            // Test byte inputs
+            fs_rng
+                .record::<G::BaseField, _>(byte_inputs.as_slice())
+                .unwrap();
+            fs_rng_g
+                .enforce_record(
+                    cs.ns(|| "enforce record byte elements"),
+                    byte_inputs_g.as_slice(),
+                )
+                .unwrap();
+
+            // Get challenges from primitive and circuit FS rng and assert equality
+            assert_eq!(
+                fs_rng
+                    .get_many_challenges::<N>(iter_num_inputs)
+                    .unwrap()
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect::<Vec<bool>>(),
+                fs_rng_g
+                    .enforce_get_many_challenges::<_, N>(
+                        cs.ns(|| "Get N bits challenges given bytes record"),
+                        iter_num_inputs
+                    )
+                    .unwrap()
+                    .iter()
+                    .flat_map(|bits_g|
+                        bits_g
+                            .iter()
+                            .map(|bit_g| bit_g.get_value().unwrap())
+                    ).collect::<Vec<bool>>()
+            );
+
+            if !cs.is_satisfied() {
+                println!("{:?}", cs.which_is_unsatisfied());
+            }
+    
+            assert!(cs.is_satisfied());
         }
-
-        assert!(cs.is_satisfied());
     }
+
+    const SAMPLES: usize = 10;
 
     pub(crate) fn fs_rng_consistency_test<
         G: Group,
@@ -248,7 +251,7 @@ pub(crate) mod test {
         let mut fs_rng = FSG::init(cs.ns(|| "init fs_rng_g")).unwrap();
 
         // record random native field elements and check everything is fine
-        let to_record = (0..10)
+        let to_record = (0..SAMPLES)
             .map(|i| {
                 let random_fe = G::BaseField::rand(rng);
                 FpGadget::<G::BaseField>::alloc(cs.ns(|| format!("alloc native fe {}", i)), || {
@@ -262,7 +265,7 @@ pub(crate) mod test {
             .unwrap();
 
         // record random non native field elements and check everything is fine
-        let to_record = (0..10)
+        let to_record = (0..SAMPLES)
             .map(|i| {
                 let random_nonnative_fe = G::ScalarField::rand(rng);
                 NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc(
@@ -277,7 +280,7 @@ pub(crate) mod test {
             .unwrap();
 
         // record random bytes and check everything is fine
-        let to_record = (0..100)
+        let to_record = (0..SAMPLES * 10)
             .map(|i| {
                 let random_byte: u8 = rng.gen();
                 UInt8::alloc(cs.ns(|| format!("Alloc random byte {}", i)), || {
@@ -296,7 +299,7 @@ pub(crate) mod test {
             .enforce_get_challenge::<_, N>(cs.ns(|| "test 1 - get init challenge"))
             .unwrap();
         let mut prev = out;
-        for i in 0..100 {
+        for i in 0..SAMPLES * 10 {
             let curr = fs_rng
                 .enforce_get_challenge::<_, N>(cs.ns(|| format!("test 1 - get challenge {}", i)))
                 .unwrap();
@@ -326,7 +329,7 @@ pub(crate) mod test {
             &mut set,
         );
 
-        let random_fes = (0..10)
+        let random_fes = (0..SAMPLES)
             .map(|i| {
                 let random_fe = G::BaseField::rand(rng);
                 FpGadget::<G::BaseField>::alloc(
@@ -337,7 +340,7 @@ pub(crate) mod test {
             })
             .collect::<Vec<_>>();
 
-        for i in 1..=10 {
+        for i in 1..=SAMPLES {
             fs_rng
                 .reset(cs.ns(|| format!("test 2 - reset {}", i)))
                 .unwrap();

@@ -111,6 +111,7 @@ pub trait CanonicalDeserialize: Sized {
     }
 }
 
+/// Serialize the input argument and return its bytes in a Vec.
 #[macro_export]
 macro_rules! serialize {
     ($($x:expr),*) => ({
@@ -120,6 +121,7 @@ macro_rules! serialize {
     });
 }
 
+/// Serialize the input argument in a Vec (passed as argument too).
 #[macro_export]
 macro_rules! serialize_to_vec {
     ($buf:expr, $y:expr, $($x:expr),*) => ({
@@ -133,6 +135,7 @@ macro_rules! serialize_to_vec {
     })
 }
 
+/// Serialize without metadata the input argument and return its bytes in a Vec.
 #[macro_export]
 macro_rules! serialize_no_metadata {
     ($($x:expr),*) => ({
@@ -142,6 +145,7 @@ macro_rules! serialize_no_metadata {
     });
 }
 
+/// Serialize without metadata the input argument in a Vec (passed as argument too).
 #[macro_export]
 macro_rules! serialize_to_vec_no_metadata {
     ($buf:expr, $y:expr, $($x:expr),*) => ({
