@@ -830,7 +830,7 @@ mod test {
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
-            ).unwrap();
+            )?;
 
             let accumulators = verifier_state_vec
                 .into_iter()

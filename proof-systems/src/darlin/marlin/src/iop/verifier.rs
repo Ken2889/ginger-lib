@@ -3,7 +3,7 @@
 use crate::iop::indexer::IndexInfo;
 use crate::iop::*;
 
-use algebra::{PrimeField, Group};
+use algebra::PrimeField;
 use algebra::{get_best_evaluation_domain, EvaluationDomain};
 use fiat_shamir::FiatShamirRng;
 use poly_commit::QuerySet;
@@ -45,7 +45,7 @@ pub struct VerifierSecondMsg<F> {
 impl<F: PrimeField> IOP<F> {
     /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
     /// to a sumcheck.
-    pub fn verifier_first_round<R: FiatShamirRng, G: Group<ScalarField = F>>(
+    pub fn verifier_first_round<R: FiatShamirRng>(
         index_info: IndexInfo<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierFirstMsg<F>, VerifierState<F>), Error> {
@@ -91,7 +91,7 @@ impl<F: PrimeField> IOP<F> {
 
     /// Second round of the verifier, samples the random challenge `beta` for probing
     /// the outer sumcheck identity.
-    pub fn verifier_second_round<R: FiatShamirRng, G: Group<ScalarField = F>>(
+    pub fn verifier_second_round<R: FiatShamirRng>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
@@ -115,7 +115,7 @@ impl<F: PrimeField> IOP<F> {
 
     /// Third round of the verifier. Samples the random challenge `gamma` for
     /// probing the inner sumcheck identity.
-    pub fn verifier_third_round<R: FiatShamirRng, G: Group<ScalarField = F>>(
+    pub fn verifier_third_round<R: FiatShamirRng>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<VerifierState<F>, Error> {

@@ -5,14 +5,14 @@
 //! * a seperate aggregation prover for the verifier "hard" parts.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
+use crate::read_fe_from_challenge;
 use crate::Error;
 use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
     Field, Group, PrimeField, SemanticallyValid, UniformRand,
-    CanonicalSerialize, serialize_no_metadata, EndoMulCurve,
-    FromBits
+    CanonicalSerialize, serialize_no_metadata,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -26,18 +26,34 @@ use rayon::prelude::*;
 use fiat_shamir::FiatShamirRng;
 use digest::Digest;
 
+use trait_set::trait_set;
+
+#[cfg(feature = "circuit-friendly")]
+use algebra::EndoMulCurve;
+#[cfg(feature = "circuit-friendly")]
+trait_set! {
+    pub trait IPACurve = EndoMulCurve;
+}
+
+#[cfg(not(feature = "circuit-friendly"))]
+use algebra::Curve;
+#[cfg(not(feature = "circuit-friendly"))]
+trait_set! {
+    pub trait IPACurve = Curve;
+}
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng> {
+pub struct InnerProductArgPC<G: IPACurve, FS: FiatShamirRng> {
     _projective: PhantomData<G>,
     _fs: PhantomData<FS>,
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -203,7 +219,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
@@ -526,18 +542,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
             // Save always round challenge as a normal 128 bits G::ScalarField element
             let chal = fs_rng.get_challenge::<128>()?;
-            let raw_round_chal = {
-                let mut chal = chal.to_vec();
-                // Pad before reversing if necessary
-                if chal.len() < G::ScalarField::size_in_bits() {
-                    chal.append(&mut vec![false; G::ScalarField::size_in_bits() - chal.len()])
-                }
-
-                // Reverse and read (as read_bits read in BE)
-                chal.reverse();
-                G::ScalarField::read_bits(chal)
-                    .map_err(|e| Error::Other(e.to_string()))?
-            };
+            let raw_round_chal = read_fe_from_challenge::<G::ScalarField>(chal.to_vec())?;
             round_challenges.push(raw_round_chal);
             round_challenge = raw_round_chal;
 

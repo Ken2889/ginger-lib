@@ -146,9 +146,6 @@ where
             proof: MarlinProof(proof),
             deferred: sys_ins,
         };
-        // let usr_ins = usr_ins.to_field_elements().map_err(|_| {
-        //     FinalDarlinError::Other("Failed to convert usr ins to field elements".to_owned())
-        // })?;
 
         Ok(FinalDarlinPCD::<G1, G2, FS>::new(proof, usr_ins))
     }

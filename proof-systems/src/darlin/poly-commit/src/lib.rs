@@ -14,7 +14,6 @@
 #![deny(trivial_numeric_casts, private_in_public, variant_size_differences)]
 #![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
 #![deny(unused_attributes, unused_mut)]
-#![deny(missing_docs)]
 #![deny(unused_imports)]
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
@@ -40,7 +39,6 @@ mod tests;
 
 use algebra::SquareRootField;
 use algebra::PrimeField;
-use algebra::FromBits;
 use fiat_shamir::FiatShamirRng;
 pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
@@ -538,19 +536,10 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
     /// Transform a challenge to its representation in the scalar field.
     /// 'chal' bits are supposed to be in LE bit order.
-    fn challenge_to_scalar(mut chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
-        
-        // Pad before reversing if necessary
-        if chal.len() < G::ScalarField::size_in_bits() {
-            chal.append(&mut vec![false; G::ScalarField::size_in_bits() - chal.len()])
-        }
-
-        // Reverse and read (as read_bits read in BE)
-        chal.reverse();
-        let scalar = G::ScalarField::read_bits(chal)
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        let chal = read_fe_from_challenge::<G::ScalarField>(chal)
             .map_err(|e| Error::Other(e.to_string()))?;
-
-        Ok(scalar)
+        Ok(chal)
     }
 
     /// Build the multi-poly single-point (random) linear combination.
@@ -1020,7 +1009,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
                     fs_rng.set_state(state.clone())?;
 
                     // Perform succinct check of i-th proof
-                    let verfifier_state = Self::succinct_multi_point_multi_poly_verify(
+                    let verifier_state = Self::succinct_multi_point_multi_poly_verify(
                         vk,
                         commitments,
                         query_set,
@@ -1029,11 +1018,11 @@ pub trait PolynomialCommitment<G: Group>: Sized {
                         &mut fs_rng,
                     )?;
 
-                    if verfifier_state.is_none() {
+                    if verifier_state.is_none() {
                         Err(Error::FailedSuccinctCheck)?
                     }
 
-                    Ok(verfifier_state.unwrap())
+                    Ok(verifier_state.unwrap())
                 },
             )
             .partition(Result::is_ok);
@@ -1084,4 +1073,21 @@ pub fn evaluate_query_set_to_vec<'a, F: Field>(
         v.push(((label.clone(), point_label.clone()), eval));
     }
     v
+}
+
+/// Transform a challenge to its representation in the field F.
+/// 'chal' bits are supposed to be in LE bit order.
+pub(crate) fn read_fe_from_challenge<F: PrimeField>(mut chal: Vec<bool>) -> Result<F, Error> {
+    
+    // Pad before reversing if necessary
+    if chal.len() < F::size_in_bits() {
+        chal.append(&mut vec![false; F::size_in_bits() - chal.len()])
+    }
+
+    // Reverse and read (as read_bits read in BE)
+    chal.reverse();
+    let scalar = F::read_bits(chal)
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    Ok(scalar)
 }

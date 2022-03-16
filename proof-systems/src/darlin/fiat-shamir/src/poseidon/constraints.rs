@@ -42,7 +42,7 @@ where
     ) -> Result<(), SynthesisError> {
         if !self.pending_inputs.is_empty() {
             // Permute inputs
-            DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::_enforce_hash_constant_length(
+            DensityOptimizedPoseidonQuinticSboxHashGadget::<ConstraintF, P, DOP>::apply_inputs_to_state(
                 cs.ns(|| "apply permutations to inputs"),
                 self.pending_inputs.as_slice(),
                 &mut self.state,
@@ -97,10 +97,8 @@ where
         let mut src_elements = Vec::with_capacity(num_elements);
 
         // Apply as many permutations as needed to get the required number of field elements
-        let mut i = 0;
-        while src_elements.len() != num_elements {
+        for i in 0..num_elements {
             src_elements.push(self.enforce_get_element(cs.ns(|| format!("Get elem {}", i)))?);
-            i += 1;
         }
 
         // Serialize field elements into bits and return them
@@ -157,14 +155,14 @@ where
         // We can ignore the rest as they should be empty
         let (state, _, _) = primitive_fs_rng.get_state();
 
-        // Hardcode inital state
+        // Hardcode initial state
         let state =
             Vec::<FpGadget<ConstraintF>>::from_value(cs.ns(|| "hardcode initial state"), &state);
 
         Ok(Self {
             state,
             pending_inputs: Vec::new(),
-            pending_outputs: Vec::with_capacity(P::T - P::R),
+            pending_outputs: Vec::with_capacity(P::R),
             _parameters: PhantomData,
             _density_optimized_parameters: PhantomData,
         })
@@ -179,7 +177,7 @@ where
         let mut elems = data.to_field_gadget_elements(cs.ns(|| "data to fes"))?;
 
         if elems.is_empty() {
-            return Err(SynthesisError::Other("Noting to record !".to_string()));
+            return Err(SynthesisError::Other("Nothing to record !".to_string()));
         }
 
         // They refer to an old state, so we cannot use them anymore

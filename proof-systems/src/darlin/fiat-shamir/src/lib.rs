@@ -217,6 +217,8 @@ pub(crate) mod test {
         }
     }
 
+    const SAMPLES: usize = 10;
+
     pub(crate) fn fs_rng_consistency_test<
         FS: FiatShamirRng,
         F1: PrimeField,
@@ -256,9 +258,9 @@ pub(crate) mod test {
         fs_rng.reset();
         let mut set = std::collections::HashSet::new();
         set.insert(fs_rng.get_challenge::<N>().unwrap());
-        let random_fes = (0..10).map(|_| F1::rand(rng)).collect::<Vec<_>>();
+        let random_fes = (0..SAMPLES).map(|_| F1::rand(rng)).collect::<Vec<_>>();
 
-        for i in 1..=10 {
+        for i in 1..=SAMPLES {
             fs_rng.reset();
             let random_fes = random_fes[..i].to_vec();
             fs_rng.record(random_fes).unwrap();
