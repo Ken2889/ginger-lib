@@ -3,7 +3,7 @@
 use crate::iop::indexer::IndexInfo;
 use crate::iop::*;
 
-use algebra::{PrimeField, EndoMulCurve};
+use algebra::PrimeField;
 use algebra::{get_best_evaluation_domain, EvaluationDomain};
 use fiat_shamir::FiatShamirRng;
 use poly_commit::QuerySet;
@@ -45,7 +45,7 @@ pub struct VerifierSecondMsg<F> {
 impl<F: PrimeField> IOP<F> {
     /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
     /// to a sumcheck.
-    pub fn verifier_first_round<R: FiatShamirRng, G: EndoMulCurve<ScalarField = F>>(
+    pub fn verifier_first_round<R: FiatShamirRng>(
         index_info: IndexInfo<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierFirstMsg<F>, VerifierState<F>), Error> {
@@ -58,14 +58,23 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let alpha: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let alpha = F::read_bits(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| Error::Other(e.to_string()))?;
+
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
                 "Sampled an alpha challenge belonging to H domain".to_owned(),
             ))?
         }
 
-        let eta: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let eta = F::read_bits(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierFirstMsg { alpha, eta };
 
@@ -82,11 +91,16 @@ impl<F: PrimeField> IOP<F> {
 
     /// Second round of the verifier, samples the random challenge `beta` for probing
     /// the outer sumcheck identity.
-    pub fn verifier_second_round<R: FiatShamirRng, G: EndoMulCurve<ScalarField = F>>(
+    pub fn verifier_second_round<R: FiatShamirRng>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
-        let beta: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let beta = F::read_bits(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| Error::Other(e.to_string()))?;
+
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
                 "Sampled a beta challenge belonging to H domain".to_owned(),
@@ -101,11 +115,16 @@ impl<F: PrimeField> IOP<F> {
 
     /// Third round of the verifier. Samples the random challenge `gamma` for
     /// probing the inner sumcheck identity.
-    pub fn verifier_third_round<R: FiatShamirRng, G: EndoMulCurve<ScalarField = F>>(
+    pub fn verifier_third_round<R: FiatShamirRng>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<VerifierState<F>, Error> {
-        let gamma: F = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let gamma = F::read_bits(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+        ).map_err(|e| Error::Other(e.to_string()))?;
+
         state.gamma = Some(gamma);
         Ok(state)
     }

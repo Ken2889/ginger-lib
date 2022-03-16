@@ -5,12 +5,14 @@
 //! * a seperate aggregation prover for the verifier "hard" parts.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
+use crate::read_fe_from_challenge;
 use crate::Error;
 use crate::{Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    BitIterator, Field, Group, PrimeField, SemanticallyValid, UniformRand, CanonicalSerialize, serialize_no_metadata, EndoMulCurve
+    Field, Group, PrimeField, SemanticallyValid, UniformRand,
+    CanonicalSerialize, serialize_no_metadata,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -24,18 +26,34 @@ use rayon::prelude::*;
 use fiat_shamir::FiatShamirRng;
 use digest::Digest;
 
+use trait_set::trait_set;
+
+#[cfg(feature = "circuit-friendly")]
+use algebra::EndoMulCurve;
+#[cfg(feature = "circuit-friendly")]
+trait_set! {
+    pub trait IPACurve = EndoMulCurve;
+}
+
+#[cfg(not(feature = "circuit-friendly"))]
+use algebra::Curve;
+#[cfg(not(feature = "circuit-friendly"))]
+trait_set! {
+    pub trait IPACurve = Curve;
+}
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng> {
+pub struct InnerProductArgPC<G: IPACurve, FS: FiatShamirRng> {
     _projective: PhantomData<G>,
     _fs: PhantomData<FS>,
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -95,7 +113,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .for_each(|(z_l, z_r)| *z_l += &(round_challenge * z_r));
 
         k_l.par_iter_mut().zip(k_r).for_each(|(k_l, k_r)| {
-            *k_l += G::mul_bits_affine(&k_r, BitIterator::new(round_challenge.into_repr()))
+            *k_l += G::mul_bits_affine(&k_r, algebra::BitIterator::new(round_challenge.into_repr()))
         });
     }
 
@@ -108,7 +126,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     // No segmentation here: Reduction polys are at most as big as the committer key.
     pub fn open_reduction_polynomials<'a>(
         ck: &CommitterKey<G>,
-        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G::ScalarField>>,
+        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G>>,
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
@@ -129,12 +147,15 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .par_iter()
             .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
-
-        // Absorb evaluations
-        fs_rng.absorb(values)?;
+        // record evaluations
+        fs_rng.record(values)?;
 
         // Sample new batching challenge
-        let random_scalar = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let random_scalar = Self::challenge_to_scalar(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -198,7 +219,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
@@ -243,6 +264,12 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
 
         Ok(pp)
     }
+
+    #[cfg(feature = "circuit-friendly")]
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        let scalar = G::endo_rep_to_scalar(chal).map_err(|e| Error::Other(e.to_string()))?;
+        Ok(scalar)
+    } 
 
     fn commit(
         ck: &Self::CommitterKey,
@@ -314,15 +341,18 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             // We assume that the commitments, the query point, and the evaluations are already
             // bound to the internal state of the Fiat-Shamir rng. Hence the same is true for
             // the deterministically derived combined_commitment and its combined_v.
-            fs_rng.absorb(hiding_commitment)?;
+            fs_rng.record(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
-
+            let hiding_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .get_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
             polynomial += (hiding_challenge, &hiding_polynomial);
             rand += &(hiding_challenge * &hiding_randomness);
-            fs_rng.absorb(rand)?;
+            fs_rng.record(rand)?;
 
             end_timer!(hiding_time);
 
@@ -334,7 +364,11 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let mut round_challenge = Self::challenge_to_scalar(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -387,12 +421,18 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             r_vec.push(lr[1]);
 
             // the previous challenge is bound to the internal state, hence
-            // no need to absorb it
-            fs_rng.absorb([lr[0], lr[1]])?;
+            // no need to record it
+            fs_rng.record([lr[0], lr[1]])?;
 
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
-            // round_challenge is guaranteed to be non-zero by squeeze function
-            let round_challenge_inv = round_challenge.inverse().unwrap();
+            round_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .get_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
+
+            let round_challenge_inv = round_challenge
+                .inverse()
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::GetChallengeError("sampled a 0 challenge !".to_string())))?;
 
             Self::round_reduce(
                 round_challenge,
@@ -467,17 +507,28 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
             let hiding_comm = proof.hiding_comm.unwrap();
             let rand = proof.rand.unwrap();
 
-            fs_rng.absorb(hiding_comm)?;
-            let hiding_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
-            fs_rng.absorb(rand)?;
+            fs_rng.record(hiding_comm)?;
+            let hiding_challenge = Self::challenge_to_scalar(
+                fs_rng
+                    .get_challenge::<128>()?
+                    .to_vec()
+                ).map_err(|e| Error::Other(e.to_string()))?;
+            fs_rng.record(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
         }
 
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
+        
+        #[cfg(feature = "circuit-friendly")]
+        let mut endo_round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+        let mut round_challenge = Self::challenge_to_scalar(
+            fs_rng
+                .get_challenge::<128>()?
+                .to_vec()
+            ).map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -487,18 +538,38 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProduc
         let r_iter = proof.r_vec.iter();
 
         for (l, r) in l_iter.zip(r_iter) {
-            fs_rng.absorb([*l, *r])?;
-            round_challenge = fs_rng.squeeze_128_bits_challenge::<G>()?;
+            fs_rng.record([*l, *r])?;
 
-            round_challenges.push(round_challenge);
+            // Save always round challenge as a normal 128 bits G::ScalarField element
+            let chal = fs_rng.get_challenge::<128>()?;
+            let raw_round_chal = read_fe_from_challenge::<G::ScalarField>(chal.to_vec())?;
+            round_challenges.push(raw_round_chal);
+            round_challenge = raw_round_chal;
 
-            // round_challenge is guaranteed to be non-zero by squeeze function
+            // If in circuit-friendly mode, let's transform it to an endo scalar and save it
+            #[cfg(feature = "circuit-friendly")]
+            {
+                let endo_chal = Self::challenge_to_scalar(chal.to_vec())
+                    .map_err(|e| Error::Other(e.to_string()))?;
+                endo_round_challenges.push(endo_chal);
+                round_challenge = endo_chal;
+            }
+            
+            let round_challenge_inv = round_challenge
+                .inverse()
+                .ok_or(Error::FiatShamirTransformError(fiat_shamir::error::Error::GetChallengeError("sampled a 0 challenge !".to_string())))?;
+
             round_commitment_proj +=
-                &(l.mul(&round_challenge.inverse().unwrap()) + &r.mul(&round_challenge));
+                &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
         }
 
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-        let check_poly = SuccinctCheckPolynomial::<G::ScalarField>(round_challenges);
+        #[cfg(feature = "circuit-friendly")]
+        let check_poly = SuccinctCheckPolynomial::<G> { chals: round_challenges, endo_chals: endo_round_challenges };
+
+        #[cfg(not(feature = "circuit-friendly"))]
+        let check_poly = SuccinctCheckPolynomial::<G> { chals: round_challenges };
+            
         let v_prime = check_poly.evaluate(point) * &proof.c;
 
         let check_commitment_elem: G = Self::inner_commit(

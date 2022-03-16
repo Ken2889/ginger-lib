@@ -1,8 +1,10 @@
 //! A polynomial represented in coefficient form.
 
+use crate::SquareRootField;
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
 use crate::{
-    serialize::*, Field, FromBytes, FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBytes,
+    serialize::*, Field, FromBytes, FromBytesChecked, Group,
+    PrimeField, SemanticallyValid, ToBytes, ToConstraintField, Error
 };
 use rand::Rng;
 use rayon::prelude::*;
@@ -487,7 +489,8 @@ impl<F: PrimeField> SemanticallyValid for DensePolynomial<F> {
     }
 }
 
-impl<F: PrimeField> Group for DensePolynomial<F> {
+impl<F: PrimeField + SquareRootField> Group for DensePolynomial<F> {
+    type BaseField = F;
     type ScalarField = F;
 
     fn zero() -> Self {
@@ -501,6 +504,12 @@ impl<F: PrimeField> Group for DensePolynomial<F> {
     fn double_in_place(&mut self) -> &mut Self {
         self.add_assign(&self.clone());
         self
+    }
+}
+
+impl<F: PrimeField + SquareRootField> ToConstraintField<F> for DensePolynomial<F> {
+    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+        ToConstraintField::<<Self as Group>::BaseField>::to_field_elements(&self.coeffs)
     }
 }
 

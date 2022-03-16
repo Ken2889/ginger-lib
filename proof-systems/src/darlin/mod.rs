@@ -31,16 +31,15 @@ use crate::darlin::{
 };
 use algebra::{EndoMulCurve, Group, GroupVec, ToConstraintField};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
         CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
         VerifierKey as DLogVerifierKey,
     },
-    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment,
-    QuerySet,
+    DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, QuerySet,
 };
-use fiat_shamir::FiatShamirRng;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -138,18 +137,15 @@ where
         let usr_ins = c.get_usr_ins()?;
 
         // run the Marlin prover on the initialized recursive circuit
-        let proof = Marlin::<
-            G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
-        >::prove(index_pk, pc_pk, c, zk, zk_rng)?;
+        let proof =
+            Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>::prove(
+                index_pk, pc_pk, c, zk, zk_rng,
+            )?;
 
         let proof = FinalDarlinProof::<G1, G2, FS> {
             proof: MarlinProof(proof),
             deferred: sys_ins,
         };
-        let usr_ins = usr_ins.to_field_elements().map_err(|_| {
-            FinalDarlinError::Other("Failed to convert usr ins to field elements".to_owned())
-        })?;
 
         Ok(FinalDarlinPCD::<G1, G2, FS>::new(proof, usr_ins))
     }
@@ -182,17 +178,22 @@ where
     /// Verifies only the IOP part of a `FinalDarlinProof`, i.e. a Marlin AHP
     /// for the PCDCircuit with correctly combined system and user inputs.
     pub fn verify_ahp(
-        pc_vk:          &DLogVerifierKey<G1>,
-        index_vk:       &FinalDarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>>,
-        usr_ins:        &[G1::ScalarField],
-        proof:          &FinalDarlinProof<G1, G2, FS>,
-    )  -> Result<(
-        QuerySet<'a, G1::ScalarField>,
-        Evaluations<'a, G1::ScalarField>,
-        Vec<LabeledCommitment<GroupVec<G1>>>,
-        FS,
-    ), FinalDarlinError>
-    {
+        pc_vk: &DLogVerifierKey<G1>,
+        index_vk: &FinalDarlinVerifierKey<
+            G1,
+            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
+        >,
+        usr_ins: &[G1::ScalarField],
+        proof: &FinalDarlinProof<G1, G2, FS>,
+    ) -> Result<
+        (
+            QuerySet<'a, G1::ScalarField>,
+            Evaluations<'a, G1::ScalarField>,
+            Vec<LabeledCommitment<GroupVec<G1>>>,
+            FS,
+        ),
+        FinalDarlinError,
+    > {
         // Get "system inputs"
         let mut public_inputs = proof.deferred.to_field_elements().map_err(|_| {
             FinalDarlinError::Other(

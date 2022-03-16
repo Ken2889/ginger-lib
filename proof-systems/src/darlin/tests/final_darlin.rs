@@ -7,13 +7,13 @@ use crate::darlin::{
     pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
-use algebra::{Group, ToConstraintField, UniformRand, EndoMulCurve};
+use algebra::{EndoMulCurve, Group, ToConstraintField, UniformRand};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use poly_commit::{
     ipa_pc::{CommitterKey, InnerProductArgPC, Parameters},
     DomainExtendedPolynomialCommitment, Error as PCError,
 };
-use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::Rng;
@@ -298,7 +298,13 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
+pub fn generate_test_pcd<
+    'a,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'a,
+    R: RngCore,
+>(
     pc_ck_g1: &CommitterKey<G1>,
     final_darlin_pk: &FinalDarlinProverKey<
         G1,
@@ -341,7 +347,14 @@ where
 /// Generates `num_proofs` random instances of FinalDarlinPCDs for TestCircuit1 at given
 /// `num_constraints`, using `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, D: Digest, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
+pub fn generate_test_data<
+    'a,
+    D: Digest,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'a,
+    R: RngCore,
+>(
     num_constraints: usize,
     segment_size: usize,
     params_g1: &Parameters<G1>,

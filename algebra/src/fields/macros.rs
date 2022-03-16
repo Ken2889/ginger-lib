@@ -613,6 +613,7 @@ macro_rules! impl_Fp {
         }
 
         impl<P: $FpParameters> Group for $Fp<P> {
+            type BaseField = $Fp<P>;
             type ScalarField = $Fp<P>;
 
             #[inline]

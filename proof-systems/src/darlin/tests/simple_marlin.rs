@@ -6,10 +6,10 @@ use crate::darlin::pcd::{
 };
 use algebra::{EndoMulCurve, Field, UniformRand};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
 use poly_commit::DomainExtendedPolynomialCommitment;
-use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;

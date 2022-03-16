@@ -45,7 +45,7 @@ where
     ) -> Self {
         // Generate valid accumulator over G1 starting from random xi_s
         let log_key_len_g1 = algebra::log2(committer_key_g1.comm_key.len());
-        let random_xi_s_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
+        let random_xi_s_g1 = SuccinctCheckPolynomial::<G1>::from_chals(
             (0..log_key_len_g1 as usize)
                 .map(|_| u128::rand(rng).into())
                 .collect(),
@@ -65,7 +65,7 @@ where
 
         // Generate valid accumulator over G2 starting from random xi_s
         let log_key_len_g2 = algebra::log2(committer_key_g2.comm_key.len());
-        let random_xi_s_g2 = SuccinctCheckPolynomial::<G2::ScalarField>(
+        let random_xi_s_g2 = SuccinctCheckPolynomial::<G2>::from_chals(
             (0..log_key_len_g2 as usize)
                 .map(|_| u128::rand(rng).into())
                 .collect(),
@@ -116,7 +116,7 @@ where
         // We packing the full bit vector into native field elements as efficient as possible (yet
         // still secure).
         let mut xi_s_bits = Vec::new();
-        for fe in self.previous_acc.xi_s.0.clone().into_iter() {
+        for fe in self.previous_acc.xi_s.chals.iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
@@ -124,7 +124,7 @@ where
             debug_assert!(
                 <[bool] as ToConstraintField<G2::ScalarField>>::to_field_elements(&bits[to_skip..])
                     .unwrap()[0]
-                    == fe
+                    == *fe
             );
             xi_s_bits.extend_from_slice(&bits[to_skip..]);
         }
@@ -147,7 +147,7 @@ where
         // As for the xi's of the previous node, we serialize them all to bits and pack them into native
         // field elements as efficient as possible (yet secure).
         let mut xi_s_bits = Vec::new();
-        for fe in self.pre_previous_acc.xi_s.0.clone().into_iter() {
+        for fe in self.pre_previous_acc.xi_s.chals.iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
@@ -155,7 +155,7 @@ where
             debug_assert!(
                 <[bool] as ToConstraintField<G1::ScalarField>>::to_field_elements(&bits[to_skip..])
                     .unwrap()[0]
-                    == fe
+                    == *fe
             );
             xi_s_bits.extend_from_slice(&bits[to_skip..]);
         }
@@ -182,7 +182,9 @@ pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRn
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid for FinalDarlinProof<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid
+    for FinalDarlinProof<G1, G2, FS>
+{
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.deferred.is_valid()
     }

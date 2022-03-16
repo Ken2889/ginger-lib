@@ -2,7 +2,7 @@ use super::Group;
 use crate::{
     bytes::{FromBytes, ToBytes, FromBytesChecked},
     serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError},
-    SemanticallyValid, ToConstraintField, Field, Error
+    SemanticallyValid, ToConstraintField, Error
 };
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
@@ -99,6 +99,12 @@ impl<G: Group> Display for GroupVec<G> {
             writeln!(f, "[{}]: {}", i, item)?;
         }
         Ok(())
+    }
+}
+
+impl<G: Group> ToConstraintField<G::BaseField> for GroupVec<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+        self.0.to_field_elements()
     }
 }
 
@@ -209,6 +215,7 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
 }
 
 impl<G: Group> Group for GroupVec<G> {
+    type BaseField = G::BaseField;
     type ScalarField = G::ScalarField;
 
     fn zero() -> Self {
@@ -224,11 +231,5 @@ impl<G: Group> Group for GroupVec<G> {
             self.0[i] += item;
         }
         self
-    }
-}
-
-impl<F: Field, G: Group + ToConstraintField<F>> ToConstraintField<F> for GroupVec<G> {
-    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        self.0.to_field_elements()
     }
 }

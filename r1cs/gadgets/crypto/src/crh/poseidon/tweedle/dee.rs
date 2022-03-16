@@ -1,6 +1,23 @@
+use crate::DensityOptimizedPoseidonQuinticSboxHashGadget;
+use primitives::TweedleFrQuinticSbox;
+use crate::PoseidonHashGadget;
+use crate::QuinticSBoxGadget;
 use algebra::{field_new, fields::tweedle::Fr as TweedleFr, BigInteger256 as BigInteger};
 use primitives::crh::TweedleFrPoseidonParameters;
 use crate::DensityOptimizedPoseidonQuinticSBoxParameters;
+
+type TweedleFrQuinticSboxGadget = QuinticSBoxGadget<TweedleFr, TweedleFrQuinticSbox>;
+pub type TweedleFrPoseidonHashGadget = PoseidonHashGadget<
+    TweedleFr,
+    TweedleFrPoseidonParameters,
+    TweedleFrQuinticSbox,
+    TweedleFrQuinticSboxGadget,
+>;
+pub type TweedleFrDensityOptimizedPoseidonHashGadget = DensityOptimizedPoseidonQuinticSboxHashGadget<
+    TweedleFr,
+    TweedleFrPoseidonParameters,
+    TweedleFrDensityOptimizedPoseidonParameters
+>;
 
 #[derive(Clone)]
 pub struct TweedleFrDensityOptimizedPoseidonParameters {}

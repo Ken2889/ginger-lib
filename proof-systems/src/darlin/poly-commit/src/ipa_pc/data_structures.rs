@@ -8,12 +8,13 @@
 //! [BCMS20]: https://eprint.iacr.org/2020/499
 use crate::*;
 use crate::{PCCommitterKey, PCVerifierKey, Vec};
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::PrimeField;
 use std::{
     convert::TryFrom,
     io::{Read, Write},
     vec,
 };
+use super::IPACurve;
 
 /// `Parameters` are the polynomial commitment parameters for the inner product arg scheme.
 // TODO: it seems to be artificial to have a `Parameters` struct which is the same as
@@ -27,7 +28,7 @@ use std::{
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct Parameters<G: EndoMulCurve> {
+pub struct Parameters<G: IPACurve> {
     /// The key used to commit to polynomials.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -42,7 +43,7 @@ pub struct Parameters<G: EndoMulCurve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: EndoMulCurve> PCParameters<G> for Parameters<G> {
+impl<G: IPACurve> PCParameters<G> for Parameters<G> {
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
     type Error = Error;
@@ -102,7 +103,7 @@ impl<G: EndoMulCurve> PCParameters<G> for Parameters<G> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct CommitterKey<G: EndoMulCurve> {
+pub struct CommitterKey<G: IPACurve> {
     /// The base point vector used for the coefficients of the polynomial.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -122,7 +123,7 @@ pub struct CommitterKey<G: EndoMulCurve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: EndoMulCurve> SemanticallyValid for CommitterKey<G> {
+impl<G: IPACurve> SemanticallyValid for CommitterKey<G> {
     // Technically this function is redundant, since the keys are generated
     // through a deterministic procedure starting from a public string.
     fn is_valid(&self) -> bool {
@@ -133,7 +134,7 @@ impl<G: EndoMulCurve> SemanticallyValid for CommitterKey<G> {
     }
 }
 
-impl<G: EndoMulCurve> PCCommitterKey for CommitterKey<G> {
+impl<G: IPACurve> PCCommitterKey for CommitterKey<G> {
     fn max_degree(&self) -> usize {
         self.max_degree
     }
@@ -154,7 +155,7 @@ impl<G: EndoMulCurve> PCCommitterKey for CommitterKey<G> {
 /// `VerifierKey` is used to check evaluation proofs for a given commitment.
 pub type VerifierKey<G> = CommitterKey<G>;
 
-impl<G: EndoMulCurve> PCVerifierKey for VerifierKey<G> {
+impl<G: IPACurve> PCVerifierKey for VerifierKey<G> {
     fn max_degree(&self) -> usize {
         self.max_degree
     }
@@ -178,7 +179,7 @@ impl<G: EndoMulCurve> PCVerifierKey for VerifierKey<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: EndoMulCurve> {
+pub struct Proof<G: IPACurve> {
     /// Vector of left elements for each of the log_d iterations in `open`
     pub l_vec: Vec<G>,
 
@@ -199,13 +200,13 @@ pub struct Proof<G: EndoMulCurve> {
     pub rand: Option<G::ScalarField>,
 }
 
-impl<G: EndoMulCurve> PCProof for Proof<G> {
+impl<G: IPACurve> PCProof for Proof<G> {
     fn get_key_len(&self) -> usize {
         1 << self.l_vec.len()
     }
 }
 
-impl<G: EndoMulCurve> SemanticallyValid for Proof<G> {
+impl<G: IPACurve> SemanticallyValid for Proof<G> {
     fn is_valid(&self) -> bool {
         self.l_vec.is_valid() &&
             self.r_vec.is_valid() &&
@@ -230,7 +231,7 @@ impl<G: EndoMulCurve> SemanticallyValid for Proof<G> {
     }
 }
 
-impl<G: EndoMulCurve> CanonicalSerialize for Proof<G> {
+impl<G: IPACurve> CanonicalSerialize for Proof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // l_vec
         // More than enough for practical applications
@@ -345,7 +346,7 @@ impl<G: EndoMulCurve> CanonicalSerialize for Proof<G> {
     }
 }
 
-impl<G: EndoMulCurve> CanonicalDeserialize for Proof<G> {
+impl<G: IPACurve> CanonicalDeserialize for Proof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read l_vec
         let l_vec_len: u8 = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -501,7 +502,7 @@ impl<G: EndoMulCurve> CanonicalDeserialize for Proof<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct MultiPointProof<G: EndoMulCurve> {
+pub struct MultiPointProof<G: IPACurve> {
     /// This is a "classical" single-point multi-poly proof which involves all commitments:
     /// commitments from the initial claim and the new "h_comm"
     pub proof: Proof<G>,
@@ -510,7 +511,7 @@ pub struct MultiPointProof<G: EndoMulCurve> {
     pub h_commitment: G,
 }
 
-impl<G: EndoMulCurve> PCMultiPointProof<G> for MultiPointProof<G> {
+impl<G: IPACurve> PCMultiPointProof<G> for MultiPointProof<G> {
     type Commitment = G;
     type Proof = Proof<G>;
 
@@ -533,13 +534,13 @@ impl<G: EndoMulCurve> PCMultiPointProof<G> for MultiPointProof<G> {
     }
 }
 
-impl<G: EndoMulCurve> SemanticallyValid for MultiPointProof<G> {
+impl<G: IPACurve> SemanticallyValid for MultiPointProof<G> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.h_commitment.is_valid()
     }
 }
 
-impl<G: EndoMulCurve> CanonicalSerialize for MultiPointProof<G> {
+impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
         CanonicalSerialize::serialize(&self.proof, &mut writer)?;
@@ -586,7 +587,7 @@ impl<G: EndoMulCurve> CanonicalSerialize for MultiPointProof<G> {
     }
 }
 
-impl<G: EndoMulCurve> CanonicalDeserialize for MultiPointProof<G> {
+impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read proof
         let proof: Proof<G> = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -653,13 +654,59 @@ impl<G: EndoMulCurve> CanonicalDeserialize for MultiPointProof<G> {
 /// and can be evaluated in `O(log(degree))` time, and the final committer key
 /// G_final can be computed via an MSM from its coefficients.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SuccinctCheckPolynomial<F: PrimeField>(pub Vec<F>);
+pub struct SuccinctCheckPolynomial<G: IPACurve> {
+    #[doc(hidden)]
+    pub chals: Vec<G::ScalarField>,
+    #[cfg(feature = "circuit-friendly")]
+    #[doc(hidden)]
+    pub endo_chals: Vec<G::ScalarField>,
+}
 
-impl<F: PrimeField> SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> SuccinctCheckPolynomial<G> {
+
+    /// Construct Self starting from the challenges.
+    /// Will automatically calculate also the endo versions of them
+    #[cfg(feature = "circuit-friendly")]
+    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
+        use algebra::ToBits;
+
+        let endo_chals = chals
+            .iter()
+            .map(|chal| {
+                // Serialize FE
+                let mut bits = chal.write_bits();
+                // Reverse bits as endo_rep_to_scalar requires them to be in LE
+                bits.reverse();
+                // We know that only the first 128 bits are relevant
+                bits = bits[..128].to_vec();                
+                // Read endo scalar
+                G::endo_rep_to_scalar(bits).unwrap()
+            }).collect();
+        Self { chals, endo_chals }
+    }
+
+    /// Construct Self starting from the challenges
+    #[cfg(not(feature = "circuit-friendly"))]
+    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
+        Self { chals }
+    }
+
+    /// Get endo chals from this polynomial
+    #[cfg(feature = "circuit-friendly")]
+    pub fn get_chals(&self) -> &[G::ScalarField] {
+        self.endo_chals.as_slice()
+    }
+
+    /// Get chals from this polynomial
+    #[cfg(not(feature = "circuit-friendly"))]
+    pub fn get_chals(&self) -> &[G::ScalarField] {
+        self.chals.as_slice()
+    }
+
     /// Slightly optimized way to compute it, taken from
     /// [o1-labs/marlin](https://github.com/o1-labs/marlin/blob/master/dlog/commitment/src/commitment.rs#L175)
-    fn _compute_succinct_poly_coeffs(&self, mut init_coeffs: Vec<F>) -> Vec<F> {
-        let challenges = &self.0;
+    fn _compute_succinct_poly_coeffs(&self, mut init_coeffs: Vec<G::ScalarField>) -> Vec<G::ScalarField> {
+        let challenges = self.get_chals();
         let log_d = challenges.len();
         let mut k: usize = 0;
         let mut pow: usize = 1;
@@ -672,39 +719,39 @@ impl<F: PrimeField> SuccinctCheckPolynomial<F> {
     }
 
     /// Computes the coefficients of the underlying degree `d` polynomial.
-    pub fn compute_coeffs(&self) -> Vec<F> {
-        self._compute_succinct_poly_coeffs(vec![F::one(); 1 << self.0.len()])
+    pub fn compute_coeffs(&self) -> Vec<G::ScalarField> {
+        self._compute_succinct_poly_coeffs(vec![G::ScalarField::one(); 1 << self.chals.len()])
     }
 
     /// Computes the coefficients of the underlying degree `d` polynomial, scaled by
     /// a factor `scale`.
-    pub fn compute_scaled_coeffs(&self, scale: F) -> Vec<F> {
-        self._compute_succinct_poly_coeffs(vec![scale; 1 << self.0.len()])
+    pub fn compute_scaled_coeffs(&self, scale: G::ScalarField) -> Vec<G::ScalarField> {
+        self._compute_succinct_poly_coeffs(vec![scale; 1 << self.chals.len()])
     }
 
     /// Evaluate `self` at `point` in time `O(log_d)`.
-    pub fn evaluate(&self, point: F) -> F {
-        let challenges = &self.0;
+    pub fn evaluate(&self, point: G::ScalarField) -> G::ScalarField {
+        let challenges = self.get_chals();
         let log_d = challenges.len();
 
-        let mut product = F::one();
+        let mut product = G::ScalarField::one();
         for (i, challenge) in challenges.iter().enumerate() {
             let i = i + 1;
             let elem_degree: u64 = (1 << (log_d - i)) as u64;
             let elem = point.pow([elem_degree]);
-            product *= &(F::one() + &(elem * challenge));
+            product *= &(G::ScalarField::one() + &(elem * challenge));
         }
 
         product
     }
 }
 
-impl<F: PrimeField> CanonicalSerialize for SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> CanonicalSerialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        let len = self.0.len() as u8;
+        let len = self.chals.len() as u8;
         CanonicalSerialize::serialize(&len, &mut writer)?;
-        for item in self.0.iter() {
+        for item in self.chals.iter() {
             // Each field element is, in reality, only 128 bits long
             let fe128 = item.into_repr().as_ref()[0] as u128
                 + ((item.into_repr().as_ref()[1] as u128) << 64);
@@ -715,11 +762,11 @@ impl<F: PrimeField> CanonicalSerialize for SuccinctCheckPolynomial<F> {
 
     #[inline]
     fn serialized_size(&self) -> usize {
-        1 + self.0.len() * 16
+        1 + self.chals.len() * 16
     }
 }
 
-impl<F: PrimeField> CanonicalDeserialize for SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let len = <u8 as CanonicalDeserialize>::deserialize(&mut reader)?;
@@ -729,17 +776,29 @@ impl<F: PrimeField> CanonicalDeserialize for SuccinctCheckPolynomial<F> {
             let fe128 = u128::deserialize(&mut reader)?;
             values.push(fe128.into());
         }
-        Ok(SuccinctCheckPolynomial(values))
+        Ok(SuccinctCheckPolynomial::<G>::from_chals(values))
+    }
+}
+
+impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
+    #[cfg(feature = "circuit-friendly")]
+    fn is_valid(&self) -> bool {
+        self.chals.is_valid() && self.endo_chals.is_valid()
+    }
+
+    #[cfg(not(feature = "circuit-friendly"))]
+    fn is_valid(&self) -> bool {
+        self.chals.is_valid()
     }
 }
 
 /// The succinct part of the verifier returns a succinct-check polynomial and final comm key
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifierState<G: EndoMulCurve> {
+#[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct VerifierState<G: IPACurve> {
     /// check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-    pub check_poly: SuccinctCheckPolynomial<G::ScalarField>,
+    pub check_poly: SuccinctCheckPolynomial<G>,
     /// final comm key
     pub final_comm_key: G,
 }
 
-impl<G: EndoMulCurve> PCVerifierState for VerifierState<G> {}
+impl<G: IPACurve> PCVerifierState for VerifierState<G> {}

@@ -2,24 +2,20 @@
 #![allow(non_camel_case_types)]
 
 use algebra::{
-    curves::tweedle::dee::DeeJacobian as TweedleDee, fields::tweedle::{Fr, Fq},
-    Curve, Field, UniformRand, EndoMulCurve, CanonicalSerialize, serialize_no_metadata};
+    curves::tweedle::dee::DeeJacobian as TweedleDee,
+    EndoMulCurve, CanonicalSerialize, serialize_no_metadata
+};
 use blake2::Blake2s;
 use digest::Digest;
 
 use super::InnerProductArgPC;
 use crate::Error;
-use fiat_shamir::{
-    FiatShamirRng, FiatShamirRngSeed,
-};
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
 use crate::{
     DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PolynomialCommitment,
 };
 use rand::thread_rng;
-use rayon::prelude::*;
-use std::ops::Mul;
 
 impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
     fn randomize(&mut self) {
@@ -127,7 +123,10 @@ macro_rules! generate_pc_tests {
 
             #[test]
             fn [<polycommit_round_reduce_test_ $pc_inst_name>]() {
-
+                use algebra::fields::tweedle::Fr;
+                use algebra::{Curve, Field, UniformRand};
+                use rayon::prelude::*;
+                use std::ops::Mul;
                 let mut rng = &mut thread_rng();
 
                 let round_challenge = Fr::rand(&mut rng);
@@ -172,116 +171,24 @@ macro_rules! generate_pc_tests {
                     .zip(key_r)
                     .for_each(|(k_l, k_r)| *k_l += &k_r.mul(&round_challenge));
 
-                $pc::round_reduce(
-                    round_challenge,
-                    round_challenge_inv,
-                    &mut gpu_coeffs_l,
-                    &gpu_coeffs_r,
-                    &mut gpu_z_l,
-                    &gpu_z_r,
-                    &mut gpu_key_proj_l,
-                    gpu_key_r.as_slice(),
-                );
+                
+                {
+                    $pc::round_reduce(
+                        round_challenge,
+                        round_challenge_inv,
+                        &mut gpu_coeffs_l,
+                        &gpu_coeffs_r,
+                        &mut gpu_z_l,
+                        &gpu_z_r,
+                        &mut gpu_key_proj_l,
+                        gpu_key_r.as_slice(),
+                    );
+                }
+
 
                 assert_eq!(coeffs_l, gpu_coeffs_l);
                 assert_eq!(z_l, gpu_z_l);
                 assert_eq!(key_proj_l, gpu_key_proj_l);
-            }
-
-            #[test]
-            fn [<fiat_shamir_rng_test_ $pc_inst_name>]() {
-                // Empty test
-                {
-                    let mut rng1 = $fs_rng::from_seed(
-                        FiatShamirRngSeed::new().finalize().unwrap(),
-                    ).unwrap();
-                    let mut rng2 = $fs_rng::from_seed(
-                        FiatShamirRngSeed::new().finalize().unwrap(),
-                    ).unwrap();
-
-                    assert_eq!(rng1.get_state(), rng2.get_state());
-
-                    let a: Fq = rng1.squeeze().unwrap();
-                    let b = rng2.squeeze().unwrap();
-
-                    assert_eq!(a, b);
-                    assert_eq!(rng1.get_state(), rng2.get_state());
-
-                    rng1.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-                    rng2.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-
-                    assert_eq!(rng1.get_state(), rng2.get_state());
-
-                    let a = rng1.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-                    let b = rng2.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-
-                    assert_eq!(a, b);
-                    assert_eq!(rng1.get_state(), rng2.get_state());
-                }
-
-                // No cross protocol attacks possible
-                {
-                    let fs_rng_seed = {
-                        let mut seed_builder = FiatShamirRngSeed::new();
-                        seed_builder.add_bytes(b"TEST_SEED").unwrap();
-                        seed_builder.finalize().unwrap()
-                    };
-
-                    let malicious_fs_rng_seed = {
-                        let mut seed_builder = FiatShamirRngSeed::new();
-                        seed_builder.add_bytes(b"TEST_").unwrap();
-                        seed_builder.add_bytes(b"SEED").unwrap();
-                        seed_builder.finalize().unwrap()
-                    };
-
-                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed).unwrap();
-                    let mut malicious_fs_rng = $fs_rng::from_seed(malicious_fs_rng_seed).unwrap();
-
-                    assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
-
-                    let a: Fq = fs_rng.squeeze().unwrap();
-                    let b = malicious_fs_rng.squeeze().unwrap();
-
-                    assert_ne!(a, b);
-                    assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
-
-                    fs_rng.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-                    malicious_fs_rng.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-
-                    assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
-
-                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-                    let b = malicious_fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-
-                    assert_ne!(a, b);
-                    assert_ne!(fs_rng.get_state(), malicious_fs_rng.get_state());
-                }
-
-                // set_state test
-                {
-                    let fs_rng_seed = {
-                        let mut seed_builder = FiatShamirRngSeed::new();
-                        seed_builder.add_bytes(b"TEST_SEED").unwrap();
-                        seed_builder.finalize().unwrap()
-                    };
-                    let mut fs_rng = $fs_rng::from_seed(fs_rng_seed).unwrap();
-
-                    let mut fs_rng_copy = $fs_rng::default();
-                    fs_rng_copy.set_state(fs_rng.get_state().clone());
-
-                    assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
-
-                    fs_rng.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-                    fs_rng_copy.absorb::<Fq, _>("ABSORBABLE_ELEM").unwrap();
-
-                    assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
-
-                    let a = fs_rng.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-                    let b = fs_rng_copy.squeeze_128_bits_challenge::<TweedleDee>().unwrap();
-
-                    assert_eq!(a, b);
-                    assert_eq!(fs_rng.get_state(), fs_rng_copy.get_state());
-                }
             }
         }
     };
@@ -294,7 +201,6 @@ mod chacha_fs {
     use super::*;
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
-    type CHACHA_BLAKE2S_FS_RNG = FiatShamirChaChaRng<Blake2s>;
     // The ipa_pc over the Tweedle Dee using a Chacha-Blake2s based Fiat-Shamir rng.
     type PC_DEE_CHACHA_BLAKE2S = PC<TweedleDee, FiatShamirChaChaRng<Blake2s>>;
     // its domain extended variant
@@ -306,14 +212,14 @@ mod chacha_fs {
 #[cfg(feature = "circuit-friendly")]
 mod poseidon_fs {
     use super::*;
-    use primitives::TweedleFqPoseidonSponge;
+    use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
 
-    type POSEIDON_TWEEDLE_FQ_FS_RNG = TweedleFqPoseidonSponge;
-    type PC_DEE_POSEIDON = PC<TweedleDee, TweedleFqPoseidonSponge>;
+    // The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
+    type PC_DEE<FS> = PC<TweedleDee, FS>;
     // its domain extended variant
-    type PC_DEE_POSEIDON_DE = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE_POSEIDON>;
+    type PC_DEE_DE<FS> = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE<FS>>;
     
-    generate_pc_tests!(pc_dee, PC_DEE_POSEIDON, PC_DEE_POSEIDON_DE, Blake2s, POSEIDON_TWEEDLE_FQ_FS_RNG);
+    generate_pc_tests!(pc_dee_tweedle_fq_poseidon_fs, PC_DEE::<TweedleFqPoseidonFSRng>, PC_DEE_DE::<TweedleFqPoseidonFSRng>, Blake2s, TweedleFqPoseidonFSRng);
+    generate_pc_tests!(pc_dee_tweedle_fr_poseidon_fs, PC_DEE::<TweedleFrPoseidonFSRng>, PC_DEE_DE::<TweedleFrPoseidonFSRng>, Blake2s, TweedleFrPoseidonFSRng);
 }
-// The ipa_pc over the Tweedle Dee using a Poseidon based Fiat-Shamir rng.
 

@@ -1,8 +1,8 @@
 use crate::{
     bytes::{FromBytes, ToBytes},
-    fields::PrimeField,
+    fields::{PrimeField, SquareRootField},
 };
-use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid};
+use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid, ToConstraintField};
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
@@ -45,8 +45,10 @@ pub trait Group:
     + for<'a> AddAssign<&'a Self>
     + for<'a> SubAssign<&'a Self>
     + for<'a> MulAssign<&'a <Self as Group>::ScalarField>
+    + ToConstraintField<<Self as Group>::BaseField>
 {
-    type ScalarField: PrimeField;
+    type BaseField: PrimeField + SquareRootField;
+    type ScalarField: PrimeField + SquareRootField; // Temporary
 
     /// Returns the additive identity.
     fn zero() -> Self;

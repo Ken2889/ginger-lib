@@ -18,9 +18,6 @@ pub use self::parameters::*;
 pub mod sbox;
 pub use self::sbox::*;
 
-pub mod sponge;
-pub use self::sponge::*;
-
 pub trait PoseidonParameters: 'static + FieldBasedHashParameters + Clone {
     const T: usize; // Number of S-Boxes
     const R_F: i32; // Number of full rounds
@@ -196,7 +193,7 @@ where
         }
     }
 
-    pub(crate) fn poseidon_perm(state: &mut Vec<F>) {
+    pub fn poseidon_perm(state: &mut Vec<F>) {
         // index that goes over the round constants
         let round_cst_idx = &mut 0;
 
