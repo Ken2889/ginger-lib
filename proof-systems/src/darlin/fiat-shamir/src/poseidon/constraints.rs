@@ -23,9 +23,9 @@ pub struct DensityOptimizedPoseidonQuinticSBoxFSRngGadget<
     P: PoseidonParameters<Fr = ConstraintF>,
     DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
 > {
-    pub(crate) state: Vec<FpGadget<ConstraintF>>,
-    pub(crate) pending_inputs: Vec<FpGadget<ConstraintF>>,
-    pub(crate) pending_outputs: Vec<FpGadget<ConstraintF>>,
+    state: Vec<FpGadget<ConstraintF>>,
+    pending_inputs: Vec<FpGadget<ConstraintF>>,
+    pending_outputs: Vec<FpGadget<ConstraintF>>,
     _parameters: PhantomData<P>,
     _density_optimized_parameters: PhantomData<DOP>,
 }
