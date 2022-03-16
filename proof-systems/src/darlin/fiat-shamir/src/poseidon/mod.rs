@@ -22,9 +22,9 @@ pub struct PoseidonFSRng<
     P: PoseidonParameters<Fr = F>,
     SB: SBox<Field = F, Parameters = P>,
 > {
-    pub(crate) state: Vec<F>,
-    pub(crate) pending_inputs: Vec<F>,
-    pub(crate) pending_outputs: Vec<F>,
+    state: Vec<F>,
+    pending_inputs: Vec<F>,
+    pending_outputs: Vec<F>,
     _parameters: PhantomData<P>,
     _sbox: PhantomData<SB>,
 }
