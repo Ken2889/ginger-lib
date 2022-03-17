@@ -434,7 +434,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let domain_h = &state.domain_h;
 
         let alpha = ver_message.alpha;
-        let eta = &ver_message.eta;
+        let eta = &ver_message.get_etas();
 
         let summed_y_m_poly_time = start_timer!(|| "Compute y_m poly");
         let (y_a_poly, y_b_poly) = match state.my_polys {
@@ -669,7 +669,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let verifier_first_msg = state.verifier_first_msg.as_ref().expect(
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
-        let eta = &verifier_first_msg.eta;
+        let eta = &verifier_first_msg.get_etas();
 
         let beta = ver_message.beta;
 
@@ -754,7 +754,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let verifier_first_msg = state.verifier_first_msg.as_ref().expect(
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
-        let eta = &verifier_first_msg.eta;
+        let eta = &verifier_first_msg.get_etas();
         let eta_prime = &state.inner_sumcheck_acc.1.eta;
         let lambda = ver_message.lambda;
         let gamma = ver_message.gamma;

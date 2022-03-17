@@ -624,7 +624,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             prev_dlog_acc.0.clone(),
         );
 
-        let mut eta = verifier_state.first_round_msg.unwrap().eta;
+        let mut eta = verifier_state.first_round_msg.unwrap().get_etas();
         for (eta, eta_prime) in eta.iter_mut().zip(prev_inner_sumcheck_acc.1.eta.iter()) {
             *eta += verifier_state.third_round_msg.unwrap().lambda * eta_prime;
         }

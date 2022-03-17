@@ -3,7 +3,7 @@
 use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use algebra::{get_best_evaluation_domain, Curve, EvaluationDomain, Group};
+use algebra::{get_best_evaluation_domain, Curve, EvaluationDomain, Field, Group};
 use marlin::iop::Error;
 use poly_commit::fiat_shamir_rng::FiatShamirRng;
 use poly_commit::QuerySet;
@@ -33,7 +33,14 @@ pub struct VerifierFirstMsg<G: Group> {
     /// Query for the random polynomial.
     pub alpha: G::ScalarField,
     /// Randomizer for the lincheck for `A`, `B`, and `C`.
-    pub eta: Vec<G::ScalarField>,
+    pub eta: G::ScalarField,
+}
+
+impl<G: Group> VerifierFirstMsg<G> {
+    /// Return a vector with the three randomizers [1, eta, eta^2]
+    pub fn get_etas(&self) -> Vec<G::ScalarField> {
+        return vec![G::ScalarField::one(), self.eta, self.eta.square()];
+    }
 }
 
 /// Second verifier message.
@@ -91,10 +98,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             ))?
         }
 
-        let eta: Vec<_> = (0..3)
-            .into_iter()
-            .map(|_| fs_rng.squeeze_128_bits_challenge())
-            .collect();
+        let eta = fs_rng.squeeze_128_bits_challenge();
 
         let msg = VerifierFirstMsg { alpha, eta };
         state.first_round_msg = Some(msg.clone());

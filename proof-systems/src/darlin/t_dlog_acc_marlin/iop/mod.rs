@@ -109,7 +109,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         let first_round_msg = state.first_round_msg.as_ref().unwrap();
         let alpha = first_round_msg.alpha;
-        let eta = &first_round_msg.eta;
+        let eta = &first_round_msg.get_etas();
 
         let beta = match state.second_round_msg {
             Some(v) => v.beta,
