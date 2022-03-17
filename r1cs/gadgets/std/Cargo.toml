@@ -26,8 +26,8 @@ license = "MIT/Apache-2.0"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
-r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
+algebra = { path = "../../../algebra" }
+r1cs-core = { path = "../../core" }
 derivative = "=2.2.0"
 radix_trie = "=0.2.1"
 rand = { version = "=0.8.4" }
@@ -48,7 +48,7 @@ ed25519 = ["algebra/ed25519"]
 nonnative = ["num-bigint", "num-integer"]
 
 [dev-dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["parallel"] }
+algebra = { path = "../../../algebra", features = ["parallel"] }
 paste = "=1.0.6"
 rand = { version = "=0.8.4" }
 rand_xorshift = { version = "=0.3.0" }

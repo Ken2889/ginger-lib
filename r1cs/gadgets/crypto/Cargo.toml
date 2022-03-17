@@ -26,9 +26,9 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = [ "parallel" ] }
+algebra = { path = "../../../algebra", features = [ "parallel" ] }
 primitives = {path = "../../../primitives"}
-r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
+r1cs-core = { path = "../../core" }
 r1cs-std = { path = "../std"}
 bench-utils = { path = "../../../bench-utils" }
 num-traits = { version = "0.2", default-features = false }
@@ -56,6 +56,6 @@ llvm_asm = ["algebra/llvm_asm"]
 
 [dev-dependencies]
 rand_xorshift = { version = "=0.3.0" }
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }
+algebra = { path = "../../../algebra", features = ["tweedle"] }
 r1cs-std = { path = "../std", features = ["tweedle"] }
 r1cs-crypto = { path = "../crypto", features = ["tweedle"] }

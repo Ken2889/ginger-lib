@@ -26,7 +26,7 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["parallel"] }
+algebra = { path = "../algebra", features = ["parallel"] }
 bench-utils = { path = "../bench-utils" }
 
 digest = { version = "=0.8.1", optional = true }
@@ -52,7 +52,7 @@ vrf = ["algebra/derive"]
 tweedle = ["algebra/tweedle"]
 
 [dev-dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }
+algebra = { path = "../algebra", features = ["tweedle"] }
 primitives = { path = "../primitives", features = ["tweedle"] }
 
 criterion = "=0.3.5"
