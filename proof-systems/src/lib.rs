@@ -19,13 +19,4 @@
     clippy::many_single_char_names
 )]
 
-
-#[macro_use]
-extern crate bench_utils;
-
-#[cfg(feature = "darlin")]
-#[macro_use]
-extern crate derivative;
-
-#[cfg(feature = "darlin")]
 pub mod darlin;

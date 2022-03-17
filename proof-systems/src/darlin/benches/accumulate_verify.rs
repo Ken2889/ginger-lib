@@ -1,4 +1,4 @@
-use algebra::{Curve, ToConstraintField};
+use algebra::{Group, Curve, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -6,12 +6,12 @@ use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::{accumulate_proofs, verify_aggregated_proofs},
-    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
+    tests::final_darlin::generate_test_data as generate_final_darlin_test_data,
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: Curve, G2: Curve, D: Digest>(
+fn bench_verify<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -27,17 +27,14 @@ fn bench_verify<G1: Curve, G2: Curve, D: Digest>(
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
-
-    let (committer_key_g1, verifier_key_g1, committer_key_g2, verifier_key_g2) =
-        get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
         num_constraints - 1,
         segment_size,
-        &params_g1,
-        &params_g2,
+        (&committer_key_g1, &verifier_key_g1),
+        (&committer_key_g2, &verifier_key_g2),
         1,
         rng,
     );
@@ -80,7 +77,7 @@ fn bench_verify<G1: Curve, G2: Curve, D: Digest>(
     group.finish();
 }
 
-fn bench_accumulate<G1: Curve, G2: Curve, D: Digest>(
+fn bench_accumulate<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -96,16 +93,14 @@ fn bench_accumulate<G1: Curve, G2: Curve, D: Digest>(
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
-
-    let (committer_key_g1, _, committer_key_g2, _) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
         num_constraints - 1,
         segment_size,
-        &params_g1,
-        &params_g2,
+        (&committer_key_g1, &verifier_key_g1),
+        (&committer_key_g2, &verifier_key_g2),
         1,
         rng,
     );
@@ -139,7 +134,7 @@ fn bench_accumulate<G1: Curve, G2: Curve, D: Digest>(
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_verify_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
+    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
     bench_verify::<TweedleDee, TweedleDum, Blake2s>(
         c,
@@ -164,7 +159,7 @@ fn bench_verify_tweedle(c: &mut Criterion) {
 }
 
 fn bench_accumulate_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::Affine as TweedleDee, dum::Affine as TweedleDum};
+    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
     bench_accumulate::<TweedleDee, TweedleDum, Blake2s>(
         c,

@@ -9,6 +9,7 @@ use digest::Digest;
 use poly_commit::ipa_pc::{
     CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
 };
+use derivative::Derivative;
 use rand::RngCore;
 
 /// The `FinalDarlinDeferredData`, assuming that the final node is in G1.
@@ -43,45 +44,45 @@ where
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
     ) -> Self {
-        // Generate valid accumulator over G1 starting from random xi_s
+        // Generate valid accumulator over G1 starting from random check_poly
         let log_key_len_g1 = algebra::log2(committer_key_g1.comm_key.len());
-        let random_xi_s_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
+        let random_check_poly_g1 = SuccinctCheckPolynomial::<G1::ScalarField>(
             (0..log_key_len_g1 as usize)
                 .map(|_| u128::rand(rng).into())
                 .collect(),
         );
-        let g_final_g1 = InnerProductArgPC::<G1, D>::inner_commit(
+        let final_comm_key_g1 = InnerProductArgPC::<G1, D>::inner_commit(
             committer_key_g1.comm_key.as_slice(),
-            random_xi_s_g1.compute_coeffs().as_slice(),
+            random_check_poly_g1.compute_coeffs().as_slice(),
             None,
             None,
         )
         .unwrap();
 
         let acc_g1 = DLogItem::<G1> {
-            g_final: g_final_g1,
-            xi_s: random_xi_s_g1,
+            final_comm_key: final_comm_key_g1,
+            check_poly: random_check_poly_g1,
         };
 
-        // Generate valid accumulator over G2 starting from random xi_s
+        // Generate valid accumulator over G2 starting from random check_poly
         let log_key_len_g2 = algebra::log2(committer_key_g2.comm_key.len());
-        let random_xi_s_g2 = SuccinctCheckPolynomial::<G2::ScalarField>(
+        let random_check_poly_g2 = SuccinctCheckPolynomial::<G2::ScalarField>(
             (0..log_key_len_g2 as usize)
                 .map(|_| u128::rand(rng).into())
                 .collect(),
         );
 
-        let g_final_g2 = InnerProductArgPC::<G2, D>::inner_commit(
+        let final_comm_key_g2 = InnerProductArgPC::<G2, D>::inner_commit(
             committer_key_g2.comm_key.as_slice(),
-            random_xi_s_g2.compute_coeffs().as_slice(),
+            random_check_poly_g2.compute_coeffs().as_slice(),
             None,
             None,
         )
         .unwrap();
 
         let acc_g2 = DLogItem::<G2> {
-            g_final: g_final_g2,
-            xi_s: random_xi_s_g2,
+            final_comm_key: final_comm_key_g2,
+            check_poly: random_check_poly_g2,
         };
 
         // Return accumulators in deferred struct
@@ -108,15 +109,15 @@ where
         // Convert previous_acc into G1::ScalarField field elements (the circuit field,
         // called native in the sequel)
 
-        // The G_final of the previous node consists of native field elements only
-        let g_final_g2 = self.previous_acc.g_final.clone();
-        fes.append(&mut g_final_g2.to_field_elements()?);
+        // The final_comm_key of the previous node consists of native field elements only
+        let final_comm_key_g2 = self.previous_acc.final_comm_key.clone();
+        fes.append(&mut final_comm_key_g2.to_field_elements()?);
 
-        // Convert xi_s, which are 128 bit elements from G2::ScalarField, to the native field.
+        // Convert check_poly, which are 128 bit elements from G2::ScalarField, to the native field.
         // We packing the full bit vector into native field elements as efficient as possible (yet
         // still secure).
-        let mut xi_s_bits = Vec::new();
-        for fe in self.previous_acc.xi_s.0.clone().into_iter() {
+        let mut check_poly_bits = Vec::new();
+        for fe in self.previous_acc.check_poly.0.clone().into_iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
@@ -126,28 +127,28 @@ where
                     .unwrap()[0]
                     == fe
             );
-            xi_s_bits.extend_from_slice(&bits[to_skip..]);
+            check_poly_bits.extend_from_slice(&bits[to_skip..]);
         }
-        fes.append(&mut xi_s_bits.to_field_elements()?);
+        fes.append(&mut check_poly_bits.to_field_elements()?);
 
         // Convert the pre-previous acc into native field elements.
 
-        // The G_final of the pre-previous node is in G1, hence over G2::ScalarField.
+        // The final_comm_key of the pre-previous node is in G1, hence over G2::ScalarField.
         // We serialize them all to bits and pack them safely into native field elements
-        let g_final_g1 = self.pre_previous_acc.g_final.clone();
-        let mut g_final_g1_bits = Vec::new();
-        let c_fes = g_final_g1.to_field_elements()?;
+        let final_comm_key_g1 = self.pre_previous_acc.final_comm_key.clone();
+        let mut final_comm_key_g1_bits = Vec::new();
+        let c_fes = final_comm_key_g1.to_field_elements()?;
         for fe in c_fes {
-            g_final_g1_bits.append(&mut fe.write_bits());
+            final_comm_key_g1_bits.append(&mut fe.write_bits());
         }
-        fes.append(&mut g_final_g1_bits.to_field_elements()?);
+        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
 
         // Although the xi's of the pre-previous node are by default 128 bit elements from G1::ScalarField
         // (we do field arithmetics with them lateron) we do not want waste space.
         // As for the xi's of the previous node, we serialize them all to bits and pack them into native
         // field elements as efficient as possible (yet secure).
-        let mut xi_s_bits = Vec::new();
-        for fe in self.pre_previous_acc.xi_s.0.clone().into_iter() {
+        let mut check_poly_bits = Vec::new();
+        for fe in self.pre_previous_acc.check_poly.0.clone().into_iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
@@ -157,9 +158,9 @@ where
                     .unwrap()[0]
                     == fe
             );
-            xi_s_bits.extend_from_slice(&bits[to_skip..]);
+            check_poly_bits.extend_from_slice(&bits[to_skip..]);
         }
-        fes.append(&mut xi_s_bits.to_field_elements()?);
+        fes.append(&mut check_poly_bits.to_field_elements()?);
 
         Ok(fes)
     }

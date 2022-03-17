@@ -5,17 +5,13 @@ use digest::Digest;
 use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
-use proof_systems::darlin::pcd::{DualPCDVerifierKey, GeneralPCD};
+use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
-use proof_systems::darlin::{
-    pcd::PCD,
-    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
-};
+use proof_systems::darlin::tests::final_darlin::generate_test_data as generate_final_darlin_test_data;
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
-use rayon::prelude::*;
 
 fn bench_succinct_part_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
     c: &mut Criterion,
@@ -33,20 +29,16 @@ fn bench_succinct_part_batch_verification<G1: Curve, G2: Curve, D: Digest + 'sta
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );
@@ -96,20 +88,16 @@ fn bench_hard_part_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );
@@ -167,20 +155,16 @@ fn bench_batch_verification_complete<G1: Curve, G2: Curve, D: Digest + 'static>(
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );

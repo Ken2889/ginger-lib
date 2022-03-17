@@ -18,12 +18,13 @@ use crate::darlin::{
 use algebra::{Group, Curve, ToConstraintField, UniformRand};
 use digest::Digest;
 use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
-    Error as PCError, PCParameters,
+    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey},
+    Error as PCError, PCKey,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
+use derivative::Derivative;
 
 pub mod error;
 pub mod final_darlin;
@@ -41,9 +42,9 @@ impl PCDParameters {
     /// specified in the config.
     pub fn universal_setup<G: Curve, D: Digest>(
         &self,
-        params: &Parameters<G>,
+        params: (&DLogCommitterKey<G>, &DLogVerifierKey<G>),
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
-        params.trim(self.segment_size - 1)
+        Ok((params.0.trim(self.segment_size - 1)?, params.1.trim(self.segment_size - 1)?))
     }
 }
 

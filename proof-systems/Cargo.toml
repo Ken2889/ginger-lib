@@ -30,8 +30,10 @@ algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "ref
 r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev" }
 bench-utils = { path = "../bench-utils" }
 
-marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "refactor_ginger_dev" }
+marlin = { git = "https://github.com/HorizenLabs/marlin", branch = "marlin_refactoring" }
 poly-commit = { git = "https://github.com/HorizenLabs/poly-commit", branch = "refactor_ginger_dev" }
+
+r1cs-std = { path = "../r1cs/gadgets/std" }
 
 rand = { version = "=0.8.4" }
 rayon = { version = "=1.5.1" }
@@ -40,6 +42,7 @@ byteorder = { version = "=1.4.3" }
 digest = { version = "=0.8.1" }
 serde = { version = "=1.0.130", features = ["derive"]}
 derivative = { version = "=2.2.0" }
+num-traits = { version = "=0.2.14", default-features = false }
 
 [dev-dependencies]
 csv = { version = "=1.1.6" }
@@ -49,18 +52,17 @@ blake2 = { version = "=0.8.1", default-features = false }
 
 algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "refactor_ginger_dev", features = ["tweedle"] }
 r1cs-crypto = { path = "../r1cs/gadgets/crypto" }
-r1cs-std = { path = "../r1cs/gadgets/std" }
 
 [features]
-print-trace = [ "bench-utils/print-trace" ]
-llvm_asm = ["algebra/llvm_asm"]
+print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
+llvm_asm = ["algebra/llvm_asm", "marlin/asm", "poly-commit/asm"]
 
 [[bench]]
 name = "darlin_batch_verification_bench"
 path = "src/darlin/benches/batch_verification.rs"
 harness = false
 required-features = [
-   "llvm_asm", "algebra/tweedle",
+   "llvm_asm"
 ]
 
 [[bench]]
@@ -68,7 +70,7 @@ name = "darlin_batch_verification_detailed_bench"
 path = "src/darlin/benches/batch_verification_detailed.rs"
 harness = false
 required-features = [
-    "llvm_asm", "algebra/tweedle",
+    "llvm_asm"
 ]
 
 [[bench]]
@@ -76,5 +78,5 @@ name = "darlin_accumulate_verify_bench"
 path = "src/darlin/benches/accumulate_verify.rs"
 harness = false
 required-features = [
-   "llvm_asm", "algebra/tweedle",
+   "llvm_asm"
 ]

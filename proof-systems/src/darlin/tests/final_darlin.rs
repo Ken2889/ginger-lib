@@ -4,13 +4,13 @@
 use crate::darlin::{
     accumulators::ItemAccumulator,
     data_structures::FinalDarlinDeferredData,
-    pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
+    pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCD, PCDParameters},
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
 use algebra::{Curve, Group, ToConstraintField, UniformRand};
 use digest::Digest;
 use poly_commit::{
-    ipa_pc::{CommitterKey, InnerProductArgPC, Parameters},
+    ipa_pc::{CommitterKey, VerifierKey, InnerProductArgPC},
     DomainExtendedPolynomialCommitment, Error as PCError,
 };
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
@@ -343,8 +343,8 @@ where
 pub fn generate_test_data<'a, G1: Curve, G2: Curve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
-    params_g1: &Parameters<G1>,
-    params_g2: &Parameters<G2>,
+    params_g1: (&CommitterKey<G1>, &VerifierKey<G1>),
+    params_g2: (&CommitterKey<G2>, &VerifierKey<G2>),
     num_proofs: usize,
     rng: &mut R,
 ) -> (

@@ -1,12 +1,14 @@
 //! Simple Marlin "proof carrying data". This corresponds to non-recursive applications.
 use crate::darlin::{
     accumulators::{
-        dlog::{DLogItem, DLogItemAccumulator},
+        dlog::DLogItemAccumulator,
         ItemAccumulator,
     },
     pcd::{error::PCDError, PCD},
+    DomainExtendedIpaPc,
 };
 use algebra::{serialize::*, Curve, SemanticallyValid};
+use bench_utils::*;
 use digest::Digest;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
@@ -14,6 +16,7 @@ use poly_commit::{
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
+use derivative::Derivative;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -168,13 +171,8 @@ where
             ))?
         }
 
-        let verifier_state = verifier_state.unwrap();
-
         // Successfull verification: return current accumulator
-        let acc = DLogItem::<G> {
-            g_final: verifier_state.final_comm_key.clone(),
-            xi_s: verifier_state.check_poly.clone(),
-        };
+        let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
         Ok(acc)

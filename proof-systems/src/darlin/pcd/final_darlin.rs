@@ -2,19 +2,21 @@
 //! exiting/conversion chain of our Darlin PCD scheme, and provides a (coboundary)
 //! Marlin proof plus the dlog accumulators of the previous and pre-previous node.
 use crate::darlin::{
-    accumulators::dlog::{DLogItem, DualDLogItem, DualDLogItemAccumulator},
+    accumulators::dlog::{DualDLogItem, DualDLogItemAccumulator},
     accumulators::ItemAccumulator,
     data_structures::*,
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
 };
 use algebra::{Curve, Group, ToConstraintField};
+use bench_utils::*;
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::FiatShamirRng,
     ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
+use derivative::Derivative;
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
@@ -129,13 +131,8 @@ where
             ))?
         }
 
-        let verifier_state = verifier_state.unwrap();
-
         // Verification successfull: return new accumulator
-        let acc = DLogItem::<G1> {
-            g_final: verifier_state.final_comm_key.clone(),
-            xi_s: verifier_state.check_poly.clone(),
-        };
+        let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
         Ok(DualDLogItem::<G1, G2>(

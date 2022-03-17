@@ -34,11 +34,11 @@ use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
-        CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
+        CommitterKey as DLogProverKey, InnerProductArgPC,
         VerifierKey as DLogVerifierKey,
     },
     DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, PolynomialCommitment,
-    QuerySet,
+    QueryMap,
 };
 use rand::RngCore;
 use std::marker::PhantomData;
@@ -72,7 +72,7 @@ where
         num_variables: usize,
         num_non_zero: usize,
         zk: bool,
-    ) -> Result<(Parameters<G1>, Parameters<G2>), FinalDarlinError> {
+    ) -> Result<((DLogProverKey<G1>, DLogVerifierKey<G1>), (DLogProverKey<G2>, DLogVerifierKey<G2>)), FinalDarlinError> {
         let srs_g1 = Marlin::<
             G1,
             DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
@@ -191,7 +191,7 @@ where
         usr_ins:        &[G1::ScalarField],
         proof:          &FinalDarlinProof<G1, G2, D>,
     )  -> Result<(
-        QuerySet<'a, G1::ScalarField>,
+        QueryMap<'a, G1::ScalarField>,
         Evaluations<'a, G1::ScalarField>,
         Vec<LabeledCommitment<GroupVec<G1>>>,
         <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
@@ -221,7 +221,7 @@ where
         pc_vk: &DLogVerifierKey<G1>,
         proof: &FinalDarlinProof<G1, G2, D>,
         labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
-        query_set: QuerySet<'a, G1::ScalarField>,
+        query_set: QueryMap<'a, G1::ScalarField>,
         evaluations: Evaluations<'a, G1::ScalarField>,
         fs_rng:         &mut <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
     ) -> Result<bool, FinalDarlinError> {

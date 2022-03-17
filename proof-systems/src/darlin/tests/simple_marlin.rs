@@ -1,14 +1,16 @@
 //! A R1CS density one test circuit of specified number of constraints, which processes
 //! two public inputs satisfying a simple quadratic relation.
-use crate::darlin::pcd::{
-    simple_marlin::{MarlinProof, SimpleMarlinPCD},
-    PCDParameters,
+use crate::darlin::{
+    pcd::{
+        simple_marlin::{MarlinProof, SimpleMarlinPCD},
+        PCDParameters,
+    },
+    DomainExtendedIpaPc,
 };
 use algebra::{Curve, Field, UniformRand};
 use digest::Digest;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
-use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
-use poly_commit::DomainExtendedPolynomialCommitment;
+use poly_commit::ipa_pc::{CommitterKey, VerifierKey};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;
@@ -125,7 +127,7 @@ pub fn generate_test_pcd<'a, G: Curve, D: Digest + 'a, R: RngCore>(
 pub fn generate_test_data<'a, G: Curve, D: Digest + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
-    params: &Parameters<G>,
+    params: (&CommitterKey<G>, &VerifierKey<G>),
     num_proofs: usize,
     rng: &mut R,
 ) -> (

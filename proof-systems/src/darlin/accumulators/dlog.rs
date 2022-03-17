@@ -4,129 +4,26 @@
 //! reduction steps) is the polynomial commitment of the succinct 'reduction polynomial'
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
-use crate::darlin::accumulators::{AccumulationProof, ItemAccumulator};
+use crate::darlin::{
+    accumulators::{AccumulationProof, ItemAccumulator},
+    DomainExtendedIpaPc,
+};
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, to_bytes, Curve, Field, Group, GroupVec, SemanticallyValid, ToBytes, UniformRand,
+    serialize::*, to_bytes, Curve, Group, GroupVec, ToBytes, UniformRand
 };
+use bench_utils::*;
 use digest::Digest;
 use poly_commit::{
     fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed},
-    ipa_pc::{CommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, VerifierKey},
-    DomainExtendedPolynomialCommitment, Error, LabeledCommitment, PolynomialCommitment,
+    ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey},
+    Error, LabeledCommitment, PolynomialCommitment,
 };
+pub use poly_commit::ipa_pc::DLogItem;
 use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
-
-/// This implements the public aggregator for the IPA/DLOG commitment scheme.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DLogItem<G: Curve> {
-    /// Final committer key after the DLOG reduction.
-    pub(crate) g_final: G,
-
-    /// Challenges of the DLOG reduction.
-    pub(crate) xi_s: SuccinctCheckPolynomial<G::ScalarField>,
-}
-
-impl<G: Curve> CanonicalSerialize for DLogItem<G> {
-    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize(&self.xi_s, &mut writer)
-    }
-
-    fn serialized_size(&self) -> usize {
-        self.g_final.serialized_size() + self.xi_s.serialized_size()
-    }
-
-    fn serialize_without_metadata<W: Write>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), SerializationError> {
-        CanonicalSerialize::serialize_without_metadata(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize_without_metadata(&self.xi_s, &mut writer)
-    }
-
-    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        CanonicalSerialize::serialize_uncompressed(&self.g_final, &mut writer)?;
-
-        CanonicalSerialize::serialize_uncompressed(&self.xi_s, &mut writer)
-    }
-
-    fn uncompressed_size(&self) -> usize {
-        self.g_final.uncompressed_size() + self.xi_s.uncompressed_size()
-    }
-}
-
-impl<G: Curve> CanonicalDeserialize for DLogItem<G> {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    #[inline]
-    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-
-    #[inline]
-    fn deserialize_uncompressed_unchecked<R: Read>(
-        mut reader: R,
-    ) -> Result<Self, SerializationError> {
-        // GFinal will always be 1 segment and without any shift
-        let g_final = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
-
-        let xi_s = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
-
-        Ok(Self { g_final, xi_s })
-    }
-}
-
-impl<G: Curve> SemanticallyValid for DLogItem<G> {
-    fn is_valid(&self) -> bool {
-        self.g_final.is_valid() && self.xi_s.0.is_valid()
-    }
-}
-
-impl<G: Curve> Default for DLogItem<G> {
-    fn default() -> Self {
-        Self {
-            g_final: G::default(),
-            xi_s: SuccinctCheckPolynomial(vec![]),
-        }
-    }
-}
-
-impl<G: Curve> ToBytes for DLogItem<G> {
-    fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
-        use std::io::{Error, ErrorKind};
-
-        self.serialize_without_metadata(writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
-    }
-}
+use num_traits::{Zero, One};
 
 pub struct DLogItemAccumulator<G: Curve, D: Digest + 'static> {
     _digest: PhantomData<D>,
@@ -149,7 +46,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
     /// for dlog "items".
     /// Recall that in the special situation of dlog items, the accumulated item
     /// is part of the proof itself. However, as we use size-optimized proofs, the
-    /// xi_s are recomputed from the proof and returned by the verifier (if successful).
+    /// check_poly are recomputed from the proof and returned by the verifier (if successful).
     pub fn succinct_verify_accumulated_items(
         vk: &VerifierKey<G>,
         previous_accumulators: Vec<DLogItem<G>>,
@@ -183,10 +80,10 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
             .into_par_iter()
             .enumerate()
             .map(|(i, acc)| {
-                let final_comm_key = acc.g_final.clone();
-                let xi_s = acc.xi_s;
+                let final_comm_key = acc.final_comm_key.clone();
+                let check_poly = acc.check_poly;
 
-                // Create a LabeledCommitment out of the g_final
+                // Create a LabeledCommitment out of the final_comm_key
                 let labeled_comm = {
                     let comm = final_comm_key;
 
@@ -194,7 +91,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
-                let eval = xi_s.evaluate(z);
+                let eval = check_poly.evaluate(z);
 
                 (labeled_comm, eval)
             })
@@ -225,8 +122,8 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
-        let verifier_state = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::succinct_single_point_multi_poly_verify(
-            vk, comms.iter(), z, values, &proof.pc_proof, &mut fs_rng
+        let verifier_state = DomainExtendedIpaPc::<G, D>::succinct_single_point_multi_poly_verify(
+            vk, comms.iter(), z, values.iter(), &proof.pc_proof, &mut fs_rng
         ).map_err(|e| {
             end_timer!(check_time);
             end_timer!(succinct_time);
@@ -236,15 +133,7 @@ impl<G: Curve, D: Digest + 'static> DLogItemAccumulator<G, D> {
         end_timer!(check_time);
         end_timer!(succinct_time);
 
-        if verifier_state.is_some() {
-            let verifier_state = verifier_state.unwrap();
-            Ok(Some(DLogItem::<G> {
-                g_final: verifier_state.final_comm_key.clone(),
-                xi_s: verifier_state.check_poly.clone(),
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(verifier_state)
     }
 }
 
@@ -265,11 +154,11 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
 
         let final_comm_keys = accumulators
             .iter()
-            .map(|acc| acc.g_final)
+            .map(|acc| acc.final_comm_key)
             .collect::<Vec<_>>();
         let xi_s_vec = accumulators
             .iter()
-            .map(|acc| acc.xi_s.clone())
+            .map(|acc| acc.check_poly.clone())
             .collect::<Vec<_>>();
 
         let batching_time = start_timer!(|| "Combine check polynomials and final comm keys");
@@ -290,8 +179,8 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
         let combined_check_poly = batching_chal_pows
             .par_iter()
             .zip(xi_s_vec)
-            .map(|(&chal, xi_s)| {
-                Polynomial::from_coefficients_vec(xi_s.compute_scaled_coeffs(-chal))
+            .map(|(&chal, check_poly)| {
+                Polynomial::from_coefficients_vec(check_poly.compute_scaled_coeffs(-chal))
             })
             .reduce(
                 || Polynomial::zero(),
@@ -364,10 +253,10 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
         // Sample a new challenge z
         let z = fs_rng.squeeze_128_bits_challenge::<G::ScalarField>();
 
-        // Collect xi_s from the accumulators
-        let xi_s = accumulators
+        // Collect check_poly from the accumulators
+        let check_poly = accumulators
             .into_iter()
-            .map(|acc| acc.xi_s)
+            .map(|acc| acc.check_poly)
             .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
@@ -375,7 +264,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
         // Compute multi-poly single-point opening proof for the G_f's, i.e.
         // the commitments of the item polys.
         let opening_proof =
-            InnerProductArgPC::<G, D>::open_reduction_polynomials(&ck, xi_s.iter(), z, &mut fs_rng)
+            InnerProductArgPC::<G, D>::open_reduction_polynomials(&ck, check_poly.iter(), z, &mut fs_rng)
                 .map_err(|e| {
                     end_timer!(poly_time);
                     end_timer!(accumulate_time);
@@ -573,16 +462,17 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use algebra::SemanticallyValid;
     use poly_commit::{
-        ipa_pc::{Parameters, Proof},
-        DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial, PCParameters,
-        PolynomialCommitment, QuerySet,
+        ipa_pc::Proof,
+        DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial,
+        PolynomialCommitment, QueryMap, PCKey,
     };
-
     use blake2::Blake2s;
     use digest::Digest;
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
+    use derivative::Derivative;
 
     fn get_test_fs_rng<G: Curve, D: Digest + 'static>(
     ) -> <InnerProductArgPC<G, D> as PolynomialCommitment<G>>::RandomOracle {
@@ -609,12 +499,12 @@ mod test {
     struct VerifierData<'a, G: Curve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
-        query_set: QuerySet<'a, G::ScalarField>,
+        query_map: QueryMap<'a, G::ScalarField>,
         values: Evaluations<'a, G::ScalarField>,
         proof: DomainExtendedMultiPointProof<G, Proof<G>>,
         polynomials: Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials: usize,
-        num_points_in_query_set: usize,
+        num_points_in_query_map: usize,
         _m: PhantomData<&'a G::ScalarField>, // To avoid compilation issue 'a
     }
 
@@ -622,7 +512,7 @@ mod test {
     // specifications in the TestInfo.
     fn get_data_for_verifier<'a, G, D>(
         info: TestInfo,
-        pp: Option<Parameters<G>>,
+        ck: Option<CommitterKey<G>>,
     ) -> Result<VerifierData<'a, G>, Error>
     where
         G: Curve,
@@ -641,13 +531,13 @@ mod test {
         let rng = &mut thread_rng();
         let max_degree =
             max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng));
-        let pp = if pp.is_some() {
-            pp.unwrap()
+        let ck = if ck.is_some() {
+            ck.unwrap()
         } else {
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?
+            DomainExtendedIpaPc::<G, D>::setup(max_degree)?.0
         };
 
-        test_canonical_serialize_deserialize(true, &pp);
+        test_canonical_serialize_deserialize(true, &ck);
 
         let supported_degree = match supported_degree {
             Some(0) => 0,
@@ -666,7 +556,7 @@ mod test {
         println!("Sampled supported degree");
 
         // Generate random dense polynomials
-        let num_points_in_query_set =
+        let num_points_in_query_map =
             rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
         for i in 0..num_polynomials {
             let label = format!("Test{}", i);
@@ -690,41 +580,39 @@ mod test {
             polynomials.push(LabeledPolynomial::new(label, poly, hiding))
         }
         println!("supported degree: {:?}", supported_degree);
-        println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-        let (ck, vk) = pp.trim(supported_degree)?;
+        println!("num_points_in_query_map: {:?}", num_points_in_query_map);
+        let ck = ck.trim(supported_degree)?;
         println!("Trimmed");
 
         test_canonical_serialize_deserialize(true, &ck);
-        test_canonical_serialize_deserialize(true, &vk);
 
         let (comms, rands) =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::commit_vec(
+            DomainExtendedIpaPc::<G, D>::commit_many(
                 &ck,
                 &polynomials,
                 Some(rng),
             )?;
 
-        // Construct "symmetric" query set: every polynomial is evaluated at every
-        // point.
-        let mut query_set = QuerySet::new();
+        // Evaluate all polynomials in all points
+        let mut query_map = QueryMap::new();
         let mut values = Evaluations::new();
         // let mut point = F::one();
-        for _ in 0..num_points_in_query_set {
+        for i in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
-            for (i, label) in labels.iter().enumerate() {
-                query_set.insert((label.clone(), (format!("{}", i), point)));
-                let value = polynomials[i].evaluate(point);
-                values.insert((label.clone(), point), value);
+            let point_label = format!("{}", i);
+            query_map.insert(point_label.clone(), (point, labels.iter().cloned().collect()));
+            for poly in polynomials.iter() {
+                let value = poly.evaluate(point);
+                values.insert((poly.label().clone(), point_label.clone()), value);
             }
         }
         println!("Generated query set");
 
         let mut fs_rng = get_test_fs_rng::<G, D>();
-        let proof = DomainExtendedPolynomialCommitment::<G, InnerProductArgPC::<G, D>>::multi_point_multi_poly_open(
+        let proof = DomainExtendedIpaPc::<G, D>::multi_point_multi_poly_open(
             &ck,
             &polynomials,
-            &comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &rands,
             Some(rng),
@@ -733,14 +621,14 @@ mod test {
         test_canonical_serialize_deserialize(true, &proof);
 
         Ok(VerifierData {
-            vk,
+            vk: ck,
             comms,
-            query_set,
+            query_map,
             values,
             proof,
             polynomials,
             num_polynomials,
-            num_points_in_query_set,
+            num_points_in_query_map,
             _m: PhantomData,
         })
     }
@@ -763,14 +651,12 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?;
+        let (_, vk) = DomainExtendedIpaPc::<G, D>::setup(max_degree)?;
 
-        test_canonical_serialize_deserialize(true, &pp);
+        test_canonical_serialize_deserialize(true, &vk);
 
-        let (ck, vk) = pp.trim(max_degree)?;
+        let vk = vk.trim(max_degree)?;
 
-        test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
 
         for num_proofs in 1..20 {
@@ -782,11 +668,11 @@ mod test {
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
                 verifier_data_vec
-                    .push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
+                    .push(get_data_for_verifier::<G, D>(info, Some(vk.clone())).unwrap())
             }
 
             let mut comms = Vec::new();
-            let mut query_sets = Vec::new();
+            let mut query_maps = Vec::new();
             let mut evals = Vec::new();
             let mut proofs = Vec::new();
             let mut states = Vec::new();
@@ -797,42 +683,28 @@ mod test {
                 let len = verifier_data.vk.comm_key.len();
                 assert_eq!(&verifier_data.vk.comm_key[..], &vk.comm_key[..len]); // Vk should be equal for all proofs
                 comms.push(verifier_data.comms.as_slice());
-                query_sets.push(&verifier_data.query_set);
+                query_maps.push(&verifier_data.query_map);
                 evals.push(&verifier_data.values);
                 proofs.push(&verifier_data.proof);
                 states.push(&state);
             });
 
             // extract the xi's and G_fin's from the proof
-            let verifier_state_vec = DomainExtendedPolynomialCommitment::<
-                G,
-                InnerProductArgPC<G, D>,
-            >::batch_succinct_verify(
+            let accumulators = DomainExtendedIpaPc::<G, D>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
-                query_sets.clone(),
+                query_maps.clone(),
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
             )?;
 
-            let accumulators = verifier_state_vec
-                .into_iter()
-                .map(|verifier_state| {
-                    let acc = DLogItem::<G> {
-                        g_final: verifier_state.final_comm_key,
-                        xi_s: verifier_state.check_poly.clone(),
-                    };
-                    test_canonical_serialize_deserialize(true, &acc);
-                    acc
-                })
-                .collect::<Vec<_>>();
-
+            test_canonical_serialize_deserialize(true, &accumulators);
             assert!(accumulators.is_valid());
 
             // provide aggregation proof of the extracted dlog items
             let (_, proof) =
-                DLogItemAccumulator::<G, D>::accumulate_items(&ck, accumulators.clone())?;
+                DLogItemAccumulator::<G, D>::accumulate_items(&vk, accumulators.clone())?;
 
             test_canonical_serialize_deserialize(true, &proof);
 
@@ -868,11 +740,9 @@ mod test {
             ..Default::default()
         };
 
-        let pp =
-            DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, D>>::setup(max_degree)?;
-        let (_, vk) = pp.trim(max_degree)?;
+        let (_, vk) = DomainExtendedIpaPc::<G, D>::setup(max_degree)?;
+        let vk = vk.trim(max_degree)?;
 
-        test_canonical_serialize_deserialize(true, &pp);
         test_canonical_serialize_deserialize(true, &vk);
 
         for num_proofs in 1..20 {
@@ -884,11 +754,11 @@ mod test {
                 info.hiding = rng.gen();
                 info.segmented = rng.gen();
                 verifier_data_vec
-                    .push(get_data_for_verifier::<G, D>(info, Some(pp.clone())).unwrap())
+                    .push(get_data_for_verifier::<G, D>(info, Some(vk.clone())).unwrap())
             }
 
             let mut comms = Vec::new();
-            let mut query_sets = Vec::new();
+            let mut query_maps = Vec::new();
             let mut evals = Vec::new();
             let mut proofs = Vec::new();
             let mut states = Vec::new();
@@ -899,37 +769,23 @@ mod test {
                 let len = verifier_data.vk.comm_key.len();
                 assert_eq!(&verifier_data.vk.comm_key[..], &vk.comm_key[..len]); // Vk should be equal for all proofs
                 comms.push(verifier_data.comms.as_slice());
-                query_sets.push(&verifier_data.query_set);
+                query_maps.push(&verifier_data.query_map);
                 evals.push(&verifier_data.values);
                 proofs.push(&verifier_data.proof);
                 states.push(&state);
             });
 
             // extract the xi's and G_fin's from the proof
-            let verifier_state_vec = DomainExtendedPolynomialCommitment::<
-                G,
-                InnerProductArgPC<G, D>,
-            >::batch_succinct_verify(
+            let accumulators = DomainExtendedIpaPc::<G, D>::batch_succinct_verify(
                 &vk,
                 comms.clone(),
-                query_sets.clone(),
+                query_maps.clone(),
                 evals.clone(),
                 proofs.clone(),
                 states.clone(),
             )?;
 
-            let accumulators = verifier_state_vec
-                .into_iter()
-                .map(|verifier_state| {
-                    let acc = DLogItem::<G> {
-                        g_final: verifier_state.final_comm_key,
-                        xi_s: verifier_state.check_poly.clone(),
-                    };
-                    test_canonical_serialize_deserialize(true, &acc);
-                    acc
-                })
-                .collect::<Vec<_>>();
-
+            test_canonical_serialize_deserialize(true, &accumulators);
             assert!(accumulators.is_valid());
 
             // batch verify the extracted dlog items
