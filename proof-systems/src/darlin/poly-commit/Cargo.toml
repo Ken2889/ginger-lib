@@ -31,6 +31,7 @@ r1cs-crypto = { path =  "../../../../r1cs/gadgets/crypto"}
 
 rand = { version = "0.8.4", default-features = false }
 rand_core = { version = "0.6.3", default-features = false }
+rand_xorshift = "0.3.0"
 digest = "0.8"
 rayon = { version = "1" }
 derivative = { version = "2" }

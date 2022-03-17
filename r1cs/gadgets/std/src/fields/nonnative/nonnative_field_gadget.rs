@@ -331,6 +331,9 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
 
     pub fn to_bits_for_normal_form<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Vec<Boolean>, SynthesisError> {
         let params = get_params(SimulationF::size_in_bits(), ConstraintF::size_in_bits());
+        if !self.num_of_additions_over_normal_form.is_zero() {
+            return Err(SynthesisError::Other("to_bits_for_normal_form called over a non-native field element in non-normal form".to_string()));
+        }
         let mut bits = Vec::with_capacity(SimulationF::size_in_bits());
         for (i, limb) in self.limbs.iter().enumerate() {
             let bits_per_limb = if i == 0 {

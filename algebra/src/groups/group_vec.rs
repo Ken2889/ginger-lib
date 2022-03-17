@@ -37,6 +37,10 @@ impl<G: Group> GroupVec<G> {
     pub fn into_iter(&self) -> IntoIter<G> {
         self.0.clone().into_iter()
     }
+
+    pub fn rand<R: Rng + ?Sized>(len: u16, rng: &mut R) -> Self {
+        Self::new((0..len).map(|_| G::rand(rng)).collect::<Vec<G>>())
+    }
 }
 
 impl<G: Group> Index<usize> for GroupVec<G> {
@@ -213,13 +217,7 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
 
 impl<G: Group> UniformRand for GroupVec<G> {
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        let vec_len: usize = rng.gen();
-        let mut rand_vec = Vec::with_capacity(vec_len);
-        for _ in 0..vec_len {
-            rand_vec.push(G::rand(rng));
-        }
-
-        Self::new(rand_vec)
+        Self::rand(rng.gen(), rng)
     }
 }
 

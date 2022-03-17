@@ -1,6 +1,6 @@
 use crate::{
-    Error as PolyError, Evaluations, PCMultiPointProof, PCVerifierKey, PCVerifierState,
-    PolynomialCommitment, PolynomialLabel, QueryMap,
+    Error as PolyError, Evaluations,
+    PolynomialCommitment, QueryMap,
 };
 use algebra::{EndoMulCurve, Group, PrimeField, UniformRand};
 use fiat_shamir::constraints::FiatShamirRngGadget;
@@ -9,9 +9,12 @@ use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, 
 use r1cs_std::groups::GroupGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
-use rand::thread_rng;
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use rand_core::SeedableRng;
+use rand_xorshift::XorShiftRng;
+
+pub mod data_structures;
+pub use data_structures::*;
 
 #[cfg(test)]
 #[cfg(feature = "circuit-friendly")]
@@ -22,83 +25,7 @@ use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
 use r1cs_std::FromGadget;
 
-/// A commitment gadget plus its label, needed for reference.
-#[derive(Clone)]
-pub struct LabeledCommitmentGadget<
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    PC: PolynomialCommitment<G>,
-> {
-    label: PolynomialLabel,
-    commitment: PCG::Commitment,
-}
-
-impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
-where
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    PC: PolynomialCommitment<G>,
-{
-    /// Instantiate a new labeled commitment from a label and a commitment gadget.
-    pub fn new(label: PolynomialLabel, commitment: PCG::Commitment) -> Self {
-        Self { label, commitment }
-    }
-
-    /// Return the label for `self`.
-    pub fn label(&self) -> &String {
-        &self.label
-    }
-
-    /// Retrieve the commitment from `self`.
-    pub fn commitment(&self) -> &PCG::Commitment {
-        &self.commitment
-    }
-}
-
-/// Define interface for a gadget representing an opening proof for a multi-point assertion
-pub trait MultiPointProofGadget<
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    MPP: PCMultiPointProof<G>,
->: AllocGadget<MPP, ConstraintF>
-{
-    /// Type of commitment gadget
-    type Commitment;
-    /// Type of the opening proof gadget for a single-point assertion
-    type Proof;
-
-    /// get the proof gadget for the combined single-point assertion
-    fn get_proof(&self) -> &Self::Proof;
-
-    /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
-    fn get_h_commitment(&self) -> &Self::Commitment;
-}
-
-/// Gadget for the state returned by verifier in case of successful verification
-pub trait VerifierStateGadget<VS: PCVerifierState, ConstraintF: PrimeField>:
-    Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
-{
-}
-/// Interface for the gadget representing the verifier key
-pub trait VerifierKeyGadget<VK: PCVerifierKey, ConstraintF: PrimeField>:
-    Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
-{
-    /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
-    /// with `self`
-    fn segment_size(&self) -> usize;
-
-    /// Get the gadget for the hash of the verifier key `VK` represented by `self`
-    fn get_hash(&self) -> &[u8];
-}
-
-impl From<SynthesisError> for PolyError {
-    fn from(err: SynthesisError) -> Self {
-        Self::Other(err.to_string())
-    }
-}
-
+/// multiply `base_point` to `scalar` dealing with the corner case that `base_point` may be zero
 pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
     mut cs: CS,
     base_point: &PCG::Commitment,
@@ -113,7 +40,18 @@ where
     CS: ConstraintSystemAbstract<ConstraintF>,
     IT: Iterator<Item = &'a Boolean>,
 {
-    let rng = &mut thread_rng();
+    /*
+    We deterministically sample a non zero commitment C' and then we perform the following steps:
+    - let `non_trivial_base_point` = cond_select(is_zero, C', base_point), where `is_zero` is true
+    iff `base_point` is zero. This ensures that `non_trivial_base_point` will always be a non-zero
+    commitment, which can then be safely multiplied by `scalar`
+    - the result is then computed as cond_select(is_zero, 0, non_trivial_base_point*scalar); thus,
+    if `base_point` is zero, then the result is 0 and the product `non_trivial_base_point`*`scalar`
+    is discarded, otherwise the result will just be `base_point`*`scalar`
+    */
+    // we need to employ a rng with fixed seed in order to deterministically generated a
+    // non zero base element in PC::Commitment
+    let rng = &mut XorShiftRng::seed_from_u64(42);
     let mut non_trivial_base_constant = PC::Commitment::rand(rng);
     while non_trivial_base_constant.is_zero() {
         non_trivial_base_constant = PC::Commitment::rand(rng);
@@ -138,6 +76,12 @@ where
         &zero,
         &safe_mul_res,
     )
+}
+
+impl From<SynthesisError> for PolyError {
+    fn from(err: SynthesisError) -> Self {
+        Self::Other(err.to_string())
+    }
 }
 
 /// Gadget for a linear polynomial commitment verifier
@@ -174,7 +118,8 @@ pub trait PolynomialCommitmentVerifierGadget<
         + From<PolyError>
         + std::error::Error;
 
-    /// this function specifies how to multiply a commitment to a challenge squeezed from the random oracle
+    /// this function specifies how to multiply a commitment to a challenge squeezed from the random oracle.
+    /// Input parameter `challenge` must be an iterator over the bits of the challenge in *little-endian* order
     fn mul_by_challenge<
         'a,
         CS: ConstraintSystemAbstract<ConstraintF>,
@@ -186,7 +131,8 @@ pub trait PolynomialCommitmentVerifierGadget<
     ) -> Result<Self::Commitment, SynthesisError> {
         safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(cs, base, challenge)
     }
-    /// This function specifies how to convert a challenge squeezed from the random oracle to a gadget for `G::ScalarField`
+    /// This function specifies how to convert a challenge squeezed from the random oracle to a
+    /// gadget for `G::ScalarField` with `challenge` as a *big-endian* representation
     fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         challenge: &[Boolean],
@@ -224,6 +170,8 @@ pub trait PolynomialCommitmentVerifierGadget<
         proof: &Self::Proof,
         random_oracle: &mut Self::RandomOracle,
     ) -> Result<Self::VerifierState, Self::Error> {
+        assert_eq!(labeled_commitments.len(), values.len());
+
         let lambda = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
             )?;
@@ -231,20 +179,24 @@ pub trait PolynomialCommitmentVerifierGadget<
             cs.ns(|| "convert lambda to non native field gadget"),
             &lambda,
         )?;
-        let default_commitment = LabeledCommitmentGadget::new(
-            String::from("default commitment"),
-            Self::Commitment::zero(&mut cs)?,
-        );
+        /*
+        Batching of commitments is performed with Horner scheme.
+        That is, to compute a batched commitment C=C_1+lambda*C_2+lambda2*C_3+..+lambda^(n-1)*C_n from a set of commitments
+        C_1,..,C_n we do as follows:
+        - initialize C to C_n
+        - for the commitment C_i,where i varies from n-1 to 1, we update C = C_i + lambda*C
+        Therefore, we need to iterate the set of labeled commitments in reverse order.
+        Same strategy is employed for values.
+        */
         let mut commitments_iter = labeled_commitments.iter().rev();
         let mut batched_commitment = commitments_iter
             .next()
-            .unwrap_or(&default_commitment)
+            .ok_or(SynthesisError::Other("no commitment provided".to_string()))?
             .commitment()
             .clone();
 
-        let zero_value = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::zero(&mut cs)?;
         let mut values_iter = values.iter().rev();
-        let mut batched_value = values_iter.next().unwrap_or(&zero_value).clone();
+        let mut batched_value = values_iter.next().ok_or(SynthesisError::Other("no evaluation provided".to_string()))?.clone();
 
         for (i, (commitment, value)) in commitments_iter.zip(values_iter).enumerate() {
             batched_commitment = Self::mul_by_challenge(
@@ -261,6 +213,7 @@ pub trait PolynomialCommitmentVerifierGadget<
                 cs.ns(|| format!("lambda*batched_value_{}", i)),
                 &lambda_non_native,
             )?;
+            //ToDo: This cast will be unnecessary after refactoring `NonNativeFieldGadget`
             let value = FromGadget::from(value, cs.ns(|| format!("value {} to mul result", i)))?;
             batched_value = batched_value_times_lambda
                 .add(
@@ -321,11 +274,22 @@ pub trait PolynomialCommitmentVerifierGadget<
             &evaluation_point_bits,
         )?;
 
+        /*
+        Given a set of points x_1, ..., x_n and an evaluation point x distinct from all the other
+        points, we need to batch the commitments C_1, ..., C_n in a single commitment
+        C=C_1*(x-x_1)^-1+lambda*C_2*(x-x_2)^-1+lambda^2*C_3*(x-x_3)^-1 + ... + lambda^(n-1)*C_n*(x-x_n)^-1.
+        To do this, we again use Horner scheme:
+        - Initialize C = C_n*(x-x_n)^-1
+        - For each point x_i, where i varies from n-1 to 1, we update C = C_i*(x-x_i)^-1 + lambda*C
+        Therefore, we iterate over the set of points in reverse order, fetching the corresponding
+        commitment from `commitment_map`. The same strategy is applied to batch values
+        */
+
+        // here we fetch the point x_n to initialize both the batched commitment and the batched
+        // value to be updated in subsequent iterations following Horner scheme
         let mut points_iter = points.iter().rev();
-        let zero_value = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::zero(&mut cs)?;
-        let default_label = (String::from("default label"), String::from("default label"));
         let ((label, point_label), point) =
-            points_iter.next().unwrap_or((&default_label, &zero_value));
+            points_iter.next().ok_or(SynthesisError::Other("no evaluation points provided".to_string()))?;
         let commitment = *commitment_map
             .get(label)
             .ok_or(SynthesisError::Other(String::from(format!(

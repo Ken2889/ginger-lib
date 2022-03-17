@@ -14,8 +14,9 @@ use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::FromBitsGadget;
-use rand::thread_rng;
 use std::marker::PhantomData;
+use rand_core::SeedableRng;
+use rand_xorshift::XorShiftRng;
 
 mod data_structures;
 
@@ -23,6 +24,9 @@ mod data_structures;
 #[cfg(test)]
 mod tests;
 
+/// Helper function that allows to compute `base_point`*`scalar` by dealing also with the case that
+/// `base_point` is zero. The `endo_mul` flag specifies if the multiplication between `base_point`
+/// and `scalar` must be performed with `endo_mul` or a simple `mul_bits`
 pub(crate) fn safe_mul<'a, ConstraintF, G, GG, CS, IT>(
     mut cs: CS,
     base_point: &GG,
@@ -38,7 +42,9 @@ where
     CS: ConstraintSystemAbstract<ConstraintF>,
     IT: Iterator<Item = &'a Boolean>,
 {
-    let rng = &mut thread_rng();
+    // we need to employ a rng with fixed seed in order to deterministically generated a
+    // non zero base element in PC::Commitment
+    let rng = &mut XorShiftRng::seed_from_u64(42);
     let mut non_trivial_base_constant = G::rand(rng);
     while non_trivial_base_constant.is_zero() {
         non_trivial_base_constant = G::rand(rng);

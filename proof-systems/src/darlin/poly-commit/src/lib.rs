@@ -863,6 +863,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         let labeled_commitments_iter = labeled_commitments.into_iter();
         let values_iter = values.into_iter();
 
+
         for (labeled_commitment, value) in labeled_commitments_iter.zip(values_iter) {
             let commitment = labeled_commitment.commitment();
             combined_value += &(cur_challenge * &value);
