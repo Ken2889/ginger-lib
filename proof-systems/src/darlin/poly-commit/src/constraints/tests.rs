@@ -3,7 +3,7 @@ use crate::{
     Evaluations, LabeledCommitmentGadget, LabeledPolynomial, PCParameters, Polynomial,
     PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap,
 };
-use algebra::{EndoMulCurve, Field, Group, PrimeField, SemanticallyValid, ToBits, UniformRand};
+use algebra::{Field, Group, PrimeField, SemanticallyValid, ToBits, UniformRand};
 use blake2::Blake2s;
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
@@ -55,7 +55,7 @@ fn value_for_alloc<F: Field, R: RngCore>(
     }
 }
 
-fn commitment_for_alloc<G: EndoMulCurve, PC: PolynomialCommitment<G>>(
+fn commitment_for_alloc<G: Group, PC: PolynomialCommitment<G>>(
     commitment: &PC::Commitment,
     negative_type: &Option<NegativeTestType>,
 ) -> PC::Commitment {
@@ -68,7 +68,7 @@ fn commitment_for_alloc<G: EndoMulCurve, PC: PolynomialCommitment<G>>(
 
 fn test_succinct_verify_template<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >(
@@ -166,7 +166,7 @@ fn test_succinct_verify_template<
 
 fn test_multi_point_multi_poly_verify<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >(
@@ -304,7 +304,7 @@ fn test_multi_point_multi_poly_verify<
 
 fn test_single_point_multi_poly_verify<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >(
@@ -430,7 +430,7 @@ fn exec_test<FN: Fn(Option<NegativeTestType>)>(test_fn: FN) {
 
 pub(crate) fn succinct_verify_single_point_single_poly_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
@@ -450,7 +450,7 @@ pub(crate) fn succinct_verify_single_point_single_poly_test<
 
 pub(crate) fn succinct_verify_with_segmentation_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: 'static + PolynomialCommitment<G, Commitment = G>,
     PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
@@ -505,7 +505,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<
 
 pub(crate) fn single_point_multi_poly_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
@@ -525,7 +525,7 @@ pub(crate) fn single_point_multi_poly_test<
 
 pub(crate) fn constant_polynomial_succinct_verify_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
@@ -545,7 +545,7 @@ pub(crate) fn constant_polynomial_succinct_verify_test<
 
 pub(crate) fn multi_poly_multi_point_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
@@ -565,7 +565,7 @@ pub(crate) fn multi_poly_multi_point_test<
 
 pub(crate) fn single_poly_multi_point_test<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {

@@ -2,7 +2,7 @@ use crate::{
     Error as PolyError, Evaluations,
     PolynomialCommitment, QueryMap,
 };
-use algebra::{EndoMulCurve, Group, PrimeField, UniformRand};
+use algebra::{Group, PrimeField, UniformRand};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget};
@@ -34,7 +34,7 @@ pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
 where
     ConstraintF: PrimeField,
     // ToDo: can probably be a Group if we implement rand also for groups
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     CS: ConstraintSystemAbstract<ConstraintF>,
@@ -87,7 +87,7 @@ impl From<SynthesisError> for PolyError {
 /// Gadget for a linear polynomial commitment verifier
 pub trait PolynomialCommitmentVerifierGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
 >: Sized
 {

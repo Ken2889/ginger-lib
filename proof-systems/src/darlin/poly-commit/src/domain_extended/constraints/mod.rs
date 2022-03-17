@@ -3,7 +3,7 @@ use crate::{
     MultiPointProofGadget, PCMultiPointProof, PolynomialCommitment,
     PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget,
 };
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::{Group, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::alloc::AllocGadget;
@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 /// Gadget for multi-point proof for domain extended poly-commit verifier gadget
 pub struct DomainExtendedMultiPointProofGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G, Commitment = G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 > {
@@ -34,7 +34,7 @@ impl<ConstraintF, G, PC, PCG>
     > for DomainExtendedMultiPointProofGadget<ConstraintF, G, PC, PCG>
 where
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: 'static + PolynomialCommitment<G, Commitment = G>,
     PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 {
@@ -98,7 +98,7 @@ impl<ConstraintF, G, PC, PCG>
     > for DomainExtendedMultiPointProofGadget<ConstraintF, G, PC, PCG>
 where
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: 'static + PolynomialCommitment<G, Commitment = G>,
     PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 {
@@ -116,7 +116,7 @@ where
 /// Poly-commit verifier gadget for domain extended polynomials
 pub struct DomainExtendedPolyCommitVerifierGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 > {
@@ -128,7 +128,7 @@ pub struct DomainExtendedPolyCommitVerifierGadget<
 
 impl<
         ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
+        G: Group<BaseField = ConstraintF>,
         PC: 'static + PolynomialCommitment<G, Commitment = G>,
         PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     > DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>
@@ -187,7 +187,7 @@ impl<
 
 impl<
         ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
+        G: Group<BaseField = ConstraintF>,
         PC: 'static + PolynomialCommitment<G, Commitment = G>,
         PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     > PolynomialCommitmentVerifierGadget<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>>

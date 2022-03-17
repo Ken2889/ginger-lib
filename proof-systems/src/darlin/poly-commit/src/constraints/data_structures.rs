@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::{Group, PrimeField};
 use r1cs_std::prelude::AllocGadget;
 use crate::{PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialCommitmentVerifierGadget, PolynomialLabel};
 
@@ -8,7 +8,7 @@ use crate::{PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitm
 pub struct LabeledCommitmentGadget<
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
 > {
     label: PolynomialLabel,
@@ -19,7 +19,7 @@ impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
     where
         PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
         ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
+        G: Group<BaseField = ConstraintF>,
         PC: PolynomialCommitment<G>,
 {
     /// Instantiate a new labeled commitment from a label and a commitment gadget.
@@ -41,7 +41,7 @@ impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
 /// Define interface for a gadget representing an opening proof for a multi-point assertion
 pub trait MultiPointProofGadget<
     ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
+    G: Group<BaseField = ConstraintF>,
     MPP: PCMultiPointProof<G>,
 >: AllocGadget<MPP, ConstraintF>
 {
