@@ -166,11 +166,9 @@ impl<
                 hiding_randomness_bits.as_slice(),
             )?;
 
-            let comm_times_challenge = safe_mul::<ConstraintF, G, GG, _, _>(
+            let comm_times_challenge = comm.endo_mul(
                 cs.ns(|| "hiding_commitment * hiding_challenge"),
-                &comm,
-                hiding_challenge.iter(),
-                true,
+                &hiding_challenge,
             )?;
             let rand_times_s = vk.s.mul_bits(
                 cs.ns(|| "vk.s * hiding_randomness"),
