@@ -155,7 +155,8 @@ impl<
         let mut iterators = Vec::new();
         let mut labels = Vec::new();
         for el in commitments {
-            labels.push(el.label().clone());
+            let cloned_el = el.clone();
+            labels.push(cloned_el.label().clone());
             iterators.push(el.commitment().iter().rev());
         }
 
@@ -313,15 +314,28 @@ impl<
             &evaluation_point_bits,
         )?;
 
+        // merge h-commitment to labeled_commitments to combine segments for all of them simultaneously
+        let mut labeled_commitments_to_be_combined = vec![LabeledCommitmentGadget::<
+            Self,
+            ConstraintF,
+            G,
+            DomainExtendedPolynomialCommitment<G, PC>,
+        >::new(
+            String::from("labeled commitment"),
+            proof.get_h_commitment().clone(),
+        )];
+        labeled_commitments_to_be_combined.extend_from_slice(labeled_commitments);
         let combined_commitments = Self::combine_commitments(
             cs.ns(|| "combine segmented commitments"),
             vk,
-            labeled_commitments,
+            labeled_commitments_to_be_combined.as_slice(),
             &evaluation_point,
         )?;
+        let labeled_combined_h_commitment = combined_commitments.get(0).unwrap();
 
         let commitment_map: BTreeMap<_, _> = combined_commitments
             .iter()
+            .skip(1) // skip first commitment as it is the h-commitment
             .map(|commitment| (commitment.label(), commitment.commitment()))
             .collect();
 
@@ -421,25 +435,16 @@ impl<
                 .reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
         }
         // subtract h-commitment
-        let labeled_h_commitment = LabeledCommitmentGadget::<
-            Self,
-            ConstraintF,
-            G,
-            DomainExtendedPolynomialCommitment<G, PC>,
-        >::new(
-            String::from("labeled commitment"),
-            proof.get_h_commitment().clone(),
-        );
-        let labeled_combined_h_commitment = Self::combine_commitments(
+        /*let labeled_combined_h_commitment = Self::combine_commitments(
             cs.ns(|| "combine h-commitment"),
             vk,
             [labeled_h_commitment].as_ref(),
             &evaluation_point,
         )?;
         assert_eq!(labeled_combined_h_commitment.len(), 1);
-        let combined_h_commitment = labeled_combined_h_commitment[0].commitment();
+        let combined_h_commitment = labeled_combined_h_commitment[0].commitment();*/
         batched_commitment =
-            batched_commitment.sub(cs.ns(|| "sub h commitment"), combined_h_commitment)?;
+            batched_commitment.sub(cs.ns(|| "sub h commitment"), labeled_combined_h_commitment.commitment())?;
         let batched_value_bits =
             batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
         PCG::succinct_verify(

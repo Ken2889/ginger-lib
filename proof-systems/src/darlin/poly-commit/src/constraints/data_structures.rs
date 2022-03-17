@@ -4,7 +4,10 @@ use r1cs_std::prelude::AllocGadget;
 use crate::{PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialCommitmentVerifierGadget, PolynomialLabel};
 
 /// A commitment gadget plus its label, needed for reference.
-#[derive(Clone)]
+#[derive(Derivative)]
+#[derivative(
+Clone(bound = ""),
+)]
 pub struct LabeledCommitmentGadget<
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
