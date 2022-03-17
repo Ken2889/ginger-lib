@@ -431,6 +431,55 @@ impl<F: Field> ConstraintSystem<F> {
         self.mode == SynthesisMode::Debug
     }
 
+    /// Return the number of non-zero entries of matrix `A`.
+    pub fn num_non_zero_matrix_a(&self) -> usize {
+        Self::num_non_zero_helper(&self.at)
+    }
+
+    /// Return the number of non-zero entries of matrix `B`.
+    pub fn num_non_zero_matrix_b(&self) -> usize {
+        Self::num_non_zero_helper(&self.bt)
+    }
+
+    /// Return the number of non-zero entries of matrix `C`.
+    pub fn num_non_zero_matrix_c(&self) -> usize {
+        Self::num_non_zero_helper(&self.ct)
+    }
+
+    /// Return the maximum number of non-zero entries among matrices `A`, `B`, and `C`.
+    pub fn num_non_zero(&self) -> usize {
+        let max = *[
+            self.num_non_zero_matrix_a(),
+            self.num_non_zero_matrix_b(),
+            self.num_non_zero_matrix_c(),
+        ]
+        .iter()
+        .max()
+        .expect("iterator is not empty");
+        max
+    }
+
+    /// A simple function that balances the non-zero entries between A and B.
+    pub fn balance_matrices(&mut self) {
+        let mut a_weight = self.num_non_zero_matrix_a();
+        let mut b_weight = self.num_non_zero_matrix_b();
+        for (a_row, b_row) in self.at.iter_mut().zip(self.bt.iter_mut()) {
+            let a_row_weight = a_row.len();
+            let b_row_weight = b_row.len();
+            if (a_weight < b_weight && a_row_weight < b_row_weight)
+                || (a_weight > b_weight && a_row_weight > b_row_weight)
+            {
+                std::mem::swap(a_row, b_row);
+                a_weight = a_weight - a_row_weight + b_row_weight;
+                b_weight = b_weight - b_row_weight + a_row_weight;
+            }
+        }
+    }
+
+    fn num_non_zero_helper(matrix: &Vec<Vec<(F, Index)>>) -> usize {
+        matrix.iter().map(|row| row.len()).sum()
+    }
+
     fn debug_info_as_mut(&mut self) -> &mut DebugInfo<F> {
         self.debug_info
             .as_mut()
@@ -668,5 +717,113 @@ impl<F: Field, CS: ConstraintSystemAbstract<F> + ConstraintSystemDebugger<F>>
     #[inline]
     fn get(&mut self, path: &str) -> F {
         (**self).get(path)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{ConstraintSystem, ConstraintSystemAbstract, LinearCombination, SynthesisMode};
+    use algebra::fields::tweedle::fq::Fq as F;
+    use num_traits::identities::One;
+    use rand::{thread_rng, Rng, RngCore};
+
+    // Build a R1CS with `num_constraints` many constraints and:
+    // - exactly 2 non-zero entries in each constraint of matrix A
+    // - exactly 1 non-zero entry in each constraint of matrix B
+    fn build_cs(num_constraints: usize) -> ConstraintSystem<F> {
+        let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
+        let mut var = Vec::new();
+        for i in 0..num_constraints + 1 {
+            var.push(
+                cs.alloc(|| format!("variable {}", i), || Ok(F::one()))
+                    .unwrap(),
+            );
+        }
+        for i in 0..num_constraints {
+            let lc_a = LinearCombination::from(var[i]) + LinearCombination::from(var[i + 1]);
+            let lc_b = LinearCombination::from(var[i]);
+            let lc_c = LinearCombination::zero();
+            cs.enforce(|| format!("constraint {}", i), |_| lc_a, |_| lc_b, |_| lc_c);
+        }
+        cs
+    }
+
+    fn build_random_cs(
+        num_constraints: usize,
+        num_variables: usize,
+        rng: &mut dyn RngCore,
+    ) -> ConstraintSystem<F> {
+        let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
+
+        let mut var = Vec::new();
+        for i in 0..num_variables {
+            var.push(
+                cs.alloc(|| format!("variable {}", i), || Ok(F::one()))
+                    .unwrap(),
+            );
+        }
+
+        for i in 0..num_constraints {
+            let n_a = rng.gen_range(0..=num_variables);
+            let mut lc_a = LinearCombination::zero();
+            for j in 0..n_a {
+                lc_a += (F::one(), var[j]);
+            }
+
+            let n_b = rng.gen_range(0..=num_variables);
+            let mut lc_b = LinearCombination::zero();
+            for j in 0..n_b {
+                lc_b += (F::one(), var[j]);
+            }
+
+            let lc_c = LinearCombination::zero();
+            cs.enforce(|| format!("constraint {}", i), |_| lc_a, |_| lc_b, |_| lc_c);
+        }
+        cs
+    }
+
+    #[test]
+    // In this situation the balancer should perfectly balance the matrices.
+    fn matrix_balancer_even() {
+        let num_constraints = 100;
+        let mut cs = build_cs(num_constraints);
+        cs.balance_matrices();
+        assert_eq!(cs.num_non_zero_matrix_a(), cs.num_non_zero_matrix_b());
+    }
+
+    #[test]
+    // In this situation the difference in the number of non-zero elements of A and B after
+    // balancing should be equal to 1.
+    fn matrix_balancer_odd() {
+        let num_constraints = 101;
+        let mut cs = build_cs(num_constraints);
+        cs.balance_matrices();
+
+        assert_eq!(
+            (cs.num_non_zero_matrix_a() as i64 - cs.num_non_zero_matrix_b() as i64).abs(),
+            1
+        );
+    }
+
+    #[test]
+    // Balancer should behave symmetrically with respect to swapping matrices A and B.
+    fn matrix_balancer_symmetry() {
+        let rng = &mut thread_rng();
+        let num_constraints = rng.gen_range(1..=100);
+        let num_variables = rng.gen_range(1..=100);
+
+        let mut cs = build_random_cs(num_constraints, num_variables, rng);
+
+        let mut cs_swapped = cs.clone();
+        std::mem::swap(&mut cs_swapped.at, &mut cs_swapped.bt);
+
+        assert_eq!(cs.at, cs_swapped.bt);
+        assert_eq!(cs.bt, cs_swapped.at);
+
+        cs.balance_matrices();
+        cs_swapped.balance_matrices();
+
+        assert_eq!(cs.at, cs_swapped.bt);
+        assert_eq!(cs.bt, cs_swapped.at);
     }
 }

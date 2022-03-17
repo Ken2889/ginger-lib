@@ -217,7 +217,8 @@ impl<F: PrimeField> IOP<F> {
 
         // matrix post-processing: balance matrices
         let matrix_processing_time = start_timer!(|| "Processing matrices");
-        balance_matrices(&mut ics.at, &mut ics.bt);
+        ics.balance_matrices();
+        let num_non_zero = ics.num_non_zero();
         add_to_trace!(|| "number of (formatted) input_variables", || format!(
             "{}",
             ics.num_inputs
@@ -230,17 +231,14 @@ impl<F: PrimeField> IOP<F> {
             "{}",
             ics.num_constraints
         ));
-        add_to_trace!(|| "number of num_non_zero", || format!(
-            "{}",
-            num_non_zero(&mut ics)
-        ));
+        add_to_trace!(|| "number of num_non_zero", || format!("{}", num_non_zero));
         end_timer!(matrix_processing_time);
 
         let index_info = IndexInfo {
             num_witness: ics.num_aux,
             num_inputs: ics.num_inputs,
             num_constraints: ics.num_constraints,
-            num_non_zero: num_non_zero(&mut ics),
+            num_non_zero: num_non_zero,
 
             f: PhantomData,
         };
@@ -251,8 +249,11 @@ impl<F: PrimeField> IOP<F> {
             index_info.num_non_zero,
         )?;
 
-        let (mut a, mut b, mut c) =
-            post_process_matrices(&mut ics, &domain_h, &domain_x).expect("should not be `None`");
+        // Convert R1CS from the representation used inside `ConstraintSystem` to the SparseMatrix
+        // representation used in `algebra` module.
+        let mut a = to_matrix_helper(&ics.at, &domain_h, &domain_x);
+        let mut b = to_matrix_helper(&ics.bt, &domain_h, &domain_x);
+        let mut c = to_matrix_helper(&ics.ct, &domain_h, &domain_x);
 
         let a_arithmetization_time = start_timer!(|| "Arithmetizing A");
         let a_arith = arithmetize_matrix("a", &mut a, &domain_k, &domain_h, &domain_b)?;
@@ -458,7 +459,7 @@ fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> boo
 }
 
 /*
-    Elementary R1CS matrix conversion and post-processing.
+    Elementary R1CS matrix conversion.
 
 */
 
@@ -488,51 +489,6 @@ fn to_matrix_helper<F: PrimeField>(
         new_matrix.push(new_row)
     }
     new_matrix
-}
-
-/// A simple function that balances the non-zero entries between A and B.
-// TODO: write a test to check that `balance_matrices` improves the balancing of the matrices
-// A and B by distributing the non-zero elements (more or less) evenly between the two.
-fn balance_matrices<F: Field>(
-    a_matrix: &mut Vec<Vec<(F, VarIndex)>>,
-    b_matrix: &mut Vec<Vec<(F, VarIndex)>>,
-) {
-    let mut a_weight: usize = a_matrix.iter().map(|row| row.len()).sum();
-    let mut b_weight: usize = b_matrix.iter().map(|row| row.len()).sum();
-    for (a_row, b_row) in a_matrix.iter_mut().zip(b_matrix) {
-        let a_row_weight = a_row.len();
-        let b_row_weight = b_row.len();
-        if (a_weight < b_weight && a_row_weight < b_row_weight)
-            || (a_weight > b_weight && a_row_weight > b_row_weight)
-        {
-            std::mem::swap(a_row, b_row);
-            a_weight = a_weight - a_row_weight + b_row_weight;
-            b_weight = b_weight - b_row_weight + a_row_weight;
-        }
-    }
-}
-
-pub(crate) fn post_process_matrices<F: PrimeField>(
-    cs: &mut ConstraintSystem<F>,
-    domain_h: &Box<dyn EvaluationDomain<F>>,
-    domain_x: &Box<dyn EvaluationDomain<F>>,
-) -> Option<(SparseMatrix<F>, SparseMatrix<F>, SparseMatrix<F>)> {
-    let a = to_matrix_helper(&cs.at, domain_h, domain_x);
-    let b = to_matrix_helper(&cs.bt, domain_h, domain_x);
-    let c = to_matrix_helper(&cs.ct, domain_h, domain_x);
-    Some((a, b, c))
-}
-
-pub(crate) fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
-    let a_non_zeros = cs.at.iter().map(|row| row.len()).sum();
-    let b_non_zeros = cs.bt.iter().map(|row| row.len()).sum();
-    let c_non_zeros = cs.ct.iter().map(|row| row.len()).sum();
-
-    let max = *[a_non_zeros, b_non_zeros, c_non_zeros]
-        .iter()
-        .max()
-        .expect("iterator is not empty");
-    max
 }
 
 #[cfg(test)]
@@ -656,68 +612,5 @@ mod test {
 
             assert_eq!(result_dense, result_sparse);
         }
-    }
-
-    #[test]
-    // - Matrix A: exactly 2 non-zero elements in each constraint
-    // - Matrix B: exactly 1 non-zero element in each constraint
-    // - Even number of constraints
-    // In this situation the balancer should perfectly balance the matrices.
-    fn matrix_balancer_even() {
-        let num_constraints = 100;
-        let mut a = vec![vec![(F::one(), VarIndex::Aux(0)); 2]; num_constraints];
-        let mut b = vec![vec![(F::one(), VarIndex::Aux(0)); 1]; num_constraints];
-        balance_matrices(&mut a, &mut b);
-        let a_weight: usize = a.iter().map(|row| row.len()).sum();
-        let b_weight: usize = b.iter().map(|row| row.len()).sum();
-        assert_eq!(a_weight, b_weight);
-    }
-    #[test]
-    // - Matrix A: exactly 2 non-zero elements in each constraint
-    // - Matrix B: exactly 1 non-zero element in each constraint
-    // - Odd number of constraints
-    // In this situation the difference in the number of non-zero elements of A and B after
-    // balancing should be equal to 1.
-    fn matrix_balancer_odd() {
-        let num_constraints = 101;
-        let mut a = vec![vec![(F::one(), VarIndex::Aux(0)); 2]; num_constraints];
-        let mut b = vec![vec![(F::one(), VarIndex::Aux(0)); 1]; num_constraints];
-        balance_matrices(&mut a, &mut b);
-        let a_weight: usize = a.iter().map(|row| row.len()).sum();
-        let b_weight: usize = b.iter().map(|row| row.len()).sum();
-        assert_eq!((a_weight as i64 - b_weight as i64).abs(), 1);
-    }
-
-    #[test]
-    // Balancer should behave symmetrically with respect to its two arguments.
-    fn matrix_balancer_symmetry() {
-        let num_constraints = 10;
-        let num_elements = Uniform::from(0..100);
-        let rng = &mut thread_rng();
-        let a: Vec<_> = (0..num_constraints)
-            .into_iter()
-            .map(|_| {
-                let n = num_elements.sample(rng);
-                vec![(F::one(), VarIndex::Aux(0)); n]
-            })
-            .collect();
-        let b: Vec<_> = (0..num_constraints)
-            .into_iter()
-            .map(|_| {
-                let n = num_elements.sample(rng);
-                vec![(F::one(), VarIndex::Aux(0)); n]
-            })
-            .collect();
-
-        let mut a1 = a.clone();
-        let mut b1 = b.clone();
-        balance_matrices(&mut a1, &mut b1);
-
-        let mut a2 = a.clone();
-        let mut b2 = b.clone();
-        balance_matrices(&mut b2, &mut a2);
-
-        assert_eq!(a1, a2);
-        assert_eq!(b1, b2);
     }
 }

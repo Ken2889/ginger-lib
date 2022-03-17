@@ -31,3 +31,4 @@ rand = { version = "=0.8.4" }
 
 [dev-dependencies]
 algebra = { path = "../../algebra", features = ["tweedle"] }
+num-traits = "=0.2.14"
