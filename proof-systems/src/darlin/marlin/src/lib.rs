@@ -34,9 +34,7 @@ extern crate bench_utils;
 use algebra::ToBytes;
 use algebra::{to_bytes, Group};
 use digest::Digest;
-use poly_commit::{
-    evaluate_query_map_to_vec, Evaluations, LabeledPolynomial, LabeledRandomness, PCKey, QueryMap,
-};
+use poly_commit::{evaluate_query_map_to_vec, Evaluations, LabeledRandomness, PCKey, QueryMap};
 use poly_commit::{optional_rng::OptionalRng, LabeledCommitment, PolynomialCommitment};
 use r1cs_core::ConstraintSynthesizer;
 use rand_core::RngCore;
@@ -115,7 +113,7 @@ impl<G: Group, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let commit_time = start_timer!(|| "Commit to index polynomials");
 
         let (index_comms, index_comm_rands): (_, _) =
-            Self::commit_vec(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
+            PC::commit_many(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
 
         end_timer!(commit_time);
 
@@ -191,7 +189,7 @@ impl<G: Group, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_comms, first_comm_rands) =
-            Self::commit_vec(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(first_round_comm_time);
 
@@ -214,7 +212,7 @@ impl<G: Group, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_comms, second_comm_rands) =
-            Self::commit_vec(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(second_round_comm_time);
 
@@ -235,7 +233,7 @@ impl<G: Group, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_comms, third_comm_rands) =
-            Self::commit_vec(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(third_round_comm_time);
 
@@ -496,65 +494,5 @@ impl<G: Group, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         end_timer!(check_time);
 
         result
-    }
-
-    /// The vectorial variant of `fn commit()`. Outputs a vector of commitments
-    /// to a set of `polynomials`.
-    // If `polynomials[i].is_hiding()`, then the `i`-th commitment is hiding.
-    // Hence `rng` should not be `None` if `polynomials[i].is_hiding() == true`
-    // for some of the `i`s.
-    // If for some `i`, `polynomials[i].is_hiding() == false`, then the
-    // corresponding randomness is `G::ScalarField::empty()`.
-    // TODO: move this function back to poly-commit when merging into mono-repo.
-    fn commit_vec<'a>(
-        ck: &PC::CommitterKey,
-        labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
-        // The optional rng for additional internal randomness of open()
-        mut rng: Option<&mut dyn RngCore>,
-    ) -> Result<
-        (
-            Vec<LabeledCommitment<PC::Commitment>>,
-            Vec<LabeledRandomness<PC::Randomness>>,
-        ),
-        PC::Error,
-    > {
-        let mut labaled_commitments = Vec::new();
-        let mut labeled_randomnesses = Vec::new();
-
-        let commit_time = start_timer!(|| "Committing to polynomials");
-        for labeled_polynomial in labeled_polynomials {
-            let polynomial = labeled_polynomial.polynomial();
-            let label = labeled_polynomial.label();
-            let is_hiding = labeled_polynomial.is_hiding();
-
-            let single_commit_time = start_timer!(|| format!(
-                "Polynomial {} of degree {}, and hiding bound {:?}",
-                label,
-                polynomial.degree(),
-                is_hiding,
-            ));
-
-            let (commitment, randomness) = PC::commit(
-                ck,
-                polynomial,
-                is_hiding,
-                if rng.is_some() {
-                    Some(rng.as_mut().unwrap())
-                } else {
-                    None
-                },
-            )?;
-
-            let labeled_commitment = LabeledCommitment::new(label.to_string(), commitment);
-            let labeled_randomness = LabeledRandomness::new(label.to_string(), randomness);
-
-            labaled_commitments.push(labeled_commitment);
-            labeled_randomnesses.push(labeled_randomness);
-
-            end_timer!(single_commit_time);
-        }
-
-        end_timer!(commit_time);
-        Ok((labaled_commitments, labeled_randomnesses))
     }
 }
