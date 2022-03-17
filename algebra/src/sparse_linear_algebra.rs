@@ -1,15 +1,13 @@
-use algebra::Field;
+use crate::Field;
 
-// TODO: vector-matrix arithmetics should be ideally outsourced to a module of the
-// `algebra` crate.
 /// Internal representation of a sparse matrix.
 /// Each row is described by a vector of `(value, column_index)`- pairs.
-pub(crate) type SparseMatrix<F> = Vec<Vec<(F, usize)>>;
+pub type SparseMatrix<F> = Vec<Vec<(F, usize)>>;
 
 /// Multiplication of a SparseMatrix by a vector.
 /// This functions handles non-compatible  matrix-vector dimensions by (implicitly) padding the
 /// vector by zeroes to match the number of columns of the matrix.
-pub(crate) fn mat_vec_mul<F: Field>(matrix: &SparseMatrix<F>, v: &[F]) -> Vec<F> {
+pub fn mat_vec_mul<F: Field>(matrix: &SparseMatrix<F>, v: &[F]) -> Vec<F> {
     let num_rows = matrix.len();
     let mut out = vec![F::zero(); num_rows];
     for (r, row) in matrix.iter().enumerate() {
@@ -23,24 +21,19 @@ pub(crate) fn mat_vec_mul<F: Field>(matrix: &SparseMatrix<F>, v: &[F]) -> Vec<F>
     out
 }
 
-#[cfg(test)]
-pub(crate) mod test {
-    // use crate::iop::sparse_linear_algebra::SparseMatrix;
-    use crate::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
-    use algebra::fields::tweedle::fq::Fq as F;
-    use algebra::{Field, UniformRand};
-    use num_traits::Zero;
-    use rand::distributions::{Bernoulli, Distribution, Uniform};
-    use rand::{thread_rng, Rng, RngCore};
+pub mod dense_matrix {
+    use super::*;
+    use rand::distributions::{Bernoulli, Distribution};
+    use rand::RngCore;
 
-    pub(crate) struct DenseMatrix<F: Field> {
-        pub(crate) val: Vec<F>,
-        pub(crate) num_rows: usize,
-        pub(crate) num_cols: usize,
+    pub struct DenseMatrix<F: Field> {
+        pub val: Vec<F>,
+        pub num_rows: usize,
+        pub num_cols: usize,
     }
 
     impl<F: Field> DenseMatrix<F> {
-        pub(crate) fn generate_random(
+        pub fn generate_random(
             num_rows: usize,
             num_cols: usize,
             fill_factor: f64,
@@ -61,7 +54,7 @@ pub(crate) mod test {
                 num_cols,
             }
         }
-        pub(crate) fn vec_mul(&self, vec: &[F]) -> Vec<F> {
+        pub fn vec_mul(&self, vec: &[F]) -> Vec<F> {
             let mut res = Vec::new();
             for i in 0..self.num_rows {
                 let mut acc = F::zero();
@@ -72,7 +65,7 @@ pub(crate) mod test {
             }
             res
         }
-        pub(crate) fn to_sparse(&self) -> SparseMatrix<F> {
+        pub fn to_sparse(&self) -> SparseMatrix<F> {
             let mut res = Vec::new();
             for i in 0..self.num_rows {
                 let mut acc = Vec::new();
@@ -87,8 +80,20 @@ pub(crate) mod test {
             res
         }
     }
+}
 
-    pub(crate) fn generate_random_vector<F: Field>(len: usize, rng: &mut dyn RngCore) -> Vec<F> {
+#[cfg(test)]
+mod test {
+    // use crate::iop::sparse_linear_algebra::SparseMatrix;
+    use super::*;
+    use crate::dense_matrix::DenseMatrix;
+    use crate::fields::tweedle::fq::Fq as F;
+    use crate::UniformRand;
+    use num_traits::Zero;
+    use rand::distributions::{Bernoulli, Distribution, Uniform};
+    use rand::{thread_rng, Rng, RngCore};
+
+    fn generate_random_vector<F: Field>(len: usize, rng: &mut dyn RngCore) -> Vec<F> {
         let vec: Vec<F> = (0..len).map(|_| UniformRand::rand(rng)).collect();
         vec
     }

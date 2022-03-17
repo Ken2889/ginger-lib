@@ -19,7 +19,6 @@ use rayon::prelude::*;
 pub mod indexer;
 /// Describes data structures and the algorithms used by the interactive prover.
 pub mod prover;
-pub(crate) mod sparse_linear_algebra;
 /// Describes data structures and the algorithms used by the interactive verifier.
 pub mod verifier;
 

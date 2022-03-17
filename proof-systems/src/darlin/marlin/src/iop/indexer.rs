@@ -5,15 +5,13 @@ use crate::iop::{Error, IOP};
 use crate::{ToString, Vec};
 use algebra::{
     get_best_evaluation_domain, serialize::*, EvaluationDomain, Evaluations as EvaluationsOnDomain,
-    PrimeField, SemanticallyValid, ToBytes,
+    PrimeField, SemanticallyValid, SparseMatrix, ToBytes,
 };
 use derivative::Derivative;
 use poly_commit::LabeledPolynomial;
 use r1cs_core::{
     ConstraintSynthesizer, ConstraintSystem, Index as VarIndex, SynthesisError, SynthesisMode,
 };
-
-use crate::iop::sparse_linear_algebra::SparseMatrix;
 use std::marker::PhantomData;
 
 /// Information about the index, including the field of definition, the number of
@@ -540,8 +538,8 @@ pub(crate) fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::iop::sparse_linear_algebra::test::DenseMatrix;
     use crate::IOP;
+    use algebra::dense_matrix::DenseMatrix;
     use algebra::fields::tweedle::fq::Fq as F;
     use algebra::UniformRand;
     use num_traits::{One, Zero};

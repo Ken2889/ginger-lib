@@ -4,9 +4,11 @@ use crate::iop::indexer::*;
 use crate::iop::verifier::*;
 use crate::iop::*;
 
-use crate::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
 use crate::{ToString, Vec};
-use algebra::{get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain};
+use algebra::{
+    get_best_evaluation_domain, mat_vec_mul, EvaluationDomain, Evaluations as EvaluationsOnDomain,
+    SparseMatrix,
+};
 use algebra::{Field, PrimeField};
 use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};

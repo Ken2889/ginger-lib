@@ -65,6 +65,9 @@ pub use to_field_vec::ToConstraintField;
 pub mod linear_combination;
 pub use linear_combination::LinearCombination;
 
+pub mod sparse_linear_algebra;
+pub use sparse_linear_algebra::*;
+
 #[cfg(feature = "parallel")]
 pub mod msm;
 #[cfg(feature = "parallel")]
