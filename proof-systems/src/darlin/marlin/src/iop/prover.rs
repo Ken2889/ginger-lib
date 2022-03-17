@@ -209,7 +209,9 @@ impl<F: PrimeField> IOP<F> {
         combination with the input polynomial,
             y(X) = x(X) + z_I(X)* w(X) mod (X^n-1).
         */
-        let ratio = Self::get_subdomain_step(domain_h, domain_x)?;
+        let ratio = domain_h
+            .get_subdomain_step(domain_x)
+            .map_err(|e| Error::Other(format!("{}", e)))?;
 
         let mut w_extended = state.witness_assignment.clone();
         w_extended.extend(vec![
@@ -346,26 +348,6 @@ impl<F: PrimeField> IOP<F> {
             }
         }
         Ok(t_evals_on_h)
-    }
-
-    /// Returns the ratio of the sizes of `domain` and `subdomain` or an Error if
-    /// `subdomain` is not a subdomain of `domain`.
-    fn get_subdomain_step(
-        domain: &Box<dyn EvaluationDomain<F>>,
-        subdomain: &Box<dyn EvaluationDomain<F>>,
-    ) -> Result<usize, Error> {
-        if domain.size() % subdomain.size() != 0 {
-            Err(Error::Other(
-                "domain size not divisible by subdomain size".to_owned(),
-            ))?
-        }
-        let step = domain.size() / subdomain.size();
-        if subdomain.group_gen() != domain.group_gen().pow(&[step as u64]) {
-            Err(Error::Other(
-                "domain and subdomain have inconsistent generators".to_owned(),
-            ))?
-        }
-        Ok(step)
     }
 
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
@@ -517,7 +499,9 @@ impl<F: PrimeField> IOP<F> {
 
         let u_1_time = start_timer!(|| "Compute u_1 poly");
 
-        let step = Self::get_subdomain_step(&domain_b, &domain_h)?;
+        let step = domain_b
+            .get_subdomain_step(domain_h)
+            .map_err(|e| Error::Other(format!("{}", e)))?;
 
         let outer_poly_evals_on_H = EvaluationsOnDomain::from_vec_and_domain(
             t_poly_evals
@@ -697,7 +681,9 @@ impl<F: PrimeField> IOP<F> {
         // Compute the evaluations of the inverses of the denominators over the indexer domain `K`
         // by reusing the already computed evaluations of the denominators over the domain `B` and
         // performing a batch inversion.
-        let step = Self::get_subdomain_step(&domain_b, &domain_k)?;
+        let step = domain_b
+            .get_subdomain_step(&domain_k)
+            .map_err(|e| Error::Other(format!("{}", e)))?;
 
         let compute_inverse_denom_evals_on_k = |m_denom_evals_on_b: &Vec<F>| -> Vec<F> {
             let mut result: Vec<_> = m_denom_evals_on_b

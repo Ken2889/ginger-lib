@@ -120,7 +120,7 @@ mod marlin {
                 if zk { Some(rng) } else { None },
             );
 
-            assert!(proof.is_ok());
+            // assert!(proof.is_ok());
 
             let proof = proof.unwrap();
 

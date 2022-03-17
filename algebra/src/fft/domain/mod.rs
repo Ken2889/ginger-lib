@@ -183,6 +183,19 @@ pub trait EvaluationDomain<F: PrimeField>: Debug + Send + Sync {
         }
     }
 
+    /// Returns the ratio of the sizes of `self` and `subdomain` or an Error if
+    /// `subdomain` is not a subdomain of `self`.
+    fn get_subdomain_step(&self, subdomain: &Box<dyn EvaluationDomain<F>>) -> Result<usize, Error> {
+        if self.size() % subdomain.size() != 0 {
+            Err("domain size not divisible by subdomain size".to_owned())?
+        }
+        let step = self.size() / subdomain.size();
+        if subdomain.group_gen() != self.group_gen().pow(&[step as u64]) {
+            Err("domain and subdomain have inconsistent generators".to_owned())?
+        }
+        Ok(step)
+    }
+
     /// Given an index which assumes the first elements of this domain are the elements of
     /// another (sub)domain with size size_s, this returns the actual index into this domain.
     fn reindex_by_subdomain(&self, other_size: usize, index: usize) -> Result<usize, Error> {
