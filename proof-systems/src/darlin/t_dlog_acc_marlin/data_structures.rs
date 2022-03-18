@@ -13,7 +13,7 @@ use derivative::Derivative;
 use digest::Digest;
 use marlin::iop::LagrangeKernel;
 use poly_commit::ipa_pc::InnerProductArgPC;
-use poly_commit::{DomainExtendedPolynomialCommitment, LabeledRandomness, PolynomialCommitment};
+use poly_commit::{DomainExtendedPolynomialCommitment, PolynomialCommitment};
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
@@ -34,19 +34,8 @@ pub(crate) type PC<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArg
 pub struct VerifierKey<G1: Curve, G2: Curve, D: Digest + 'static> {
     /// The index itself.
     pub index: Index<G1, G2>,
-    /// Commitments to the indexed polynomials.
-    pub index_comms: Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>,
     /// Commitments of the lagrange polynomials over the input domain.
     pub lagrange_comms: Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>,
-}
-
-impl<G1: Curve, G2: Curve, D: Digest + 'static> VerifierKey<G1, G2, D> {
-    /// Iterate over the commitments to indexed polynomials in `self`.
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = &<PC<G1, D> as PolynomialCommitment<G1>>::Commitment> {
-        self.index_comms.iter()
-    }
 }
 
 /// The prover key for a specific R1CS.
@@ -61,9 +50,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> VerifierKey<G1, G2, D> {
 pub struct ProverKey<G1: Curve, G2: Curve, D: Digest + 'static> {
     /// The index verifier key.
     pub index_vk: VerifierKey<G1, G2, D>,
-    /// The randomness for the index polynomial commitments.
-    pub index_comm_rands:
-        Vec<LabeledRandomness<<PC<G1, D> as PolynomialCommitment<G1>>::Randomness>>,
 }
 
 /// The SNARK proof itself.

@@ -76,18 +76,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
         end_timer!(index_time);
 
-        let commit_time = start_timer!(|| "Commit to index polynomials");
-
-        let (index_comms, index_comm_rands): (_, _) =
-            <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(committer_key, index.iter(), None)
-                .map_err(Error::from_pc_err)?;
-        end_timer!(commit_time);
-
-        let index_comms = index_comms
-            .into_iter()
-            .map(|c| c.commitment().clone())
-            .collect();
-
         // Compute the commitments of the Lagrange polynomials over the input domain.
         // They are included into the verifier key in order to help the circuit verifier not to
         // perform a lagrange kernel evaluation in non native arithmetic.
@@ -105,13 +93,11 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
         let index_vk = VerifierKey {
             index,
-            index_comms,
             lagrange_comms,
         };
 
         let index_pk = ProverKey {
             index_vk: index_vk.clone(),
-            index_comm_rands,
         };
 
         Ok((index_pk, index_vk))
@@ -119,7 +105,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
     fn fiat_shamir_rng_init(
         pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        index_vk: &VerifierKey<G1, G2, D>,
+        _index_vk: &VerifierKey<G1, G2, D>,
         x_poly_comm: &<PC<G1, D> as PolynomialCommitment<G1>>::Commitment,
         inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         dlog_acc: &DualDLogItem<G2, G1>,
@@ -133,7 +119,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             seed_builder.add_bytes(&PCVerifierKey::get_hash(pc_vk))?;
             seed_builder.add_bytes(inner_sumcheck_acc)?;
             seed_builder.add_bytes(dlog_acc)?;
-            seed_builder.add_bytes(&index_vk.index_comms)?;
+            // FIXME: uncomment when get_hash() is implemented
+            // seed_builder.add_bytes(&index_vk.get_hash())?;
             seed_builder.add_bytes(x_poly_comm)?;
 
             seed_builder.finalize()
@@ -334,13 +321,9 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .chain(prover_accumulator_oracles.iter())
             .collect();
 
-        let labeled_comms: Vec<_> = index_pk
-            .index_vk
+        let labeled_comms: Vec<_> = init_comms
             .iter()
             .cloned()
-            .zip(&IOP::<G1, G2>::INDEXER_POLYNOMIALS)
-            .map(|(c, l)| LabeledCommitment::new(l.to_string(), c))
-            .chain(init_comms.iter().cloned())
             .chain(first_comms.iter().cloned())
             .chain(second_comms.iter().cloned())
             .chain(third_comms.iter().cloned())
@@ -349,13 +332,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .collect();
 
         // Gather commitment randomness together.
-        let comm_rands: Vec<
-            LabeledRandomness<<PC<G1, D> as PolynomialCommitment<G1>>::Randomness>,
-        > = index_pk
-            .index_comm_rands
-            .clone()
+        let comm_rands: Vec<_> = init_comm_rands
             .into_iter()
-            .chain(init_comm_rands)
             .chain(first_comm_rands)
             .chain(second_comm_rands)
             .chain(third_comm_rands)

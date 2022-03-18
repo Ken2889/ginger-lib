@@ -25,16 +25,6 @@ pub struct IOP<G1: Curve, G2: Curve> {
 }
 
 impl<G1: Curve, G2: Curve> IOP<G1, G2> {
-    /// The labels for the polynomials output by the indexer.
-    #[rustfmt::skip]
-    pub const INDEXER_POLYNOMIALS: [&'static str; 9] = [
-        // Polynomials for A
-        "a_row", "a_col", "a_val_row_col",
-        // Polynomials for B
-        "b_row", "b_col", "b_val_row_col",
-        // Polynomials for C
-        "c_row", "c_col", "c_val_row_col",
-    ];
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
     pub const PROVER_POLYNOMIALS: [&'static str; 12] = [
