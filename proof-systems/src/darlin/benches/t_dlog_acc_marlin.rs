@@ -295,7 +295,7 @@ fn generate_trivial_accumulators(
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let (_, verification_g1) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
+    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -303,13 +303,9 @@ fn generate_trivial_accumulators(
         &t_acc,
         &dlog_acc,
     )
-    .unwrap()
     .unwrap();
 
-    let bullet_poly = verification_g1.bullet_poly;
-    let t_poly = verification_g1.t_acc_poly;
-
-    (dlog_acc, t_acc, bullet_poly, t_poly)
+    (dlog_acc, t_acc, dlog_poly, t_poly)
 }
 
 fn generate_random_accumulators<R: RngCore>(
@@ -340,7 +336,7 @@ fn generate_random_accumulators<R: RngCore>(
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let (_, verification_g1) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
+    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -348,16 +344,12 @@ fn generate_random_accumulators<R: RngCore>(
         &t_acc,
         &dlog_acc,
     )
-    .unwrap()
     .unwrap();
 
-    let bullet_poly = verification_g1.bullet_poly;
-    let t_poly = verification_g1.t_acc_poly;
-
-    (dlog_acc, t_acc, bullet_poly, t_poly)
+    (dlog_acc, t_acc, dlog_poly, t_poly)
 }
 
-fn bench_prover_single_prev_acc<C1, C2>(
+fn bench_prover_single_prev_acc_helper<C1, C2>(
     group: &mut BenchmarkGroup<WallTime>,
     num_constraints: usize,
     segment_size: usize,
@@ -438,7 +430,7 @@ fn bench_prover_single_prev_acc<C1, C2>(
     );
 }
 
-fn bench_prover_trivial_prev_acc<C1, C2>(
+fn bench_prover_trivial_prev_acc_helper<C1, C2>(
     group: &mut BenchmarkGroup<WallTime>,
     num_constraints: usize,
     segment_size: usize,
@@ -516,153 +508,94 @@ fn bench_prover_trivial_prev_acc<C1, C2>(
     );
 }
 
-fn bench_prover_circuit1c_half_segment_size_single_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 1c - 1 prev acc - segment_size = num_constraints/2 ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_single_prev_acc::<
-            TestCircuit1c<<G1 as Group>::ScalarField>,
-            TestCircuit1c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints / 2);
+fn bench_prover_loop<F>(
+    group: &mut BenchmarkGroup<WallTime>,
+    num_constraints: &[usize],
+    segment_size: &[usize],
+    func: F,
+) where
+    F: Fn(&mut BenchmarkGroup<WallTime>, usize, usize),
+{
+    for (&nc, &ns) in num_constraints.iter().zip(segment_size.iter()) {
+        func(group, nc, ns);
     }
-
-    group.finish();
 }
 
-fn bench_prover_circuit1c_half_segment_size_trivial_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 1c - trivial prev acc - segment_size = num_constraints/2 ",
-    );
-
+fn bench_prover(c: &mut Criterion) {
     let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
+    let segment_sizes = vec![
+        num_constraints.clone(),
+        num_constraints.iter().map(|nc| nc / 2).collect::<Vec<_>>(),
+    ];
+    let segment_sizes_labels = vec!["segment_size full", "segment_size half"];
 
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_trivial_prev_acc::<
-            TestCircuit1c<<G1 as Group>::ScalarField>,
-            TestCircuit1c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints / 2);
+    for (segment_size, segment_size_label) in segment_sizes.iter().zip(segment_sizes_labels) {
+        let mut group = c.benchmark_group(format!(
+            "t_dlog_acc_marlin - circuit 1c - 1 prev acc - {} ",
+            segment_size_label
+        ));
+        bench_prover_loop(
+            &mut group,
+            &num_constraints,
+            segment_size,
+            bench_prover_single_prev_acc_helper::<
+                TestCircuit1c<<G1 as Group>::ScalarField>,
+                TestCircuit1c<<G2 as Group>::ScalarField>,
+            >,
+        );
+        group.finish();
+
+        let mut group = c.benchmark_group(format!(
+            "t_dlog_acc_marlin - circuit 1c - trivial prev acc - {} ",
+            segment_size_label
+        ));
+        bench_prover_loop(
+            &mut group,
+            &num_constraints,
+            segment_size,
+            bench_prover_trivial_prev_acc_helper::<
+                TestCircuit1c<<G1 as Group>::ScalarField>,
+                TestCircuit1c<<G2 as Group>::ScalarField>,
+            >,
+        );
+        group.finish();
+
+        let mut group = c.benchmark_group(format!(
+            "t_dlog_acc_marlin - circuit 2c - 1 prev acc - {} ",
+            segment_size_label
+        ));
+        bench_prover_loop(
+            &mut group,
+            &num_constraints,
+            segment_size,
+            bench_prover_single_prev_acc_helper::<
+                TestCircuit2c<<G1 as Group>::ScalarField>,
+                TestCircuit2c<<G2 as Group>::ScalarField>,
+            >,
+        );
+        group.finish();
+
+        let mut group = c.benchmark_group(format!(
+            "t_dlog_acc_marlin - circuit 2c - trivial prev acc - {} ",
+            segment_size_label
+        ));
+        bench_prover_loop(
+            &mut group,
+            &num_constraints,
+            segment_size,
+            bench_prover_trivial_prev_acc_helper::<
+                TestCircuit2c<<G1 as Group>::ScalarField>,
+                TestCircuit2c<<G2 as Group>::ScalarField>,
+            >,
+        );
+        group.finish();
     }
-
-    group.finish();
-}
-
-fn bench_prover_circuit1c_full_segment_size_single_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 1c - 1 prev acc - segment_size = num_constraints ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_single_prev_acc::<
-            TestCircuit1c<<G1 as Group>::ScalarField>,
-            TestCircuit1c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints);
-    }
-
-    group.finish();
-}
-
-fn bench_prover_circuit1c_full_segment_size_trivial_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 1c - trivial prev acc - segment_size = num_constraints ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_trivial_prev_acc::<
-            TestCircuit1c<<G1 as Group>::ScalarField>,
-            TestCircuit1c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints);
-    }
-
-    group.finish();
-}
-
-fn bench_prover_circuit2c_half_segment_size_single_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 2c - 1 prev acc - segment_size = num_constraints/2 ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_single_prev_acc::<
-            TestCircuit2c<<G1 as Group>::ScalarField>,
-            TestCircuit2c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints / 2);
-    }
-
-    group.finish();
-}
-
-fn bench_prover_circuit2c_half_segment_size_trivial_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 2c - trivial prev acc - segment_size = num_constraints/2 ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_trivial_prev_acc::<
-            TestCircuit2c<<G1 as Group>::ScalarField>,
-            TestCircuit2c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints / 2);
-    }
-
-    group.finish();
-}
-
-fn bench_prover_circuit2c_full_segment_size_single_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 2c - 1 prev acc - segment_size = num_constraints ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_single_prev_acc::<
-            TestCircuit2c<<G1 as Group>::ScalarField>,
-            TestCircuit2c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints);
-    }
-
-    group.finish();
-}
-
-fn bench_prover_circuit2c_full_segment_size_trivial_acc(c: &mut Criterion) {
-    let mut group = c.benchmark_group(
-        "t_dlog_acc_marlin - circuit 2c - trivial prev acc - segment_size = num_constraints ",
-    );
-
-    let num_constraints = (14..=21).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
-
-    for &num_constraints in num_constraints.iter() {
-        bench_prover_trivial_prev_acc::<
-            TestCircuit2c<<G1 as Group>::ScalarField>,
-            TestCircuit2c<<G2 as Group>::ScalarField>,
-        >(&mut group, num_constraints, num_constraints);
-    }
-
-    group.finish();
 }
 
 criterion_group!(
 name = t_dlog_acc_marlin;
 config = Criterion::default().sample_size(10);
-targets = bench_prover_circuit1c_half_segment_size_single_acc,
-          bench_prover_circuit1c_half_segment_size_trivial_acc,
-          bench_prover_circuit1c_full_segment_size_single_acc,
-          bench_prover_circuit1c_full_segment_size_trivial_acc,
-          bench_prover_circuit2c_half_segment_size_single_acc,
-          bench_prover_circuit2c_half_segment_size_trivial_acc,
-          bench_prover_circuit2c_full_segment_size_single_acc,
-          bench_prover_circuit2c_full_segment_size_trivial_acc,
+targets = bench_prover
 );
 
 criterion_main!(t_dlog_acc_marlin);
