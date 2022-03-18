@@ -49,7 +49,7 @@ mod short_weierstrass {
     use super::*;
     #[test]
     fn test_curve() {
-        curve_tests::<Ed25519Jacobian>(true);
+        curve_tests::<Ed25519Jacobian>(false);
         sw_jacobian_tests::<Ed25519Parameters>()
     }
 
