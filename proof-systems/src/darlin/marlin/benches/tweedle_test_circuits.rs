@@ -644,7 +644,7 @@ fn bench_prover_circuit<G: Group, PC: PolynomialCommitment<G>, D: Digest>(c: &mu
 #[cfg(not(feature = "circuit-friendly"))]
 mod benches {
     use super::*;
-    use poly_commit::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
     type IPAPCChaCha =
         DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>>;

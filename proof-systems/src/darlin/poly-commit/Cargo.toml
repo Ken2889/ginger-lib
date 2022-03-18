@@ -48,6 +48,6 @@ circuit-friendly = []
 
 [[bench]]
 name = "tweedle_open_proof"
-path = "src/benches/open_proof.rs"
+path = "benches/open_proof.rs"
 harness = false
 required-features = ["asm"]
