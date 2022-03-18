@@ -34,11 +34,10 @@ extern crate bench_utils;
 use algebra::Group;
 use algebra::{CanonicalSerialize, serialize_no_metadata};
 use digest::Digest;
-use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
 use poly_commit::{
-    optional_rng::OptionalRng, LabeledCommitment, PCCommitterKey, PCVerifierKey,
-    PolynomialCommitment,
+    evaluate_query_map_to_vec, Evaluations, LabeledRandomness, PCKey, QueryMap,
 };
+use poly_commit::{optional_rng::OptionalRng, LabeledCommitment, PolynomialCommitment};
 use r1cs_core::ConstraintSynthesizer;
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -85,7 +84,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         num_variables: usize,
         num_non_zero: usize,
         zk: bool,
-    ) -> Result<UniversalSRS<G, PC>, Error<PC::Error>> {
+    ) -> Result<(PC::CommitterKey, PC::VerifierKey), Error<PC::Error>> {
         let max_degree =
             IOP::<G::ScalarField>::max_degree(num_constraints, num_variables, num_non_zero, zk)?;
         let setup_time = start_timer!(|| {
@@ -116,7 +115,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let commit_time = start_timer!(|| "Commit to index polynomials");
 
         let (index_comms, index_comm_rands): (_, _) =
-            PC::commit_vec(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
+            PC::commit_many(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
         end_timer!(commit_time);
 
         let index_comms = index_comms
@@ -189,7 +188,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_comms, first_comm_rands) =
-            PC::commit_vec(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(first_round_comm_time);
 
@@ -216,7 +215,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_comms, second_comm_rands) =
-            PC::commit_vec(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(second_round_comm_time);
 
@@ -241,7 +240,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_comms, third_comm_rands) =
-            PC::commit_vec(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(third_round_comm_time);
 
@@ -273,16 +272,6 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             second_comms.iter().map(|p| p.commitment().clone()).collect(),
             third_comms.iter().map(|p| p.commitment().clone()).collect(),
         ];
-        let labeled_comms: Vec<_> = index_pk
-            .index_vk
-            .iter()
-            .cloned()
-            .zip(&IOP::<G::ScalarField>::INDEXER_POLYNOMIALS)
-            .map(|(c, l)| LabeledCommitment::new(l.to_string(), c))
-            .chain(first_comms.iter().cloned())
-            .chain(second_comms.iter().cloned())
-            .chain(third_comms.iter().cloned())
-            .collect();
 
         // Gather commitment randomness together.
         let comm_rands: Vec<LabeledRandomness<PC::Randomness>> = index_pk
@@ -295,12 +284,12 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect();
 
         // Set up the IOP verifier's query set.
-        let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, _) = IOP::verifier_query_map(verifier_state)?;
 
         // Compute the queried values
-        let eval_time = start_timer!(|| "Evaluating polynomials over query set");
+        let eval_time = start_timer!(|| "Evaluating polynomials over query map");
 
-        let mut evaluations = evaluate_query_set_to_vec(polynomials.clone(), &query_set);
+        let mut evaluations = evaluate_query_map_to_vec(polynomials.clone(), &query_map);
 
         evaluations.sort_by(|a, b| a.0.cmp(&b.0));
         let evaluations = evaluations
@@ -320,8 +309,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let pc_proof = PC::multi_point_multi_poly_open(
             pc_pk,
             polynomials.clone(),
-            &labeled_comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &comm_rands,
             Some(zk_rng),
@@ -397,7 +385,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         proof: &Proof<G, PC>,
     ) -> Result<
         (
-            QuerySet<'a, G::ScalarField>,
+            QueryMap<'a, G::ScalarField>,
             Evaluations<'a, G::ScalarField>,
             Vec<LabeledCommitment<PC::Commitment>>,
             PC::RandomOracle,
@@ -457,17 +445,19 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .collect();
 
         // Check sumchecks equations
-        let (query_set, verifier_state) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, verifier_state) = IOP::verifier_query_map(verifier_state)?;
+
+        let mut evaluation_keys = Vec::new();
+        for (point_label, (_, poly_set)) in query_map.iter() {
+            for poly_label in poly_set {
+                evaluation_keys.push((poly_label.clone(), point_label.clone()));
+            }
+        }
+        evaluation_keys.sort();
 
         let mut evaluations = Evaluations::new();
-        let mut evaluation_labels = Vec::new();
-        for (poly_label, (point_label, point)) in query_set.iter().cloned() {
-            evaluation_labels.push(((poly_label, point_label), point));
-        }
-
-        evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
-        for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
-            evaluations.insert(((q.0).0, q.1), *eval);
+        for (key, &eval) in evaluation_keys.into_iter().zip(proof.evaluations.iter()) {
+            evaluations.insert(key, eval);
         }
 
         let result = IOP::verify_sumchecks(&public_input, &evaluations, &verifier_state);
@@ -479,7 +469,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         end_timer!(iop_verification_time);
 
-        Ok((query_set, evaluations, commitments, fs_rng))
+        Ok((query_map, evaluations, commitments, fs_rng))
     }
 
     /// The remaining check of verifying the batch evaluation proof.
@@ -487,7 +477,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         pc_vk: &PC::VerifierKey,
         proof: &Proof<G, PC>,
         labeled_comms: Vec<LabeledCommitment<PC::Commitment>>,
-        query_set: QuerySet<'a, G::ScalarField>,
+        query_map: QueryMap<'a, G::ScalarField>,
         evaluations: Evaluations<'a, G::ScalarField>,
         fs_rng: &mut PC::RandomOracle,
     ) -> Result<bool, Error<PC::Error>> {
@@ -498,7 +488,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &proof.pc_proof,
             fs_rng,

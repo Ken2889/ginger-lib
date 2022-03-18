@@ -1,7 +1,16 @@
 use crate::{
-    curves::{models::SWModelParameters, tests::curve_tests, tweedle::*, Curve, EndoMulCurve},
-    fields::{tweedle::*, Field, SquareRootField},
-    groups::{tests::group_test, Group}, ToBits,
+    curves::{
+        Curve, EndoMulCurve,
+        models::SWModelParameters,
+        tweedle::*,
+        tests::curve_tests,
+    },
+    fields::{
+        Field, SquareRootField,
+        tweedle::*,
+    },
+    groups::tests::group_test,
+    ToBits,
 };
 use std::ops::{AddAssign, Mul, MulAssign};
 use std::str::FromStr;
@@ -12,6 +21,7 @@ use crate::curves::tweedle::dum::TweedledumParameters;
 use crate::UniformRand;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use num_traits::{Zero, One};
 
 #[test]
 fn test_dee_curve() {

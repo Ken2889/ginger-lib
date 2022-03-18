@@ -1,5 +1,4 @@
 use algebra::{biginteger::BigInteger256, field_new, fields::tweedle::Fr as TweedleFr};
-
 use crate::{crh::poseidon::TweedleFrPoseidonHash, FieldBasedMerkleTreePrecomputedZeroConstants};
 
 // PoseidonHash("This represents an empty Merkle Root for a TweedleDeePoseidonHash based Merkle Tree.")
@@ -308,12 +307,13 @@ mod test {
     use super::{TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS, TWEEDLE_DEE_PHANTOM_MERKLE_ROOT};
     use crate::{
         crh::TweedleFrPoseidonHash,
-        merkle_tree::field_based_mht::parameters::{
+       merkle_tree::parameters::{
             generate_mht_empty_nodes, generate_phantom_merkle_root_from_magic_string,
         },
         FieldBasedMerkleTreePrecomputedZeroConstants,
     };
-    use algebra::{Group, fields::tweedle::Fr};
+    use algebra::fields::tweedle::Fr;
+    use num_traits::Zero;
 
     #[ignore]
     #[test]

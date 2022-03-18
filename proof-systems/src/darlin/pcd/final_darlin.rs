@@ -2,25 +2,27 @@
 //! exiting/conversion chain of our Darlin PCD scheme, and provides a (coboundary)
 //! Marlin proof plus the dlog accumulators of the previous and pre-previous node.
 use crate::darlin::{
-    accumulators::dlog::{DLogItem, DualDLogItem, DualDLogItemAccumulator},
+    accumulators::dlog::{DualDLogItem, DualDLogItemAccumulator},
     accumulators::ItemAccumulator,
     data_structures::*,
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
+    DomainExtendedIpaPc,
 };
-use algebra::{EndoMulCurve, Group, ToConstraintField};
+use algebra::{Group, ToConstraintField};
 use bench_utils::*;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
+use derivative::Derivative;
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
+pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -30,9 +32,9 @@ pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamir
 
 impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {
@@ -52,18 +54,18 @@ where
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
 pub struct FinalDarlinPCDVerifierKey<
     'a,
-    G1: EndoMulCurve,
-    G2: EndoMulCurve,
+    G1: IPACurve,
+    G2: IPACurve,
     FS: FiatShamirRng + 'static,
 > {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, FS>>,
+        DomainExtendedIpaPc<G1, FS>,
     >,
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>
+impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
     AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, FS>
 {
@@ -74,9 +76,9 @@ impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>
 
 impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {
@@ -140,13 +142,8 @@ where
             ))?
         }
 
-        let verifier_state = verifier_state.unwrap();
-
         // Verification successfull: return new accumulator
-        let acc = DLogItem::<G1> {
-            g_final: verifier_state.final_comm_key.clone(),
-            xi_s: verifier_state.check_poly.clone(),
-        };
+        let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
         Ok(DualDLogItem::<G1, G2>(

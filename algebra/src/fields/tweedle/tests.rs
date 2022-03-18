@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use std::str::FromStr;
+use num_traits::{Zero, One};
 
 #[test]
 fn test_tweedle_fr() {

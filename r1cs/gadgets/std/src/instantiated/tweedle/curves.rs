@@ -14,6 +14,7 @@ pub type TweedleDumGadget = AffineGadget<TweedledumParameters, Fr, FrGadget>;
 fn test_dee() {
     crate::groups::test::group_test_with_incomplete_add::<_, _, TweedleDeeGadget>();
     crate::groups::test::mul_bits_test::<_, _, TweedleDeeGadget>();
+    crate::groups::test::fixed_base_msm_test::<_, _, TweedleDeeGadget>();
     crate::groups::test::endo_mul_test::<_, _, TweedleDeeGadget>();
 }
 
@@ -21,5 +22,6 @@ fn test_dee() {
 fn test_dum() {
     crate::groups::test::group_test_with_incomplete_add::<_, _, TweedleDumGadget>();
     crate::groups::test::mul_bits_test::<_, _, TweedleDumGadget>();
+    crate::groups::test::fixed_base_msm_test::<_, _, TweedleDeeGadget>();
     crate::groups::test::endo_mul_test::<_, _, TweedleDumGadget>();
 }

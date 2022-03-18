@@ -1,6 +1,6 @@
 [package]
 name = "poly-commit"
-version = "0.2.0"
+version = "0.2.2"
 authors = [
   "Alessandro Chiesa <alexch@berkeley.edu>",
   "Mary Maller <mary.maller.15@ucl.ac.uk>",
@@ -24,21 +24,22 @@ edition = "2018"
 algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive"] }
 bench-utils = {  path = "../../../../bench-utils" }
 fiat-shamir = { path = "../fiat-shamir" }
-
-rand = { version = "0.8.4", default-features = false }
-rand_core = { version = "0.6.3", default-features = false }
-digest = "0.8"
-rayon = { version = "1" }
-derivative = { version = "2" }
+rand = { version = "=0.8.4", default-features = false }
+rand_chacha = { version = "=0.3.1", default-features = false }
+rand_core = { version = "=0.6.3", default-features = false }
+digest = "=0.8.1"
+rayon = { version = "=1.5.1" }
+derivative = { version = "=2.2.0" }
+num-traits = { version = "=0.2.14", default-features = false }
 trait-set = "=0.2.0"
 
 [dev-dependencies]
-algebra = { path = "../../../../algebra", features = ["tweedle"] }
+algebra = {  path = "../../../../algebra", features = ["tweedle"] }
 fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
-criterion = "0.3"
-rand_xorshift = "0.3.0"
-blake2 = { version = "0.8.1", default-features = false }
+criterion = "=0.3.5"
+rand_xorshift = "=0.3.0"
+blake2 = { version = "=0.8.1", default-features = false }
 
 [features]
 asm = [ "algebra/llvm_asm" ]
@@ -47,6 +48,6 @@ circuit-friendly = []
 
 [[bench]]
 name = "tweedle_open_proof"
-path = "benches/open_proof.rs"
+path = "src/benches/open_proof.rs"
 harness = false
 required-features = ["asm"]

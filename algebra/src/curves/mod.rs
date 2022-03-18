@@ -1,14 +1,16 @@
 use crate::{
     fields::BitIterator,
     groups::Group,
-    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes, UniformRand,
+    CanonicalDeserialize, CanonicalSerialize, Error, FromBytes, ToBytes,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
     hash::Hash,
+    ops::{AddAssign, Mul, Neg}
 };
+use num_traits::One;
 
 pub mod models;
 
@@ -26,12 +28,12 @@ pub mod tests;
 
 pub use self::models::*;
 
+/// Projective representation of an elliptic curve point.
 pub trait Curve:
     Group
-    + Copy
+    + Copy // TODO: Let's consider removing this
     + Serialize
     + for<'a> Deserialize<'a>
-    + UniformRand
     + From<<Self as Curve>::AffineRep>
     + TryInto<<Self as Curve>::AffineRep, Error = Error>
 {
@@ -47,25 +49,24 @@ pub trait Curve:
         + CanonicalDeserialize
         + ToBytes
         + FromBytes
+        + Neg<Output = Self::AffineRep>
         + TryFrom<Self, Error = Error>;
 
+    /// Convert, if possible, `self` to its affine equivalent.
     #[inline]
     fn into_affine(&self) -> Result<Self::AffineRep, Error> {
         TryInto::<Self::AffineRep>::try_into(*self)
     }
 
+
+    /// Construct a `self` point from its affine representation.
     #[inline]
     fn from_affine<'a>(other: &'a Self::AffineRep) -> Self {
         Into::<Self>::into(*other)
     }
 
-    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
-        vec_affine
-            .iter()
-            .map(|&affine| affine.into())
-            .collect::<Vec<_>>()
-    }
-
+    /// Convert, if possible, a batch of `self` points to their affine equivalent.
+    #[inline]
     fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error> {
         vec_self
             .iter()
@@ -73,34 +74,63 @@ pub trait Curve:
             .collect::<Result<Vec<_>, _>>()
     }
 
-    fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self;
+    /// Construct `self` points from a batch of their affine representation.
+    #[inline]
+    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
+        vec_affine
+            .iter()
+            .map(|&affine| affine.into())
+            .collect::<Vec<_>>()
+    }
 
-    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep);
+    /// Add an affine point `other` to `self`, using mixed addition formulas.
+    fn add_affine(&self, other: &Self::AffineRep) -> Self;
 
-    // TODO: move to group trait?
-    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self;
+    /// Add assign an affine point `other` to `self`, using mixed addition formulas.
+    fn add_assign_affine(&mut self, other: &Self::AffineRep);
 
+    /// Add, pairwise, the elements of each vector in `to_add`
+    fn add_in_place_affine_many(to_add: &mut [Vec<Self::AffineRep>]);
+
+    /// Multiply `self` by the scalar represented by `bits`. 
+    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self {
+        if self.is_zero() {
+            *self
+        } else {
+            Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
+        }
+    }
+
+    /// Multiply an affine point `affine` by the scalar represented by `bits`. 
     fn mul_bits_affine<'a, S: AsRef<[u64]>>(
         affine: &'a Self::AffineRep,
         bits: BitIterator<S>,
     ) -> Self;
 
+    /// Multiply `self` by the cofactor.
     fn scale_by_cofactor(&self) -> Self;
 
+    /// Multiply `self` by the inverse of the cofactor in `Self::ScalarField`.
     fn scale_by_cofactor_inv(&self) -> Self;
 
-    fn is_normalized(&self) -> bool;
-
+    /// Normalize `self` so that conversion to affine is cheap. Output the normalized point.
     fn normalize(&self) -> Self;
 
+    /// Normalize `self` so that conversion to affine is cheap.
     fn normalize_assign(&mut self);
 
+    /// Return true if `self` is normalized, false otherwise.
+    fn is_normalized(&self) -> bool;
+
+    /// Normalize a slice of projective elements so that conversion to affine is cheap.
     fn batch_normalization(v: &mut [Self]);
 
+    /// Normalize a slice of projective elements and outputs a vector containing the affine equivalents.
     fn batch_normalization_into_affine(mut v: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
         Self::batch_normalization(v.as_mut_slice());
         Self::batch_into_affine(v.as_slice())
     }
+
     /// Returns a fixed generator of unknown exponent.
     #[must_use]
     fn prime_subgroup_generator() -> Self;
@@ -110,29 +140,123 @@ pub trait Curve:
     #[must_use]
     fn group_membership_test(&self) -> bool;
 
+    /// Return true if this point is on the curve, false otherwise.
     fn is_on_curve(&self) -> bool;
 
+    /// Return true if this point is in the correct prime order subgroup.
+    /// It won't check that the point is on the curve.
     fn is_in_correct_subgroup_assuming_on_curve(&self) -> bool;
 
+    /// Attempts to construct a point given an x-coordinate. The
+    /// point is not guaranteed to be in the prime order subgroup.
+    ///
+    /// If and only if `greatest` is set will the lexicographically
+    /// largest y-coordinate be selected.
     fn get_point_from_x(x: Self::BaseField, greatest: bool) -> Option<Self>;
 
+    /// Attempts to construct a point given an x-coordinate. The
+    /// point is not guaranteed to be in the prime order subgroup.
+    ///
+    /// If and only if `parity` is set will the odd y-coordinate be selected.
     fn get_point_from_x_and_parity(x: Self::BaseField, parity: bool) -> Option<Self>;
 
+    /// Returns a curve point if the set of bytes forms a valid curve point,
+    /// otherwise returns None. This function is primarily intended for sampling
+    /// random group elements from a hash-function or RNG output.
+    /// The sampled point is not guaranteed to be in the prime order subgroup.
     fn from_random_bytes(bytes: &[u8]) -> Option<Self>;
-
-    // TODO: check naming
-    fn sum_buckets_affine(to_add: &mut [Vec<Self::AffineRep>]);
 }
 
+/// The `EndoMulCurve` trait for curves that have a non-trivial endomorphism
+/// `Phi` of the form `Phi(x,y) = (zeta*x,y)`.
 pub trait EndoMulCurve: Curve {
+
+    /// The curve parameters relevant for the endomorphism.
+    type Params: EndoMulParameters<BaseField = Self::BaseField, ScalarField = Self::ScalarField>;
+
     /// Apply `Phi`
     fn apply_endomorphism(&self) -> Self;
 
-    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent
-    /// scalar
-    fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error>;
+    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent scalar
+    fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error> {
+        let mut a: Self::ScalarField = 2u64.into();
+        let mut b: Self::ScalarField = 2u64.into();
 
-    /// Endomorphism-based multiplication of `&self` with `bits`, a little-endian
-    /// endomorphism representation.
-    fn endo_mul(&self, bits: Vec<bool>) -> Result<Self, Error>;
+        let one = Self::ScalarField::one();
+        let one_neg = one.neg();
+
+        let mut bits = bits;
+        if bits.len() % 2 == 1 {
+            bits.push(false);
+        }
+
+        if bits.len() > Self::Params::LAMBDA {
+            Err("Endo mul bits length exceeds LAMBDA")?
+        }
+
+        for i in (0..(bits.len() / 2)).rev() {
+            a.double_in_place();
+            b.double_in_place();
+
+            let s = if bits[i * 2] { &one } else { &one_neg };
+
+            if bits[i * 2 + 1] {
+                a.add_assign(s);
+            } else {
+                b.add_assign(s);
+            }
+        }
+
+        Ok(a.mul(Self::Params::ENDO_SCALAR) + &b)
+    }
+
+    /// Endomorphism-based multiplication of a curve point with a scalar
+    /// in little-endian endomorphism representation.
+    fn endo_mul(&self, bits: Vec<bool>) -> Result<Self, Error> {
+        let mut bits = bits;
+        if bits.len() % 2 == 1 {
+            bits.push(false);
+        }
+
+        if bits.len() > Self::Params::LAMBDA {
+            Err("Endo mul bits length exceeds LAMBDA")?
+        }
+
+        if self.is_zero() {
+            return Ok(*self);
+        }
+
+        let self_affine = self.into_affine()?;
+        let self_affine_neg = self_affine.neg();
+
+        let self_e = self.apply_endomorphism();
+        let self_affine_e = self_e.into_affine().unwrap();
+
+        let self_affine_e_neg = self_affine_e.neg();
+
+        let mut acc = self_e;
+        acc.add_assign_affine(&self_affine);
+        acc.double_in_place();
+
+        for i in (0..(bits.len() / 2)).rev() {
+            let s = if bits[i * 2 + 1] {
+                if bits[i * 2] {
+                    &self_affine_e
+                } else {
+                    &self_affine_e_neg
+                }
+            } else {
+                if bits[i * 2] {
+                    &self_affine
+                } else {
+                    &self_affine_neg
+                }
+            };
+
+            acc.double_in_place();
+            acc.add_assign_affine(s);
+        }
+
+        Ok(acc)
+    }
 }

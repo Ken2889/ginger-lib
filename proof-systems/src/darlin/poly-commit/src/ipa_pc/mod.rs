@@ -7,16 +7,15 @@
 //! [BCMS20]: https://eprint.iacr.org/2020/499
 use crate::read_fe_from_challenge;
 use crate::Error;
-use crate::{Polynomial, PolynomialCommitment};
+use crate::{Polynomial, PolynomialCommitment, PCKey, PCProof};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    Field, Group, PrimeField, SemanticallyValid, UniformRand,
-    CanonicalSerialize, serialize_no_metadata,
+    serialize_no_metadata, Field, PrimeField,
+    SemanticallyValid, CanonicalSerialize, UniformRand,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
-use std::{format, vec};
 
 mod data_structures;
 pub use data_structures::*;
@@ -25,8 +24,8 @@ use rayon::prelude::*;
 
 use fiat_shamir::FiatShamirRng;
 use digest::Digest;
-
 use trait_set::trait_set;
+use num_traits::{Zero, One};
 
 #[cfg(feature = "circuit-friendly")]
 use algebra::EndoMulCurve;
@@ -89,8 +88,8 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// Complete semantic checks on `ck`.
     #[inline]
     pub fn check_key<D: Digest>(ck: &CommitterKey<G>, max_degree: usize) -> bool {
-        let pp = <Self as PolynomialCommitment<G>>::setup::<D>(max_degree).unwrap();
-        ck.is_valid() && &pp.hash == &ck.hash
+        let (original_ck, _) = <Self as PolynomialCommitment<G>>::setup::<D>(max_degree).unwrap();
+        ck.is_valid() && original_ck.get_hash() == ck.get_hash()
     }
 
     /// Perform a dlog reduction step as described in BCMS20
@@ -220,12 +219,11 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
 impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
-    type Parameters = Parameters<G>;
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
     // The succinct part of the verifier returns the dlog reduction challenges that
     // define the succinct check polynomial.
-    type VerifierState = VerifierState<G>;
+    type VerifierState = DLogItem<G>;
     type Commitment = G;
     type Randomness = G::ScalarField;
     type Proof = Proof<G>;
@@ -235,13 +233,13 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup<D: Digest>(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
+    fn setup<D: Digest>(max_degree: usize) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
         Self::setup_from_seed::<D>(max_degree, &Self::PROTOCOL_NAME)
     }
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
+    fn setup_from_seed<D: Digest>(max_degree: usize, seed: &[u8]) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
         // Ensure that max_degree + 1 is a power of 2
         let max_degree = (max_degree + 1).next_power_of_two() - 1;
 
@@ -255,21 +253,21 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         let s = generators[1].clone();
         let comm_key = G::batch_normalization_into_affine(generators[2..].to_vec()).unwrap();
 
-        let pp = Parameters {
+        let ck = CommitterKey {
             comm_key,
             h,
             s,
             hash,
         };
 
-        Ok(pp)
+        Ok((ck.clone(), ck))
     }
 
     #[cfg(feature = "circuit-friendly")]
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
         let scalar = G::endo_rep_to_scalar(chal).map_err(|e| Error::Other(e.to_string()))?;
         Ok(scalar)
-    } 
+    }
 
     fn commit(
         ck: &Self::CommitterKey,
@@ -469,6 +467,7 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
 
     /// The "succinct" verifier of a proof produced by `fn open()`.
     /// Does all a full verifier does, except the correctness check of G_fin.
+    /// This implementation allows passing an oversized verification key to verify the proof.
     fn succinct_verify(
         vk: &VerifierKey<G>,
         commitment: &Self::Commitment,
@@ -477,20 +476,12 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         proof: &Proof<G>,
         fs_rng: &mut FS,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
+
+        // Pre checks. The key length is read from the proof rather than from the vk.
+        // This allows to have oversized keys.
+        let log_key_len = proof.degree()? + 1;
+        
         let succinct_verify_time = start_timer!(|| "Succinct verify");
-
-        let log_key_len = proof.l_vec.len();
-
-        if proof.l_vec.len() != proof.r_vec.len() {
-            end_timer!(succinct_verify_time);
-            Err(Error::IncorrectInputLength(
-                format!(
-                    "expected l_vec size and r_vec size to be equal; instead l_vec size is {:} and r_vec size is {:}",
-                    proof.l_vec.len(),
-                    proof.r_vec.len()
-                )
-            ))?
-        }
 
         // At the end combined_commitment_proj = C
         let mut combined_commitment_proj = commitment.clone();
@@ -589,7 +580,7 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
 
         end_timer!(succinct_verify_time);
 
-        Ok(Some(VerifierState {
+        Ok(Some(DLogItem {
             check_poly,
             final_comm_key: proof.final_comm_key,
         }))

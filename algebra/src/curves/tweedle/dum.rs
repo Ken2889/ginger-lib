@@ -6,8 +6,8 @@ use crate::{
     },
     field_new,
     fields::tweedle::*,
-    Group,
 };
+use num_traits::Zero;
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct TweedledumParameters;

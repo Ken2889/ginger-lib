@@ -12,7 +12,7 @@ fn test_secp256k1_fr() {
     // generalize the from_random_bytes() function (if needed) to support
     // this particular use case in which a secp256k1 element is represented
     // using one additional limbs.
-    //primefield_test::<Fr>(); 
+    //primefield_test::<Fr>();
 }
 
 #[test]

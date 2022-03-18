@@ -3,12 +3,13 @@ use crate::{
         Field, FpParameters, PrimeField,
     },
     curves::{
-        Curve,
         models::{SWModelParameters, TEModelParameters},
         short_weierstrass_jacobian::Jacobian,
         short_weierstrass_projective::Projective,
         twisted_edwards_extended::TEExtended,
-    }, ToBits,
+        Curve,
+    },
+    ToBits,
 };
 
 type Error = Box<dyn std::error::Error>;

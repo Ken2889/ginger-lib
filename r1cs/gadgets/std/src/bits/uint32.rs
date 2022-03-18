@@ -424,13 +424,11 @@ impl<ConstraintF: Field> EqGadget<ConstraintF> for UInt32 {
 mod test {
     use super::UInt32;
     use crate::{bits::boolean::Boolean, eq::MultiEq};
-    use algebra::{
-        fields::{tweedle::Fr, Field},
-        Group,
-    };
+    use algebra::fields::tweedle::Fr;
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
+    use num_traits::{Zero, One};
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 

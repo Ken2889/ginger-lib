@@ -2,13 +2,13 @@ use crate::UniformRand;
 use crate::{
     curves::Curve,
     fields::{BitIterator, PrimeField},
-    groups::Group,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
     SWModelParameters, TEModelParameters,
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::io::Cursor;
+use num_traits::Zero;
 
 pub const ITERATIONS: usize = 10;
 
@@ -29,7 +29,7 @@ fn random_addition_test<G: Curve>() {
             aplusa += &a;
 
             let mut aplusamixed = a;
-            aplusamixed.add_affine_assign(&a.into_affine().unwrap());
+            aplusamixed.add_assign_affine(&a.into_affine().unwrap());
 
             let mut adouble = a;
             adouble.double_in_place();
@@ -53,18 +53,18 @@ fn random_addition_test<G: Curve>() {
 
         // (a + b) + c
         tmp[3] = G::from_affine(&a_affine);
-        tmp[3].add_affine_assign(&b_affine);
-        tmp[3].add_affine_assign(&c_affine);
+        tmp[3].add_assign_affine(&b_affine);
+        tmp[3].add_assign_affine(&c_affine);
 
         // a + (b + c)
         tmp[4] = G::from_affine(&b_affine);
-        tmp[4].add_affine_assign(&c_affine);
-        tmp[4].add_affine_assign(&a_affine);
+        tmp[4].add_assign_affine(&c_affine);
+        tmp[4].add_assign_affine(&a_affine);
 
         // (a + c) + b
         tmp[5] = G::from_affine(&a_affine);
-        tmp[5].add_affine_assign(&c_affine);
-        tmp[5].add_affine_assign(&b_affine);
+        tmp[5].add_assign_affine(&c_affine);
+        tmp[5].add_assign_affine(&b_affine);
 
         // Comparisons
         for i in 0..6 {
@@ -115,8 +115,8 @@ fn random_multiplication_test<G: Curve>() {
         tmp2.add_assign(&b);
 
         // Affine multiplication
-        let mut tmp3 = G::from_affine(&a_affine).mul_bits(BitIterator::new(s.into_repr()));
-        tmp3.add_assign(&G::from_affine(&b_affine).mul_bits(BitIterator::new(s.into_repr())));
+        let mut tmp3 = G::mul_bits_affine(&a_affine, BitIterator::new(s.into_repr()));
+        tmp3.add_assign(&G::mul_bits_affine(&b_affine, BitIterator::new(s.into_repr())));
 
         assert_eq!(tmp1, tmp2);
         assert_eq!(tmp1, tmp3);
@@ -143,7 +143,7 @@ fn random_doubling_test<G: Curve>() {
         tmp2.add_assign(&b);
 
         let mut tmp3 = a;
-        tmp3.add_affine_assign(&b.into_affine().unwrap());
+        tmp3.add_assign_affine(&b.try_into().unwrap());
 
         assert_eq!(tmp1, tmp2);
         assert_eq!(tmp1, tmp3);
@@ -172,7 +172,7 @@ fn random_negation_test<G: Curve>() {
         assert!(t3.is_zero());
 
         let mut t4 = t1;
-        t4.add_affine_assign(&t2.into_affine().unwrap());
+        t4.add_assign_affine(&t2.try_into().unwrap());
         assert!(t4.is_zero());
 
         t1 = -t1;
@@ -185,7 +185,7 @@ fn random_transformation_test<G: Curve>(is_twisted_edwards: bool) {
 
     for _ in 0..ITERATIONS {
         let g = G::rand(&mut rng);
-        let g_affine = g.into_affine().unwrap();
+        let g_affine = g.try_into().unwrap();
         let g_projective = G::from_affine(&g_affine);
         assert_eq!(g, g_projective);
     }
@@ -193,7 +193,13 @@ fn random_transformation_test<G: Curve>(is_twisted_edwards: bool) {
     // Batch normalization
     for _ in 0..10 {
         let mut v = (0..ITERATIONS)
-            .map(|_| G::rand(&mut rng))
+            .map(|_| {
+                let mut r = G::rand(&mut rng);
+                while r.is_normalized() {
+                    r.double_in_place();
+                }
+                r
+            })
             .collect::<Vec<_>>();
 
         for i in &v {
@@ -265,7 +271,7 @@ pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
         let mut z2 = z;
         z2.add_assign(&r);
 
-        z.add_affine_assign(&r.into_affine().unwrap());
+        z.add_assign_affine(&r.try_into().unwrap());
 
         assert_eq!(z, z2);
         assert_eq!(z, r);
@@ -274,10 +280,10 @@ pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
     // Transformations
     {
         let a = G::rand(&mut rng);
-        let b = G::from_affine(&a.into_affine().unwrap());
+        let b = G::from_affine(&a.try_into().unwrap());
         let c = G::from_affine(
-            &G::from_affine(&a.into_affine().unwrap())
-                .into_affine()
+            &G::from_affine(&a.try_into().unwrap())
+                .try_into()
                 .unwrap(),
         );
         assert_eq!(a, b);
@@ -414,129 +420,132 @@ pub fn sw_jacobian_curve_serialization_test<P: SWModelParameters>() {
     }
 }
 
-// pub fn sw_projective_tests<P: SWModelParameters>() {
-//     sw_projective_curve_serialization_test::<P>();
-//     sw_projective_from_random_bytes::<P>();
-// }
-//
-// pub fn sw_projective_from_random_bytes<P: SWModelParameters>() {
-//     use crate::curves::models::short_weierstrass_projective::{GroupAffine, GroupProjective};
-//
-//     let buf_size = GroupAffine::<P>::zero().serialized_size();
-//
-//     let rng = &mut thread_rng();
-//
-//     for _ in 0..ITERATIONS {
-//         let a = GroupProjective::<P>::rand(rng).into_affine();
-//         {
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let p1 = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             let p2 = GroupAffine::<P>::from_random_bytes(&serialized).unwrap();
-//             assert_eq!(p1, p2);
-//         }
-//     }
-// }
-//
-// pub fn sw_projective_curve_serialization_test<P: SWModelParameters>() {
-//     use crate::curves::models::short_weierstrass_projective::{GroupAffine, GroupProjective};
-//
-//     let buf_size = GroupAffine::<P>::zero().serialized_size();
-//
-//     let rng = &mut thread_rng();
-//
-//     for _ in 0..ITERATIONS {
-//         let a = GroupProjective::<P>::rand(rng);
-//         {
-//             let mut a = a.into_affine();
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//             a.y = -a.y;
-//             assert_ne!(a, b);
-//         }
-//
-//         {
-//             let mut a = a.into_affine();
-//             a.y = -a.y;
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//             a.y = -a.y;
-//             assert_ne!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; buf_size];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; buf_size - 1];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
-//         }
-//
-//         {
-//             let serialized = vec![0; buf_size - 1];
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             <GroupAffine<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
-//         }
-//
-//         {
-//             let mut a = a.into_affine();
-//             let mut serialized = vec![0; a.uncompressed_size()];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             a.serialize_uncompressed(&mut cursor).unwrap();
-//
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = GroupAffine::<P>::deserialize_uncompressed(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//             a.y = -a.y;
-//             assert_ne!(a, b);
-//         }
-//
-//         {
-//             let mut a = a.into_affine();
-//             a.y = -a.y;
-//             let mut serialized = vec![0; a.uncompressed_size()];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             a.serialize_uncompressed(&mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = GroupAffine::<P>::deserialize_uncompressed(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//             a.y = -a.y;
-//             assert_ne!(a, b);
-//         }
-//
-//         {
-//             let a = GroupAffine::<P>::zero();
-//             let mut serialized = vec![0; a.uncompressed_size()];
-//             let mut cursor = Cursor::new(&mut serialized[..]);
-//             a.serialize_uncompressed(&mut cursor).unwrap();
-//             let mut cursor = Cursor::new(&serialized[..]);
-//             let b = GroupAffine::<P>::deserialize_uncompressed(&mut cursor).unwrap();
-//             assert_eq!(a, b);
-//         }
-//     }
-// }
-//
+
+// Currently we don't have any SWProjective curve
+#[allow(unused)]
+pub fn sw_projective_tests<P: SWModelParameters>() {
+    sw_projective_curve_serialization_test::<P>();
+    sw_projective_from_random_bytes::<P>();
+}
+
+fn sw_projective_from_random_bytes<P: SWModelParameters>() {
+    use crate::curves::models::short_weierstrass_projective::Projective;
+
+    let buf_size = Projective::<P>::zero().serialized_size();
+
+    let rng = &mut thread_rng();
+
+    for _ in 0..ITERATIONS {
+        let a = Projective::<P>::rand(rng);
+        {
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let p1 = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            let p2 = Projective::<P>::from_random_bytes(&serialized).unwrap();
+            assert_eq!(p1, p2);
+        }
+    }
+}
+
+fn sw_projective_curve_serialization_test<P: SWModelParameters>() {
+    use crate::curves::models::short_weierstrass_projective::Projective;
+
+    let buf_size = Projective::<P>::zero().serialized_size();
+
+    let rng = &mut thread_rng();
+
+    for _ in 0..ITERATIONS {
+        let a = Projective::<P>::rand(rng);
+        {
+            let mut a = a;
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            assert_eq!(a, b);
+            a.y = -a.y;
+            assert_ne!(a, b);
+        }
+
+        {
+            let mut a = a;
+            a.y = -a.y;
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            assert_eq!(a, b);
+            a.y = -a.y;
+            assert_ne!(a, b);
+        }
+
+        {
+            let a = Projective::<P>::zero();
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+
+        {
+            let a = Projective::<P>::zero();
+            let mut serialized = vec![0; buf_size - 1];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap_err();
+        }
+
+        {
+            let serialized = vec![0; buf_size - 1];
+            let mut cursor = Cursor::new(&serialized[..]);
+            <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap_err();
+        }
+
+        {
+            let mut a = a;
+            let mut serialized = vec![0; a.uncompressed_size()];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            a.serialize_uncompressed(&mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = Projective::<P>::deserialize_uncompressed(&mut cursor).unwrap();
+            assert_eq!(a, b);
+            a.y = -a.y;
+            assert_ne!(a, b);
+        }
+
+        {
+            let mut a = a;
+            a.y = -a.y;
+            let mut serialized = vec![0; a.uncompressed_size()];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            a.serialize_uncompressed(&mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = Projective::<P>::deserialize_uncompressed(&mut cursor).unwrap();
+            assert_eq!(a, b);
+            a.y = -a.y;
+            assert_ne!(a, b);
+        }
+
+        {
+            let a = Projective::<P>::zero();
+            let mut serialized = vec![0; a.uncompressed_size()];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            a.serialize_uncompressed(&mut cursor).unwrap();
+            let mut cursor = Cursor::new(&serialized[..]);
+            let b = Projective::<P>::deserialize_uncompressed(&mut cursor).unwrap();
+            assert_eq!(a, b);
+        }
+    }
+}
+
 pub fn edwards_tests<P: TEModelParameters>()
 where
     P::BaseField: PrimeField,
@@ -545,7 +554,7 @@ where
     edwards_from_random_bytes::<P>();
 }
 
-pub fn edwards_from_random_bytes<P: TEModelParameters>()
+fn edwards_from_random_bytes<P: TEModelParameters>()
 where
     P::BaseField: PrimeField,
 {
@@ -571,7 +580,7 @@ where
     }
 
     for _ in 0..ITERATIONS {
-        let biginteger = <<TEExtended<P> as Group>::BaseField as PrimeField>::BigInt::rand(rng);
+        let biginteger = <P::BaseField as PrimeField>::BigInt::rand(rng);
         let mut bytes = to_bytes![biginteger].unwrap();
         let mut g = TEExtended::<P>::from_random_bytes(&bytes);
         while g.is_none() {
@@ -582,7 +591,7 @@ where
     }
 }
 
-pub fn edwards_curve_serialization_test<P: TEModelParameters>() {
+fn edwards_curve_serialization_test<P: TEModelParameters>() {
     use crate::curves::models::twisted_edwards_extended::TEExtended;
 
     let buf_size = TEExtended::<P>::zero().serialized_size();

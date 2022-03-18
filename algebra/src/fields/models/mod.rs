@@ -26,6 +26,7 @@ use crate::{
 
 use serde::{Deserialize, Serialize};
 use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write};
+use num_traits::{Zero, One};
 
 #[cfg(use_asm)]
 use std::mem::MaybeUninit;

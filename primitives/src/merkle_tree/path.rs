@@ -1,10 +1,11 @@
-use crate::{crh::*, field_based_mht::*};
-use algebra::{serialize::*, SemanticallyValid};
+use crate::{crh::*, *};
+use algebra::{serialize::*, SemanticallyValid, ToBytes, FromBytes};
 use std::{
     clone::Clone,
     convert::TryFrom,
     io::{Read, Result as IoResult, Write},
 };
+use serde::*;
 
 /// An implementation of the FieldBasedMerkleTreePath trait, for a given FieldBasedHash and
 /// FieldBasedMerkleTree with arbitrary arity.
