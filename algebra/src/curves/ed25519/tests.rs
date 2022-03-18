@@ -24,7 +24,7 @@ mod twisted_edwards {
     use super::*;
     #[test]
     fn test_curve() {
-        curve_tests::<TEEd25519>();
+        curve_tests::<TEEd25519>(true);
         edwards_tests::<Ed25519Parameters>()
     }
 
@@ -48,7 +48,7 @@ mod short_weierstrass {
     use super::*;
     #[test]
     fn test_curve() {
-        curve_tests::<SWEd25519>();
+        curve_tests::<SWEd25519>(false);
         sw_jacobian_tests::<Ed25519Parameters>()
     }
 
