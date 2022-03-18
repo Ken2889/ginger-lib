@@ -53,8 +53,7 @@ fn fill_tree_and_get_leaves_to_remove(
             )
         })
         .collect::<Vec<_>>();
-    smt.update_leaves(leaves_to_add.iter().cloned().collect::<HashSet<_>>())
-        .unwrap();
+    smt.update_leaves(leaves_to_add).unwrap();
     smt.finalize_in_place().unwrap();
 
     // Collect leaves to remove randomly among the ones already present in the tree
@@ -75,8 +74,7 @@ fn fill_tree_and_get_leaves_to_remove(
         .collect();
 
     if actually_remove_leaves {
-        smt.update_leaves(leaves_to_remove.iter().cloned().collect::<HashSet<_>>())
-            .unwrap();
+        smt.update_leaves(leaves_to_remove.clone()).unwrap();
         smt.finalize_in_place().unwrap();
         leaves_to_remove.iter_mut().for_each(|leaf| {
             (*leaf).action = ActionLeaf::Insert;
@@ -111,9 +109,7 @@ fn bench_batch_addition_removal_smt(
                             leaves_to_fill,
                             num_leaves,
                             actually_remove_leaves,
-                        )
-                        .into_iter()
-                        .collect::<HashSet<_>>();
+                        );
                         (smt, leaves_to_remove)
                     },
                     |(mut smt, leaves)| {
@@ -148,8 +144,7 @@ fn fill_tree_and_add_new(
             )
         })
         .collect::<Vec<_>>();
-    smt.update_leaves(leaves_to_add.iter().cloned().collect::<HashSet<_>>())
-        .unwrap();
+    smt.update_leaves(leaves_to_add).unwrap();
     smt.finalize_in_place().unwrap();
 
     // Collect leaves to add randomly
@@ -199,9 +194,7 @@ fn bench_batch_addition(
                         let mut smt =
                             FieldBasedSparseMHT::<FieldBasedMerkleTreeParams>::init(BENCH_HEIGHT);
                         let leaves_to_add =
-                            fill_tree_and_add_new(&mut smt, leaves_to_fill, num_leaves, subsequent)
-                                .into_iter()
-                                .collect::<HashSet<_>>();
+                            fill_tree_and_add_new(&mut smt, leaves_to_fill, num_leaves, subsequent);
                         (smt, leaves_to_add)
                     },
                     |(mut smt, leaves)| {

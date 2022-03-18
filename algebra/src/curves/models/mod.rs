@@ -55,8 +55,9 @@ pub trait MontgomeryModelParameters: ModelParameters {
     type TEModelParameters: TEModelParameters<BaseField = Self::BaseField>;
 }
 
+/// Parameters for endomorphism-based scalar multiplication [Halo](https://eprint.iacr.org/2019/1021).
 pub trait EndoMulParameters: SWModelParameters {
-    /// Parameters for endomorphism-based scalar multiplication [Halo](https://eprint.iacr.org/2019/1021).
+    
     /// A non-trivial cubic root of unity `ENDO_COEFF` for a curve endomorphism of the form
     ///     (x, y) -> (ENDO_COEFF * x, y).
     const ENDO_COEFF: Self::BaseField;

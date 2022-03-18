@@ -10,54 +10,6 @@ use std::hash::Hash;
 
 pub mod schnorr;
 
-pub trait SignatureScheme {
-    type Parameters: Clone + Send + Sync + Serialize + for<'a> Deserialize<'a>;
-    type PublicKey: ToBytes
-        + Serialize
-        + for<'a> Deserialize<'a>
-        + Hash
-        + Eq
-        + Clone
-        + Default
-        + Send
-        + Sync;
-    type SecretKey: ToBytes + Serialize + for<'a> Deserialize<'a> + Clone + Default;
-    type Signature: Serialize + for<'a> Deserialize<'a> + Clone + Default + Send + Sync;
-
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, Error>;
-
-    fn keygen<R: Rng>(
-        pp: &Self::Parameters,
-        rng: &mut R,
-    ) -> Result<(Self::PublicKey, Self::SecretKey), Error>;
-
-    fn sign<R: Rng>(
-        pp: &Self::Parameters,
-        sk: &Self::SecretKey,
-        message: &[u8],
-        rng: &mut R,
-    ) -> Result<Self::Signature, Error>;
-
-    fn verify(
-        pp: &Self::Parameters,
-        pk: &Self::PublicKey,
-        message: &[u8],
-        signature: &Self::Signature,
-    ) -> Result<bool, Error>;
-
-    fn randomize_public_key(
-        pp: &Self::Parameters,
-        public_key: &Self::PublicKey,
-        randomness: &[u8],
-    ) -> Result<Self::PublicKey, Error>;
-
-    fn randomize_signature(
-        pp: &Self::Parameters,
-        signature: &Self::Signature,
-        randomness: &[u8],
-    ) -> Result<Self::Signature, Error>;
-}
-
 pub trait FieldBasedSignatureScheme {
     type Data: Field;
     type PublicKey: FromBytes

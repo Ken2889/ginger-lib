@@ -4,7 +4,6 @@ use crate::{
         ed25519::*,
         models::twisted_edwards_extended::tests::*,
         tests::{curve_tests, sw_jacobian_tests},
-        Curve,
     },
     groups::tests::group_test,
     SemanticallyValid,
@@ -23,16 +22,15 @@ fn test_sw_conversion() {
 
 mod twisted_edwards {
     use super::*;
-    use crate::groups::Group;
 
     #[test]
-    fn test_projective_curve() {
+    fn test_curve() {
         curve_tests::<Ed25519TEExtended>(true);
         edwards_tests::<Ed25519Parameters>()
     }
 
     #[test]
-    fn test_projective_group() {
+    fn test_group() {
         let a = rand::random();
         let b = rand::random();
         for _i in 0..100 {
@@ -45,30 +43,18 @@ mod twisted_edwards {
         let generator = Ed25519TEExtended::prime_subgroup_generator();
         assert!(generator.is_valid());
     }
-
-    #[test]
-    fn test_conversion() {
-        let a: Ed25519TEExtended = rand::random();
-        let b: Ed25519TEExtended = rand::random();
-        let a_b = (a + &b).double().double().into_affine().unwrap();
-        let mut a_b2 = a + &b;
-        a_b2.add_affine_assign(&a_b2.into_affine().unwrap());
-        a_b2.add_affine_assign(&a_b2.into_affine().unwrap());
-        assert_eq!(a_b, a_b2.into_affine().unwrap());
-        assert_eq!(Ed25519TEExtended::from_affine(&a_b), a_b2);
-    }
 }
 
 mod short_weierstrass {
     use super::*;
     #[test]
-    fn test_projective_curve() {
+    fn test_curve() {
         curve_tests::<Ed25519Jacobian>(false);
         sw_jacobian_tests::<Ed25519Parameters>()
     }
 
     #[test]
-    fn test_projective_group() {
+    fn test_group() {
         let a = rand::random();
         let b = rand::random();
         for _i in 0..100 {
