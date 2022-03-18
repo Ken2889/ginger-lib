@@ -25,7 +25,7 @@ use num_traits::{Zero, One};
 
 #[test]
 fn test_dee_curve() {
-    curve_tests::<dee::DeeJacobian>();
+    curve_tests::<dee::DeeJacobian>(false);
     sw_jacobian_tests::<TweedledeeParameters>()
 }
 
@@ -46,7 +46,7 @@ fn test_dee_generator() {
 
 #[test]
 fn test_dum_curve() {
-    curve_tests::<dum::DumJacobian>();
+    curve_tests::<dum::DumJacobian>(false);
     sw_jacobian_tests::<TweedledumParameters>()
 }
 

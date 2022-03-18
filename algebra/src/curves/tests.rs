@@ -180,7 +180,7 @@ fn random_negation_test<G: Curve>() {
     }
 }
 
-fn random_transformation_test<G: Curve>() {
+fn random_transformation_test<G: Curve>(is_twisted_edwards: bool) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     for _ in 0..ITERATIONS {
@@ -214,15 +214,17 @@ fn random_transformation_test<G: Curve>() {
         }
         for _ in 0..5 {
             let s = between.sample(&mut rng);
-            if !v[s].is_zero() {
-                v[s] = G::from_affine(&v[s].try_into().unwrap());
+            if v[s].is_zero() && !is_twisted_edwards {
+                assert!(v[s].into_affine().is_err());
+            } else {
+                v[s] = G::from_affine(&v[s].into_affine().unwrap());
             }
         }
 
         let expected_v = v
             .iter()
             .map(|v| {
-                if v.is_zero() {
+                if v.is_zero() && !is_twisted_edwards {
                     G::zero()
                 } else {
                     G::from_affine(&v.into_affine().unwrap())
@@ -239,7 +241,7 @@ fn random_transformation_test<G: Curve>() {
     }
 }
 
-pub fn curve_tests<G: Curve>() {
+pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     // Negation edge case with zero.
@@ -292,7 +294,7 @@ pub fn curve_tests<G: Curve>() {
     random_multiplication_test::<G>();
     random_doubling_test::<G>();
     random_negation_test::<G>();
-    random_transformation_test::<G>();
+    random_transformation_test::<G>(is_twisted_edwards);
 }
 
 pub fn sw_jacobian_tests<P: SWModelParameters>() {

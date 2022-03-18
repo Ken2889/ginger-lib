@@ -17,7 +17,7 @@ use rand_xorshift::XorShiftRng;
 
 #[test]
 fn test_secp256k1_curve() {
-    curve_tests::<Secp256k1Jacobian>();
+    curve_tests::<Secp256k1Jacobian>(false);
     sw_jacobian_curve_serialization_test::<Secp256k1Parameters>();
 }
 
