@@ -378,15 +378,15 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     // TODO: By now, the only external call is from the batch verifier for FinalDarlin /
     // SimpleMarlin proofs. Let us think whether serving this functionality as public is a good
     // decision.
-    pub fn verify_iop<'a>(
+    pub fn verify_iop(
         pc_vk: &PC::VerifierKey,
         index_vk: &VerifierKey<G, PC>,
         public_input: &[G::ScalarField],
         proof: &Proof<G, PC>,
     ) -> Result<
         (
-            QueryMap<'a, G::ScalarField>,
-            Evaluations<'a, G::ScalarField>,
+            QueryMap<G::ScalarField>,
+            Evaluations<G::ScalarField>,
             Vec<LabeledCommitment<PC::Commitment>>,
             PC::RandomOracle,
         ),
@@ -473,12 +473,12 @@ impl<G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     }
 
     /// The remaining check of verifying the batch evaluation proof.
-    pub fn verify_opening<'a>(
+    pub fn verify_opening(
         pc_vk: &PC::VerifierKey,
         proof: &Proof<G, PC>,
         labeled_comms: Vec<LabeledCommitment<PC::Commitment>>,
-        query_map: QueryMap<'a, G::ScalarField>,
-        evaluations: Evaluations<'a, G::ScalarField>,
+        query_map: QueryMap<G::ScalarField>,
+        evaluations: Evaluations<G::ScalarField>,
         fs_rng: &mut PC::RandomOracle,
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");

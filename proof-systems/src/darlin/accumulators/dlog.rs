@@ -463,7 +463,6 @@ mod test {
     use blake2::Blake2s;
     use digest::Digest;
     use rand::{distributions::Distribution, thread_rng, Rng};
-    use std::marker::PhantomData;
     use derivative::Derivative;
 
     fn get_test_fs_rng<G: IPACurve, FS: FiatShamirRng>() -> FS {
@@ -485,24 +484,23 @@ mod test {
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
-    struct VerifierData<'a, G: IPACurve> {
+    struct VerifierData<G: IPACurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
-        query_map: QueryMap<'a, G::ScalarField>,
-        values: Evaluations<'a, G::ScalarField>,
+        query_map: QueryMap<G::ScalarField>,
+        values: Evaluations<G::ScalarField>,
         proof: DomainExtendedMultiPointProof<G, Proof<G>>,
         polynomials: Vec<LabeledPolynomial<G::ScalarField>>,
         num_polynomials: usize,
         num_points_in_query_map: usize,
-        _m: PhantomData<&'a G::ScalarField>, // To avoid compilation issue 'a
     }
 
     // Samples a random instance of a dlog multi-point multi-poly opening proof according to the
     // specifications in the TestInfo.
-    fn get_data_for_verifier<'a, G, D, FS>(
+    fn get_data_for_verifier<G, D, FS>(
         info: TestInfo,
         ck: Option<CommitterKey<G>>,
-    ) -> Result<VerifierData<'a, G>, PCError>
+    ) -> Result<VerifierData<G>, PCError>
     where
         G: IPACurve,
         D: Digest + 'static,
@@ -617,7 +615,6 @@ mod test {
             polynomials,
             num_polynomials,
             num_points_in_query_map,
-            _m: PhantomData,
         })
     }
 

@@ -186,8 +186,8 @@ where
         usr_ins:        &[G1::ScalarField],
         proof:          &FinalDarlinProof<G1, G2, FS>,
     )  -> Result<(
-        QueryMap<'a, G1::ScalarField>,
-        Evaluations<'a, G1::ScalarField>,
+        QueryMap<G1::ScalarField>,
+        Evaluations<G1::ScalarField>,
         Vec<LabeledCommitment<GroupVec<G1>>>,
         <DomainExtendedIpaPc<G1, FS> as PolynomialCommitment<G1>>::RandomOracle,
     ), FinalDarlinError>
@@ -216,8 +216,8 @@ where
         pc_vk: &DLogVerifierKey<G1>,
         proof: &FinalDarlinProof<G1, G2, FS>,
         labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
-        query_set: QueryMap<'a, G1::ScalarField>,
-        evaluations: Evaluations<'a, G1::ScalarField>,
+        query_set: QueryMap<G1::ScalarField>,
+        evaluations: Evaluations<G1::ScalarField>,
         fs_rng: &mut FS,
     ) -> Result<bool, FinalDarlinError> {
         let res = Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::verify_opening(

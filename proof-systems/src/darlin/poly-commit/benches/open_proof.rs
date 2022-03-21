@@ -149,7 +149,7 @@ mod benches {
 
 criterion_group!(
     name = single_point_single_poly_open_bench;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(30);
     targets = benches::bench_open_proof_tweedle_dee, benches::bench_open_proof_tweedle_dum
 );
 

@@ -132,9 +132,9 @@ impl<F: PrimeField> IOP<F> {
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_map<'a, 'b>(
+    pub fn verifier_query_map(
         state: VerifierState<F>,
-    ) -> Result<(QueryMap<'b, F>, VerifierState<F>), Error> {
+    ) -> Result<(QueryMap<F>, VerifierState<F>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
