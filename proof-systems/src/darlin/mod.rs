@@ -191,8 +191,8 @@ where
         usr_ins:        &[G1::ScalarField],
         proof:          &FinalDarlinProof<G1, G2, D>,
     )  -> Result<(
-        QueryMap<'a, G1::ScalarField>,
-        Evaluations<'a, G1::ScalarField>,
+        QueryMap<G1::ScalarField>,
+        Evaluations<G1::ScalarField>,
         Vec<LabeledCommitment<GroupVec<G1>>>,
         <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
     ), FinalDarlinError>
@@ -221,9 +221,9 @@ where
         pc_vk: &DLogVerifierKey<G1>,
         proof: &FinalDarlinProof<G1, G2, D>,
         labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
-        query_set: QueryMap<'a, G1::ScalarField>,
-        evaluations: Evaluations<'a, G1::ScalarField>,
-        fs_rng:         &mut <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
+        query_set: QueryMap<G1::ScalarField>,
+        evaluations: Evaluations<G1::ScalarField>,
+        fs_rng: &mut <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
     ) -> Result<bool, FinalDarlinError> {
         let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::verify_opening(
             pc_vk, &proof.proof, labeled_comms, query_set, evaluations, fs_rng
