@@ -592,7 +592,7 @@ mod test {
         for i in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
             let point_label = format!("{}", i);
-            query_map.insert(point_label.clone(), (point, labels.iter().cloned().collect()));
+            query_map.insert(point_label.clone(), (point, poly_labels.iter().cloned().collect()));
             for poly in polynomials.iter() {
                 let value = poly.evaluate(point);
                 values.insert((poly.label().clone(), point_label.clone()), value);
