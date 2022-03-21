@@ -117,7 +117,7 @@ fn bench_open_proof_tweedle_dum(c: &mut Criterion) {
 
 criterion_group!(
 name = tweedle_open_proof;
-config = Criterion::default().sample_size(10);
+config = Criterion::default().sample_size(30);
 targets = bench_open_proof_tweedle_dee, bench_open_proof_tweedle_dum
 );
 
