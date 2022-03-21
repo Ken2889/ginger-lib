@@ -1,6 +1,5 @@
-use crate::{
-    fields::Field, groups::Group, MontgomeryModelParameters, SWModelParameters, TEModelParameters,
-};
+use crate::{fields::Field, groups::Group, MontgomeryModelParameters, SWModelParameters, TEModelParameters};
+use num_traits::One;
 
 #[allow(dead_code)]
 pub(crate) fn montgomery_conversion_test<P>()

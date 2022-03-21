@@ -1,15 +1,21 @@
 use super::Group;
-use crate::{bytes::{FromBytes, ToBytes, FromBytesChecked}, serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError}, SemanticallyValid, ToConstraintField, Error, UniformRand};
+use crate::{bytes::{FromBytes, ToBytes, FromBytesChecked}, serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError}, SemanticallyValid, ToConstraintField, Error};
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
     io::{Read, Write, Error as IoError, ErrorKind, Result as IoResult},
     fmt::{Display, Formatter, Result as FmtResult},
     vec::IntoIter,
 };
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use core::slice::Iter;
-use rand::Rng;
+use num_traits::Zero;
+use serde::*;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize, Serialize, Deserialize)]
+#[serde(bound(deserialize = "G: Group"))]
 pub struct GroupVec<G: Group> (Vec<G>);
 
 impl<G: Group> GroupVec<G> {
@@ -40,6 +46,14 @@ impl<G: Group> GroupVec<G> {
 
     pub fn rand<R: Rng + ?Sized>(len: u16, rng: &mut R) -> Self {
         Self::new((0..len).map(|_| G::rand(rng)).collect::<Vec<G>>())
+    }
+}
+
+impl<G: Group> Distribution<GroupVec<G>> for Standard {
+    #[inline]
+    // better use the specific function `rand` which allows to specify the length of the vector
+    fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> GroupVec<G> {
+        unimplemented!()
     }
 }
 
@@ -109,6 +123,17 @@ impl<G: Group> ToConstraintField<G::BaseField> for GroupVec<G> {
     }
 }
 
+impl<G: Group> Zero for GroupVec<G> {
+    #[inline]
+    fn zero() -> Self {
+        GroupVec(vec![])
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0.len() == 0
+    }
+}
 
 impl<G: Group> Neg for GroupVec<G> {
     type Output = Self;
@@ -215,23 +240,9 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
     }
 }
 
-impl<G: Group> UniformRand for GroupVec<G> {
-    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        Self::rand(rng.gen(), rng)
-    }
-}
-
 impl<G: Group> Group for GroupVec<G> {
     type BaseField = G::BaseField;
     type ScalarField = G::ScalarField;
-
-    fn zero() -> Self {
-        GroupVec(vec![])
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.len() == 0
-    }
 
     fn double_in_place(&mut self) -> &mut Self {
         for (i, item) in self.0.clone().iter().enumerate() {

@@ -1,10 +1,10 @@
 use crate::{
-    safe_mul_bits, DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitmentGadget,
-    MultiPointProofGadget, PCMultiPointProof, PolynomialCommitment,
+    safe_mul_bits, BDFGMultiPointProof, DomainExtendedPolynomialCommitment, Evaluations,
+    LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment,
     PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget,
 };
 use algebra::{Group, PrimeField};
-use fiat_shamir::constraints::FiatShamirRngGadget;
+//use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::alloc::AllocGadget;
 use r1cs_std::boolean::Boolean;
@@ -14,6 +14,8 @@ use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
+//use std::collections::BTreeMap;
+use fiat_shamir::constraints::FiatShamirRngGadget;
 use std::marker::PhantomData;
 
 /// Gadget for multi-point proof for domain extended poly-commit verifier gadget
@@ -148,7 +150,7 @@ impl<
         >],
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     ) -> Result<Vec<LabeledCommitmentGadget<PCG, ConstraintF, G, PC>>, SynthesisError> {
-        let s = vk.segment_size() + 1;
+        let s = vk.degree() + 1;
         let point_to_s = point.pow_by_constant(cs.ns(|| "point^s"), [s as u64])?;
         let point_to_s_bits = point_to_s.to_bits_for_normal_form(cs.ns(|| "point^s to bits"))?;
 
@@ -295,7 +297,7 @@ impl<
     ) -> Result<Self::VerifierState, Self::Error> {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
-            )?;
+        )?;
 
         let lambda = Self::challenge_to_non_native_field_element(
             cs.ns(|| "convert lambda to non native field gadget"),
@@ -308,7 +310,7 @@ impl<
         )?;
         let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
-            )?;
+        )?;
         let evaluation_point = Self::challenge_to_non_native_field_element(
             cs.ns(|| "evaluation point from squeezed bits"),
             &evaluation_point_bits,
@@ -339,114 +341,107 @@ impl<
             .map(|commitment| (commitment.label(), commitment.commitment()))
             .collect();
 
-        let mut points_iter = points.iter().rev();
-        let zero_value = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::zero(&mut cs)?;
-        let default_label = (String::from("default label"), String::from("default label"));
-        let ((label, point_label), point) =
-            points_iter.next().unwrap_or((&default_label, &zero_value));
-        let commitment = *commitment_map
-            .get(label)
-            .ok_or(SynthesisError::Other(String::from(format!(
-                "commitment with label {} not found",
-                label
-            ))))?;
-        let value =
-            values
-                .get(&(label.clone(), point_label.clone()))
-                .ok_or(SynthesisError::Other(String::from(format!(
-                    "evaluation for point {} not found",
-                    point_label
-                ))))?;
-        let z_i_over_z_value = evaluation_point
-            .sub(cs.ns(|| "evaluation_point - point for last point"), &point)?
-            .inverse(cs.ns(|| "(evaluation_point - point)^-1 for last point"))?;
-        let z_i_over_z_bits = z_i_over_z_value
-            .to_bits_for_normal_form(cs.ns(|| "z_i_over_z_value to bits for last point"))?;
-        let mut batched_commitment = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
-            cs.ns(|| "commitment*z_i_over_z for last point"),
-            &commitment,
-            z_i_over_z_bits.iter().rev(),
-        )?; // reverse order of bits since mul_bits requires little endian representation
-        let mut batched_value = value.mul(
-            cs.ns(|| "value*z_i_over_z for last point"),
-            &z_i_over_z_value,
-        )?;
+        let mut batched_commitment = None;
+        let mut batched_value = None;
 
-        for ((label, point_label), point) in points_iter {
-            let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
-            let commitment =
-                *commitment_map
-                    .get(label)
-                    .ok_or(SynthesisError::Other(String::from(format!(
-                        "commitment with label {} not found",
-                        label
-                    ))))?;
-            let value =
-                values
-                    .get(&(label.clone(), point_label.clone()))
-                    .ok_or(SynthesisError::Other(String::from(format!(
-                        "evaluation for point {} not found",
-                        point_label
-                    ))))?;
-
+        for (point_label, (point, poly_labels)) in points.iter().rev() {
             let z_i_over_z_value = evaluation_point
                 .sub(
-                    cs.ns(|| format!("evaluation_point - point with label {}", combined_label)),
+                    cs.ns(|| format!("evaluation_point - point with label {}", point_label)),
                     &point,
                 )?
-                .inverse(cs.ns(|| {
-                    format!(
-                        "(evaluation_point - point with label {})^-1",
-                        combined_label
-                    )
-                }))?;
+                .inverse(
+                    cs.ns(|| format!("(evaluation_point - point with label {})^-1", point_label)),
+                )?;
             let z_i_over_z_bits = z_i_over_z_value.to_bits_for_normal_form(
-                cs.ns(|| format!("z_i_over_z to bits for label {}", combined_label)),
+                cs.ns(|| format!("z_i_over_z to bits for label {}", point_label)),
             )?;
-            let to_be_added_commitment = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
-                cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
-                &commitment,
-                z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
-            )?;
-            let to_be_added_value = value.mul_without_prereduce(
-                cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
-                &z_i_over_z_value,
-            )?;
+            for label in poly_labels.iter().rev() {
+                let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
+                let commitment =
+                    *commitment_map
+                        .get(label)
+                        .ok_or(SynthesisError::Other(String::from(format!(
+                            "commitment with label {} not found",
+                            label
+                        ))))?;
+                let value = values.get(&(label.clone(), point_label.clone())).ok_or(
+                    SynthesisError::Other(String::from(format!(
+                        "evaluation for point {} not found",
+                        point_label
+                    ))),
+                )?;
 
-            batched_commitment = PCG::mul_by_challenge(
-                cs.ns(|| format!("batched_commitment*lambda for label {}", combined_label)),
-                &batched_commitment,
-                lambda_bits.iter(),
-            )?;
-            batched_commitment = batched_commitment.add(
-                cs.ns(|| format!("add commitment for label {}", combined_label)),
-                &to_be_added_commitment,
-            )?;
+                match (batched_commitment, batched_value) {
+                    (None, None) => {
+                        batched_commitment = Some(safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
+                            cs.ns(|| "commitment*z_i_over_z for last point"),
+                            &commitment,
+                            z_i_over_z_bits.iter().rev(),
+                        )?); // reverse order of bits since mul_bits requires little endian representation
+                        batched_value = Some(value.mul(
+                            cs.ns(|| "value*z_i_over_z for last point"),
+                            &z_i_over_z_value,
+                        )?);
+                    }
+                    (Some(comm), Some(val)) => {
+                        let to_be_added_commitment = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
+                            cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
+                            &commitment,
+                            z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
+                        )?;
+                        let to_be_added_value = value.mul_without_prereduce(
+                            cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
+                            &z_i_over_z_value,
+                        )?;
 
-            let batched_value_times_lambda = batched_value.mul_without_prereduce(
-                cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
-                &lambda,
-            )?;
-            batched_value = batched_value_times_lambda
-                .add(
-                    cs.ns(|| format!("add value for point for label {}", combined_label)),
-                    &to_be_added_value,
-                )?
-                .reduce(cs.ns(|| format!("reduce batched value for label {}", combined_label)))?;
+                        let batched_commitment_times_lambda = PCG::mul_by_challenge(
+                            cs.ns(|| {
+                                format!("batched_commitment*lambda for label {}", combined_label)
+                            }),
+                            &comm,
+                            lambda_bits.iter(),
+                        )?;
+                        batched_commitment = Some(batched_commitment_times_lambda.add(
+                            cs.ns(|| format!("add commitment for label {}", combined_label)),
+                            &to_be_added_commitment,
+                        )?);
+
+                        let batched_value_times_lambda = val.mul_without_prereduce(
+                            cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
+                            &lambda,
+                        )?;
+                        batched_value = Some(
+                            batched_value_times_lambda
+                                .add(
+                                    cs.ns(|| {
+                                        format!("add value for point for label {}", combined_label)
+                                    }),
+                                    &to_be_added_value,
+                                )?
+                                .reduce(cs.ns(|| {
+                                    format!("reduce batched value for label {}", combined_label)
+                                }))?,
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        if batched_commitment.is_none() || batched_value.is_none() {
+            Err(SynthesisError::Other(
+                "no evaluation points provided".to_string(),
+            ))?
         }
         // subtract h-commitment
-        /*let labeled_combined_h_commitment = Self::combine_commitments(
-            cs.ns(|| "combine h-commitment"),
-            vk,
-            [labeled_h_commitment].as_ref(),
-            &evaluation_point,
+        let batched_commitment = batched_commitment.unwrap().sub(
+            cs.ns(|| "sub h commitment"),
+            labeled_combined_h_commitment.commitment(),
         )?;
-        assert_eq!(labeled_combined_h_commitment.len(), 1);
-        let combined_h_commitment = labeled_combined_h_commitment[0].commitment();*/
-        batched_commitment =
-            batched_commitment.sub(cs.ns(|| "sub h commitment"), labeled_combined_h_commitment.commitment())?;
-        let batched_value_bits =
-            batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
+        let batched_value_bits = batched_value
+            .unwrap()
+            .to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
         PCG::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,

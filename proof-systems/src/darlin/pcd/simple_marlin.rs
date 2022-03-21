@@ -1,19 +1,21 @@
 //! Simple Marlin "proof carrying data". This corresponds to non-recursive applications.
 use crate::darlin::{
     accumulators::{
-        dlog::{DLogItem, DLogItemAccumulator},
+        dlog::DLogItemAccumulator,
         ItemAccumulator,
     },
     pcd::{error::PCDError, PCD},
+    DomainExtendedIpaPc,
 };
-use algebra::{serialize::*, EndoMulCurve, SemanticallyValid};
+use algebra::{serialize::*, SemanticallyValid};
 use bench_utils::*;
 use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
+use derivative::Derivative;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -25,25 +27,25 @@ use std::ops::{Deref, DerefMut};
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct MarlinProof<G: EndoMulCurve, FS: FiatShamirRng + 'static>(
-    pub Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>,
+pub struct MarlinProof<G: IPACurve, FS: FiatShamirRng + 'static>(
+    pub Proof<G, DomainExtendedIpaPc<G, FS>>,
 );
 
-impl<G: EndoMulCurve, FS: FiatShamirRng> Deref for MarlinProof<G, FS> {
-    type Target = Proof<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>;
+impl<G: IPACurve, FS: FiatShamirRng> Deref for MarlinProof<G, FS> {
+    type Target = Proof<G, DomainExtendedIpaPc<G, FS>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng> DerefMut for MarlinProof<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> DerefMut for MarlinProof<G, FS> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<G: EndoMulCurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
@@ -76,7 +78,7 @@ impl<G: EndoMulCurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, FS: FiatShamirRng + 'static> {
+pub struct SimpleMarlinPCD<'a, G: IPACurve, FS: FiatShamirRng + 'static> {
     pub proof: MarlinProof<G, FS>,
     pub usr_ins: Vec<G::ScalarField>,
     _lifetime: PhantomData<&'a ()>,
@@ -85,7 +87,7 @@ pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, FS: FiatShamirRng + 'static> {
 /// As every PCD, the `SimpleMarlinPCD` comes as a proof plus "statement".
 impl<'a, G, FS> SimpleMarlinPCD<'a, G, FS>
 where
-    G: EndoMulCurve,
+    G: IPACurve,
     FS: FiatShamirRng + 'a,
 {
     pub fn new(
@@ -104,12 +106,12 @@ where
 
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
-pub struct SimpleMarlinPCDVerifierKey<'a, G: EndoMulCurve, FS: FiatShamirRng + 'static>(
-    pub &'a MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>,
+pub struct SimpleMarlinPCDVerifierKey<'a, G: IPACurve, FS: FiatShamirRng + 'static>(
+    pub &'a MarlinVerifierKey<G, DomainExtendedIpaPc<G, FS>>,
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: EndoMulCurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
+impl<'a, G: IPACurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
     for SimpleMarlinPCDVerifierKey<'a, G, FS>
 {
     fn as_ref(&self) -> &DLogVerifierKey<G> {
@@ -119,7 +121,7 @@ impl<'a, G: EndoMulCurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
 
 impl<'a, G, FS> PCD for SimpleMarlinPCD<'a, G, FS>
 where
-    G: EndoMulCurve,
+    G: IPACurve,
     FS: FiatShamirRng + 'static,
 {
     type PCDAccumulator = DLogItemAccumulator<G, FS>;
@@ -134,7 +136,7 @@ where
         // Verify the IOP/AHP
         let (query_map, evaluations, labeled_comms, mut fs_rng) = Marlin::<
             G,
-            DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>,
+            DomainExtendedIpaPc<G, FS>,
         >::verify_iop(
             &vk.1,
             &vk.0,
@@ -172,13 +174,8 @@ where
             ))?
         }
 
-        let verifier_state = verifier_state.unwrap();
-
         // Successfull verification: return current accumulator
-        let acc = DLogItem::<G> {
-            g_final: verifier_state.final_comm_key.clone(),
-            xi_s: verifier_state.check_poly.clone(),
-        };
+        let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
         Ok(acc)

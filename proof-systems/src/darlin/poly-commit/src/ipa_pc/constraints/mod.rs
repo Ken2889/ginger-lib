@@ -3,9 +3,10 @@ use crate::ipa_pc::constraints::data_structures::{
 };
 use crate::ipa_pc::InnerProductArgPC;
 use crate::{Error, PolynomialCommitmentVerifierGadget};
-use algebra::{EndoMulCurve, Field, PrimeField};
+use algebra::{EndoMulCurve, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
+use num_traits::One;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::fp::FpGadget;
@@ -14,9 +15,9 @@ use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::FromBitsGadget;
-use std::marker::PhantomData;
 use rand_core::SeedableRng;
 use rand_xorshift::XorShiftRng;
+use std::marker::PhantomData;
 
 mod data_structures;
 
@@ -184,8 +185,8 @@ impl<
             )?;
         }
 
-        let round_challenge = random_oracle
-            .enforce_get_challenge::<_, 128>(cs.ns(|| "squeeze round-0 challenge"))?;
+        let round_challenge =
+            random_oracle.enforce_get_challenge::<_, 128>(cs.ns(|| "squeeze round-0 challenge"))?;
 
         let mut round_challenges = Vec::with_capacity(proof.vec_l.len());
 
@@ -201,7 +202,7 @@ impl<
             )?;
             let round_challenge = random_oracle.enforce_get_challenge::<_, 128>(
                 cs.ns(|| format!("squeeze round-{} challenge", i + 1)),
-               )?;
+            )?;
             // compute round_challenge*el_vec_r dealing with the case el_vec_r is zero
             let challenge_times_r = safe_mul::<ConstraintF, G, GG, _, _>(
                 cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),

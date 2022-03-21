@@ -10,9 +10,9 @@ use rand::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    convert::TryFrom,
     fmt::{Debug, Display},
     io::{Read, Result as IoResult, Write},
-    convert::TryFrom
 };
 
 #[macro_use]

@@ -7,9 +7,9 @@ use crate::iop::*;
 use crate::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
 use crate::{ToString, Vec};
 use algebra::{get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain};
-use algebra::{Field, PrimeField};
+use algebra::PrimeField;
 use poly_commit::{LabeledPolynomial, Polynomial};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 use rand_core::RngCore;
 
 /// State for the IOP prover.
@@ -20,7 +20,10 @@ pub struct ProverState<'a, F: PrimeField> {
     // the witness polynomial w(X), normalized by the vanishing polynomial of
     // the input domain, such that y(X) = x(X) + w(X)*Z_I(X).
     w_poly: Option<LabeledPolynomial<F>>,
-    my_polys: Option<(LabeledPolynomial<F>, LabeledPolynomial<F>)>,
+    // the public input polynomial x(X).
+    x_poly: Option<DensePolynomial<F>>,
+    // the witness polynomials y_a(X) and y_b(X).
+    y_m_polys: Option<(LabeledPolynomial<F>, LabeledPolynomial<F>)>,
 
     index: &'a Index<F>,
 
@@ -45,20 +48,32 @@ impl<'a, F: PrimeField> ProverState<'a, F> {
     pub fn public_input(&self) -> Vec<F> {
         IOP::unformat_public_input(&self.formatted_input_assignment)
     }
-    /// Return the concatenation of public input (padded with zeros to match the
-    /// size of domain X) and witness variables.
-    pub fn padded_variables(&self) -> Vec<F> {
-        let padding_size = self.domain_x.size() - self.formatted_input_assignment.len();
-        let mut padded_public_input = self.formatted_input_assignment.clone();
-        padded_public_input.extend(vec![F::zero(); padding_size]);
-        let mut witness_assignment = self.witness_assignment.clone();
-        padded_public_input.append(&mut witness_assignment);
+    /// Return the variable vector, with input variables and witness variables already indexed
+    /// according to the treatment of the input domain `domain_x` as a subdomain of the full
+    /// Lagrange domain `domain_h`.
+    pub fn full_variable_vector(&self) -> Vec<F> {
+        let domain_x_size = self.domain_x.size();
+        let mut padded_public_input = vec![F::zero(); self.domain_h.size()];
+        for (i, el) in self.formatted_input_assignment.iter().enumerate() {
+            let idx = self
+                .domain_h
+                .reindex_by_subdomain(domain_x_size, i)
+                .unwrap();
+            padded_public_input[idx] = *el;
+        }
+        for (i, el) in self.witness_assignment.iter().enumerate() {
+            let idx = self
+                .domain_h
+                .reindex_by_subdomain(domain_x_size, i + domain_x_size)
+                .unwrap();
+            padded_public_input[idx] = *el;
+        }
         padded_public_input
     }
 }
 
 /// The first set of prover oracles.
-pub struct ProverFirstOracles<F: Field> {
+pub struct ProverFirstOracles<F: PrimeField> {
     /// The randomized witness polynomial `w`.
     pub w: LabeledPolynomial<F>,
     /// The randomized y_A(X)= Sum_{z in H} A(X,z)*y(z)
@@ -67,7 +82,7 @@ pub struct ProverFirstOracles<F: Field> {
     pub y_b: LabeledPolynomial<F>,
 }
 
-impl<F: Field> ProverFirstOracles<F> {
+impl<F: PrimeField> ProverFirstOracles<F> {
     /// Iterate over the polynomials output by the prover in the first round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
         vec![&self.w, &self.y_a, &self.y_b].into_iter()
@@ -75,14 +90,14 @@ impl<F: Field> ProverFirstOracles<F> {
 }
 
 /// The second set of prover oracles.
-pub struct ProverSecondOracles<F: Field> {
+pub struct ProverSecondOracles<F: PrimeField> {
     /// The boundary polynomial U_1(X) for the outer sumcheck
     pub u_1: LabeledPolynomial<F>,
     /// The quotient polynomial h_1(X) in the outer sumcheck identity.
     pub h_1: LabeledPolynomial<F>,
 }
 
-impl<F: Field> ProverSecondOracles<F> {
+impl<F: PrimeField> ProverSecondOracles<F> {
     /// Iterate over the polynomials output by the prover in the second round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
         vec![&self.u_1, &self.h_1].into_iter()
@@ -90,14 +105,14 @@ impl<F: Field> ProverSecondOracles<F> {
 }
 
 /// The third set of prover oracles.
-pub struct ProverThirdOracles<F: Field> {
+pub struct ProverThirdOracles<F: PrimeField> {
     /// The boundary polynomial U_2(X) for the inner sumcheck.
     pub u_2: LabeledPolynomial<F>,
     /// The quotient polynomial h_2(X) in the inner sumcheck identity.
     pub h_2: LabeledPolynomial<F>,
 }
 
-impl<F: Field> ProverThirdOracles<F> {
+impl<F: PrimeField> ProverThirdOracles<F> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
         vec![&self.u_2, &self.h_2].into_iter()
@@ -140,19 +155,12 @@ impl<F: PrimeField> IOP<F> {
             return Err(Error::InstanceDoesNotMatchIndex);
         }
 
-        let num_formatted_variables = num_input_variables + num_witness_variables;
-        let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
-        let domain_h = get_best_evaluation_domain::<F>(padded_matrix_dim)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-
-        let domain_k = get_best_evaluation_domain::<F>(num_non_zero)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-
-        let domain_x = get_best_evaluation_domain::<F>(num_input_variables)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-
-        let domain_b = get_best_evaluation_domain::<F>(4 * (domain_k.size() - 1))
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        let (domain_h, domain_k, domain_x, domain_b) = Self::build_domains(
+            num_witness_variables,
+            num_input_variables,
+            num_constraints,
+            num_non_zero,
+        )?;
 
         end_timer!(init_time);
 
@@ -160,7 +168,8 @@ impl<F: PrimeField> IOP<F> {
             formatted_input_assignment,
             witness_assignment,
             w_poly: None,
-            my_polys: None,
+            x_poly: None,
+            y_m_polys: None,
             index,
             verifier_first_msg: None,
             domain_h,
@@ -198,7 +207,7 @@ impl<F: PrimeField> IOP<F> {
         combination with the input polynomial,
             y(X) = x(X) + z_I(X)* w(X) mod (X^n-1).
         */
-        let ratio = domain_h.size() / domain_x.size();
+        let ratio = Self::get_subdomain_step(domain_h, domain_x)?;
 
         let mut w_extended = state.witness_assignment.clone();
         w_extended.extend(vec![
@@ -249,7 +258,7 @@ impl<F: PrimeField> IOP<F> {
 
         // For M=A,B, compute domain evaluations of y_M(X) = Sum_{z in H} M(X,z)*y(z)
         // over H
-        let variable_vector = state.padded_variables();
+        let variable_vector = state.full_variable_vector();
 
         let eval_y_a_time = start_timer!(|| "Evaluating y_A");
         let y_a = mat_vec_mul(&state.index.a, &variable_vector);
@@ -307,47 +316,34 @@ impl<F: PrimeField> IOP<F> {
         };
 
         state.w_poly = Some(w);
-        state.my_polys = Some((y_a, y_b));
+        state.x_poly = Some(x_poly);
+        state.y_m_polys = Some((y_a, y_b));
         end_timer!(round_time);
 
         Ok((oracles, state))
     }
 
     /// Given the Lagrange representation M(X,Y) for the R1CS matrices M=A,B,C,
-    /// batching challenges eta_M, M=A,B,C, and r(alpha,Y) over H, computes
-    /// the circuit polynomial
-    ///     t(X) = Sum_M eta_M * r_M(alpha,X),
-    /// where r_M(X,Y) = Sum_{z in H}  r(X,z)* M(z,Y) = <r(X, .), M(.,Y)> =
-    /// = < L(X,.), u_H(.)M(.,Y) > = u_H(X,X) * M(X,Y)
-    //
-    // TODO: When we have the Lagrange kernel we can use the matrices A, B, C
-    // from the index and compute the section polynomial T(alpha,Y) given the
-    // domain evaluation for L_H(alpha,Y) instead. This does not change performance,
-    // besides that the domain evaluation for L_H(alpha,Y) cost an extra vector
-    // product plus a scaling of it.
+    /// batching challenges eta_M, M=A,B,C, and L_H(alpha,Y) over H, computes
+    /// the evaluations over H of the circuit polynomial
+    ///     t(X) = Sum_{M} eta_M * M(alpha, X)
+    /// with
+    ///     M(alpha, X) = Sum_{z in H} L(alpha,z) * M(z,X)
     fn calculate_t<'a>(
         matrices: impl Iterator<Item = &'a SparseMatrix<F>>,
         matrix_randomizers: &[F],
-        input_domain: &Box<dyn EvaluationDomain<F>>,
         domain_h: Box<dyn EvaluationDomain<F>>,
         l_x_alpha_on_h: &Vec<F>,
     ) -> Result<Vec<F>, Error> {
         let mut t_evals_on_h = vec![F::zero(); domain_h.size()];
         for (matrix, eta) in matrices.zip(matrix_randomizers) {
-            // t(X) = Sum_{M} eta_M * M(alpha, X)
-            // with
-            //      M(alpha, X) = Sum_{z in H} L(alpha,z) * M(z,X)
             for (r, row) in matrix.iter().enumerate() {
                 for (coeff, c) in row.iter() {
-                    let index = domain_h
-                        .reindex_by_subdomain(input_domain.size(), *c)
-                        .map_err(|e| Error::Other(e.to_string()))?;
-                    t_evals_on_h[index] += *eta * coeff * l_x_alpha_on_h[r];
+                    t_evals_on_h[*c] += *eta * coeff * l_x_alpha_on_h[r];
                 }
             }
         }
         Ok(t_evals_on_h)
-        // Ok(EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h, domain_h).interpolate())
     }
 
     /// Returns the ratio of the sizes of `domain` and `subdomain` or an Error if
@@ -370,14 +366,16 @@ impl<F: PrimeField> IOP<F> {
         Ok(step)
     }
 
-    /// Output the number of oracles sent by the prover in the first round.
-    pub fn prover_num_first_round_oracles() -> usize {
-        3
-    }
-
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
     /// results from batching and reducing the R1CS identities.
-    /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
+    /// Determines the oracles for `U_1(X)` and `h_1(X)`.
+    // Note: the outer sumcheck identity is
+    //      T(alpha,X) * y(X) - L_H(X,alpha) * y_eta(X) = U_1(gX) - U_1(X) + h_1(X) * (X^n-1),
+    // with
+    //      y(X) = x(X) + (X^l-1) * w(X)
+    //      y_eta(X) = y_A(X) + eta * y_B(X) + eta^2 * y_A(X) * y_B(X)
+    // Since `T(alpha,X)` could be computed from public data, the prover does not provide a
+    // commitment for it.
     pub fn prover_second_round<'a, R: RngCore>(
         ver_message: &VerifierFirstMsg<F>,
         mut state: ProverState<'a, F>,
@@ -395,14 +393,12 @@ impl<F: PrimeField> IOP<F> {
         assert_eq!(eta_a, F::one());
 
         let summed_y_m_poly_time = start_timer!(|| "Compute y_m poly");
-        let (y_a_poly, y_b_poly) = match state.my_polys {
+        let (y_a_poly, y_b_poly) = match state.y_m_polys {
             Some(ref v) => v,
-            None => return Err(Error::Other("mz_polys are empty".to_owned())),
+            None => return Err(Error::Other("y_m_polys are empty".to_owned())),
         };
 
         // Performed via FFT using a domain of size = deg(y_a) + deg(y_b) + 1
-        // TODO: check if the `*` is really doing FFT here, and if so
-        // why we do the FFT product for the outer_poly below manually
         let y_c_poly = y_a_poly.polynomial() * y_b_poly.polynomial();
 
         let mut summed_y_m_coeffs = y_c_poly.coeffs;
@@ -441,7 +437,6 @@ impl<F: PrimeField> IOP<F> {
         let t_evals_on_h = Self::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
             &[eta_a, eta_b, eta_c],
-            &state.domain_x,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
         )?;
@@ -454,14 +449,11 @@ impl<F: PrimeField> IOP<F> {
 
         let y_poly_time = start_timer!(|| "Compute y poly");
 
-        let domain_x = get_best_evaluation_domain::<F>(state.formatted_input_assignment.len())
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)
-            .unwrap();
-        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
-            state.formatted_input_assignment.clone(),
-            domain_x.clone(),
-        )
-        .interpolate();
+        let x_poly = match state.x_poly {
+            Some(ref v) => v,
+            None => return Err(Error::Other("x_poly is empty".to_owned())),
+        };
+
         let w_poly = match state.w_poly {
             Some(ref v) => v,
             None => return Err(Error::Other("w_poly is empty".to_owned())),
@@ -476,7 +468,9 @@ impl<F: PrimeField> IOP<F> {
         //      deg (y_poly) = max(|X| - 1,  |X| + |H| + (zk - 1) * 1 - |X|) =
         //                  =  |H| - 1 + zk
         // with zk = 1 / 0.
-        let mut y_poly = w_poly.polynomial().mul_by_vanishing_poly(domain_x.size());
+        let mut y_poly = w_poly
+            .polynomial()
+            .mul_by_vanishing_poly(state.domain_x.size());
         y_poly
             .coeffs
             .par_iter_mut()
@@ -532,7 +526,7 @@ impl<F: PrimeField> IOP<F> {
                 .collect(),
             domain_h.clone(),
         );
-        let (u_1, u_1_degree) = {
+        let u_1 = {
             // compute U_1(X)
             let u_1_t = BoundaryPolynomial::from_coboundary_polynomial_evals(outer_poly_evals_on_H)
                 .map_err(|e| {
@@ -550,13 +544,11 @@ impl<F: PrimeField> IOP<F> {
 
                 // Add the randomization polynomial to u_1
                 let u_1 = &u_1_t + &randomization_poly;
-                (u_1, domain_h.size() + 1)
+                u_1
             } else {
-                (u_1_t, domain_h.size() - 1)
+                u_1_t
             }
         };
-
-        assert!(u_1.degree() <= u_1_degree);
 
         end_timer!(u_1_time);
 
@@ -565,7 +557,7 @@ impl<F: PrimeField> IOP<F> {
             // u_1 has higher degree with respect to |H| due to randomization;
             // therefore, when constructing u_1_g we have to take care of the
             // higher powers of g. So the g vector will be:
-            // (1, g, g^2,...., g^n-1, 1, g, ..., g^((deg(z1) - 1) - |H|)
+            // (1, g, g^2,...., g^n-1, 1, g, ..., g^((deg(u_1) - 1) - |H|)
             let size_diff = u_1.coeffs.len() as i32 - domain_h.size() as i32;
 
             let mut g_s = domain_h.elements().collect::<Vec<F>>();
@@ -581,11 +573,9 @@ impl<F: PrimeField> IOP<F> {
         };
         end_timer!(u_1_g_time);
 
-        assert!(u_1_g.degree() <= u_1_degree);
-
         // h1(X) = (outer_poly(X) + u1(X) - u1(g*X)) / v_H(X)
         // deg h_1(X) = deg(outer_poly(X)) - deg(v_H)
-        //      = deg(r_alpha) + deg(y_a) + deg(y_b) - |H|
+        //      = deg(l_x_alpha) + deg(y_a) + deg(y_b) - |H|
         //
         // deg h_1(X) <= |H|-1 + 2*(|H|-1 + zk) - |H| =
         //          = 2*|H| - 3 + 2*zk
@@ -617,21 +607,16 @@ impl<F: PrimeField> IOP<F> {
         Ok((oracles, state))
     }
 
-    /// Output the number of oracles sent by the prover in the second round.
-    pub fn prover_num_second_round_oracles() -> usize {
-        2
-    }
-
     /// Prover third round of the algebraic oracle proof, the "inner sumcheck".
     /// Determines the oracles for `U_2(X)` and `h_2(X)`.
     // Note: the inner sumcheck identity is
     //      a(X) = b(X)*(T(alpha,beta)/m + U_2(gX) - U_2(X)) + h_2(X)*(X^m-1),
     // with
-    //      b(X) = Product_{M=A*,B*,C*} (beta - row_M(X))*(alpha - col_M(X)),
-    //      a(X) = (beta^n-1)*(alpha^n-1)*Sum_{M=A*,B*,C*} eta_M * val_M(X)*p_M(X),
+    //      b(X) = Product_{M=A,B,C} (alpha - row_M(X)) * (beta - col_M(X)),
+    //      a(X) = (beta^n-1)*(alpha^n-1)/n^2 * Sum_{M=A,B,C} eta_M * val.row.col_M(X) * p_M(X),
     // where
-    //      p_M(X) =  prod_{N!=M}(beta-row_N(X))(alpha-col_N(X))
-    //             =  prod_{N!=M} (alpha*beta -alpha*row_N(X)-beta*col_N(X)+row.col_N(X)).
+    //      p_M(X) = prod_{N!=M} (alpha - row_N(X)) * (beta - col_N(X))
+    //             = prod_{N!=M} (alpha*beta - alpha * col_N(X) - beta * row_N(X) + row.col_N(X)).
     pub fn prover_third_round<'a>(
         ver_message: &VerifierSecondMsg<F>,
         prover_state: ProverState<'a, F>,
@@ -650,61 +635,94 @@ impl<F: PrimeField> IOP<F> {
         let verifier_first_msg = verifier_first_msg.expect(
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
-        let (mut eta_a, mut eta_b, mut eta_c) = verifier_first_msg.get_etas();
 
         let alpha = verifier_first_msg.alpha;
         let beta = ver_message.beta;
 
-        let eta_scale_factor = domain_h.evaluate_vanishing_polynomial(alpha)
-            * domain_h.evaluate_vanishing_polynomial(beta)
-            * domain_h.size_inv().square();
-        eta_a *= eta_scale_factor;
-        eta_b *= eta_scale_factor;
-        eta_c *= eta_scale_factor;
+        let (scaled_eta_a, scaled_eta_b, scaled_eta_c) = {
+            let (eta_a, eta_b, eta_c) = verifier_first_msg.get_etas();
+            let scale_factor = domain_h.evaluate_vanishing_polynomial(alpha)
+                * domain_h.evaluate_vanishing_polynomial(beta)
+                * domain_h.size_inv().square();
+            (
+                eta_a * scale_factor,
+                eta_b * scale_factor,
+                eta_c * scale_factor,
+            )
+        };
 
-        let (a_star, b_star, c_star) = (
-            &index.a_star_arith,
-            &index.b_star_arith,
-            &index.c_star_arith,
-        );
+        let (a_arith, b_arith, c_arith) = (&index.a_arith, &index.b_arith, &index.c_arith);
+
+        let denom_eval_time = start_timer!(|| "Computing denominator evals on domain B");
+        let compute_denom_evals_on_b = |m_arith: &MatrixArithmetization<F>| -> Vec<F> {
+            m_arith
+                .evals_on_domain_b
+                .row
+                .evals
+                .par_iter()
+                .zip(&m_arith.evals_on_domain_b.col.evals)
+                .zip(&m_arith.evals_on_domain_b.row_col.evals)
+                .map(|((&r, c), rc)| alpha * beta - beta * r - alpha * c + rc)
+                .collect()
+        };
+        let a_denom_evals_on_b = compute_denom_evals_on_b(a_arith);
+        let b_denom_evals_on_b = compute_denom_evals_on_b(b_arith);
+        let c_denom_evals_on_b = compute_denom_evals_on_b(c_arith);
+        end_timer!(denom_eval_time);
+
+        let scale_val_row_col_time =
+            start_timer!(|| "Scaling val.row.col evals on domain B by scaled_eta");
+        let compute_scaled_val_row_col =
+            |m_arith: &MatrixArithmetization<F>, scaled_eta_m| -> Vec<F> {
+                m_arith
+                    .evals_on_domain_b
+                    .val_row_col
+                    .evals
+                    .par_iter()
+                    .map(|m_val_row_col| scaled_eta_m * m_val_row_col)
+                    .collect()
+            };
+        let a_scaled_val_row_col_on_b = compute_scaled_val_row_col(a_arith, scaled_eta_a);
+        let b_scaled_val_row_col_on_b = compute_scaled_val_row_col(b_arith, scaled_eta_b);
+        let c_scaled_val_row_col_on_b = compute_scaled_val_row_col(c_arith, scaled_eta_c);
+        end_timer!(scale_val_row_col_time);
 
         /* Compute the domain evals of
-            f(X) =  (alpha^n-1)(beta^n-1) * sum_{M=A*,B*,C*} eta_M * val_M(X) / (row_M(X)-beta)(col_M(X)-alpha)
+            p(X) =  (alpha^n-1)(beta^n-1)/n^2 * sum_{M=A,B,C} eta_M * val.row.col_M(X) / (alpha-row_M(X))(beta-col_M(X))
         */
         let p_evals_time = start_timer!(|| "Computing p evals on K");
 
-        // Compute the denominators over the indexer domain `K`.
+        // Compute the evaluations of the inverses of the denominators over the indexer domain `K`
+        // by reusing the already computed evaluations of the denominators over the domain `B` and
+        // performing a batch inversion.
         let step = Self::get_subdomain_step(&domain_b, &domain_k)?;
-        let compute_denominators = |m_star: &MatrixArithmetization<F>| -> Vec<F> {
-            let mut inverse: Vec<_> = m_star
-                .row_evals_on_domain_b
-                .evals
+
+        let compute_inverse_denom_evals_on_k = |m_denom_evals_on_b: &Vec<F>| -> Vec<F> {
+            let mut result: Vec<_> = m_denom_evals_on_b
                 .par_iter()
-                .zip(&m_star.col_evals_on_domain_b.evals)
                 .step_by(step)
-                .map(|(row, col)| (alpha - row) * (beta - col))
+                .cloned()
                 .collect();
-            algebra::batch_inversion(&mut inverse);
-            inverse
+            algebra::batch_inversion(&mut result);
+            result
         };
+        let a_denom_inv_evals_on_k = compute_inverse_denom_evals_on_k(&a_denom_evals_on_b);
+        let b_denom_inv_evals_on_k = compute_inverse_denom_evals_on_k(&b_denom_evals_on_b);
+        let c_denom_inv_evals_on_k = compute_inverse_denom_evals_on_k(&c_denom_evals_on_b);
 
-        let inverses_a = compute_denominators(&a_star);
-        let inverses_b = compute_denominators(&b_star);
-        let inverses_c = compute_denominators(&c_star);
-
-        let p_evals_on_K: Vec<_> = a_star
-            .val_row_col_evals_on_domain_b
-            .evals
+        let p_evals_on_k: Vec<_> = a_scaled_val_row_col_on_b
             .par_iter()
-            .zip(&b_star.val_row_col_evals_on_domain_b.evals)
-            .zip(&c_star.val_row_col_evals_on_domain_b.evals)
+            .zip(&b_scaled_val_row_col_on_b)
+            .zip(&c_scaled_val_row_col_on_b)
             .step_by(step)
-            .zip(&inverses_a)
-            .zip(&inverses_b)
-            .zip(&inverses_c)
-            .map(|(((((&a_k, b_k), c_k), a_inv), b_inv), c_inv)| {
-                eta_a * a_k * a_inv + eta_b * b_k * b_inv + eta_c * c_k * c_inv
-            })
+            .zip(&a_denom_inv_evals_on_k)
+            .zip(&b_denom_inv_evals_on_k)
+            .zip(&c_denom_inv_evals_on_k)
+            .map(
+                |(((((&a_eta_vrc, &b_eta_vrc), &c_eta_vrc), a_den_inv), b_den_inv), c_den_inv)| {
+                    a_eta_vrc * a_den_inv + b_eta_vrc * b_den_inv + c_eta_vrc * c_den_inv
+                },
+            )
             .collect();
         end_timer!(p_evals_time);
 
@@ -712,7 +730,7 @@ impl<F: PrimeField> IOP<F> {
          */
         let u_2_time = start_timer!(|| "Compute u_2 poly");
         let (u_2, normalized_v) = BoundaryPolynomial::from_non_coboundary_polynomial_evals(
-            EvaluationsOnDomain::from_vec_and_domain(p_evals_on_K, domain_k.clone()),
+            EvaluationsOnDomain::from_vec_and_domain(p_evals_on_k, domain_k.clone()),
         )
         .map_err(|e| {
             end_timer!(u_2_time);
@@ -744,43 +762,29 @@ impl<F: PrimeField> IOP<F> {
         /* Compute the quotient polynomial h_2(X) for the inner sumcheck identity.
          */
 
-        let denom_eval_time = start_timer!(|| "Computing denominator evals on domain B");
-        let m_denom = |m_star: &MatrixArithmetization<F>| -> Vec<F> {
-            m_star
-                .row_evals_on_domain_b
-                .evals
-                .par_iter()
-                .zip(&m_star.col_evals_on_domain_b.evals)
-                .zip(&m_star.row_col_evals_on_domain_b.evals)
-                .map(|((&r, c), r_c)| alpha * beta - beta * r - alpha * c + r_c)
-                .collect()
-        };
-        let a_denom = m_denom(a_star);
-        let b_denom = m_denom(b_star);
-        let c_denom = m_denom(c_star);
-        end_timer!(denom_eval_time);
-
         let a_evals_time = start_timer!(|| "Computing a evals on domain B");
-        let a_poly_on_domain_b: Vec<_> = a_star
-            .val_row_col_evals_on_domain_b
-            .evals
+        let a_evals_on_b: Vec<_> = a_scaled_val_row_col_on_b
             .par_iter()
-            .zip(&b_star.val_row_col_evals_on_domain_b.evals)
-            .zip(&c_star.val_row_col_evals_on_domain_b.evals)
-            .zip(&a_denom)
-            .zip(&b_denom)
-            .zip(&c_denom)
-            .map(|(((((&a, b), c), a_den), b_den), c_den)| {
-                eta_a * a * b_den * c_den + eta_b * b * a_den * c_den + eta_c * c * a_den * b_den
-            })
+            .zip(&b_scaled_val_row_col_on_b)
+            .zip(&c_scaled_val_row_col_on_b)
+            .zip(&a_denom_evals_on_b)
+            .zip(&b_denom_evals_on_b)
+            .zip(&c_denom_evals_on_b)
+            .map(
+                |(((((&a_eta_vrc, &b_eta_vrc), &c_eta_vrc), a_den), b_den), c_den)| {
+                    a_eta_vrc * b_den * c_den
+                        + b_eta_vrc * a_den * c_den
+                        + c_eta_vrc * a_den * b_den
+                },
+            )
             .collect();
         end_timer!(a_evals_time);
 
         let b_evals_time = start_timer!(|| "Computing b evals on domain B");
-        let b_poly_on_domain_b: Vec<_> = a_denom
+        let b_evals_on_b: Vec<_> = a_denom_evals_on_b
             .par_iter()
-            .zip(&b_denom)
-            .zip(&c_denom)
+            .zip(&b_denom_evals_on_b)
+            .zip(&c_denom_evals_on_b)
             .map(|((&a_den, b_den), c_den)| a_den * b_den * c_den)
             .collect();
         end_timer!(b_evals_time);
@@ -792,12 +796,12 @@ impl<F: PrimeField> IOP<F> {
         //      a_poly_evals - b_poly_evals * f_poly_evals
         // over the larger domain B of size 4*|K|, and then do a single FFT.
         // For that we need to compute the domain eval of f_poly over 4*|K|
-        let f_poly_on_domain_b = f_poly.evaluate_over_domain_by_ref(domain_b.clone()).evals;
+        let f_evals_on_b = f_poly.evaluate_over_domain_by_ref(domain_b.clone()).evals;
 
-        let inner_poly_evals: Vec<_> = a_poly_on_domain_b
+        let inner_poly_evals: Vec<_> = a_evals_on_b
             .par_iter()
-            .zip(&b_poly_on_domain_b)
-            .zip(&f_poly_on_domain_b)
+            .zip(&b_evals_on_b)
+            .zip(&f_evals_on_b)
             .map(|((&a, &b), f)| a - b * f)
             .collect();
         let inner_poly =
@@ -822,10 +826,5 @@ impl<F: PrimeField> IOP<F> {
         end_timer!(round_time);
 
         Ok(oracles)
-    }
-
-    /// Output the number of oracles sent by the prover in the third round.
-    pub fn prover_num_third_round_oracles() -> usize {
-        2
     }
 }

@@ -447,8 +447,7 @@ mod test {
     use algebra::fields::tweedle::{Fq, Fr};
     use primitives::{
         crh::{
-            bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters},
-            pedersen::PedersenWindow,
+            bowe_hopwood::*,
             FixedLengthCRH, TweedleFqPoseidonHash, TweedleFrPoseidonHash,
         },
         vrf::{
@@ -468,7 +467,7 @@ mod test {
     #[derive(Clone)]
     struct TestWindow {}
     impl PedersenWindow for TestWindow {
-        const WINDOW_SIZE: usize = 64;
+        const WINDOW_SIZE: usize = 43;
         const NUM_WINDOWS: usize = 2;
     }
 

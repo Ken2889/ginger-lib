@@ -1,4 +1,8 @@
-use crate::{bytes::{FromBytes, ToBytes}, fields::{PrimeField, SquareRootField}, UniformRand};
+use crate::{
+    bytes::{FromBytes, ToBytes},
+    fields::{PrimeField, SquareRootField},
+    UniformRand
+};
 use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid, ToConstraintField};
 
 use std::{
@@ -6,9 +10,8 @@ use std::{
     hash::Hash,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-
-mod linear_combination;
-pub use linear_combination::*;
+use num_traits::Zero;
+use serde::*;
 
 mod group_vec;
 pub use group_vec::*;
@@ -24,6 +27,8 @@ pub trait Group:
     + SemanticallyValid
     + CanonicalSerialize
     + CanonicalDeserialize
+    + Serialize
+    + for<'a> Deserialize<'a>
     + Clone
     + Debug
     + Display
@@ -33,6 +38,7 @@ pub trait Group:
     + Eq
     + Hash
     + UniformRand
+    + Zero
     + Neg<Output = Self>
     + Add<Self, Output = Self>
     + Sub<Self, Output = Self>
@@ -47,13 +53,7 @@ pub trait Group:
     + ToConstraintField<<Self as Group>::BaseField>
 {
     type BaseField: PrimeField + SquareRootField;
-    type ScalarField: PrimeField + SquareRootField; // Temporary
-
-    /// Returns the additive identity.
-    fn zero() -> Self;
-
-    /// Returns `self == zero`.
-    fn is_zero(&self) -> bool;
+    type ScalarField: PrimeField;
 
     /// Returns `self + self`.
     #[must_use]

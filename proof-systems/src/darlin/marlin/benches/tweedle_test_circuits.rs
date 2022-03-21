@@ -1,23 +1,19 @@
-use algebra::{curves::tweedle::dee::DeeJacobian};
-use blake2::{Blake2s, Digest};
-use marlin::*;
-use poly_commit::PolynomialCommitment;
-use poly_commit::{ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCParameters};
-
-use algebra::{PrimeField, EndoMulCurve};
+use algebra::curves::tweedle::dee::DeeJacobian;
+use algebra::{PrimeField, Group};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
-
-use criterion::Criterion;
-use criterion::{BatchSize, BenchmarkId};
 use r1cs_std::alloc::AllocGadget;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::FieldGadget;
 use r1cs_std::Assignment;
+use marlin::*;
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment, DomainExtendedPolynomialCommitment, PCKey};
 
+use criterion::Criterion;
+use criterion::{BatchSize, BenchmarkId};
+use digest::Digest;
+use blake2::Blake2s;
 use rand::{rngs::OsRng, thread_rng};
-
-use std::fmt::Display;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[macro_use]
@@ -527,7 +523,7 @@ impl CircuitType {
     }
 }
 
-impl Display for CircuitType {
+impl std::fmt::Display for CircuitType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CircuitType::Circuit1a => write!(f, "Circuit1a"),
@@ -592,18 +588,18 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit<F> {
     }
 }
 
-fn bench_prover_circuit<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, circuit_type: CircuitType) {
+fn bench_prover_circuit<G: Group, PC: PolynomialCommitment<G>, D: Digest>(c: &mut Criterion, circuit_type: CircuitType) {
     let mut group = c.benchmark_group(format!("bench {}", circuit_type).as_str());
 
     let num_constraints = (14..=22).map(|i| 2usize.pow(i)).collect::<Vec<_>>();
 
     for &num_constraints in num_constraints.iter() {
-        let universal_srs =
+        let (mut pc_pk, _) =
             Marlin::<G, PC>::universal_setup::<D>(num_constraints, num_constraints, num_constraints, false)
                 .unwrap();
         let c = TestCircuit::<G::ScalarField>::get_instance_for_setup(num_constraints, circuit_type);
 
-        let (pc_pk, _) = universal_srs.trim(universal_srs.max_degree()).unwrap();
+        pc_pk = pc_pk.trim(pc_pk.degree()).unwrap();
         let (index_pk, _) = Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk, c.clone()).unwrap();
 
         add_to_trace!(
@@ -648,7 +644,7 @@ fn bench_prover_circuit<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>
 #[cfg(not(feature = "circuit-friendly"))]
 mod benches {
     use super::*;
-    use poly_commit::chacha20::FiatShamirChaChaRng;
+    use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
     type IPAPCChaCha =
         DomainExtendedPolynomialCommitment<DeeJacobian, InnerProductArgPC<DeeJacobian, FiatShamirChaChaRng<Blake2s>>>;

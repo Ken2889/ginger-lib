@@ -1,12 +1,17 @@
-use crate::{fields::{
-    Field, FpParameters, PrimeField,
-}, curves::{
-    Curve,
-    models::{SWModelParameters, TEModelParameters},
-    short_weierstrass_jacobian::Jacobian,
-    short_weierstrass_projective::Projective,
-    twisted_edwards_extended::TEExtended,
-}, ToBits, Group};
+use num_traits::Zero;
+use crate::{
+    fields::{
+        Field, FpParameters, PrimeField,
+    },
+    curves::{
+        models::{SWModelParameters, TEModelParameters},
+        short_weierstrass_jacobian::Jacobian,
+        short_weierstrass_projective::Projective,
+        twisted_edwards_extended::TEExtended,
+        Curve,
+    },
+    ToBits,
+};
 
 type Error = Box<dyn std::error::Error>;
 

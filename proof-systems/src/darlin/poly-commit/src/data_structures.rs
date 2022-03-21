@@ -10,103 +10,64 @@
 //! [`LabeledRandomness`] are provided for internal usage.
 //!
 //! [HaloInfinite]: https://eprint.iacr.org/2020/1536
-use crate::{error::*, Rc, String};
+use crate::Error;
+use crate::{Rc, String};
 pub use algebra::DensePolynomial as Polynomial;
 use algebra::{
     serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError},
-    Field, Group, SemanticallyValid,
+    Field, Group, SemanticallyValid, ToBytes,
 };
 use std::{
     fmt::Debug,
-    io::{Read, Write},
+    io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
 };
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
 pub type PolynomialLabel = String;
-/// Labels a point at which a `LabeledPolynomial` should be (or has been) evaluated.
+
+/// Labels the point(s) to which a `LabeledPolynomial` is queried at.
 pub type PointLabel = String;
 
-/// Defines the minimal interface of committer keys for any polynomial
+/// Defines the minimal interface for keys of any polynomial
 /// commitment scheme.
-pub trait PCCommitterKey:
+pub trait PCKey:
     Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
 {
-    /// Outputs the maximum degree supported by the universal parameters
-    /// `Self` was derived from.
-    fn max_degree(&self) -> usize;
-
-    /// Outputs the maximum degree supported by the committer key.
-    fn segment_size(&self) -> usize;
+    /// Outputs the maximum degree supported by this key
+    fn degree(&self) -> usize;
 
     /// Returns the hash of `self` instance.
     fn get_hash(&self) -> &[u8];
 
-    /// Returns key length
-    fn get_key_len(&self) -> usize;
-}
-
-/// Defines the minimal interface of verifier keys for any polynomial
-/// commitment scheme.
-pub trait PCVerifierKey:
-    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
-{
-    /// Outputs the maximum degree supported by the universal parameters
-    /// `Self` was derived from.
-    fn max_degree(&self) -> usize;
-
-    /// Outputs the maximum degree supported by the verifier key.
-    fn segment_size(&self) -> usize;
-
-    /// Returns the hash of `self` instance.
-    fn get_hash(&self) -> &[u8];
-}
-
-/// Defines the minimal interface for public params for any polynomial
-/// commitment scheme.
-pub trait PCParameters<G: Group>:
-    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize
-{
-    /// The committer key for the scheme; used to commit to a polynomial and then
-    /// open the commitment to produce an evaluation proof.
-    type CommitterKey: PCCommitterKey;
-    /// The verifier key for the scheme; used to check an evaluation proof.
-    type VerifierKey: PCVerifierKey;
-    /// The error type for the scheme.
-    type Error: std::error::Error + From<Error>;
-
-    /// Outputs the maximum degree supported by the committer key.
-    fn max_degree(&self) -> usize;
-
-    /// Returns the hash of `self` instance.
-    fn get_hash(&self) -> &[u8];
-
-    /// Specializes the public parameters for polynomials up to the given `supported_degree`
-    /// and for enforcing degree bounds in the range `1..=supported_degree`.
-    fn trim(
-        &self,
-        segment_size: usize,
-    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error>;
+    /// Specialize the key for polynomials up to the given `degree`.
+    fn trim(&self, degree: usize) -> Result<Self, Error>;
 }
 
 /// Defines the minimal interface of the verifier state from succinct
 /// verify part.
 /// This state is returned by the succinct verifier and contains everything
 /// that is needed to complete verification.
-pub trait PCVerifierState: Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize {}
+pub trait PCVerifierState:
+    Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize
+{
+}
 
 /// Defines the minimal interface for opening proofs for a polynomial commitment
 pub trait PCProof:
     Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
 {
-    /// Return length of committer key
-    fn get_key_len(&self) -> usize;
+    /// Get degree of this proof.
+    /// Allows to support some specific use cases, e.g. perform succinct verification of proofs using oversized keys.
+    /// We might deprecate it in the future once we implement an efficient way to trim keys,
+    /// thus enforcing proof verification with a vk the same size of the ck from which the proof was created.
+    fn degree(&self) -> Result<usize, Error>;
 }
 
 /// Defines the minimal interface for batch evaluation proofs in the style
 /// of Boneh et al [HaloInfinite], produced by `fn multi_point_multi_poly_open()`.
 ///
 /// [HaloInfinite]: https://eprint.iacr.org/2020/1536
-pub trait PCMultiPointProof<G: Group>:
+pub trait BDFGMultiPointProof<G: Group>:
     Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize + SemanticallyValid
 {
     /// Commitment
@@ -199,6 +160,14 @@ impl<G: Group> LabeledCommitment<G> {
 impl<G: Group> SemanticallyValid for LabeledCommitment<G> {
     fn is_valid(&self) -> bool {
         self.commitment.is_valid()
+    }
+}
+
+impl<G: Group> ToBytes for LabeledCommitment<G> {
+    #[inline]
+    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        CanonicalSerialize::serialize(&self.commitment, &mut writer)
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 

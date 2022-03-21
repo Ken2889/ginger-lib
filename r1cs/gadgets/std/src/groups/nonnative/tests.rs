@@ -78,3 +78,12 @@ nonnative_group_test_unsafe_add!(
     TweedleFr,
     ed25519Fq
 );
+
+#[cfg(all(feature = "tweedle", feature = "secp256k1"))]
+nonnative_group_test_unsafe_add!(
+    TweedleFrsecp256k1Fq,
+    1,
+    Secp256k1Parameters,
+    TweedleFr,
+    secp256k1Fq
+);

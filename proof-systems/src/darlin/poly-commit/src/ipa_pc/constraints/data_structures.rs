@@ -1,7 +1,7 @@
 use crate::ipa_pc::constraints::InnerProductArgGadget;
-use crate::ipa_pc::{InnerProductArgPC, MultiPointProof, Proof, VerifierKey, VerifierState};
+use crate::ipa_pc::{DLogItem, InnerProductArgPC, MultiPointProof, Proof, VerifierKey};
 use crate::{
-    MultiPointProofGadget, PCVerifierKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget,
+    MultiPointProofGadget, PCKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget,
     VerifierStateGadget,
 };
 use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, ToBits};
@@ -21,7 +21,7 @@ pub struct IPAVerifierKeyGadget<
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>,
 > {
-    segment_size: usize,
+    degree: usize,
     pub(crate) h: GG,
     pub(crate) s: GG,
     hash: Vec<u8>,
@@ -35,8 +35,8 @@ impl<
         GG: EndoMulCurveGadget<G, ConstraintF>,
     > VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
 {
-    fn segment_size(&self) -> usize {
-        self.segment_size
+    fn degree(&self) -> usize {
+        self.degree
     }
 
     fn get_hash(&self) -> &[u8] {
@@ -65,7 +65,7 @@ impl<
         let s = GG::alloc(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
         Ok(Self {
-            segment_size: vk.segment_size(),
+            degree: vk.degree(),
             h,
             s,
             hash: vk.hash.clone(),
@@ -89,7 +89,7 @@ impl<
         let s = GG::alloc_input(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
 
         Ok(Self {
-            segment_size: vk.segment_size(),
+            degree: vk.degree(),
             h,
             s,
             hash: vk.hash.clone(),
@@ -139,7 +139,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: EndoMulCurveGadget<G, ConstraintF>,
-    > VerifierStateGadget<VerifierState<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
+    > VerifierStateGadget<DLogItem<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
 {
 }
 
@@ -147,7 +147,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: EndoMulCurveGadget<G, ConstraintF>,
-    > AllocGadget<VerifierState<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
+    > AllocGadget<DLogItem<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
@@ -155,7 +155,7 @@ impl<
     ) -> Result<Self, SynthesisError>
     where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<VerifierState<G>>,
+        T: Borrow<DLogItem<G>>,
     {
         let t = f()?;
         let verifier_state = t.borrow();
@@ -184,7 +184,7 @@ impl<
     ) -> Result<Self, SynthesisError>
     where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<VerifierState<G>>,
+        T: Borrow<DLogItem<G>>,
     {
         let t = f()?;
         let verifier_state = t.borrow();

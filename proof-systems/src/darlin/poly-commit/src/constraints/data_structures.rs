@@ -1,13 +1,14 @@
-use std::fmt::Debug;
+use crate::{
+    BDFGMultiPointProof, PCKey, PCVerifierState, PolynomialCommitment,
+    PolynomialCommitmentVerifierGadget, PolynomialLabel,
+};
 use algebra::{Group, PrimeField};
 use r1cs_std::prelude::AllocGadget;
-use crate::{PCMultiPointProof, PCVerifierKey, PCVerifierState, PolynomialCommitment, PolynomialCommitmentVerifierGadget, PolynomialLabel};
+use std::fmt::Debug;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Derivative)]
-#[derivative(
-Clone(bound = ""),
-)]
+#[derivative(Clone(bound = ""))]
 pub struct LabeledCommitmentGadget<
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
@@ -19,11 +20,11 @@ pub struct LabeledCommitmentGadget<
 }
 
 impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
-    where
-        PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
-        ConstraintF: PrimeField,
-        G: Group<BaseField = ConstraintF>,
-        PC: PolynomialCommitment<G>,
+where
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
+    ConstraintF: PrimeField,
+    G: Group<BaseField = ConstraintF>,
+    PC: PolynomialCommitment<G>,
 {
     /// Instantiate a new labeled commitment from a label and a commitment gadget.
     pub fn new(label: PolynomialLabel, commitment: PCG::Commitment) -> Self {
@@ -45,7 +46,7 @@ impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
 pub trait MultiPointProofGadget<
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
-    MPP: PCMultiPointProof<G>,
+    MPP: BDFGMultiPointProof<G>,
 >: AllocGadget<MPP, ConstraintF>
 {
     /// Type of commitment gadget
@@ -62,16 +63,16 @@ pub trait MultiPointProofGadget<
 
 /// Gadget for the state returned by verifier in case of successful verification
 pub trait VerifierStateGadget<VS: PCVerifierState, ConstraintF: PrimeField>:
-Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
+    Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
 {
 }
 /// Interface for the gadget representing the verifier key
-pub trait VerifierKeyGadget<VK: PCVerifierKey, ConstraintF: PrimeField>:
-Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
+pub trait VerifierKeyGadget<VK: PCKey, ConstraintF: PrimeField>:
+    Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
 {
     /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
     /// with `self`
-    fn segment_size(&self) -> usize;
+    fn degree(&self) -> usize;
 
     /// Get the gadget for the hash of the verifier key `VK` represented by `self`
     fn get_hash(&self) -> &[u8];

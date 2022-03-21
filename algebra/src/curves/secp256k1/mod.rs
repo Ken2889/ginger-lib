@@ -6,7 +6,8 @@ use crate::curves::{
     short_weierstrass_jacobian::Jacobian,
 };
 use crate::fields::secp256k1::{fq::Fq, fr::Fr};
-use crate::{field_new, Group};
+use crate::field_new;
+use num_traits::Zero;
 
 #[cfg(test)]
 mod tests;

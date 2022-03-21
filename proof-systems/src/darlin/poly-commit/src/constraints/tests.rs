@@ -1,7 +1,7 @@
 use crate::{
     DomainExtendedPolyCommitVerifierGadget, DomainExtendedPolynomialCommitment, Error as PolyError,
-    Evaluations, LabeledCommitmentGadget, LabeledPolynomial, PCParameters, Polynomial,
-    PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap,
+    Evaluations, LabeledCommitmentGadget, LabeledPolynomial,
+    PCKey, Polynomial, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap,
 };
 use algebra::{Field, Group, PrimeField, SemanticallyValid, ToBits, UniformRand};
 use blake2::Blake2s;
@@ -16,6 +16,7 @@ use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::groups::GroupGadget;
 use rand::{thread_rng, Rng};
 use rand_core::RngCore;
+use std::collections::BTreeSet;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum NegativeTestType {
@@ -77,19 +78,24 @@ fn test_succinct_verify_template<
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
         let max_degree: usize = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
-        let supported_degree: usize = test_conf
+        let mut supported_degree: usize = test_conf
             .supported_degree
             .unwrap_or(rng.gen_range(1..=max_degree));
         assert!(supported_degree <= max_degree);
 
-        let pp = PC::setup::<Blake2s>(max_degree)?;
-        let (ck, vk) = pp.trim(supported_degree)?;
         let poly_degree: usize = if test_conf.segmented {
             rng.gen_range(supported_degree..=10 * supported_degree)
         } else {
             rng.gen_range(0..=supported_degree)
         };
         let polynomial = Polynomial::rand(poly_degree, rng);
+
+        let pp = PC::setup::<Blake2s>(max_degree)?;
+        // trim function requires a supported_degree >= 1
+        if supported_degree == 0 {
+            supported_degree = 1;
+        }
+        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
         let is_hiding: bool = rng.gen();
 
         let (mut commitment, randomness) = PC::commit(&ck, &polynomial, is_hiding, Some(rng))?;
@@ -158,7 +164,8 @@ fn test_succinct_verify_template<
         assert!(successful_test);
 
         // test mul_bits_fixed_base for commitments
-        let bits = fs_gadget.enforce_get_challenge::<_, 128>(cs.ns(|| "get random bits for mul_bits_fixed_base"))?;
+        let bits = fs_gadget
+            .enforce_get_challenge::<_, 128>(cs.ns(|| "get random bits for mul_bits_fixed_base"))?;
         PCG::Commitment::mul_bits_fixed_base(&commitment, cs, &bits[..])?;
     }
     Ok(())
@@ -205,8 +212,8 @@ fn test_multi_point_multi_poly_verify<
         }
 
         let pp = PC::setup::<Blake2s>(max_degree)?;
-        let (ck, vk) = pp.trim(supported_degree)?;
-        let (comms, rands) = PC::commit_vec(&ck, &polynomials, Some(rng))?;
+        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
+        let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
 
         assert!(comms.is_valid());
         let mut points = QueryMap::new();
@@ -220,6 +227,7 @@ fn test_multi_point_multi_poly_verify<
                 cs.ns(|| format!("alloc gadget for point {}", i)),
                 || Ok(point),
             )?;
+            let mut poly_labels_set = BTreeSet::new();
             for (j, labeled_poly) in polynomials.iter().enumerate() {
                 let label = labeled_poly.label();
                 let poly = labeled_poly.polynomial();
@@ -233,11 +241,12 @@ fn test_multi_point_multi_poly_verify<
                     }),
                     || Ok(value_for_alloc(&value, &test_conf.negative_type, rng)),
                 )?;
-                points.insert((label.clone(), point_label.clone()), point);
-                point_gadgets.insert((label.clone(), point_label.clone()), point_gadget.clone());
+                poly_labels_set.insert(label.clone());
                 values.insert((label.clone(), point_label.clone()), value);
                 value_gadgets.insert((label.clone(), point_label.clone()), value_gadget);
             }
+            points.insert(point_label.clone(), (point, poly_labels_set.clone()));
+            point_gadgets.insert(point_label.clone(), (point_gadget.clone(), poly_labels_set));
         }
 
         let fs_seed = String::from("TEST_SEED").into_bytes();
@@ -246,7 +255,6 @@ fn test_multi_point_multi_poly_verify<
         let proof = PC::multi_point_multi_poly_open(
             &ck,
             &polynomials,
-            &comms,
             &points,
             &mut fs_rng,
             &rands,
@@ -341,8 +349,8 @@ fn test_single_point_multi_poly_verify<
         }
 
         let pp = PC::setup::<Blake2s>(max_degree)?;
-        let (ck, vk) = pp.trim(supported_degree)?;
-        let (comms, rands) = PC::commit_vec(&ck, &polynomials, Some(rng))?;
+        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
+        let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
 
         // alloc gadgets for polynomial evaluations over the point here as later on they will be moved in succinct verify function
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -361,7 +369,6 @@ fn test_single_point_multi_poly_verify<
         let proof = PC::single_point_multi_poly_open(
             &ck,
             &polynomials,
-            &comms,
             point,
             &mut fs_rng,
             &rands,
@@ -373,7 +380,7 @@ fn test_single_point_multi_poly_verify<
             &vk,
             &comms,
             point,
-            values,
+            &values,
             &proof,
             &mut fs_rng,
         )?;
