@@ -5,13 +5,10 @@ use crate::iop::verifier::*;
 use crate::iop::*;
 
 use crate::{ToString, Vec};
-use algebra::{
-    get_best_evaluation_domain, mat_vec_mul, EvaluationDomain, Evaluations as EvaluationsOnDomain,
-    SparseMatrix,
-};
+use algebra::{get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain};
 use algebra::{Field, PrimeField};
 use poly_commit::{LabeledPolynomial, Polynomial};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, Index as VarIndex, SynthesisMode};
 use rand_core::RngCore;
 
 /// State for the IOP prover.
@@ -49,28 +46,6 @@ impl<'a, F: PrimeField> ProverState<'a, F> {
     /// Get the public input.
     pub fn public_input(&self) -> Vec<F> {
         IOP::unformat_public_input(&self.formatted_input_assignment)
-    }
-    /// Return the variable vector, with input variables and witness variables already indexed
-    /// according to the treatment of the input domain `domain_x` as a subdomain of the full
-    /// Lagrange domain `domain_h`.
-    pub fn full_variable_vector(&self) -> Vec<F> {
-        let domain_x_size = self.domain_x.size();
-        let mut padded_public_input = vec![F::zero(); self.domain_h.size()];
-        for (i, el) in self.formatted_input_assignment.iter().enumerate() {
-            let idx = self
-                .domain_h
-                .reindex_by_subdomain(domain_x_size, i)
-                .unwrap();
-            padded_public_input[idx] = *el;
-        }
-        for (i, el) in self.witness_assignment.iter().enumerate() {
-            let idx = self
-                .domain_h
-                .reindex_by_subdomain(domain_x_size, i + domain_x_size)
-                .unwrap();
-            padded_public_input[idx] = *el;
-        }
-        padded_public_input
     }
 }
 
@@ -262,14 +237,20 @@ impl<F: PrimeField> IOP<F> {
 
         // For M=A,B, compute domain evaluations of y_M(X) = Sum_{z in H} M(X,z)*y(z)
         // over H
-        let variable_vector = state.full_variable_vector();
-
         let eval_y_a_time = start_timer!(|| "Evaluating y_A");
-        let y_a = mat_vec_mul(&state.index.a, &variable_vector);
+        let y_a = Self::calculate_y_m(
+            &state.index.a,
+            &state.formatted_input_assignment,
+            &state.witness_assignment,
+        )?;
         end_timer!(eval_y_a_time);
 
         let eval_y_b_time = start_timer!(|| "Evaluating y_B");
-        let y_b = mat_vec_mul(&state.index.b, &variable_vector);
+        let y_b = Self::calculate_y_m(
+            &state.index.b,
+            &state.formatted_input_assignment,
+            &state.witness_assignment,
+        )?;
         end_timer!(eval_y_b_time);
 
         // For M=A,B compute the optionally randomized y_M^(X) from the domain evaluations
@@ -325,29 +306,6 @@ impl<F: PrimeField> IOP<F> {
         end_timer!(round_time);
 
         Ok((oracles, state))
-    }
-
-    /// Given the Lagrange representation M(X,Y) for the R1CS matrices M=A,B,C,
-    /// batching challenges eta_M, M=A,B,C, and L_H(alpha,Y) over H, computes
-    /// the evaluations over H of the circuit polynomial
-    ///     t(X) = Sum_{M} eta_M * M(alpha, X)
-    /// with
-    ///     M(alpha, X) = Sum_{z in H} L(alpha,z) * M(z,X)
-    fn calculate_t<'a>(
-        matrices: impl Iterator<Item = &'a SparseMatrix<F>>,
-        matrix_randomizers: &[F],
-        domain_h: Box<dyn EvaluationDomain<F>>,
-        l_x_alpha_on_h: &Vec<F>,
-    ) -> Result<Vec<F>, Error> {
-        let mut t_evals_on_h = vec![F::zero(); domain_h.size()];
-        for (matrix, eta) in matrices.zip(matrix_randomizers) {
-            for (r, row) in matrix.iter().enumerate() {
-                for (coeff, c) in row.iter() {
-                    t_evals_on_h[*c] += *eta * coeff * l_x_alpha_on_h[r];
-                }
-            }
-        }
-        Ok(t_evals_on_h)
     }
 
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
@@ -421,7 +379,8 @@ impl<F: PrimeField> IOP<F> {
         let t_evals_on_h = Self::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
             &[eta_a, eta_b, eta_c],
-            domain_h.clone(),
+            &state.domain_x,
+            &domain_h,
             &l_x_alpha_evals_on_h,
         )?;
         let t_poly =
@@ -814,5 +773,53 @@ impl<F: PrimeField> IOP<F> {
         end_timer!(round_time);
 
         Ok(oracles)
+    }
+
+    /// Compute the product between a R1CS matrix and the full variable vector (consisting of both
+    /// public input and witnesses).
+    fn calculate_y_m(
+        matrix: &Vec<Vec<(F, VarIndex)>>,
+        formatted_pulic_input: &[F],
+        witnesses: &[F],
+    ) -> Result<Vec<F>, Error> {
+        let num_rows = matrix.len();
+        let mut out = vec![F::zero(); num_rows];
+        for (r, row) in matrix.iter().enumerate() {
+            for (coeff, c) in row {
+                let value = match c {
+                    VarIndex::Input(i) => formatted_pulic_input.get(*i),
+                    VarIndex::Aux(i) => witnesses.get(*i),
+                };
+                if value.is_some() {
+                    out[r] += *coeff * value.unwrap();
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Given the Lagrange representation M(X,Y) for the R1CS matrices M=A,B,C,
+    /// batching challenges eta_M, M=A,B,C, and L_H(alpha,Y) over H, computes
+    /// the evaluations over H of the circuit polynomial
+    ///     t(X) = Sum_{M} eta_M * M(alpha, X)
+    /// with
+    ///     M(alpha, X) = Sum_{z in H} L(alpha,z) * M(z,X)
+    fn calculate_t<'a>(
+        matrices: impl Iterator<Item = &'a Vec<Vec<(F, VarIndex)>>>,
+        matrix_randomizers: &[F],
+        domain_x: &Box<dyn EvaluationDomain<F>>,
+        domain_h: &Box<dyn EvaluationDomain<F>>,
+        l_x_alpha_on_h: &Vec<F>,
+    ) -> Result<Vec<F>, Error> {
+        let mut t_evals_on_h = vec![F::zero(); domain_h.size()];
+        for (matrix, eta) in matrices.zip(matrix_randomizers) {
+            for (r, row) in matrix.iter().enumerate() {
+                for (coeff, c_r1cs) in row.iter() {
+                    let c = varindex_to_linear_index(*c_r1cs, &domain_h, &domain_x)?;
+                    t_evals_on_h[c] += *eta * coeff * l_x_alpha_on_h[r];
+                }
+            }
+        }
+        Ok(t_evals_on_h)
     }
 }

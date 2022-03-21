@@ -24,6 +24,7 @@ mod error;
 mod impl_constraint_var;
 mod impl_lc;
 
+use algebra::serialize::*;
 pub use algebra::ToConstraintField;
 pub use constraint_system::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger,
@@ -34,6 +35,7 @@ pub use error::SynthesisError;
 use algebra::Field;
 use smallvec::SmallVec as StackVec;
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 
 type SmallVec<F> = StackVec<[(Variable, F); 16]>;
 
@@ -62,6 +64,37 @@ pub enum Index {
     Input(usize),
     /// Index of an auxiliary (or private) variable.
     Aux(usize),
+}
+
+impl CanonicalSerialize for Index {
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        let (is_input, size) = match self {
+            Index::Input(size) => (true, size),
+            Index::Aux(size) => (false, size),
+        };
+        CanonicalSerialize::serialize(&is_input, &mut writer)?;
+        writer.write_all(&(*size as u32).to_le_bytes())?;
+        Ok(())
+    }
+
+    fn serialized_size(&self) -> usize {
+        1 + std::mem::size_of::<u32>()
+    }
+}
+
+impl CanonicalDeserialize for Index {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let is_input = <bool as CanonicalDeserialize>::deserialize(&mut reader)?;
+        let mut size_bytes = [0u8; std::mem::size_of::<u32>()];
+        reader.read_exact(&mut size_bytes)?;
+        let size = usize::try_from(u32::from_le_bytes(size_bytes))
+            .map_err(|_| SerializationError::InvalidData)?;
+        if is_input {
+            Ok(Index::Input(size))
+        } else {
+            Ok(Index::Aux(size))
+        }
+    }
 }
 
 impl PartialOrd for Index {

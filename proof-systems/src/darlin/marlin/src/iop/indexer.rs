@@ -5,7 +5,7 @@ use crate::iop::{Error, IOP};
 use crate::{ToString, Vec};
 use algebra::{
     get_best_evaluation_domain, serialize::*, EvaluationDomain, Evaluations as EvaluationsOnDomain,
-    PrimeField, SemanticallyValid, SparseMatrix, ToBytes,
+    PrimeField, SemanticallyValid, ToBytes,
 };
 use derivative::Derivative;
 use poly_commit::LabeledPolynomial;
@@ -89,11 +89,11 @@ pub struct Index<F: PrimeField> {
     pub index_info: IndexInfo<F>,
 
     /// The `A` matrix for the R1CS instance, in sparse representation.
-    pub a: SparseMatrix<F>,
+    pub a: Vec<Vec<(F, VarIndex)>>,
     /// The `B` matrix for the R1CS instance, in sparse representation.
-    pub b: SparseMatrix<F>,
+    pub b: Vec<Vec<(F, VarIndex)>>,
     /// The `C` matrix for the R1CS instance, in sparse representation
-    pub c: SparseMatrix<F>,
+    pub c: Vec<Vec<(F, VarIndex)>>,
 
     /// Arithmetization of the matrix`A`, which essentially contains
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
@@ -249,30 +249,27 @@ impl<F: PrimeField> IOP<F> {
             index_info.num_non_zero,
         )?;
 
-        // Convert R1CS from the representation used inside `ConstraintSystem` to the SparseMatrix
-        // representation used in `algebra` module.
-        let mut a = to_matrix_helper(&ics.at, &domain_h, &domain_x);
-        let mut b = to_matrix_helper(&ics.bt, &domain_h, &domain_x);
-        let mut c = to_matrix_helper(&ics.ct, &domain_h, &domain_x);
-
         let a_arithmetization_time = start_timer!(|| "Arithmetizing A");
-        let a_arith = arithmetize_matrix("a", &mut a, &domain_k, &domain_h, &domain_b)?;
+        let a_arith =
+            arithmetize_matrix("a", &mut ics.at, &domain_x, &domain_k, &domain_h, &domain_b)?;
         end_timer!(a_arithmetization_time);
 
         let b_arithmetization_time = start_timer!(|| "Arithmetizing B");
-        let b_arith = arithmetize_matrix("b", &mut b, &domain_k, &domain_h, &domain_b)?;
+        let b_arith =
+            arithmetize_matrix("b", &mut ics.bt, &domain_x, &domain_k, &domain_h, &domain_b)?;
         end_timer!(b_arithmetization_time);
 
         let c_arithmetization_time = start_timer!(|| "Arithmetizing C");
-        let c_arith = arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_b)?;
+        let c_arith =
+            arithmetize_matrix("c", &mut ics.ct, &domain_x, &domain_k, &domain_h, &domain_b)?;
         end_timer!(c_arithmetization_time);
 
         end_timer!(index_time);
         Ok(Index {
             index_info,
-            a,
-            b,
-            c,
+            a: ics.at,
+            b: ics.bt,
+            c: ics.ct,
             a_arith,
             b_arith,
             c_arith,
@@ -354,7 +351,9 @@ pub struct MatrixEvals<F: PrimeField> {
 pub(crate) fn arithmetize_matrix<F: PrimeField>(
     matrix_name: &str,
     // The R1CS matrix.
-    matrix: &mut SparseMatrix<F>,
+    matrix: &mut Vec<Vec<(F, VarIndex)>>,
+    // The public input domain `X`.
+    domain_x: &Box<dyn EvaluationDomain<F>>,
     // The indexer domain `K`.
     domain_k: &Box<dyn EvaluationDomain<F>>,
     // The domain `H` for the Lagrange representation of `M` .
@@ -377,9 +376,9 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
             row.sort_by(|(_, a), (_, b)| a.cmp(b));
         };
 
-        for &mut (val, c) in row {
+        for &mut (val, c_varindex) in row {
             row_vec.push(elems[r]);
-            col_vec.push(elems[c]);
+            col_vec.push(elems[varindex_to_linear_index(c_varindex, domain_h, domain_x)?]);
             val_vec.push(val);
         }
     }
@@ -444,6 +443,24 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
     })
 }
 
+/// Convert the column index from a `VarIndex` as used inside `ConstraintSystem` to a linear
+/// index, with columns related to public inputs numbered accordingly to the treatment
+/// of `domain_x` as a subdomain of `domain_h`.
+pub(crate) fn varindex_to_linear_index<F: PrimeField>(
+    var_index: VarIndex,
+    domain_h: &Box<dyn EvaluationDomain<F>>,
+    domain_x: &Box<dyn EvaluationDomain<F>>,
+) -> Result<usize, Error> {
+    let domain_x_size = domain_x.size();
+    let idx = match var_index {
+        VarIndex::Input(i) => i,
+        VarIndex::Aux(i) => domain_x_size + i,
+    };
+    domain_h
+        .reindex_by_subdomain(domain_x_size, idx)
+        .map_err(|e| Error::Other(format!("{}", e)))
+}
+
 fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> bool) -> bool {
     if x_s.is_empty() {
         true
@@ -455,162 +472,5 @@ fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> boo
             i += 1;
         }
         is_sorted
-    }
-}
-
-/*
-    Elementary R1CS matrix conversion.
-
-*/
-
-/// This function converts a R1CS matrix from ginger-lib into the sparse matrix representation
-/// `Matrix` as used in this crate.
-/// The columns of the matrix are re-arranged to be coherent with the treatment of input variables
-/// as a subdomain of the full variable vector.
-fn to_matrix_helper<F: PrimeField>(
-    matrix: &[Vec<(F, VarIndex)>],
-    domain_h: &Box<dyn EvaluationDomain<F>>,
-    domain_x: &Box<dyn EvaluationDomain<F>>,
-) -> SparseMatrix<F> {
-    let mut new_matrix = Vec::with_capacity(matrix.len());
-    let domain_x_size = domain_x.size();
-    for row in matrix {
-        let mut new_row = Vec::with_capacity(row.len());
-        for (fe, column) in row {
-            let column = match column {
-                VarIndex::Input(i) => *i,
-                VarIndex::Aux(i) => domain_x_size + i,
-            };
-            let index = domain_h
-                .reindex_by_subdomain(domain_x_size, column)
-                .unwrap();
-            new_row.push((*fe, index))
-        }
-        new_matrix.push(new_row)
-    }
-    new_matrix
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::IOP;
-    use algebra::dense_matrix::DenseMatrix;
-    use algebra::fields::tweedle::fq::Fq as F;
-    use algebra::UniformRand;
-    use num_traits::{One, Zero};
-    use rand::distributions::{Distribution, Uniform};
-    use rand::{thread_rng, RngCore};
-
-    fn build_random_matrix(
-        num_inputs: usize,
-        num_aux: usize,
-        num_constraints: usize,
-        fill_factor: f64,
-        rng: &mut dyn RngCore,
-    ) -> SparseMatrix<F> {
-        let num_padded_inputs = get_best_evaluation_domain::<F>(num_inputs).unwrap().size();
-        let mut matrix = DenseMatrix::<F>::generate_random(
-            num_constraints,
-            num_inputs + num_aux,
-            fill_factor,
-            rng,
-        );
-        for i in 0..matrix.num_rows {
-            for j in 0..matrix.num_cols {
-                if j >= num_inputs && j < num_padded_inputs {
-                    matrix.val[i * matrix.num_cols + j] = F::zero();
-                }
-            }
-        }
-        matrix.to_sparse()
-    }
-
-    #[test]
-    fn matrix_arithmetization() {
-        let num_rounds = 100;
-
-        let num_inputs_dist = Uniform::from(1..100);
-        let num_aux_dist = Uniform::from(1..100);
-        let num_constraints_dist = Uniform::from(1..200);
-        let fill_factor_dist = Uniform::new(0.0, 1.0);
-
-        let rng = &mut thread_rng();
-
-        for _ in 0..num_rounds {
-            let num_inputs = num_inputs_dist.sample(rng);
-            let num_aux = num_aux_dist.sample(rng);
-            let num_constraints = num_constraints_dist.sample(rng);
-            let fill_factor = fill_factor_dist.sample(rng);
-
-            let mut matrix =
-                build_random_matrix(num_inputs, num_aux, num_constraints, fill_factor, rng);
-            let num_non_zero = matrix.iter().map(|row| row.len()).sum();
-            let (domain_h, domain_k, _domain_x, domain_b) =
-                IOP::build_domains(num_aux, num_inputs, num_constraints, num_non_zero).unwrap();
-
-            let arithmetization =
-                arithmetize_matrix("m", &mut matrix, &domain_k, &domain_h, &domain_b).unwrap();
-
-            // Random points for checking that dense and sparse representations of the matrix coincide
-            let x = loop {
-                let x = F::rand(rng);
-                // check that x does not belong to domain_k
-                if !domain_k.evaluate_vanishing_polynomial(x).is_zero() {
-                    break x;
-                }
-            };
-            let y = loop {
-                let y = F::rand(rng);
-                // check that y does not belong to domain_k
-                if !domain_k.evaluate_vanishing_polynomial(y).is_zero() {
-                    break y;
-                }
-            };
-
-            // Evaluate M(x,y) using dense representation
-            //   M(X,Y) = \sum_{i,j = 1...n} M_{i,j} * L(X, z_i) * L(Y, z_j)
-            // where
-            //   n is the size of the Lagrange domain H
-            //   z_i for i = 1...n are the roots of unity associated to H
-            //   L(.,.) is the bivariate Lagrange kernel
-            let lagrange_h_x = domain_h.domain_eval_lagrange_kernel(x).unwrap();
-            let lagrange_h_y = domain_h.domain_eval_lagrange_kernel(y).unwrap();
-            let mut result_dense = F::zero();
-
-            for (i, row) in matrix.iter().enumerate() {
-                for &(val, j) in row {
-                    result_dense += val * lagrange_h_x[i] * lagrange_h_y[j];
-                }
-            }
-
-            // Evaluate M(x,y) using sparse representation.
-            //   M(X,Y) = (X^n - 1)*(Y^n - 1)/n^2
-            //            * \sum_{w \in K} val.row.col(w) / ((X - row(w))*(Y - col(w))) mod (X^m - 1)
-            // where
-            //   n is the size of the Lagrange domain H
-            //   m is the size of the domain K
-            let val_row_col_on_k = arithmetization
-                .val_row_col
-                .evaluate_over_domain_by_ref(domain_k.clone());
-            let row_on_k = arithmetization
-                .row
-                .evaluate_over_domain_by_ref(domain_k.clone());
-            let col_on_k = arithmetization.col.evaluate_over_domain_by_ref(domain_k);
-            let scaling_factor = (x.pow(&[domain_h.size() as u64]) - F::one())
-                * (y.pow(&[domain_h.size() as u64]) - F::one())
-                * domain_h.size_inv()
-                * domain_h.size_inv();
-            let sparse_repr: F = row_on_k
-                .evals
-                .iter()
-                .zip(col_on_k.evals.iter())
-                .zip(val_row_col_on_k.evals.iter())
-                .map(|((r, c), vrc)| *vrc / ((x - r) * (y - c)))
-                .sum();
-            let result_sparse = scaling_factor * sparse_repr;
-
-            assert_eq!(result_dense, result_sparse);
-        }
     }
 }
