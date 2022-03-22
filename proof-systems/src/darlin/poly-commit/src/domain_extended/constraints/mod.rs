@@ -1,8 +1,6 @@
-use crate::{
-    safe_mul_bits, BDFGMultiPointProof, DomainExtendedPolynomialCommitment, Evaluations,
-    LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment,
-    PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget,
-};
+use crate::{safe_mul_bits, BDFGMultiPointProof, DomainExtendedPolynomialCommitment, Evaluations,
+            LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment,
+            PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget};
 use algebra::{Group, PrimeField};
 //use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};

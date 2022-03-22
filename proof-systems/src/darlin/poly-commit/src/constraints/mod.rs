@@ -24,6 +24,7 @@ use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
 use r1cs_std::FromGadget;
 
 /// multiply `base_point` to `scalar` dealing with the corner case that `base_point` may be zero
+/// `scalar` must be an iterator over the bits of the scalar in *little-endian* order
 pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
     mut cs: CS,
     base_point: &PCG::Commitment,
@@ -129,7 +130,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(cs, base, challenge)
     }
     /// This function specifies how to convert a challenge squeezed from the random oracle to a
-    /// gadget for `G::ScalarField` with `challenge` as a *big-endian* representation
+    /// gadget for `G::ScalarField` with `challenge` as a *little-endian* representation
     fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
         challenge: &[Boolean],
@@ -167,7 +168,6 @@ pub trait PolynomialCommitmentVerifierGadget<
         proof: &Self::Proof,
         random_oracle: &mut Self::RandomOracle,
     ) -> Result<Self::VerifierState, Self::Error> {
-        assert_eq!(labeled_commitments.len(), values.len());
 
         let lambda = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),

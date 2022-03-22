@@ -1,11 +1,12 @@
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use algebra::{EndoMulCurve, Field, Group, GroupVec};
+use num_traits::Zero;
+use algebra::{Field, Group, GroupVec};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use crate::boolean::Boolean;
 use crate::eq::EqGadget;
-use crate::groups::{EndoMulCurveGadget, GroupGadget};
+use crate::groups:: GroupGadget;
 use crate::prelude::{CondSelectGadget, UInt8};
 use crate::{ToBitsGadget, ToBytesGadget};
 use crate::alloc::{AllocGadget, ConstantGadget};
@@ -76,6 +77,23 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ToBytesGadge
 
 impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> EqGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
     fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
+        // deal with `self` or `other` being the empty vector
+        match (self.len(), other.len()) {
+            (0, 0) => { // in this case the vectors are trivially equal
+                return Ok(Boolean::Constant(true));
+            },
+            (0, _) => {
+                // `self` is the empty vector (i.e., the zero element), so `self == other` iff
+                // `other` is a vector of zero elements (i.e., the non-canonical representation of zero)
+                return other.is_zero(cs.ns(|| "check if other is zero"));
+            },
+            (_, 0) => {
+                // `other` is the empty vector (i.e., the zero element), so `self == other` iff
+                // `self` is a vector of zero elements (i.e., the non-canonical representation of zero)
+                return self.is_zero(cs.ns(|| "check if self is zero"))
+            },
+            (_,_) => {},
+        };
         if self.len() != other.len() {
             Err(SynthesisError::Unsatisfiable)?
         }
@@ -110,41 +128,41 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ToBitsGadget
 
 impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> CondSelectGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
     fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, cond: &Boolean, first: &Self, second: &Self) -> Result<Self, SynthesisError> {
+        // deal with `first` or `second` being the empty vector
+        let padded_vec;
+        let (first, second) = match (first.len(), second.len()) {
+            (0, 0) => { // in this case the vectors are equal, so we can return one of them independently from cond
+                return Ok(first.clone());
+            },
+            (0, len) => {
+                // `first` is the empty vector, so we pad it with zeros to make it as long as `second`
+                let padded_first =(0..len).map(|i| GG::zero(cs.ns(|| format!("alloc {}-th zero element", i)))).collect::<Result<Vec<_>, SynthesisError>>()?;
+                padded_vec = Self::new(padded_first);
+                (&padded_vec, second)
+            },
+            (len, 0) => {
+                // `second` is the empty vector, so we pad it with zeros to make it as long as `first`
+                let padded_second =(0..len).map(|i| GG::zero(cs.ns(|| format!("alloc {}-th zero element", i)))).collect::<Result<Vec<_>, SynthesisError>>()?;
+                padded_vec = Self::new(padded_second);
+                (first, &padded_vec)
+            },
+            (_,_) => (first, second)
+        };
+
+        if first.len() != second.len() {
+            Err(SynthesisError::Other(format!("cond select between group gadget vectors with different lengths: self.len = {}, other.len = {}", first.len(), second.len())))?
+        }
+
         let mut res_vec = Vec::new();
         for (i,(el1, el2)) in first.iter().zip(second.iter()).enumerate() {
             res_vec.push(GG::conditionally_select(cs.ns(|| format!("cond select element {}", i)), cond, el1, el2)?);
         }
-        let zero = GG::zero(cs.ns(|| "alloc zero"))?;
-        if first.len() > second.len() {
-            for (i, el) in first.iter().enumerate().skip(second.len()) {
-                res_vec.push(GG::conditionally_select(cs.ns(|| format!("cond select element {}", i)), cond, el, &zero)?)
-            }
-        } else {
-            for (i, el) in second.iter().enumerate().skip(first.len()) {
-                res_vec.push(GG::conditionally_select(cs.ns(|| format!("cond select element {}", i)), cond, &zero, &el)?)
-            }
-        };
+
         Ok(Self::new(res_vec))
     }
 
     fn cost() -> usize {
         unimplemented!()
-    }
-}
-
-impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> AllocGadget<G, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
-    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError> where F: FnOnce() -> Result<T, SynthesisError>, T: Borrow<G> {
-        let t = f()?;
-        let g = t.borrow();
-        let gg = GG::alloc(cs.ns(|| "alloc group gadget"), || Ok(g))?;
-        Ok(Self::new(vec![gg]))
-    }
-
-    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError> where F: FnOnce() -> Result<T, SynthesisError>, T: Borrow<G> {
-        let t = f()?;
-        let g = t.borrow();
-        let gg = GG::alloc_input(cs.ns(|| "alloc group gadget"), || Ok(g))?;
-        Ok(Self::new(vec![gg]))
     }
 }
 
@@ -170,17 +188,27 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> AllocGadget<
     }
 }
 
-impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ConstantGadget<G, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
-    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS, value: &G) -> Self {
-        Self::new(vec![GG::from_value(cs, value)])
+impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ConstantGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
+    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, value: &GroupVec<G>) -> Self {
+        let mut res_vec = Vec::with_capacity(value.len());
+        for (i, el) in value.iter().enumerate() {
+            res_vec.push(GG::from_value(cs.ns(|| format!("alloc constant element {}", i)), el));
+        }
+
+        Self::new(res_vec)
     }
 
-    fn get_constant(&self) -> G {
-        unimplemented!()
+    fn get_constant(&self) -> GroupVec<G> {
+        let mut res_vec = Vec::with_capacity(self.len());
+        for el in self.iter() {
+            res_vec.push(el.get_constant());
+        }
+
+        GroupVec::<G>::new(res_vec)
     }
 }
 
-impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<G, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
+impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
     type Value = Vec<GG::Value>;
     type Variable = Vec<GG::Variable>;
 
@@ -188,8 +216,8 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         let mut vec = Vec::with_capacity(self.len());
         for gg in self.iter() {
             match gg.get_value() {
-                    Some(g) => vec.push(g),
-                    None => return None,
+                Some(g) => vec.push(g),
+                None => return None,
             };
         }
         Some(vec)
@@ -203,15 +231,18 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         variables
     }
 
-    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
-        Ok(Self {
-            vec: vec![GG::zero(cs)?],
-            _field: PhantomData,
-            _group: PhantomData,
-        })
+    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(_cs: CS) -> Result<Self, SynthesisError> {
+        // "canonical" representation of zero is the empty vector.
+        // However, zero may also be represented by a vector with all zero elements,
+        // as an output of a subtraction.
+        Ok(Self::new(vec![]))
     }
 
     fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Boolean, SynthesisError> {
+        // zero element can either be the empty vector of a vector with all zeros
+        if self.len() == 0 {
+            return Ok(Boolean::Constant(false))
+        }
         let mut zero_flags = Vec::with_capacity(self.len());
         for (i, gg) in self.iter().enumerate() {
             zero_flags.push(gg.is_zero(cs.ns(|| format!("check if element {} is zero", i)))?);
@@ -221,6 +252,13 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Self, SynthesisError> {
+        // deal with self or other being the empty vector (i.e., the zero representation)
+        if self.len() == 0 {
+            return Ok(other.clone())
+        }
+        if other.len() == 0 {
+            return Ok(self.clone())
+        }
         let mut sum_vec = self.iter()
             .zip(other.iter())
             .enumerate()
@@ -234,23 +272,32 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         } else {
             sum_vec.extend_from_slice(&other.vec.as_slice()[self_len..])
         }
-        Ok(Self{
-            vec: sum_vec,
-            _field: PhantomData,
-            _group: PhantomData,
-        })
+        Ok(Self::new(sum_vec))
     }
 
-    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &G) -> Result<Self, SynthesisError> {
-        let sum_vec = self.iter().enumerate()
-            .map(|(i,el)|
-                el.add_constant(cs.ns(|| format!("self[{}]*other", i)), other)
-            ).collect::<Result<Vec<_>, SynthesisError>>()?;
-        Ok(Self {
-            vec: sum_vec,
-            _field: PhantomData,
-            _group: PhantomData,
-        })
+    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &GroupVec<G>) -> Result<Self, SynthesisError> {
+        // dealing with self or other being zero
+        if self.len() == 0 {
+            return Ok(Self::from_value(&mut cs, other));
+        }
+        if other.is_zero() {
+            return Ok(self.clone());
+        }
+        let mut sum_vec = self.iter()
+            .zip(other.iter())
+            .enumerate()
+            .map(|(i,(el1, el2))| {
+                el1.add_constant(cs.ns(|| format!("self[{}]+other[{}]",i,i)), el2)
+            }).collect::<Result<Vec<_>, SynthesisError>>()?;
+        let self_len = self.len();
+        let other_len = other.len();
+        if self_len > other_len {
+            sum_vec.extend_from_slice(&self.vec.as_slice()[other_len..])
+        } else {
+            let other_vec = other.iter().skip(self_len).enumerate().map(|(i, el)| GG::from_value(cs.ns(|| format!("alloc constant element {} of other", self_len+i)), el)).collect::<Vec<_>>();
+            sum_vec.extend_from_slice(&other_vec.as_slice())
+        }
+        Ok(Self::new(sum_vec))
     }
 
     fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(&mut self, mut cs: CS) -> Result<(), SynthesisError> {
@@ -277,126 +324,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         Ok(Self::new(res_vec))
     }
 
-    // pointless to implement it, would be equivalent to GG::mul_bits_fixed_base
-    fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(_base: &G, _cs: CS, _bits: &[Boolean]) -> Result<Self, SynthesisError> {
-        unimplemented!()
-    }
-
-    fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(&mut self, _cs: CS, _scalar_bits_with_base_powers: I) -> Result<(), SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, I: Iterator<Item=(B, &'a G)>, B: Borrow<Boolean>, G: 'a {
-        unimplemented!()
-    }
-    // pointless to implement it, would be equivalent to GG::mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers
-    fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(_cs: CS, _bases: &[B], _powers: &[J]) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, I: Borrow<[Boolean]>, J: Borrow<[I]>, B: Borrow<[G]> {
-        unimplemented!()
-    }
-
-    // pointless to implement it, would be equivalent to GG::fixed_base_msm_with_precomputed_base_powers
-    fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(_cs: CS, _bases: &[B], _scalars: I) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, I: Iterator<Item=&'a T>, B: Borrow<[G]> {
-        unimplemented!()
-    }
-
-    // pointless to implement it, would be equivalent to GG::fixed_base_msm
-    fn fixed_base_msm<'a, CS, T, IS, IB>(_cs: CS, _bases: IB, _scalars: IS) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, IS: Iterator<Item=&'a T>, IB: Iterator<Item=&'a G> {
-        unimplemented!()
-    }
-
-    fn cost_of_add() -> usize {
-        unimplemented!() // depend on the number of group gadgets in the vector
-    }
-
-    fn cost_of_double() -> usize {
-        unimplemented!() // depend on the number of group gadgets in the vector
-    }
-}
-
-impl<ConstraintF: Field, G: EndoMulCurve, GG: EndoMulCurveGadget<G, ConstraintF>> EndoMulCurveGadget<G, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
-    fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Self, SynthesisError> {
-        let mut res_vec = Vec::with_capacity(self.len());
-        for (i, el) in self.iter().enumerate() {
-            res_vec.push(el.apply_endomorphism(cs.ns(|| format!("apply endomorphism to self[{}]", i)))?);
-        }
-        Ok(Self::new(res_vec))
-    }
-
-    fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, bits: &[Boolean]) -> Result<Self, SynthesisError> {
-        let mut res_vec = Vec::with_capacity(self.len());
-        for (i, el) in self.iter().enumerate() {
-            res_vec.push(el.endo_mul(cs.ns(|| format!("self[{}]*bits", i)), bits)?);
-        }
-        Ok(Self::new(res_vec))
-    }
-}
-
-impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ConstantGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
-    fn from_value<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, value: &GroupVec<G>) -> Self {
-        let mut res_vec = Vec::with_capacity(value.len());
-        for (i, el) in value.iter().enumerate() {
-            res_vec.push(GG::from_value(cs.ns(|| format!("alloc constant element {}", i)), el));
-        }
-
-        Self::new(res_vec)
-    }
-
-    fn get_constant(&self) -> GroupVec<G> {
-        let mut res_vec = Vec::with_capacity(self.len());
-        for el in self.iter() {
-            res_vec.push(el.get_constant());
-        }
-
-        GroupVec::<G>::new(res_vec)
-    }
-}
-
-impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<GroupVec<G>, ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
-    type Value = <Self as GroupGadget<G, ConstraintF>>::Value;
-    type Variable = <Self as GroupGadget<G, ConstraintF>>::Variable;
-
-    fn get_value(&self) -> Option<Self::Value> {
-        <Self as GroupGadget<G, ConstraintF>>::get_value(&self)
-    }
-
-    fn get_variable(&self) -> Self::Variable {
-        <Self as GroupGadget<G, ConstraintF>>::get_variable(&self)
-    }
-
-    fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(cs: CS) -> Result<Self, SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::zero(cs)
-    }
-
-    fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS) -> Result<Boolean, SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::is_zero(&self, cs)
-    }
-
-    fn add<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS, other: &Self) -> Result<Self, SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::add(&self, cs, other)
-    }
-
-    fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &GroupVec<G>) -> Result<Self, SynthesisError> {
-        let mut sum_vec = self.iter()
-            .zip(other.iter())
-            .enumerate()
-            .map(|(i,(el1, el2))| {
-                el1.add_constant(cs.ns(|| format!("self[{}]+other[{}]",i,i)), el2)
-            }).collect::<Result<Vec<_>, SynthesisError>>()?;
-        let self_len = self.len();
-        let other_len = other.len();
-        if self_len > other_len {
-            sum_vec.extend_from_slice(&self.vec.as_slice()[other_len..])
-        } else {
-            let other_vec = other.iter().skip(self_len).enumerate().map(|(i, el)| GG::from_value(cs.ns(|| format!("alloc constant element {} of other", self_len+i)), el)).collect::<Vec<_>>();
-            sum_vec.extend_from_slice(&other_vec.as_slice())
-        }
-        Ok(Self{
-            vec: sum_vec,
-            _field: PhantomData,
-            _group: PhantomData,
-        })
-    }
-
-
-    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS, bits: impl Iterator<Item=&'a Boolean>) -> Result<Self, SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::mul_bits(self, cs, bits)
-    }
 
     fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(base: &GroupVec<G>, mut cs: CS, bits: &[Boolean]) -> Result<Self, SynthesisError> {
         let mut res_vec = Vec::with_capacity(base.len());
@@ -407,13 +334,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         Ok(Self::new(res_vec))
     }
 
-    fn double_in_place<CS: ConstraintSystemAbstract<ConstraintF>>(&mut self, cs: CS) -> Result<(), SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::double_in_place(self, cs)
-    }
-
-    fn negate<CS: ConstraintSystemAbstract<ConstraintF>>(&self, cs: CS) -> Result<Self, SynthesisError> {
-        <Self as GroupGadget<G, ConstraintF>>::negate(self, cs)
-    }
 
     fn cost_of_add() -> usize {
         unimplemented!()
@@ -436,6 +356,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn fixed_base_msm<'a, CS, T, IS, IB>(_cs: CS, _bases: IB, _scalars: IS) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, IS: Iterator<Item=&'a T>, IB: Iterator<Item=&'a GroupVec<G>> {
-        todo!()
+        unimplemented!()
     }
 }
