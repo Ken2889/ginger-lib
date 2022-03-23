@@ -40,20 +40,21 @@ impl<
     // which can be used to verify an opening proof for the polynomial at point `point`.
     // For efficiency, the function allows to simultaneously convert set of commitments
     // for multiple segmented polynomials with an opening proof for the same point `point`.
-    fn combine_commitments<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
+    fn combine_commitments<'a, CS, I>(
         mut cs: CS,
         vk: &PCG::VerifierKeyGadget,
-        commitments: &[&'a LabeledCommitmentGadget<
-            ConstraintF,
-            <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
-            <Self as PolynomialCommitmentVerifierGadget<
-                ConstraintF,
-                G,
-                DomainExtendedPolynomialCommitment<G, PC>,
-            >>::CommitmentGadget,
-        >],
+        commitments: I,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     ) -> Result<Vec<LabeledCommitmentGadget<ConstraintF, G, PCG::CommitmentGadget>>, SynthesisError>
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            I: IntoIterator<
+                Item = &'a LabeledCommitmentGadget<
+                    ConstraintF,
+                    <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
+                    <Self as PolynomialCommitmentVerifierGadget<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>>>::CommitmentGadget,
+                >,
+            >,
     {
         let s = vk.degree() + 1;
         let point_to_s = point.pow_by_constant(cs.ns(|| "point^s"), [s as u64])?;
@@ -167,7 +168,7 @@ impl<
         let labeled_combined_commitment = Self::combine_commitments(
             cs.ns(|| "combine segmented commitment"),
             vk,
-            [&labeled_commitment].as_ref(),
+            [labeled_commitment].as_ref(),
             point,
         )?;
         assert_eq!(labeled_combined_commitment.len(), 1);
@@ -185,18 +186,9 @@ impl<
         )
     }
 
-    // Override default implementation of PolynomialCommitmentVerifierGadget to combine the
-    // commitments of the segments of each polynomial before batching the polynomials.
-    // ToDo: this implementation does not seem to outperform the default one except for few cases; therefore, it is left here as commented as in future we might run extensive benchmarks to determine the optimal strategy depending on the number of segments and the number of polynomials
-    /*fn succinct_verify_single_point_multi_poly<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, vk: &Self::VerifierKey, labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, GG, DomainExtendedPolynomialCommitment<G, PC>>], point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>, values: &[NonNativeFieldGadget<G::ScalarField, ConstraintF>], proof: &Self::Proof, random_oracle: &mut Self::RandomOracle) -> Result<Self::VerifierState, Self::Error> {
-        let combined_commitments = Self::combine_commitments(cs.ns(|| "combine segmented commitments"), vk, labeled_commitments, point)?;
-
-        PCG::succinct_verify_single_point_multi_poly(cs.ns(|| ""), vk, combined_commitments.as_slice(), point, values, proof, random_oracle)
-    }*/
 
     // Override default implementation of PolynomialCommitmentVerifierGadget to combine the
     // commitments of the segments of each polynomial before batching the polynomials.
-    // ToDo: This implementation seems to be most efficient than default one in most of the cases, but extensive benchmarks may be necessary to determine the optimal strategy depending on the number of segments and the number of polynomials.
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &Self::VerifierKeyGadget,
@@ -247,17 +239,17 @@ impl<
         let combined_commitments = Self::combine_commitments(
             cs.ns(|| "combine segmented commitments"),
             vk,
-            labeled_commitments_to_be_combined.as_slice(),
+            labeled_commitments_to_be_combined,
             &evaluation_point,
         )?;
         let labeled_combined_h_commitment = combined_commitments
-            .get(labeled_commitments_to_be_combined.len() - 1)
+            .get(combined_commitments.len() - 1)
             .unwrap();
 
         let (mut batched_commitment, batched_value) =
             multi_poly_multi_point_batching::<ConstraintF, G, PC, PCG, _, _>(
                 cs.ns(|| "multi point batching"),
-                &combined_commitments[..labeled_commitments_to_be_combined.len() - 1],
+                &combined_commitments[..combined_commitments.len() - 1],
                 points,
                 values,
                 &evaluation_point,
