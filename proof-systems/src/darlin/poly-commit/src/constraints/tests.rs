@@ -123,7 +123,7 @@ fn alloc_gadgets_for_succinct_verify<
 ) -> Result<
     (
         PCG::VerifierKeyGadget,
-        Vec<LabeledCommitmentGadget<PCG, ConstraintF, G, PC>>,
+        Vec<LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>>,
         PCG::RandomOracleGadget,
     ),
     SynthesisError,
@@ -325,13 +325,14 @@ fn test_multi_point_multi_poly_verify<
         )?;
         assert!(v_state.is_some());
 
-        let (vk_gadget, labeled_comms, mut fs_gadget) = alloc_gadgets_for_succinct_verify(
-            cs.ns(|| "alloc gadgets for verify"),
-            &vk,
-            &comms,
-            fs_seed,
-            &test_conf.negative_type,
-        )?;
+        let (vk_gadget, labeled_comms, mut fs_gadget) =
+            alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
+                cs.ns(|| "alloc gadgets for verify"),
+                &vk,
+                &comms,
+                fs_seed,
+                &test_conf.negative_type,
+            )?;
         let proof_gadget =
             PCG::MultiPointProofGadget::alloc(cs.ns(|| "alloc proof gadget"), || Ok(proof))?;
         let _v_state = PCG::succinct_verify_multi_poly_multi_point(
@@ -417,13 +418,14 @@ fn test_single_point_multi_poly_verify<
         if v_state.is_none() {
             Err(PolyError::FailedSuccinctCheck)?
         }
-        let (vk_gadget, labeled_comms, mut fs_gadget) = alloc_gadgets_for_succinct_verify(
-            cs.ns(|| "alloc gadgets for verify"),
-            &vk,
-            &comms,
-            fs_seed,
-            &test_conf.negative_type,
-        )?;
+        let (vk_gadget, labeled_comms, mut fs_gadget) =
+            alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
+                cs.ns(|| "alloc gadgets for verify"),
+                &vk,
+                &comms,
+                fs_seed,
+                &test_conf.negative_type,
+            )?;
         let proof_gadget = PCG::ProofGadget::alloc(cs.ns(|| "alloc proof"), || Ok(proof))?;
         let point_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
             cs.ns(|| "alloc point"),

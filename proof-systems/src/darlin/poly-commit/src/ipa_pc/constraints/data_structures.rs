@@ -20,7 +20,7 @@ use std::{borrow::Borrow, marker::PhantomData};
 pub struct IPAVerifierKeyGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
+    GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
 > {
     degree: usize,
     pub(crate) h: GG,
@@ -33,7 +33,7 @@ pub struct IPAVerifierKeyGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>,
+        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
     > VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
 {
     fn degree(&self) -> usize {
@@ -48,7 +48,7 @@ impl<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>,
+        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
     > AllocGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -171,7 +171,7 @@ impl<ConstraintF: PrimeField, G: EndoMulCurve<BaseField = ConstraintF>>
 pub struct IPAVerifierStateGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>,
+    GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
 > {
     check_poly: SuccinctCheckPolynomialGadget<ConstraintF, G>,
     final_comm_key: GG,
@@ -180,7 +180,7 @@ pub struct IPAVerifierStateGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>,
+        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
     > IPAVerifierStateGadget<ConstraintF, G, GG>
 {
     pub fn new(
@@ -197,7 +197,7 @@ impl<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>,
+        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
     > VerifierStateGadget<DLogItem<G>, ConstraintF> for IPAVerifierStateGadget<ConstraintF, G, GG>
 {
 }
@@ -205,7 +205,7 @@ impl<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>,
+        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
     > AllocGadget<DLogItem<G>, ConstraintF> for IPAVerifierStateGadget<ConstraintF, G, GG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -274,7 +274,8 @@ impl<
 pub struct IPAProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>
+    GG: 'static
+        + EndoMulCurveGadget<G, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
@@ -290,7 +291,8 @@ pub struct IPAProofGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>
+        GG: 'static
+            + EndoMulCurveGadget<G, ConstraintF>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
@@ -437,7 +439,8 @@ type IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG> =
 pub struct IPAMultiPointProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>
+    GG: 'static
+        + EndoMulCurveGadget<G, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
@@ -449,7 +452,8 @@ pub struct IPAMultiPointProofGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>
+        GG: 'static
+            + EndoMulCurveGadget<G, ConstraintF>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
@@ -511,7 +515,8 @@ impl<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>
+        GG: 'static
+            + EndoMulCurveGadget<G, ConstraintF>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,

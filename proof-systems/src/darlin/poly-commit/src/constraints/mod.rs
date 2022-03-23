@@ -81,14 +81,18 @@ where
 /// a `multi_point` succinct verification, batches the commitments and the evaluation in a single
 /// commitment and in a single value, respectively.
 pub(crate) fn multi_poly_multi_point_batching<
+    'a,
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     CS: ConstraintSystemAbstract<ConstraintF>,
+    I: IntoIterator<
+        Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
+    >,
 >(
     mut cs: CS,
-    labeled_commitments: &[LabeledCommitmentGadget<PCG, ConstraintF, G, PC>],
+    labeled_commitments: I,
     points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
     values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
     evaluation_point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
@@ -99,7 +103,10 @@ pub(crate) fn multi_poly_multi_point_batching<
         NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     ),
     PCG::Error,
-> {
+>
+where
+    <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+{
     let commitment_map: BTreeMap<_, _> = labeled_commitments
         .into_iter()
         .map(|commitment| (commitment.label(), commitment.commitment()))
@@ -250,7 +257,8 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// Gadget for the state returned by verify functions
     type VerifierStateGadget: VerifierStateGadget<PC::VerifierState, ConstraintF>;
     /// Gadget for the commitment
-    type CommitmentGadget: GroupGadget<PC::Commitment, ConstraintF>
+    type CommitmentGadget: 'static
+        + GroupGadget<PC::Commitment, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>
         + AllocGadget<PC::Commitment, ConstraintF>;
     /// Gadget for the proof
@@ -315,15 +323,24 @@ pub trait PolynomialCommitmentVerifierGadget<
 
     /// succinct check of the verification of an opening proof for multiple polynomials in the
     /// same point
-    fn succinct_verify_single_point_multi_poly<CS: ConstraintSystemAbstract<ConstraintF>>(
+    fn succinct_verify_single_point_multi_poly<'a, CS, IC, IV>(
         mut cs: CS,
         vk: &Self::VerifierKeyGadget,
-        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, PC>], //ToDo: see if we can take an impl IntoIterator as for the primitive
+        labeled_commitments: IC,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
-        values: &[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
+        values: IV, //&[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
         proof: &Self::ProofGadget,
         random_oracle: &mut Self::RandomOracleGadget,
-    ) -> Result<Self::VerifierStateGadget, Self::Error> {
+    ) -> Result<Self::VerifierStateGadget, Self::Error>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        IC: IntoIterator<
+            Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
+        >,
+        <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
+        IV: IntoIterator<Item = &'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+        <IV as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
         let lambda = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
         )?;
@@ -340,14 +357,14 @@ pub trait PolynomialCommitmentVerifierGadget<
         Therefore, we need to iterate the set of labeled commitments in reverse order.
         Same strategy is employed for values.
         */
-        let mut commitments_iter = labeled_commitments.iter().rev();
+        let mut commitments_iter = labeled_commitments.into_iter().rev();
         let mut batched_commitment = commitments_iter
             .next()
             .ok_or(SynthesisError::Other("no commitment provided".to_string()))?
             .commitment()
             .clone();
 
-        let mut values_iter = values.iter().rev();
+        let mut values_iter = values.into_iter().rev();
         let mut batched_value = values_iter
             .next()
             .ok_or(SynthesisError::Other("no evaluation provided".to_string()))?
@@ -394,15 +411,22 @@ pub trait PolynomialCommitmentVerifierGadget<
 
     /// succinct check of the verification of an opening proof for multiple polynomials in
     /// multiple points
-    fn succinct_verify_multi_poly_multi_point<CS: ConstraintSystemAbstract<ConstraintF>>(
+    fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &Self::VerifierKeyGadget,
-        labeled_commitments: &[LabeledCommitmentGadget<Self, ConstraintF, G, PC>],
+        labeled_commitments: I,
         points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         proof: &Self::MultiPointProofGadget,
         random_oracle: &mut Self::RandomOracleGadget,
-    ) -> Result<Self::VerifierStateGadget, Self::Error> {
+    ) -> Result<Self::VerifierStateGadget, Self::Error>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        I: IntoIterator<
+            Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
+        >,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
         )?;
@@ -419,14 +443,15 @@ pub trait PolynomialCommitmentVerifierGadget<
             &evaluation_point_bits,
         )?;
 
-        let (mut batched_commitment, batched_value) = multi_poly_multi_point_batching(
-            cs.ns(|| "multi point batching"),
-            labeled_commitments,
-            points,
-            values,
-            &evaluation_point,
-            &lambda_bits,
-        )?;
+        let (mut batched_commitment, batched_value) =
+            multi_poly_multi_point_batching::<ConstraintF, G, PC, Self, _, _>(
+                cs.ns(|| "multi point batching"),
+                labeled_commitments,
+                points,
+                values,
+                &evaluation_point,
+                &lambda_bits,
+            )?;
 
         batched_commitment =
             batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;

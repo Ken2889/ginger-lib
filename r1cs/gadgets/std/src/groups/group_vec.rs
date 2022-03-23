@@ -299,18 +299,18 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(&mut self, _cs: CS, _scalar_bits_with_base_powers: I) -> Result<(), SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, I: Iterator<Item=(B, &'a GroupVec<G>)>, B: Borrow<Boolean>, GroupVec<G>: 'a {
-        unimplemented!()
+        todo!()
     }
 
     fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(_cs: CS, _bases: &[B], _powers: &[J]) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, I: Borrow<[Boolean]>, J: Borrow<[I]>, B: Borrow<[GroupVec<G>]> {
-        unimplemented!()
+        todo!()
     }
 
     fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(_cs: CS, _bases: &[B], _scalars: I) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, I: Iterator<Item=&'a T>, B: Borrow<[GroupVec<G>]> {
-        unimplemented!()
+        todo!()
     }
 
     fn fixed_base_msm<'a, CS, T, IS, IB>(_cs: CS, _bases: IB, _scalars: IS) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, IS: Iterator<Item=&'a T>, IB: Iterator<Item=&'a GroupVec<G>> {
-        unimplemented!()
+        todo!()
     }
 }

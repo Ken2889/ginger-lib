@@ -1,34 +1,38 @@
-use crate::{
-    BDFGMultiPointProof, PCKey, PCVerifierState, PolynomialCommitment,
-    PolynomialCommitmentVerifierGadget, PolynomialLabel,
-};
+use crate::{BDFGMultiPointProof, PCKey, PCVerifierState, PolynomialLabel};
 use algebra::{Group, PrimeField};
+use r1cs_std::groups::GroupGadget;
 use r1cs_std::prelude::AllocGadget;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 pub struct LabeledCommitmentGadget<
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
-    PC: PolynomialCommitment<G>,
+    GG: GroupGadget<G, ConstraintF>,
 > {
     label: PolynomialLabel,
-    commitment: PCG::CommitmentGadget,
+    commitment: GG,
+    _constraintf: PhantomData<ConstraintF>,
+    _group: PhantomData<G>,
 }
 
-impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
+impl<ConstraintF, G, GG> LabeledCommitmentGadget<ConstraintF, G, GG>
 where
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
-    PC: PolynomialCommitment<G>,
+    GG: GroupGadget<G, ConstraintF>,
 {
     /// Instantiate a new labeled commitment from a label and a commitment gadget.
-    pub fn new(label: PolynomialLabel, commitment: PCG::CommitmentGadget) -> Self {
-        Self { label, commitment }
+    pub fn new(label: PolynomialLabel, commitment: GG) -> Self {
+        Self {
+            label,
+            commitment,
+            _constraintf: PhantomData::<ConstraintF>,
+            _group: PhantomData::<G>,
+        }
     }
 
     /// Return the label for `self`.
@@ -37,7 +41,7 @@ where
     }
 
     /// Retrieve the commitment from `self`.
-    pub fn commitment(&self) -> &PCG::CommitmentGadget {
+    pub fn commitment(&self) -> &GG {
         &self.commitment
     }
 }

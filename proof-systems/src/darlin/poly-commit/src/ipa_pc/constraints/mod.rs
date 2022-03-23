@@ -30,7 +30,8 @@ pub struct InnerProductArgGadget<
     ConstraintF: PrimeField,
     FSG: FiatShamirRngGadget<ConstraintF>,
     G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>
+    GG: 'static
+        + EndoMulCurveGadget<G, ConstraintF>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
 > {
     _constraint_field_phantom: PhantomData<ConstraintF>,
@@ -42,7 +43,8 @@ pub struct InnerProductArgGadget<
 impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: EndoMulCurveGadget<G, ConstraintF>
+        GG: 'static
+            + EndoMulCurveGadget<G, ConstraintF>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
