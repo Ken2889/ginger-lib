@@ -51,9 +51,8 @@ impl<G: Group> GroupVec<G> {
 
 impl<G: Group> Distribution<GroupVec<G>> for Standard {
     #[inline]
-    // better use the specific function `rand` which allows to specify the length of the vector
     fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> GroupVec<G> {
-        unimplemented!()
+        unimplemented!("use the specific function `rand` which allows to specify the length of the vector")
     }
 }
 

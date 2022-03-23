@@ -52,6 +52,17 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadgetV
     pub fn into_iter(&self) -> impl IntoIterator<Item=GG> {
         self.vec.clone().into_iter()
     }
+
+    /// this function allows to generate the zero element of `GroupGadgetVec as GroupGadget`.
+    /// It replaces the `zero` function of `GroupGadget`, as the latter does not allow to specify
+    /// the length of the zero vector
+    pub fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, length: u16) -> Result<Self, SynthesisError> {
+        Ok(
+            Self::new(
+            (0..length).map(|i| GG::zero(cs.ns(|| format!("alloc {}-th zero element", i)))).collect::<Result<Vec<_>, SynthesisError>>()?
+            )
+        )
+    }
 }
 
 
@@ -77,23 +88,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ToBytesGadge
 
 impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> EqGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
     fn is_eq<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
-        // deal with `self` or `other` being the empty vector
-        match (self.len(), other.len()) {
-            (0, 0) => { // in this case the vectors are trivially equal
-                return Ok(Boolean::Constant(true));
-            },
-            (0, _) => {
-                // `self` is the empty vector (i.e., the zero element), so `self == other` iff
-                // `other` is a vector of zero elements (i.e., the non-canonical representation of zero)
-                return other.is_zero(cs.ns(|| "check if other is zero"));
-            },
-            (_, 0) => {
-                // `other` is the empty vector (i.e., the zero element), so `self == other` iff
-                // `self` is a vector of zero elements (i.e., the non-canonical representation of zero)
-                return self.is_zero(cs.ns(|| "check if self is zero"))
-            },
-            (_,_) => {},
-        };
         if self.len() != other.len() {
             Err(SynthesisError::Unsatisfiable)?
         }
@@ -128,27 +122,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> ToBitsGadget
 
 impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> CondSelectGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG> {
     fn conditionally_select<CS: ConstraintSystemAbstract<ConstraintF>>(mut cs: CS, cond: &Boolean, first: &Self, second: &Self) -> Result<Self, SynthesisError> {
-        // deal with `first` or `second` being the empty vector
-        let padded_vec;
-        let (first, second) = match (first.len(), second.len()) {
-            (0, 0) => { // in this case the vectors are equal, so we can return one of them independently from cond
-                return Ok(first.clone());
-            },
-            (0, len) => {
-                // `first` is the empty vector, so we pad it with zeros to make it as long as `second`
-                let padded_first =(0..len).map(|i| GG::zero(cs.ns(|| format!("alloc {}-th zero element", i)))).collect::<Result<Vec<_>, SynthesisError>>()?;
-                padded_vec = Self::new(padded_first);
-                (&padded_vec, second)
-            },
-            (len, 0) => {
-                // `second` is the empty vector, so we pad it with zeros to make it as long as `first`
-                let padded_second =(0..len).map(|i| GG::zero(cs.ns(|| format!("alloc {}-th zero element", i)))).collect::<Result<Vec<_>, SynthesisError>>()?;
-                padded_vec = Self::new(padded_second);
-                (first, &padded_vec)
-            },
-            (_,_) => (first, second)
-        };
-
         if first.len() != second.len() {
             Err(SynthesisError::Other(format!("cond select between group gadget vectors with different lengths: self.len = {}, other.len = {}", first.len(), second.len())))?
         }
@@ -232,17 +205,10 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn zero<CS: ConstraintSystemAbstract<ConstraintF>>(_cs: CS) -> Result<Self, SynthesisError> {
-        // "canonical" representation of zero is the empty vector.
-        // However, zero may also be represented by a vector with all zero elements,
-        // as an output of a subtraction.
-        Ok(Self::new(vec![]))
+        unimplemented!("use the publicly available function `zero` of `GroupGadgetVec`, which allows to specify the length of the zero element to be generated")
     }
 
     fn is_zero<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Boolean, SynthesisError> {
-        // zero element can either be the empty vector of a vector with all zeros
-        if self.len() == 0 {
-            return Ok(Boolean::Constant(false))
-        }
         let mut zero_flags = Vec::with_capacity(self.len());
         for (i, gg) in self.iter().enumerate() {
             zero_flags.push(gg.is_zero(cs.ns(|| format!("check if element {} is zero", i)))?);
@@ -252,13 +218,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Self, SynthesisError> {
-        // deal with self or other being the empty vector (i.e., the zero representation)
-        if self.len() == 0 {
-            return Ok(other.clone())
-        }
-        if other.len() == 0 {
-            return Ok(self.clone())
-        }
         let mut sum_vec = self.iter()
             .zip(other.iter())
             .enumerate()
@@ -276,10 +235,6 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
     }
 
     fn add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS, other: &GroupVec<G>) -> Result<Self, SynthesisError> {
-        // dealing with self or other being zero
-        if self.len() == 0 {
-            return Ok(Self::from_value(&mut cs, other));
-        }
         if other.is_zero() {
             return Ok(self.clone());
         }

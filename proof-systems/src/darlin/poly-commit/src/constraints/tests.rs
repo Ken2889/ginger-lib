@@ -1,14 +1,15 @@
 use crate::{
     DomainExtendedPolyCommitVerifierGadget, DomainExtendedPolynomialCommitment, Error as PolyError,
-    Evaluations, LabeledCommitmentGadget, LabeledPolynomial,
-    PCKey, Polynomial, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap,
+    Evaluations, LabeledCommitment, LabeledCommitmentGadget, LabeledPolynomial, PCKey, Polynomial,
+    PolynomialCommitment, PolynomialCommitmentVerifierGadget, PolynomialLabel, QueryMap,
 };
 use algebra::{Field, Group, PrimeField, SemanticallyValid, ToBits, UniformRand};
 use blake2::Blake2s;
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{
-    ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
+    ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisError,
+    SynthesisMode,
 };
 use r1cs_std::alloc::AllocGadget;
 use r1cs_std::boolean::Boolean;
@@ -16,6 +17,7 @@ use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::groups::GroupGadget;
 use rand::{thread_rng, Rng};
 use rand_core::RngCore;
+use std::cmp;
 use std::collections::BTreeSet;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -67,6 +69,80 @@ fn commitment_for_alloc<G: Group, PC: PolynomialCommitment<G>>(
     }
 }
 
+fn setup_pc_parameters<G: Group, PC: PolynomialCommitment<G>, R: RngCore>(
+    test_conf: &TestInfo,
+    rng: &mut R,
+) -> Result<(usize, PC::CommitterKey, PC::VerifierKey), PC::Error> {
+    let max_degree: usize = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
+    let supported_degree: usize = test_conf
+        .supported_degree
+        .unwrap_or(rng.gen_range(1..=max_degree));
+    assert!(supported_degree <= max_degree);
+
+    let pp = PC::setup::<Blake2s>(max_degree)?;
+    // Note that we need to ensure that the degree provided as input to trim function must be >= 1,
+    // but supported_degree may be 0
+    let (ck, vk) = (
+        pp.0.trim(cmp::max(supported_degree, 1))?,
+        pp.1.trim(cmp::max(supported_degree, 1))?,
+    );
+
+    Ok((supported_degree, ck, vk))
+}
+
+fn generate_labeled_polynomial<R: RngCore, F: Field>(
+    segmented: bool,
+    label: PolynomialLabel,
+    supported_degree: usize,
+    rng: &mut R,
+) -> LabeledPolynomial<F> {
+    let poly_degree: usize = if segmented {
+        rng.gen_range(supported_degree..=10 * supported_degree)
+    } else {
+        rng.gen_range(0..=supported_degree)
+    };
+    let polynomial = Polynomial::rand(poly_degree, rng);
+
+    let is_hiding: bool = rng.gen();
+
+    LabeledPolynomial::new(label, polynomial, is_hiding)
+}
+
+fn alloc_gadgets_for_succinct_verify<
+    ConstraintF: PrimeField,
+    G: Group<BaseField = ConstraintF>,
+    PC: PolynomialCommitment<G>,
+    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
+    CS: ConstraintSystemAbstract<ConstraintF>,
+>(
+    mut cs: CS,
+    vk: &PC::VerifierKey,
+    commitments: &[LabeledCommitment<PC::Commitment>],
+    fs_seed: Vec<u8>,
+    test_type: &Option<NegativeTestType>,
+) -> Result<
+    (
+        PCG::VerifierKeyGadget,
+        Vec<LabeledCommitmentGadget<PCG, ConstraintF, G, PC>>,
+        PCG::RandomOracleGadget,
+    ),
+    SynthesisError,
+> {
+    let vk_gadget = PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
+    let mut labeled_comms = Vec::with_capacity(commitments.len());
+    for comm in commitments {
+        let label = comm.label();
+        let comm_gadget = PCG::CommitmentGadget::alloc(
+            cs.ns(|| format!("alloc commitment with label {}", label)),
+            || Ok(commitment_for_alloc::<G, PC>(comm.commitment(), test_type)),
+        )?;
+        labeled_comms.push(LabeledCommitmentGadget::new(label.clone(), comm_gadget));
+    }
+    let fs_gadget = PCG::RandomOracleGadget::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
+
+    Ok((vk_gadget, labeled_comms, fs_gadget))
+}
+
 fn test_succinct_verify_template<
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
@@ -77,37 +153,24 @@ fn test_succinct_verify_template<
 ) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
-        let max_degree: usize = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
-        let mut supported_degree: usize = test_conf
-            .supported_degree
-            .unwrap_or(rng.gen_range(1..=max_degree));
-        assert!(supported_degree <= max_degree);
+        let (supported_degree, ck, vk) = setup_pc_parameters::<G, PC, _>(&test_conf, rng)?;
 
-        let poly_degree: usize = if test_conf.segmented {
-            rng.gen_range(supported_degree..=10 * supported_degree)
-        } else {
-            rng.gen_range(0..=supported_degree)
-        };
-        let polynomial = Polynomial::rand(poly_degree, rng);
-
-        let pp = PC::setup::<Blake2s>(max_degree)?;
-        // trim function requires a supported_degree >= 1
-        if supported_degree == 0 {
-            supported_degree = 1;
-        }
-        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
-        let is_hiding: bool = rng.gen();
-
-        let (mut commitment, randomness) = PC::commit(&ck, &polynomial, is_hiding, Some(rng))?;
+        let labeled_polynomial =
+            generate_labeled_polynomial(test_conf.segmented, "".to_string(), supported_degree, rng);
+        let (polynomial, is_hiding) = (
+            labeled_polynomial.polynomial(),
+            labeled_polynomial.is_hiding(),
+        );
+        let (commitment, randomness) = PC::commit(&ck, polynomial, is_hiding, Some(rng))?;
 
         let point = G::ScalarField::rand(rng);
-        let mut value = polynomial.evaluate(point);
+        let value = polynomial.evaluate(point);
         let fs_seed = String::from("TEST_SEED").into_bytes();
         let mut fs_rng =
             PC::RandomOracle::from_seed(fs_seed.clone()).map_err(|err| PolyError::from(err))?;
         let proof = PC::open(
             &ck,
-            polynomial,
+            polynomial.clone(),
             point,
             is_hiding,
             randomness,
@@ -123,20 +186,20 @@ fn test_succinct_verify_template<
         }
 
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
-        match test_conf.negative_type {
-            Some(NegativeTestType::Commitments) => {
-                commitment = commitment * &G::ScalarField::rand(rng)
-            }
-            Some(NegativeTestType::Values) => value = G::ScalarField::rand(rng),
-            None => {}
-        }
-        let vk_gadget = PCG::VerifierKey::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
-        let commitment_gadget = PCG::Commitment::alloc(cs.ns(|| "alloc commitment"), || {
-            Ok(commitment_for_alloc::<G, PC>(
-                &commitment,
+
+        let (vk_gadget, labeled_commitments, mut fs_gadget) =
+            alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
+                cs.ns(|| "alloc gadgets for verify"),
+                &vk,
+                &vec![LabeledCommitment::<PC::Commitment>::new(
+                    "".to_string(),
+                    commitment.clone(),
+                )]
+                .as_slice(),
+                fs_seed,
                 &test_conf.negative_type,
-            ))
-        })?;
+            )?;
+        let commitment_gadget = labeled_commitments.get(0).unwrap().commitment();
 
         let point_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
             cs.ns(|| "alloc evaluation point"),
@@ -144,14 +207,15 @@ fn test_succinct_verify_template<
         )?;
         let value_gadget = Boolean::alloc_input_vec(
             cs.ns(|| "alloc polynomial evalauation on point"),
-            value.write_bits().as_slice(),
+            value_for_alloc::<G::ScalarField, _>(&value, &test_conf.negative_type, rng)
+                .write_bits()
+                .as_slice(),
         )?;
-        let proof_gadget = PCG::Proof::alloc(cs.ns(|| "alloc opening proof"), || Ok(proof))?;
-        let mut fs_gadget = PCG::RandomOracle::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
+        let proof_gadget = PCG::ProofGadget::alloc(cs.ns(|| "alloc opening proof"), || Ok(proof))?;
         let _v_state_gadget = PCG::succinct_verify(
             cs.ns(|| "succinct-verify"),
             &vk_gadget,
-            &commitment_gadget,
+            commitment_gadget,
             &point_gadget,
             &value_gadget,
             &proof_gadget,
@@ -166,7 +230,7 @@ fn test_succinct_verify_template<
         // test mul_bits_fixed_base for commitments
         let bits = fs_gadget
             .enforce_get_challenge::<_, 128>(cs.ns(|| "get random bits for mul_bits_fixed_base"))?;
-        PCG::Commitment::mul_bits_fixed_base(&commitment, cs, &bits[..])?;
+        PCG::CommitmentGadget::mul_bits_fixed_base(&commitment, cs, &bits[..])?;
     }
     Ok(())
 }
@@ -182,11 +246,8 @@ fn test_multi_point_multi_poly_verify<
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
-        let max_degree = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
-        let supported_degree = test_conf
-            .supported_degree
-            .unwrap_or(rng.gen_range(1..=max_degree));
-        assert!(supported_degree <= max_degree);
+
+        let (supported_degree, ck, vk) = setup_pc_parameters::<G, PC, _>(&test_conf, rng)?;
 
         let max_num_polynomials = test_conf.num_polynomials;
         let num_polynomials = rng.gen_range(1..=max_num_polynomials);
@@ -198,21 +259,12 @@ fn test_multi_point_multi_poly_verify<
         for i in 0..num_polynomials {
             let label = format!("Test polynomial {}", i);
             labels.push(label.clone());
+            let labeled_polynomial =
+                generate_labeled_polynomial(test_conf.segmented, label, supported_degree, rng);
 
-            let poly_degree: usize = if test_conf.segmented {
-                rng.gen_range(supported_degree..=10 * supported_degree)
-            } else {
-                rng.gen_range(0..=supported_degree)
-            };
-            let polynomial = Polynomial::rand(poly_degree, rng);
-
-            let is_hiding: bool = rng.gen();
-
-            polynomials.push(LabeledPolynomial::new(label, polynomial, is_hiding));
+            polynomials.push(labeled_polynomial);
         }
 
-        let pp = PC::setup::<Blake2s>(max_degree)?;
-        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
         let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
 
         assert!(comms.is_valid());
@@ -273,24 +325,15 @@ fn test_multi_point_multi_poly_verify<
         )?;
         assert!(v_state.is_some());
 
-        let vk_gadget = PCG::VerifierKey::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
-        let mut labeled_comms = Vec::with_capacity(comms.len());
-        for comm in comms {
-            let label = comm.label();
-            let comm_gadget = PCG::Commitment::alloc(
-                cs.ns(|| format!("alloc commitment with label {}", label)),
-                || {
-                    Ok(commitment_for_alloc::<G, PC>(
-                        comm.commitment(),
-                        &test_conf.negative_type,
-                    ))
-                },
-            )?;
-            labeled_comms.push(LabeledCommitmentGadget::new(label.clone(), comm_gadget));
-        }
+        let (vk_gadget, labeled_comms, mut fs_gadget) = alloc_gadgets_for_succinct_verify(
+            cs.ns(|| "alloc gadgets for verify"),
+            &vk,
+            &comms,
+            fs_seed,
+            &test_conf.negative_type,
+        )?;
         let proof_gadget =
-            PCG::MultiPointProof::alloc(cs.ns(|| "alloc proof gadget"), || Ok(proof))?;
-        let mut fs_gadget = PCG::RandomOracle::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
+            PCG::MultiPointProofGadget::alloc(cs.ns(|| "alloc proof gadget"), || Ok(proof))?;
         let _v_state = PCG::succinct_verify_multi_poly_multi_point(
             cs.ns(|| "verify proof"),
             &vk_gadget,
@@ -320,11 +363,7 @@ fn test_single_point_multi_poly_verify<
 ) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
-        let max_degree = test_conf.max_degree.unwrap_or(rng.gen_range(1..=256));
-        let supported_degree = test_conf
-            .supported_degree
-            .unwrap_or(rng.gen_range(1..=max_degree));
-        assert!(supported_degree <= max_degree);
+        let (supported_degree, ck, vk) = setup_pc_parameters::<G, PC, _>(&test_conf, rng)?;
 
         let num_polynomials = rng.gen_range(1..=test_conf.num_polynomials);
 
@@ -335,21 +374,12 @@ fn test_single_point_multi_poly_verify<
         for i in 0..num_polynomials {
             let label = format!("Test polynomial {}", i);
             labels.push(label.clone());
-
-            let poly_degree: usize = if test_conf.segmented {
-                rng.gen_range(supported_degree..=10 * supported_degree)
-            } else {
-                rng.gen_range(0..=supported_degree)
-            };
-            let polynomial = Polynomial::rand(poly_degree, rng);
-
-            let is_hiding: bool = rng.gen();
-            values.push(polynomial.evaluate(point));
-            polynomials.push(LabeledPolynomial::new(label, polynomial, is_hiding));
+            let labeled_polynomial =
+                generate_labeled_polynomial(test_conf.segmented, label, supported_degree, rng);
+            values.push(labeled_polynomial.polynomial().evaluate(point));
+            polynomials.push(labeled_polynomial);
         }
 
-        let pp = PC::setup::<Blake2s>(max_degree)?;
-        let (ck, vk) = (pp.0.trim(supported_degree)?, pp.1.trim(supported_degree)?);
         let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
 
         // alloc gadgets for polynomial evaluations over the point here as later on they will be moved in succinct verify function
@@ -387,29 +417,18 @@ fn test_single_point_multi_poly_verify<
         if v_state.is_none() {
             Err(PolyError::FailedSuccinctCheck)?
         }
-
-        let vk_gadget = PCG::VerifierKey::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
-        let mut labeled_comms = Vec::with_capacity(comms.len());
-        for comm in comms {
-            let label = comm.label();
-            let comm_gadget = PCG::Commitment::alloc(
-                cs.ns(|| format!("alloc commitment with label {}", label)),
-                || {
-                    Ok(commitment_for_alloc::<G, PC>(
-                        comm.commitment(),
-                        &test_conf.negative_type,
-                    ))
-                },
-            )?;
-            labeled_comms.push(LabeledCommitmentGadget::new(label.clone(), comm_gadget));
-        }
-        let proof_gadget = PCG::Proof::alloc(cs.ns(|| "alloc proof"), || Ok(proof))?;
+        let (vk_gadget, labeled_comms, mut fs_gadget) = alloc_gadgets_for_succinct_verify(
+            cs.ns(|| "alloc gadgets for verify"),
+            &vk,
+            &comms,
+            fs_seed,
+            &test_conf.negative_type,
+        )?;
+        let proof_gadget = PCG::ProofGadget::alloc(cs.ns(|| "alloc proof"), || Ok(proof))?;
         let point_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
             cs.ns(|| "alloc point"),
             || Ok(point),
         )?;
-
-        let mut fs_gadget = PCG::RandomOracle::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
         let _v_state_gadget = PCG::succinct_verify_single_point_multi_poly(
             cs.ns(|| "verify proof"),
             &vk_gadget,

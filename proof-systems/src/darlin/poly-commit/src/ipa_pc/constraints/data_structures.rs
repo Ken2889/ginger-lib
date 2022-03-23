@@ -7,11 +7,12 @@ use crate::{
 use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, ToBits};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
+use num_traits::One;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
-use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget};
+use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget, FieldGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::{borrow::Borrow, marker::PhantomData};
 
@@ -99,25 +100,80 @@ impl<
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BulletPolynomial<ConstraintF: PrimeField, G: EndoMulCurve<BaseField = ConstraintF>>(
-    Vec<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-);
+pub struct SuccinctCheckPolynomialGadget<
+    ConstraintF: PrimeField,
+    G: EndoMulCurve<BaseField = ConstraintF>,
+>(Vec<NonNativeFieldGadget<G::ScalarField, ConstraintF>>);
 
 impl<ConstraintF: PrimeField, G: EndoMulCurve<BaseField = ConstraintF>>
-    BulletPolynomial<ConstraintF, G>
+    SuccinctCheckPolynomialGadget<ConstraintF, G>
 {
     pub fn new(challenges: Vec<NonNativeFieldGadget<G::ScalarField, ConstraintF>>) -> Self {
-        BulletPolynomial(challenges)
+        SuccinctCheckPolynomialGadget(challenges)
+    }
+
+    pub fn evaluate<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+        point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
+    ) -> Result<NonNativeFieldGadget<G::ScalarField, ConstraintF>, SynthesisError> {
+        let mut point_power = point.clone();
+        let one = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::one(
+            cs.ns(|| "alloc 1 in scalar field"),
+        )?;
+        let mut bullet_polynomial_evaluation = one.clone();
+
+        let challenges = &self.0;
+        for (i, round_challenge) in challenges.iter().rev().enumerate() {
+            let challenge_times_point_power = point_power.mul_without_prereduce(
+                cs.ns(|| format!("round_challenge_{}*point^(2^{})", challenges.len() - i, i)),
+                &round_challenge,
+            )?;
+            let current_term = challenge_times_point_power.add_constant(
+                cs.ns(|| format!("round_challenge_{}*point^(2^{})+1", challenges.len() - i, i)),
+                &G::ScalarField::one(),
+            )?;
+            let current_term = current_term.reduce(cs.ns(|| {
+                format!(
+                    "reduce round_challenge_{}*point^(2^{})+1",
+                    challenges.len() - i,
+                    i
+                )
+            }))?;
+
+            if i != 0 {
+                bullet_polynomial_evaluation.mul_in_place(
+                    cs.ns(|| {
+                        format!(
+                            "update bullet polynomial with challenge {}",
+                            challenges.len() - i
+                        )
+                    }),
+                    &current_term,
+                )?;
+            } else {
+                // avoid costly multiplication in the first iteration
+                bullet_polynomial_evaluation = current_term;
+            }
+
+            if i == challenges.len() - 1 {
+                //avoid costly squaring in the last iteration
+                continue;
+            }
+
+            point_power.square_in_place(cs.ns(|| format!("compute point^(2^{})", i)))?;
+        }
+        Ok(bullet_polynomial_evaluation)
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IPAVerifierState<
+pub struct IPAVerifierStateGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>,
 > {
-    check_poly: BulletPolynomial<ConstraintF, G>,
+    check_poly: SuccinctCheckPolynomialGadget<ConstraintF, G>,
     final_comm_key: GG,
 }
 
@@ -125,9 +181,12 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: EndoMulCurveGadget<G, ConstraintF>,
-    > IPAVerifierState<ConstraintF, G, GG>
+    > IPAVerifierStateGadget<ConstraintF, G, GG>
 {
-    pub fn new(check_poly: BulletPolynomial<ConstraintF, G>, final_comm_key: GG) -> Self {
+    pub fn new(
+        check_poly: SuccinctCheckPolynomialGadget<ConstraintF, G>,
+        final_comm_key: GG,
+    ) -> Self {
         Self {
             check_poly,
             final_comm_key,
@@ -139,7 +198,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: EndoMulCurveGadget<G, ConstraintF>,
-    > VerifierStateGadget<DLogItem<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
+    > VerifierStateGadget<DLogItem<G>, ConstraintF> for IPAVerifierStateGadget<ConstraintF, G, GG>
 {
 }
 
@@ -147,7 +206,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: EndoMulCurveGadget<G, ConstraintF>,
-    > AllocGadget<DLogItem<G>, ConstraintF> for IPAVerifierState<ConstraintF, G, GG>
+    > AllocGadget<DLogItem<G>, ConstraintF> for IPAVerifierStateGadget<ConstraintF, G, GG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
@@ -173,7 +232,7 @@ impl<
         })?;
 
         Ok(Self {
-            check_poly: BulletPolynomial(check_poly),
+            check_poly: SuccinctCheckPolynomialGadget(check_poly),
             final_comm_key,
         })
     }
@@ -204,7 +263,7 @@ impl<
         })?;
 
         Ok(Self {
-            check_poly: BulletPolynomial(check_poly),
+            check_poly: SuccinctCheckPolynomialGadget(check_poly),
             final_comm_key,
         })
     }
@@ -220,11 +279,11 @@ pub struct IPAProofGadget<
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
 > {
-    pub(crate) vec_l: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
-    pub(crate) vec_r: Vec<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
-    pub(crate) final_comm_key: IPACommitment<ConstraintF, G, GG, FS, FSG>,
+    pub(crate) vec_l: Vec<IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>>,
+    pub(crate) vec_r: Vec<IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>>,
+    pub(crate) final_comm_key: IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>,
     pub(crate) c: Vec<Boolean>,
-    pub(crate) hiding_comm: Option<IPACommitment<ConstraintF, G, GG, FS, FSG>>,
+    pub(crate) hiding_comm: Option<IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>>,
     pub(crate) rand: Option<Vec<Boolean>>,
 }
 
@@ -360,22 +419,22 @@ impl<
 }
 
 // alias for the proof type of InnerProductArgGadget
-type IPAProof<ConstraintF, G, GG, FS, FSG> =
+type IPAProofGadgetType<ConstraintF, G, GG, FS, FSG> =
     <InnerProductArgGadget<ConstraintF, FSG, G, GG> as PolynomialCommitmentVerifierGadget<
         ConstraintF,
         G,
         InnerProductArgPC<G, FS>,
-    >>::Proof;
+    >>::ProofGadget;
 // alias for the commitment type of InnerProductArgGadget
-type IPACommitment<ConstraintF, G, GG, FS, FSG> =
+type IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG> =
     <InnerProductArgGadget<ConstraintF, FSG, G, GG> as PolynomialCommitmentVerifierGadget<
         ConstraintF,
         G,
         InnerProductArgPC<G, FS>,
-    >>::Commitment;
+    >>::CommitmentGadget;
 
 #[derive(Clone)]
-pub struct IPAMultiPointProof<
+pub struct IPAMultiPointProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: EndoMulCurveGadget<G, ConstraintF>
@@ -383,8 +442,8 @@ pub struct IPAMultiPointProof<
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
 > {
-    proof: IPAProof<ConstraintF, G, GG, FS, FSG>,
-    h_commitment: IPACommitment<ConstraintF, G, GG, FS, FSG>,
+    proof: IPAProofGadgetType<ConstraintF, G, GG, FS, FSG>,
+    h_commitment: IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>,
 }
 
 impl<
@@ -395,7 +454,7 @@ impl<
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
     > AllocGadget<MultiPointProof<G>, ConstraintF>
-    for IPAMultiPointProof<ConstraintF, G, GG, FS, FSG>
+    for IPAMultiPointProofGadget<ConstraintF, G, GG, FS, FSG>
 {
     fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
@@ -408,7 +467,7 @@ impl<
         let t = f()?;
         let mp_proof = t.borrow();
 
-        let proof = IPAProof::<ConstraintF, G, GG, FS, FSG>::alloc(
+        let proof = IPAProofGadgetType::<ConstraintF, G, GG, FS, FSG>::alloc(
             cs.ns(|| "alloc combined proof for multi-point proof"),
             || Ok(mp_proof.proof.clone()),
         )?;
@@ -433,7 +492,7 @@ impl<
         let t = f()?;
         let mp_proof = t.borrow();
 
-        let proof = IPAProof::<ConstraintF, G, GG, FS, FSG>::alloc_input(
+        let proof = IPAProofGadgetType::<ConstraintF, G, GG, FS, FSG>::alloc_input(
             cs.ns(|| "alloc combined proof for multi-point proof"),
             || Ok(mp_proof.proof.clone()),
         )?;
@@ -457,16 +516,16 @@ impl<
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
     > MultiPointProofGadget<ConstraintF, G, MultiPointProof<G>>
-    for IPAMultiPointProof<ConstraintF, G, GG, FS, FSG>
+    for IPAMultiPointProofGadget<ConstraintF, G, GG, FS, FSG>
 {
-    type Commitment = IPACommitment<ConstraintF, G, GG, FS, FSG>;
-    type Proof = IPAProof<ConstraintF, G, GG, FS, FSG>;
+    type CommitmentGadget = IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>;
+    type ProofGadget = IPAProofGadgetType<ConstraintF, G, GG, FS, FSG>;
 
-    fn get_proof(&self) -> &Self::Proof {
+    fn get_proof(&self) -> &Self::ProofGadget {
         &self.proof
     }
 
-    fn get_h_commitment(&self) -> &Self::Commitment {
+    fn get_h_commitment(&self) -> &Self::CommitmentGadget {
         &self.h_commitment
     }
 }

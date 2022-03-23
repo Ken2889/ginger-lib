@@ -1,12 +1,12 @@
 use crate::ipa_pc::constraints::data_structures::{
-    BulletPolynomial, IPAMultiPointProof, IPAProofGadget, IPAVerifierKeyGadget, IPAVerifierState,
+    IPAMultiPointProofGadget, IPAProofGadget, IPAVerifierKeyGadget, IPAVerifierStateGadget,
+    SuccinctCheckPolynomialGadget,
 };
 use crate::ipa_pc::InnerProductArgPC;
-use crate::{Error, PolynomialCommitmentVerifierGadget};
+use crate::{safe_mul_bits, Error, PolynomialCommitmentVerifierGadget};
 use algebra::{EndoMulCurve, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
-use num_traits::One;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::fp::FpGadget;
@@ -24,60 +24,6 @@ mod data_structures;
 #[cfg(feature = "circuit-friendly")]
 #[cfg(test)]
 mod tests;
-
-/// Helper function that allows to compute `base_point`*`scalar` by dealing also with the case that
-/// `base_point` is zero. The `endo_mul` flag specifies if the multiplication between `base_point`
-/// and `scalar` must be performed with `endo_mul` or a simple `mul_bits`
-pub(crate) fn safe_mul<'a, ConstraintF, G, GG, CS, IT>(
-    mut cs: CS,
-    base_point: &GG,
-    scalar: IT,
-    endo_mul: bool,
-) -> Result<GG, SynthesisError>
-where
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: EndoMulCurveGadget<G, ConstraintF>
-        + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
-
-    CS: ConstraintSystemAbstract<ConstraintF>,
-    IT: Iterator<Item = &'a Boolean>,
-{
-    // we need to employ a rng with fixed seed in order to deterministically generated a
-    // non zero base element in PC::Commitment
-    let rng = &mut XorShiftRng::seed_from_u64(42);
-    let mut non_trivial_base_constant = G::rand(rng);
-    while non_trivial_base_constant.is_zero() {
-        non_trivial_base_constant = G::rand(rng);
-    }
-    let non_trivial_base_gadget = GG::from_value(
-        cs.ns(|| "alloc non trivial base constant"),
-        &non_trivial_base_constant,
-    );
-    let zero = GG::zero(cs.ns(|| "alloc constant 0"))?;
-
-    let is_zero = base_point.is_zero(cs.ns(|| "check if base point is zero"))?;
-    let non_trivial_base_point = GG::conditionally_select(
-        cs.ns(|| "select non trivial base point for mul"),
-        &is_zero,
-        &non_trivial_base_gadget,
-        &base_point,
-    )?;
-    let safe_mul_res = if endo_mul {
-        non_trivial_base_point.endo_mul(
-            cs.ns(|| "base_point*scalar"),
-            scalar.cloned().collect::<Vec<_>>().as_slice(),
-        )
-    } else {
-        non_trivial_base_point.mul_bits(cs.ns(|| "base_point*scalar"), scalar)
-    }?;
-    GG::conditionally_select(
-        cs.ns(|| "select correct result for safe mul"),
-        &is_zero,
-        &zero,
-        &safe_mul_res,
-    )
-}
 
 /// poly-commit verifier gadget implementation from the inner-product argument ([BCMS20](https://eprint.iacr.org/2020/499))
 pub struct InnerProductArgGadget<
@@ -103,12 +49,12 @@ impl<
     > PolynomialCommitmentVerifierGadget<ConstraintF, G, InnerProductArgPC<G, FS>>
     for InnerProductArgGadget<ConstraintF, FSG, G, GG>
 {
-    type VerifierKey = IPAVerifierKeyGadget<ConstraintF, G, GG>;
-    type VerifierState = IPAVerifierState<ConstraintF, G, GG>;
-    type Commitment = GG;
-    type Proof = IPAProofGadget<ConstraintF, G, GG, FS, FSG>;
-    type MultiPointProof = IPAMultiPointProof<ConstraintF, G, GG, FS, FSG>;
-    type RandomOracle = FSG;
+    type VerifierKeyGadget = IPAVerifierKeyGadget<ConstraintF, G, GG>;
+    type VerifierStateGadget = IPAVerifierStateGadget<ConstraintF, G, GG>;
+    type CommitmentGadget = GG;
+    type ProofGadget = IPAProofGadget<ConstraintF, G, GG, FS, FSG>;
+    type MultiPointProofGadget = IPAMultiPointProofGadget<ConstraintF, G, GG, FS, FSG>;
+    type RandomOracleGadget = FSG;
     type Error = Error;
 
     fn mul_by_challenge<
@@ -116,11 +62,40 @@ impl<
         CS: ConstraintSystemAbstract<ConstraintF>,
         IT: Iterator<Item = &'a Boolean>,
     >(
-        cs: CS,
-        base: &Self::Commitment,
+        mut cs: CS,
+        base_point: &Self::CommitmentGadget,
         challenge: IT,
-    ) -> Result<Self::Commitment, SynthesisError> {
-        safe_mul::<ConstraintF, G, GG, _, _>(cs, base, challenge, true)
+    ) -> Result<Self::CommitmentGadget, SynthesisError> {
+        // we need to employ a rng with fixed seed in order to deterministically generated a
+        // non zero base element in PC::Commitment
+        let rng = &mut XorShiftRng::seed_from_u64(42);
+        let mut non_trivial_base_constant = G::rand(rng);
+        while non_trivial_base_constant.is_zero() {
+            non_trivial_base_constant = G::rand(rng);
+        }
+        let non_trivial_base_gadget = Self::CommitmentGadget::from_value(
+            cs.ns(|| "alloc non trivial base constant"),
+            &non_trivial_base_constant,
+        );
+        let zero = Self::CommitmentGadget::zero(cs.ns(|| "alloc constant 0"))?;
+
+        let is_zero = base_point.is_zero(cs.ns(|| "check if base point is zero"))?;
+        let non_trivial_base_point = Self::CommitmentGadget::conditionally_select(
+            cs.ns(|| "select non trivial base point for mul"),
+            &is_zero,
+            &non_trivial_base_gadget,
+            &base_point,
+        )?;
+        let safe_mul_res = non_trivial_base_point.endo_mul(
+            cs.ns(|| "base_point*scalar"),
+            challenge.cloned().collect::<Vec<_>>().as_slice(),
+        )?;
+        Self::CommitmentGadget::conditionally_select(
+            cs.ns(|| "select correct result for safe mul"),
+            &is_zero,
+            &zero,
+            &safe_mul_res,
+        )
     }
 
     fn challenge_to_non_native_field_element<CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -140,13 +115,13 @@ impl<
 
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        vk: &Self::VerifierKey,
-        commitment: &Self::Commitment,
+        vk: &Self::VerifierKeyGadget,
+        commitment: &Self::CommitmentGadget,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         value: &Vec<Boolean>,
-        proof: &Self::Proof,
-        random_oracle: &mut Self::RandomOracle,
-    ) -> Result<Self::VerifierState, Self::Error> {
+        proof: &Self::ProofGadget,
+        random_oracle: &mut Self::RandomOracleGadget,
+    ) -> Result<Self::VerifierStateGadget, Self::Error> {
         if proof.vec_l.len() != proof.vec_r.len() {
             Err(SynthesisError::Other(String::from(format!("vec_l and vec_r in proof do not have the same length: len(vec_l)={}, len(vec_r)={}", proof.vec_l.len(), proof.vec_r.len()))))?;
         }
@@ -204,11 +179,14 @@ impl<
                 cs.ns(|| format!("squeeze round-{} challenge", i + 1)),
             )?;
             // compute round_challenge*el_vec_r dealing with the case el_vec_r is zero
-            let challenge_times_r = safe_mul::<ConstraintF, G, GG, _, _>(
+            let challenge_times_r = <Self as PolynomialCommitmentVerifierGadget<
+                ConstraintF,
+                G,
+                InnerProductArgPC<G, FS>,
+            >>::mul_by_challenge(
                 cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),
                 el_vec_r,
                 round_challenge.iter(),
-                true,
             )?;
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| format!("add round_challenge_{}*vec_r_{} to commitment", i + 1, i)),
@@ -243,12 +221,12 @@ impl<
                 cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)),
             )?;
             // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
-            let challenge_inv_times_l = safe_mul::<ConstraintF, G, GG, _, _>(
-                cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
-                el_vec_l,
-                round_challenge_inverse_bits.iter().rev(),
-                false,
-            )?;
+            let challenge_inv_times_l =
+                safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
+                    cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
+                    el_vec_l,
+                    round_challenge_inverse_bits.iter().rev(),
+                )?;
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| {
                     format!(
@@ -262,75 +240,21 @@ impl<
             round_challenges.push(round_challenge_in_scalar_field);
         }
         // evaluate bullet polynomial h over point
-        let mut point_power = point.clone();
-        let one = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::one(
-            cs.ns(|| "alloc 1 in scalar field"),
-        )?;
-        let mut bullet_polynomial_evaluation = one.clone();
-
-        for (i, round_challenge) in round_challenges.iter().rev().enumerate() {
-            let challenge_times_point_power = point_power.mul_without_prereduce(
-                cs.ns(|| {
-                    format!(
-                        "round_challenge_{}*point^(2^{})",
-                        round_challenges.len() - i,
-                        i
-                    )
-                }),
-                &round_challenge,
-            )?;
-            let current_term = challenge_times_point_power.add_constant(
-                cs.ns(|| {
-                    format!(
-                        "round_challenge_{}*point^(2^{})+1",
-                        round_challenges.len() - i,
-                        i
-                    )
-                }),
-                &G::ScalarField::one(),
-            )?;
-            let current_term = current_term.reduce(cs.ns(|| {
-                format!(
-                    "reduce round_challenge_{}*point^(2^{})+1",
-                    round_challenges.len() - i,
-                    i
-                )
-            }))?;
-
-            if i != 0 {
-                bullet_polynomial_evaluation.mul_in_place(
-                    cs.ns(|| {
-                        format!(
-                            "update bullet polynomial with challenge {}",
-                            round_challenges.len() - i
-                        )
-                    }),
-                    &current_term,
-                )?;
-            } else {
-                // avoid costly multiplication in the first iteration
-                bullet_polynomial_evaluation = current_term;
-            }
-
-            if i == round_challenges.len() - 1 {
-                //avoid costly squaring in the last iteration
-                continue;
-            }
-
-            point_power.square_in_place(cs.ns(|| format!("compute point^(2^{})", i)))?;
-        }
+        let bullet_polynomial = SuccinctCheckPolynomialGadget::new(round_challenges);
+        let bullet_polynomial_evaluation =
+            bullet_polynomial.evaluate(cs.ns(|| "evaluate bullet polynomial"), point)?;
 
         let c = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
             cs.ns(|| "proof.c from bits"),
             &proof.c,
         )?;
         let v_prime = c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
-        let c_times_final_comm_key = safe_mul::<ConstraintF, G, GG, _, _>(
-            cs.ns(|| "c*g_final"),
-            &proof.final_comm_key,
-            proof.c.iter().rev(),
-            false,
-        )?;
+        let c_times_final_comm_key =
+            safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
+                cs.ns(|| "c*g_final"),
+                &proof.final_comm_key,
+                proof.c.iter().rev(),
+            )?;
         let v_prime_bits = v_prime.to_bits_for_normal_form(cs.ns(|| "v' to bits"))?;
         let v_prime_times_h_prime =
             h_prime.mul_bits(cs.ns(|| "v'*h'"), v_prime_bits.iter().rev())?;
@@ -343,8 +267,8 @@ impl<
             &non_hiding_commitment,
         )?;
 
-        Ok(IPAVerifierState::new(
-            BulletPolynomial::new(round_challenges),
+        Ok(IPAVerifierStateGadget::new(
+            bullet_polynomial,
             final_commitment,
         ))
     }

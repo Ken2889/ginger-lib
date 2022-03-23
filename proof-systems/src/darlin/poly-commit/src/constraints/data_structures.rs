@@ -16,7 +16,7 @@ pub struct LabeledCommitmentGadget<
     PC: PolynomialCommitment<G>,
 > {
     label: PolynomialLabel,
-    commitment: PCG::Commitment,
+    commitment: PCG::CommitmentGadget,
 }
 
 impl<PCG, ConstraintF, G, PC> LabeledCommitmentGadget<PCG, ConstraintF, G, PC>
@@ -27,7 +27,7 @@ where
     PC: PolynomialCommitment<G>,
 {
     /// Instantiate a new labeled commitment from a label and a commitment gadget.
-    pub fn new(label: PolynomialLabel, commitment: PCG::Commitment) -> Self {
+    pub fn new(label: PolynomialLabel, commitment: PCG::CommitmentGadget) -> Self {
         Self { label, commitment }
     }
 
@@ -37,7 +37,7 @@ where
     }
 
     /// Retrieve the commitment from `self`.
-    pub fn commitment(&self) -> &PCG::Commitment {
+    pub fn commitment(&self) -> &PCG::CommitmentGadget {
         &self.commitment
     }
 }
@@ -50,15 +50,15 @@ pub trait MultiPointProofGadget<
 >: AllocGadget<MPP, ConstraintF>
 {
     /// Type of commitment gadget
-    type Commitment;
+    type CommitmentGadget;
     /// Type of the opening proof gadget for a single-point assertion
-    type Proof;
+    type ProofGadget;
 
     /// get the proof gadget for the combined single-point assertion
-    fn get_proof(&self) -> &Self::Proof;
+    fn get_proof(&self) -> &Self::ProofGadget;
 
     /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
-    fn get_h_commitment(&self) -> &Self::Commitment;
+    fn get_h_commitment(&self) -> &Self::CommitmentGadget;
 }
 
 /// Gadget for the state returned by verifier in case of successful verification
