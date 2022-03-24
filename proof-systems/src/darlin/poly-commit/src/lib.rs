@@ -530,7 +530,11 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         fs_rng
             .record(h_commitment.clone())
             .map_err(Error::FiatShamirTransformError)?;
-        let x_point = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+
+        // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
+        // is not implementation specific
+        let x_point = read_fe_from_challenge::<G::ScalarField>(
+            fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
 
         // Assert x_point != x_1, ..., x_m
@@ -686,9 +690,11 @@ pub trait PolynomialCommitment<G: Group>: Sized {
             .record(multi_point_proof.get_h_commitment().clone())
             .map_err(Error::FiatShamirTransformError)?;
 
-        let x_point = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+        // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
+        // is not implementation specific
+        let x_point = read_fe_from_challenge::<G::ScalarField>(
+            fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
-
         // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
         let mut lc_commitment = Self::Commitment::zero();
 

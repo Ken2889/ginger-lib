@@ -177,7 +177,7 @@ impl<
                 cs.ns(|| format!("absorb commitments for round {}", i + 1)),
                 [el_vec_l.clone(), el_vec_r.clone()],
             )?;
-            let round_challenge = random_oracle.enforce_get_challenge::<_, 128>(
+            let round_challenge_bits = random_oracle.enforce_get_challenge::<_, 128>(
                 cs.ns(|| format!("squeeze round-{} challenge", i + 1)),
             )?;
             // compute round_challenge*el_vec_r dealing with the case el_vec_r is zero
@@ -188,36 +188,26 @@ impl<
             >>::mul_by_challenge(
                 cs.ns(|| format!("round_challenge_{}*vec_r_{}", i + 1, i)),
                 el_vec_r,
-                round_challenge.iter(),
+                round_challenge_bits.iter(),
             )?;
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| format!("add round_challenge_{}*vec_r_{} to commitment", i + 1, i)),
                 &challenge_times_r,
             )?;
-            //apply endomorphism to round_challenge, as challenge_times_r = r*endomorphism(round_challenge),
-            // since endo_mul is employed for the multiplication. Therefore,
-            // the actual challenge to be employed for the bullet polynomial and to be inverted to
-            // be multiplied to l is endomorphism(round_challenge)
-            let round_challenge_endo = GG::endo_rep_to_scalar_bits(
-                cs.ns(|| format!("apply endomorphism to round_challenge_{}", i + 1)),
-                round_challenge.to_vec(),
+            let round_challenge = <Self as PolynomialCommitmentVerifierGadget<
+                ConstraintF,
+                G,
+                InnerProductArgPC<G, FS>,
+            >>::challenge_to_non_native_field_element(
+                cs.ns(|| {
+                    format!(
+                        "converting round_challenge_{} to scalar field element",
+                        i + 1
+                    )
+                }),
+                &round_challenge_bits,
             )?;
-            let round_challenge_be_bits = round_challenge_endo
-                .iter()
-                .rev()
-                .cloned()
-                .collect::<Vec<_>>();
-            let round_challenge_in_scalar_field =
-                NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
-                    cs.ns(|| {
-                        format!(
-                            "converting round_challenge_{} to scalar field element",
-                            i + 1
-                        )
-                    }),
-                    &round_challenge_be_bits,
-                )?;
-            let round_challenge_inverse = round_challenge_in_scalar_field
+            let round_challenge_inverse = round_challenge
                 .inverse(cs.ns(|| format!("invert round_challenge_{}", i + 1)))?;
             let round_challenge_inverse_bits = round_challenge_inverse.to_bits_for_normal_form(
                 cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)),
@@ -239,7 +229,7 @@ impl<
                 }),
                 &challenge_inv_times_l,
             )?;
-            round_challenges.push(round_challenge_in_scalar_field);
+            round_challenges.push(round_challenge);
         }
         // evaluate bullet polynomial h over point
         let bullet_polynomial = SuccinctCheckPolynomialGadget::new(round_challenges);

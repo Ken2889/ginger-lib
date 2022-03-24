@@ -438,9 +438,15 @@ pub trait PolynomialCommitmentVerifierGadget<
         let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
         )?;
-        let evaluation_point = Self::challenge_to_non_native_field_element(
-            cs.ns(|| "evaluation point from squeezed bits"),
-            &evaluation_point_bits,
+
+        let evaluation_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+            cs.ns(|| "evaluation point to field gadget"),
+            evaluation_point_bits
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
         )?;
 
         let (mut batched_commitment, batched_value) =
