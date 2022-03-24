@@ -73,7 +73,11 @@ impl CanonicalSerialize for Index {
             Index::Aux(size) => (false, size),
         };
         CanonicalSerialize::serialize(&is_input, &mut writer)?;
-        writer.write_all(&(*size as u32).to_le_bytes())?;
+        writer.write_all(
+            &u32::try_from(*size)
+                .map_err(|_| SerializationError::InvalidData)?
+                .to_le_bytes(),
+        )?;
         Ok(())
     }
 
@@ -148,10 +152,13 @@ pub fn debug_circuit<F: Field, C: ConstraintSynthesizer<F>>(
 
 #[cfg(test)]
 mod test {
-    use crate::{debug_circuit, ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
+    use crate::{
+        debug_circuit, ConstraintSynthesizer, ConstraintSystemAbstract, Index, SynthesisError,
+    };
     use algebra::fields::tweedle::fr::Fr;
-    use algebra::Field;
+    use algebra::{test_canonical_serialize_deserialize, CanonicalSerialize, Field, UniformRand};
     use rand;
+    use rand::thread_rng;
 
     struct MyCircuit<F: Field> {
         a: Option<F>,
@@ -207,5 +214,39 @@ mod test {
         let unsatisfied_constraint = debug_circuit(circuit).unwrap();
         assert!(unsatisfied_constraint.is_some());
         assert_eq!(unsatisfied_constraint.unwrap(), "multiplication constraint");
+    }
+
+    #[test]
+    fn canonical_serialize_deserialize_index() {
+        let mut rng = thread_rng();
+
+        let num_samples = 100;
+        let idx_vec = vec![0usize, 1usize, u32::MAX as usize].into_iter().chain(
+            (0..num_samples)
+                .into_iter()
+                .map(|_| u32::rand(&mut rng) as usize),
+        );
+        for idx in idx_vec {
+            let input_var = Index::Input(idx);
+            test_canonical_serialize_deserialize(true, &input_var);
+            let aux_var = Index::Aux(idx);
+            test_canonical_serialize_deserialize(true, &aux_var);
+        }
+
+        // Test that trying to serialize a variable whose index exceeds the capacity of a u32
+        // returns an error.
+        let idx = 1usize + u32::MAX as usize;
+
+        let input_var = Index::Input(idx);
+        let buf_size = input_var.serialized_size();
+        let mut serialized = Vec::with_capacity(buf_size);
+        let result = CanonicalSerialize::serialize(&input_var, &mut serialized);
+        assert!(result.is_err());
+
+        let aux_var = Index::Aux(idx);
+        let buf_size = aux_var.serialized_size();
+        let mut serialized = Vec::with_capacity(buf_size);
+        let result = CanonicalSerialize::serialize(&aux_var, &mut serialized);
+        assert!(result.is_err());
     }
 }
