@@ -1,7 +1,7 @@
 //! Module implementing the gadgets related to the Marlin verifier
 //!
 
-use crate::constraints::data_structures::{ProofGadget, PublicInputsGadget, VerifierKeyGadget};
+use crate::constraints::data_structures::{ProofGadget, VerifierKeyGadget};
 use crate::constraints::iop::IOPVerificationGadget;
 use crate::{Marlin, IOP};
 use algebra::EndoMulCurve;
@@ -50,14 +50,14 @@ where
         mut cs: CS,
         pc_vk: &PCG::VerifierKeyGadget,
         index_vk: &VerifierKeyGadget<G, PC, PCG>,
-        public_input: PublicInputsGadget<G>,
+        public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         proof: &ProofGadget<G, PC, PCG>,
     ) -> Result<(), SynthesisError> {
         // Check commitment to the input poly
         let one_ins = NonNativeFieldGadget::one(cs.ns(|| "pub ins 1"))?;
         let formatted_public_input = {
             let mut res = vec![one_ins];
-            res.extend_from_slice(public_input.ins.as_slice());
+            res.extend_from_slice(public_input);
             res
         };
 

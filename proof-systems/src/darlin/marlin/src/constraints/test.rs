@@ -1,7 +1,7 @@
 #[cfg(test)]
 #[cfg(feature = "circuit-friendly")]
 mod verifier_gadget {
-    use crate::constraints::data_structures::{ProofGadget, PublicInputsGadget, VerifierKeyGadget};
+    use crate::constraints::data_structures::{ProofGadget, VerifierKeyGadget};
     use crate::constraints::MarlinVerifierGadget;
     use crate::test::Circuit;
     use crate::Marlin;
@@ -13,6 +13,7 @@ mod verifier_gadget {
     use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use r1cs_std::alloc::AllocGadget;
     use r1cs_std::fields::fp::FpGadget;
+    use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
     use r1cs_std::groups::EndoMulCurveGadget;
     use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
     use rand::thread_rng;
@@ -87,17 +88,25 @@ mod verifier_gadget {
                 })
                 .unwrap();
 
-            let public_inputs_gadget =
-                PublicInputsGadget::<G>::alloc_input(cs.ns(|| "alloc public inputs"), || {
-                    Ok(correct_inputs)
-                })
-                .unwrap();
+            let public_inputs = {
+                let mut public_inputs = Vec::new();
+                for (i, input) in correct_inputs.iter().enumerate() {
+                    public_inputs.push(
+                        NonNativeFieldGadget::alloc_input(
+                            cs.ns(|| format!("alloc public input {}", i)),
+                            || Ok(input),
+                        )
+                        .unwrap(),
+                    )
+                }
+                public_inputs
+            };
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify(
                 cs.ns(|| "proof verification"),
                 &pc_verifier_key_gadget,
                 &verifier_key_gadget,
-                public_inputs_gadget,
+                &public_inputs,
                 &proof_gadget,
             )
             .unwrap();
@@ -135,17 +144,25 @@ mod verifier_gadget {
                 })
                 .unwrap();
 
-            let public_inputs_gadget =
-                PublicInputsGadget::<G>::alloc_input(cs.ns(|| "alloc public inputs"), || {
-                    Ok(wrong_inputs)
-                })
-                .unwrap();
+            let public_inputs = {
+                let mut public_inputs = Vec::new();
+                for (i, input) in wrong_inputs.iter().enumerate() {
+                    public_inputs.push(
+                        NonNativeFieldGadget::alloc_input(
+                            cs.ns(|| format!("alloc public input {}", i)),
+                            || Ok(input),
+                        )
+                        .unwrap(),
+                    )
+                }
+                public_inputs
+            };
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify(
                 cs.ns(|| "proof verification"),
                 &pc_verifier_key_gadget,
                 &verifier_key_gadget,
-                public_inputs_gadget,
+                &public_inputs,
                 &proof_gadget,
             )
             .unwrap();
