@@ -138,8 +138,10 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let lagrange_comms: Vec<_> = domain_x
             .elements()
             .into_iter()
-            .map(|y| domain_x.slice_lagrange_kernel(y))
-            .map(|poly| PC::commit(committer_key, &poly, false, None).unwrap().0)
+            .map(|y| {
+                let poly = domain_x.slice_lagrange_kernel(y);
+                PC::commit(committer_key, &poly, false, None).unwrap().0
+            })
             .collect();
 
         let index_vk = VerifierKey {
