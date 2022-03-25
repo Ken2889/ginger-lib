@@ -39,6 +39,8 @@ use r1cs_core::ConstraintSynthesizer;
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
+use num_traits::Zero;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
     string::{String, ToString},
     vec::Vec,
@@ -426,11 +428,10 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
 
         let x_poly_comm = index_vk
             .lagrange_comms
-            .iter()
-            .zip(IOP::format_public_input(&public_input).iter())
+            .par_iter()
+            .zip(IOP::format_public_input(&public_input).par_iter())
             .map(|(g, x)| g.clone() * x)
-            .reduce(|a, b| a + b)
-            .expect("public input should include at least one element");
+            .reduce(|| PC::Commitment::zero(), |a, b| a + b);
 
         // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
