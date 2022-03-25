@@ -10,33 +10,15 @@ pub struct AlgebraForIOP<F: PrimeField, ConstraintF: PrimeField> {
 }
 
 impl<F: PrimeField, ConstraintF: PrimeField> AlgebraForIOP<F, ConstraintF> {
-    pub fn prepare<CS: ConstraintSystemAbstract<ConstraintF>>(
-        cs: CS,
-        x: &NonNativeFieldGadget<F, ConstraintF>,
-        domain_size: u64,
-    ) -> Result<NonNativeFieldGadget<F, ConstraintF>, SynthesisError> {
-        x.pow_by_constant(cs, &[domain_size])
-    }
-
-    pub fn prepared_eval_vanishing_polynomial<CS: ConstraintSystemAbstract<ConstraintF>>(
-        mut cs: CS,
-        x_prepared: &NonNativeFieldGadget<F, ConstraintF>,
-    ) -> Result<NonNativeFieldGadget<F, ConstraintF>, SynthesisError> {
-        let one = NonNativeFieldGadget::<F, ConstraintF>::one(cs.ns(|| "alloc one"))?;
-        let result = x_prepared.sub(cs.ns(|| "x_prepared - one"), &one)?;
-        Ok(result)
-    }
-
     pub fn eval_vanishing_polynomial<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         x: &NonNativeFieldGadget<F, ConstraintF>,
         domain_size: u64,
     ) -> Result<NonNativeFieldGadget<F, ConstraintF>, SynthesisError> {
-        let x_prepared = Self::prepare(cs.ns(|| "prepare x"), x, domain_size)?;
-        Self::prepared_eval_vanishing_polynomial(
-            cs.ns(|| "compute eval vanishing poly"),
-            &x_prepared,
-        )
+        let pow_of_x = x.pow_by_constant(cs.ns(|| "pow of x"), &[domain_size])?;
+        let one = NonNativeFieldGadget::<F, ConstraintF>::one(cs.ns(|| "alloc one"))?;
+        let result = pow_of_x.sub(cs.ns(|| "pow of x - one"), &one)?;
+        Ok(result)
     }
 
     pub fn prepared_eval_lagrange_kernel<CS: ConstraintSystemAbstract<ConstraintF>>(

@@ -1,6 +1,6 @@
 use crate::constraints::polynomials::AlgebraForIOP;
 use crate::iop::indexer::IndexInfo;
-use algebra::{get_best_evaluation_domain, EndoMulCurve, Field, PrimeField};
+use algebra::{get_best_evaluation_domain, EndoMulCurve, EvaluationDomain, Field, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use poly_commit::{Evaluations, QueryMap};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -26,8 +26,8 @@ where
 
 #[derive(Clone)]
 pub struct VerifierStateGadget<SimulationF: PrimeField, ConstraintF: PrimeField> {
-    domain_h_size: u64,
-    domain_k_size: u64,
+    domain_h: Box<dyn EvaluationDomain<SimulationF>>,
+    domain_k: Box<dyn EvaluationDomain<SimulationF>>,
 
     first_round_msg: Option<VerifierFirstMsgGadget<SimulationF, ConstraintF>>,
     second_round_msg: Option<VerifierSecondMsgGadget<SimulationF, ConstraintF>>,
@@ -95,8 +95,8 @@ where
         let msg = VerifierFirstMsgGadget { alpha, eta };
 
         let new_state = VerifierStateGadget {
-            domain_h_size: domain_h.size() as u64,
-            domain_k_size: domain_k.size() as u64,
+            domain_h,
+            domain_k,
             first_round_msg: Some(msg.clone()),
             second_round_msg: None,
             gamma: None,
@@ -171,13 +171,8 @@ where
         evals: &Evaluations<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
         state: &VerifierStateGadget<G::ScalarField, G::BaseField>,
     ) -> Result<(), SynthesisError> {
-        let domain_h = get_best_evaluation_domain::<G::ScalarField>(state.domain_h_size as usize)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let h_size_inv = domain_h.size_inv();
-
-        let domain_k = get_best_evaluation_domain::<G::ScalarField>(state.domain_k_size as usize)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let k_size_inv = domain_k.size_inv();
+        let h_size_inv = state.domain_h.size_inv();
+        let k_size_inv = state.domain_k.size_inv();
 
         let zero = NonNativeFieldGadget::<G::ScalarField, G::BaseField>::zero(cs.ns(|| "zero"))?;
 
@@ -210,19 +205,19 @@ where
         let v_H_at_alpha = AlgebraForIOP::eval_vanishing_polynomial(
             cs.ns(|| "alpha^|H| - 1"),
             &alpha,
-            domain_h.size() as u64,
+            state.domain_h.size() as u64,
         )?;
 
         let v_H_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
             cs.ns(|| "beta^|H| - 1"),
             &beta,
-            domain_h.size() as u64,
+            state.domain_h.size() as u64,
         )?;
 
         let v_K_at_gamma = AlgebraForIOP::eval_vanishing_polynomial(
             cs.ns(|| "gamma^|K| - 1"),
             &gamma,
-            domain_k.size() as u64,
+            state.domain_k.size() as u64,
         )?;
 
         let v_X_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
@@ -484,12 +479,8 @@ where
         }
         let gamma = state.gamma.as_ref().unwrap().clone();
 
-        let domain_h = get_best_evaluation_domain::<G::ScalarField>(state.domain_h_size as usize)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let domain_k = get_best_evaluation_domain::<G::ScalarField>(state.domain_k_size as usize)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let g_h = domain_h.group_gen();
-        let g_k = domain_k.group_gen();
+        let g_h = state.domain_h.group_gen();
+        let g_k = state.domain_k.group_gen();
 
         let g_h_times_beta = beta.mul_by_constant(cs.ns(|| "g_H * beta"), &g_h)?;
         let g_k_times_gamma = gamma.mul_by_constant(cs.ns(|| "g_K * beta"), &g_k)?;
