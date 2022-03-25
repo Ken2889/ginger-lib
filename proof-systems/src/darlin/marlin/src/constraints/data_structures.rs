@@ -71,7 +71,7 @@ where
             .iter()
             .enumerate()
             .map(|(i, comm)| {
-                PCG::CommitmentGadget::alloc::<_, PC::Commitment, _>(
+                PCG::CommitmentGadget::alloc_without_check::<_, PC::Commitment, _>(
                     cs.ns(|| format!("alloc index commitment {}", i)),
                     || Ok(comm.clone()),
                 )
@@ -169,7 +169,7 @@ where
                 lst.iter()
                     .enumerate()
                     .map(|(j, comm)| {
-                        PCG::CommitmentGadget::alloc::<_, PC::Commitment, _>(
+                        PCG::CommitmentGadget::alloc_checked::<_, PC::Commitment, _>(
                             cs.ns(|| format!("alloc commitment {}{}", i, j)),
                             || Ok(comm.clone()),
                         )
