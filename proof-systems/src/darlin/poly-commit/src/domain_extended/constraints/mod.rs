@@ -1,9 +1,6 @@
+use std::collections::BTreeMap;
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
-use crate::{
-    multi_poly_multi_point_batching, safe_mul_bits, DomainExtendedPolynomialCommitment,
-    Evaluations, LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment,
-    PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget,
-};
+use crate::{multi_poly_multi_point_batching, safe_mul_bits, DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget, sort_commitments_and_values};
 use algebra::{Group, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -14,6 +11,7 @@ use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
 use std::marker::PhantomData;
 use r1cs_std::FromBitsGadget;
+use crate::constraints::single_point_multi_poly_succinct_verify;
 
 mod data_structures;
 
@@ -185,6 +183,30 @@ impl<
             proof,
             random_oracle,
         )
+    }
+
+    fn succinct_verify_single_point_multi_poly<'a, CS, IC, IV>(
+        cs: CS,
+        vk: &Self::VerifierKeyGadget,
+        labeled_commitments: IC,
+        point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
+        values: IV,
+        proof: &Self::ProofGadget,
+        random_oracle: &mut Self::RandomOracleGadget,
+    ) -> Result<Self::VerifierStateGadget, Self::Error>
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            IC: IntoIterator<Item=&'a LabeledCommitmentGadget<ConstraintF,
+                <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
+                Self::CommitmentGadget>>,
+            <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
+            IV: IntoIterator<Item=&'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+            <IV as IntoIterator>::IntoIter: DoubleEndedIterator {
+
+        let (sorted_commitments, sorted_values) = sort_commitments_and_values!(labeled_commitments, values);
+
+        single_point_multi_poly_succinct_verify::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, Self, _, _ ,_>
+            (cs, vk, sorted_commitments, point, sorted_values, proof, random_oracle)
     }
 
 
