@@ -254,7 +254,7 @@ where
             .get(&("u_1".into(), "beta".into()))
             .ok_or_else(|| SynthesisError::AssignmentMissing)?;
         let u_1_at_g_beta = evals
-            .get(&("u_1".into(), "g_h * beta".into()))
+            .get(&("u_1".into(), "g * beta".into()))
             .ok_or_else(|| SynthesisError::AssignmentMissing)?;
         let h_1_at_beta = evals
             .get(&("h_1".into(), "beta".into()))
@@ -315,7 +315,7 @@ where
                 .get(&("u_2".into(), "gamma".into()))
                 .ok_or_else(|| SynthesisError::AssignmentMissing)?;
             let u_2_at_g_gamma = evals
-                .get(&("u_2".into(), "g_k * gamma".into()))
+                .get(&("u_2".into(), "g * gamma".into()))
                 .ok_or_else(|| SynthesisError::AssignmentMissing)?;
             let h_2_at_gamma = evals
                 .get(&("h_2".into(), "gamma".into()))
@@ -495,6 +495,7 @@ where
         let g_k_times_gamma = gamma.mul_by_constant(cs.ns(|| "g_K * beta"), &g_k)?;
 
         let queries_at_beta = BTreeSet::from_iter(vec![
+            "x".to_string(),
             "w".to_string(),
             "y_a".to_string(),
             "y_b".to_string(),
