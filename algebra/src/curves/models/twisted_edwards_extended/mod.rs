@@ -22,6 +22,7 @@ use std::{
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
     marker::PhantomData,
 };
+use num_traits::{Zero, One};
 
 #[cfg(test)]
 pub mod tests;
@@ -216,8 +217,11 @@ impl<P: Parameters> Distribution<TEExtended<P>> for Standard {
             let x = P::BaseField::rand(rng);
             let greatest = rng.gen();
 
-            if let Some(p) = TEExtended::get_point_from_x(x, greatest) {
-                return p.scale_by_cofactor();
+            if let Some(mut p) = TEExtended::<P>::get_point_from_x(x, greatest) {
+                if P::COFACTOR != &[0x1] {
+                    p = p.scale_by_cofactor();
+                }
+                return p;
             }
         }
     }
@@ -526,11 +530,8 @@ impl<P: Parameters> TryFrom<TEExtended<P>> for AffineRep<P> {
     }
 }
 
-impl<P: Parameters> Group for TEExtended<P> {
-    type BaseField = P::BaseField;
-    type ScalarField = P::ScalarField;
-
-    // The point at infinity is conventionally represented as (1:1:0)
+impl<P: Parameters> Zero for TEExtended<P> {
+    // The point at infinity is conventionally represented as (0:1:0:1)
     #[inline]
     fn zero() -> Self {
         Self::new(
@@ -547,6 +548,11 @@ impl<P: Parameters> Group for TEExtended<P> {
     fn is_zero(&self) -> bool {
         self.x.is_zero() && self.y == self.z && !self.y.is_zero() && self.t.is_zero()
     }
+}
+
+impl<P: Parameters> Group for TEExtended<P> {
+    type BaseField = P::BaseField;
+    type ScalarField = P::ScalarField;
 
     fn double_in_place(&mut self) -> &mut Self {
         let tmp = *self;
@@ -560,11 +566,12 @@ impl<P: Parameters> Curve for TEExtended<P> {
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
-        copy.add_affine_assign(other);
+        copy.add_assign_affine(other);
         copy
     }
 
-    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep) {
+    /// https://www.hyperelliptic.org/EFD/g1p/data/twisted/extended/addition/madd-2008-hwcd
+    fn add_assign_affine<'a>(&mut self, other: &'a Self::AffineRep) {
         // A = X1*X2
         let a = self.x * &other.x;
         // B = Y1*Y2
@@ -591,18 +598,15 @@ impl<P: Parameters> Curve for TEExtended<P> {
         self.z = f * &g;
     }
 
+    fn add_in_place_affine_many(_to_add: &mut [Vec<Self::AffineRep>]) {
+        unimplemented!()
+    }
+
     /// WARNING: This implementation doesn't take costant time with respect
     /// to the exponent, and therefore is susceptible to side-channel attacks.
     /// Be sure to use it in applications where timing (or similar) attacks
     /// are not possible.
     /// TODO: Add a side-channel secure variant.
-    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self {
-        if self.is_zero() {
-            return *self;
-        }
-        Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
-    }
-
     fn mul_bits_affine<'a, S: AsRef<[u64]>>(
         affine: &'a Self::AffineRep,
         bits: BitIterator<S>,
@@ -611,7 +615,7 @@ impl<P: Parameters> Curve for TEExtended<P> {
         for i in bits {
             res.double_in_place();
             if i {
-                res.add_affine_assign(&affine);
+                res.add_assign_affine(&affine);
             }
         }
         res
@@ -785,10 +789,6 @@ impl<P: Parameters> Curve for TEExtended<P> {
                 Self::get_point_from_x_and_parity(x, flags.is_odd())
             }
         })
-    }
-
-    fn sum_buckets_affine(_: &mut [Vec<Self::AffineRep>]) {
-        unimplemented!()
     }
 }
 

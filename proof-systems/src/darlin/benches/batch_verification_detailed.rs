@@ -1,25 +1,23 @@
-use algebra::{serialize::*, EndoMulCurve, Group, ToConstraintField};
+use algebra::{serialize::*, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+use poly_commit::{ipa_pc::{IPACurve, InnerProductArgPC}, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
-use proof_systems::darlin::tests::{
-    final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys,
-};
+use proof_systems::darlin::tests::final_darlin::generate_test_data as generate_final_darlin_test_data;
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 fn bench_succinct_part_batch_verification<
-    G1: EndoMulCurve,
-    G2: EndoMulCurve,
+    G1: IPACurve,
+    G2: IPACurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -29,29 +27,25 @@ fn bench_succinct_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );
@@ -86,8 +80,8 @@ fn bench_succinct_part_batch_verification<
 }
 
 fn bench_hard_part_batch_verification<
-    G1: EndoMulCurve,
-    G2: EndoMulCurve,
+    G1: IPACurve,
+    G2: IPACurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -97,29 +91,25 @@ fn bench_hard_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );
@@ -163,8 +153,8 @@ fn bench_hard_part_batch_verification<
 }
 
 fn bench_batch_verification_complete<
-    G1: EndoMulCurve,
-    G2: EndoMulCurve,
+    G1: IPACurve,
+    G2: IPACurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -174,29 +164,25 @@ fn bench_batch_verification_complete<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
-    println!("Key G1 size: {}", params_g1.comm_key.len());
-    println!("Key G2 size: {}", params_g2.comm_key.len());
-
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     // Generate proofs and bench
     for num_constraints in num_constraints.into_iter() {
         let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
             num_constraints - 1,
             segment_size,
-            &params_g1,
-            &params_g2,
+            (&committer_key_g1, &verifier_key_g1),
+            (&committer_key_g2, &verifier_key_g2),
             1,
             rng,
         );

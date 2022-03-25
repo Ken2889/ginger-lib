@@ -6,6 +6,8 @@ use crate::iop::*;
 use algebra::{get_best_evaluation_domain, EvaluationDomain, PrimeField};
 use fiat_shamir::FiatShamirRng;
 use poly_commit::QueryMap;
+use std::collections::BTreeSet;
+use std::iter::FromIterator;
 
 /// State of the IOP verifier
 pub struct VerifierState<F: PrimeField> {
@@ -117,9 +119,9 @@ impl<F: PrimeField> IOP<F> {
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_map(
+    pub fn verifier_query_map<'a, 'b>(
         state: VerifierState<F>,
-    ) -> Result<(QueryMap<F>, VerifierState<F>), Error> {
+    ) -> Result<(QueryMap<'b, F>, VerifierState<F>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
@@ -133,39 +135,41 @@ impl<F: PrimeField> IOP<F> {
         let g_h = state.domain_h.group_gen();
         let g_k = state.domain_k.group_gen();
 
-        let mut query_map = QueryMap::new();
+        let queries_at_beta = BTreeSet::from_iter(vec![
+            "x".to_string(),
+            "w".to_string(),
+            "y_a".to_string(),
+            "y_b".to_string(),
+            "u_1".to_string(),
+            "h_1".to_string(),
+        ]);
+        let queries_at_gamma = BTreeSet::from_iter(vec![
+            "u_2".to_string(),
+            "h_2".to_string(),
+            "a_row".to_string(),
+            "a_col".to_string(),
+            "a_row_col".to_string(),
+            "a_val_row_col".to_string(),
+            "b_row".to_string(),
+            "b_col".to_string(),
+            "b_row_col".to_string(),
+            "b_val_row_col".to_string(),
+            "c_row".to_string(),
+            "c_col".to_string(),
+            "c_row_col".to_string(),
+            "c_val_row_col".to_string(),
+        ]);
+        let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
+        let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
-        // Outer sumcheck
-
-        // First round polys
-        query_map.insert(("x".into(), "beta".into()), beta);
-        query_map.insert(("w".into(), "beta".into()), beta);
-        query_map.insert(("y_a".into(), "beta".into()), beta);
-        query_map.insert(("y_b".into(), "beta".into()), beta);
-
-        // Second round polys
-        query_map.insert(("u_1".into(), "beta".into()), beta);
-        query_map.insert(("u_1".into(), "g_h * beta".into()), g_h * beta);
-        query_map.insert(("h_1".into(), "beta".into()), beta);
-
-        // Inner sumcheck
-
-        // Third round polys
-        query_map.insert(("u_2".into(), "gamma".into()), gamma);
-        query_map.insert(("u_2".into(), "g_k * gamma".into()), g_k * gamma);
-        query_map.insert(("h_2".into(), "gamma".into()), gamma);
-        query_map.insert(("a_row".into(), "gamma".into()), gamma);
-        query_map.insert(("a_col".into(), "gamma".into()), gamma);
-        query_map.insert(("a_row_col".into(), "gamma".into()), gamma);
-        query_map.insert(("a_val_row_col".into(), "gamma".into()), gamma);
-        query_map.insert(("b_row".into(), "gamma".into()), gamma);
-        query_map.insert(("b_col".into(), "gamma".into()), gamma);
-        query_map.insert(("b_row_col".into(), "gamma".into()), gamma);
-        query_map.insert(("b_val_row_col".into(), "gamma".into()), gamma);
-        query_map.insert(("c_row".into(), "gamma".into()), gamma);
-        query_map.insert(("c_col".into(), "gamma".into()), gamma);
-        query_map.insert(("c_row_col".into(), "gamma".into()), gamma);
-        query_map.insert(("c_val_row_col".into(), "gamma".into()), gamma);
+        let query_map = {
+            let mut map = QueryMap::new();
+            map.insert("beta".to_string(), (beta, queries_at_beta));
+            map.insert("gamma".to_string(), (gamma, queries_at_gamma));
+            map.insert("g * beta".to_string(), (g_h * beta, queries_at_g_beta));
+            map.insert("g * gamma".to_string(), (g_k * gamma, queries_at_g_gamma));
+            map
+        };
 
         Ok((query_map, state))
     }

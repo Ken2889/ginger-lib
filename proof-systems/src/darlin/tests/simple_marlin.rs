@@ -1,15 +1,17 @@
 //! A R1CS density one test circuit of specified number of constraints, which processes
 //! two public inputs satisfying a simple quadratic relation.
-use crate::darlin::pcd::{
-    simple_marlin::{MarlinProof, SimpleMarlinPCD},
-    PCDParameters,
+use crate::darlin::{
+    pcd::{
+        simple_marlin::{MarlinProof, SimpleMarlinPCD},
+        PCDParameters,
+    },
+    DomainExtendedIpaPc,
 };
-use algebra::{EndoMulCurve, Field, UniformRand};
+use algebra::{Field, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
-use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC, Parameters};
-use poly_commit::DomainExtendedPolynomialCommitment;
+use poly_commit::ipa_pc::{IPACurve, CommitterKey, VerifierKey};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use rand::{Rng, RngCore};
 use std::ops::MulAssign;
@@ -86,9 +88,9 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 /// Generates a SimpleMarlinPCD from `Circuit`, by sampling the internal
 /// witnesses a,b at random.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
+pub fn generate_test_pcd<'a, G: IPACurve, FS: FiatShamirRng + 'a, R: RngCore>(
     pc_ck: &CommitterKey<G>,
-    marlin_pk: &MarlinProverKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>,
+    marlin_pk: &MarlinProverKey<G, DomainExtendedIpaPc<G, FS>>,
     num_constraints: usize,
     zk: bool,
     rng: &mut R,
@@ -108,7 +110,7 @@ pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore
     };
 
     let proof =
-        Marlin::<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>::prove(
+        Marlin::<G, DomainExtendedIpaPc<G, FS>>::prove(
             marlin_pk,
             pc_ck,
             circ,
@@ -123,19 +125,19 @@ pub fn generate_test_pcd<'a, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore
 /// Generates `num_proofs` random instances of SimpleMarlinPCDs for `Circuit` with
 /// `num_constraints`, using the given `segment_size` for the dlog commitment scheme.
 #[allow(dead_code)]
-pub fn generate_test_data<'a, D: Digest, G: EndoMulCurve, FS: FiatShamirRng + 'a, R: RngCore>(
+pub fn generate_test_data<'a, D: Digest, G: IPACurve, FS: FiatShamirRng + 'a, R: RngCore>(
     num_constraints: usize,
     segment_size: usize,
-    params: &Parameters<G>,
+    params: (&CommitterKey<G>, &VerifierKey<G>),
     num_proofs: usize,
     rng: &mut R,
 ) -> (
     Vec<SimpleMarlinPCD<'a, G, FS>>,
-    Vec<MarlinVerifierKey<G, DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>>>,
+    Vec<MarlinVerifierKey<G, DomainExtendedIpaPc<G, FS>>>,
 ) {
     // Trim committer key and verifier key
     let config = PCDParameters { segment_size };
-    let (committer_key, _) = config.universal_setup::<_, D>(params).unwrap();
+    let (committer_key, _) = config.universal_setup(params).unwrap();
 
     // Generate Marlin prover and verifier key
     let circ = Circuit {
@@ -147,7 +149,7 @@ pub fn generate_test_data<'a, D: Digest, G: EndoMulCurve, FS: FiatShamirRng + 'a
 
     let (index_pk, index_vk) = Marlin::<
         G,
-        DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>,
+        DomainExtendedIpaPc<G, FS>,
     >::circuit_specific_setup::<_, D>(&committer_key, circ.clone())
     .unwrap();
 

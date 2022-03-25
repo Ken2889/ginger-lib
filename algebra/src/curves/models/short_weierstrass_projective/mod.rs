@@ -22,6 +22,7 @@ use std::{
     io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
     marker::PhantomData,
 };
+use num_traits::{Zero, One};
 
 #[derive(Derivative)]
 #[derivative(
@@ -215,9 +216,17 @@ impl<P: Parameters> PartialEq for Projective<P> {
 impl<P: Parameters> Distribution<Projective<P>> for Standard {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Projective<P> {
-        let res = Projective::prime_subgroup_generator() * &P::ScalarField::rand(rng);
-        debug_assert!(res.is_in_correct_subgroup_assuming_on_curve());
-        res
+        loop {
+            let x = P::BaseField::rand(rng);
+            let greatest = rng.gen();
+
+            if let Some(mut p) = Projective::<P>::get_point_from_x(x, greatest) {
+                if P::COFACTOR != &[0x1] {
+                    p = p.scale_by_cofactor();
+                }
+                return p;
+            }
+        }
     }
 }
 
@@ -537,10 +546,7 @@ impl<P: Parameters> TryFrom<Projective<P>> for AffineRep<P> {
     }
 }
 
-impl<P: Parameters> Group for Projective<P> {
-    type BaseField = P::BaseField;
-    type ScalarField = P::ScalarField;
-
+impl<P: Parameters> Zero for Projective<P> {
     // The point at infinity is conventionally represented as (1:1:0)
     #[inline]
     fn zero() -> Self {
@@ -557,6 +563,11 @@ impl<P: Parameters> Group for Projective<P> {
     fn is_zero(&self) -> bool {
         self.z.is_zero()
     }
+}
+
+impl<P: Parameters> Group for Projective<P> {
+    type BaseField = P::BaseField;
+    type ScalarField = P::ScalarField;
 
     fn double_in_place(&mut self) -> &mut Self {
         if self.is_zero() {
@@ -601,11 +612,11 @@ impl<P: Parameters> Curve for Projective<P> {
 
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
-        copy.add_affine_assign(other);
+        copy.add_assign_affine(other);
         copy
     }
 
-    fn add_affine_assign<'a>(&mut self, other: &'a Self::AffineRep) {
+    fn add_assign_affine<'a>(&mut self, other: &'a Self::AffineRep) {
         if self.is_zero() {
             self.x = other.x;
             self.y = other.y;
@@ -643,18 +654,97 @@ impl<P: Parameters> Curve for Projective<P> {
         }
     }
 
+    fn add_in_place_affine_many(to_add: &mut [Vec<Self::AffineRep>]) {
+        let zero = P::BaseField::zero();
+        let one = P::BaseField::one();
+        let length = to_add.iter().map(|l| l.len()).fold(0, |x, y| x + y);
+        let mut denoms = vec![zero; length / 2];
+
+        while to_add.iter().position(|x| x.len() > 1) != None {
+            let mut dx: usize = 0;
+            for p in to_add.iter_mut() {
+                if p.len() < 2 {
+                    continue;
+                }
+                let len = if p.len() % 2 == 0 {
+                    p.len()
+                } else {
+                    p.len() - 1
+                };
+                for i in (0..len).step_by(2) {
+                    denoms[dx] = {
+                        if p[i].x == p[i + 1].x {
+                            if p[i + 1].y == zero {
+                                one
+                            } else {
+                                p[i + 1].y.double()
+                            }
+                        } else {
+                            p[i].x - &p[i + 1].x
+                        }
+                    };
+                    dx += 1;
+                }
+            }
+
+            denoms.truncate(dx);
+            crate::fields::batch_inversion(&mut denoms);
+            dx = 0;
+
+            for p in to_add.iter_mut() {
+                if p.len() < 2 {
+                    continue;
+                }
+                let len = if p.len() % 2 == 0 {
+                    p.len()
+                } else {
+                    p.len() - 1
+                };
+
+                let mut zeros = vec![false; p.len()];
+
+                for i in (0..len).step_by(2) {
+                    let j = i / 2;
+                    if zeros[i + 1] {
+                        p[j] = p[i];
+                    } else if zeros[i] {
+                        p[j] = p[i + 1];
+                    } else if p[i + 1].x == p[i].x && (p[i + 1].y != p[i].y || p[i + 1].y.is_zero())
+                    {
+                        zeros[j] = true;
+                    } else if p[i + 1].x == p[i].x && p[i + 1].y == p[i].y {
+                        let sq = p[i].x.square();
+                        let s = (sq.double() + &sq + &P::COEFF_A) * &denoms[dx];
+                        let x = s.square() - &p[i].x.double();
+                        let y = -p[i].y - &(s * &(x - &p[i].x));
+                        p[j].x = x;
+                        p[j].y = y;
+                    } else {
+                        let s = (p[i].y - &p[i + 1].y) * &denoms[dx];
+                        let x = s.square() - &p[i].x - &p[i + 1].x;
+                        let y = -p[i].y - &(s * &(x - &p[i].x));
+                        p[j].x = x;
+                        p[j].y = y;
+                    }
+                    dx += 1;
+                }
+
+                let len = p.len();
+                if len % 2 == 1 {
+                    p[len / 2] = p[len - 1];
+                    p.truncate(len / 2 + 1);
+                } else {
+                    p.truncate(len / 2);
+                }
+            }
+        }
+    }
+
     /// WARNING: This implementation doesn't take costant time with respect
     /// to the exponent, and therefore is susceptible to side-channel attacks.
     /// Be sure to use it in applications where timing (or similar) attacks
     /// are not possible.
     /// TODO: Add a side-channel secure variant.
-    fn mul_bits<S: AsRef<[u64]>>(&self, bits: BitIterator<S>) -> Self {
-        if self.is_zero() {
-            return *self;
-        }
-        Self::mul_bits_affine(&self.into_affine().unwrap(), bits)
-    }
-
     fn mul_bits_affine<'a, S: AsRef<[u64]>>(
         affine: &'a Self::AffineRep,
         bits: BitIterator<S>,
@@ -663,7 +753,7 @@ impl<P: Parameters> Curve for Projective<P> {
         for i in bits {
             res.double_in_place();
             if i {
-                res.add_affine_assign(&affine);
+                res.add_assign_affine(&affine);
             }
         }
         res
@@ -834,176 +924,14 @@ impl<P: Parameters> Curve for Projective<P> {
             }
         })
     }
-
-    fn sum_buckets_affine(to_add: &mut [Vec<Self::AffineRep>]) {
-        let zero = P::BaseField::zero();
-        let one = P::BaseField::one();
-        let length = to_add.iter().map(|l| l.len()).fold(0, |x, y| x + y);
-        let mut denoms = vec![zero; length / 2];
-
-        while to_add.iter().position(|x| x.len() > 1) != None {
-            let mut dx: usize = 0;
-            for p in to_add.iter_mut() {
-                if p.len() < 2 {
-                    continue;
-                }
-                let len = if p.len() % 2 == 0 {
-                    p.len()
-                } else {
-                    p.len() - 1
-                };
-                for i in (0..len).step_by(2) {
-                    denoms[dx] = {
-                        if p[i].x == p[i + 1].x {
-                            if p[i + 1].y == zero {
-                                one
-                            } else {
-                                p[i + 1].y.double()
-                            }
-                        } else {
-                            p[i].x - &p[i + 1].x
-                        }
-                    };
-                    dx += 1;
-                }
-            }
-
-            denoms.truncate(dx);
-            crate::fields::batch_inversion(&mut denoms);
-            dx = 0;
-
-            for p in to_add.iter_mut() {
-                if p.len() < 2 {
-                    continue;
-                }
-                let len = if p.len() % 2 == 0 {
-                    p.len()
-                } else {
-                    p.len() - 1
-                };
-
-                let mut zeros = vec![false; p.len()];
-
-                for i in (0..len).step_by(2) {
-                    let j = i / 2;
-                    if zeros[i + 1] {
-                        p[j] = p[i];
-                    } else if zeros[i] {
-                        p[j] = p[i + 1];
-                    } else if p[i + 1].x == p[i].x && (p[i + 1].y != p[i].y || p[i + 1].y.is_zero())
-                    {
-                        zeros[j] = true;
-                    } else if p[i + 1].x == p[i].x && p[i + 1].y == p[i].y {
-                        let sq = p[i].x.square();
-                        let s = (sq.double() + &sq + &P::COEFF_A) * &denoms[dx];
-                        let x = s.square() - &p[i].x.double();
-                        let y = -p[i].y - &(s * &(x - &p[i].x));
-                        p[j].x = x;
-                        p[j].y = y;
-                    } else {
-                        let s = (p[i].y - &p[i + 1].y) * &denoms[dx];
-                        let x = s.square() - &p[i].x - &p[i + 1].x;
-                        let y = -p[i].y - &(s * &(x - &p[i].x));
-                        p[j].x = x;
-                        p[j].y = y;
-                    }
-                    dx += 1;
-                }
-
-                let len = p.len();
-                if len % 2 == 1 {
-                    p[len / 2] = p[len - 1];
-                    p.truncate(len / 2 + 1);
-                } else {
-                    p.truncate(len / 2);
-                }
-            }
-        }
-    }
 }
 
 impl<P: EndoParameters> EndoMulCurve for Projective<P> {
+    type Params = P;
+
     fn apply_endomorphism(&self) -> Self {
         let mut self_e = self.clone();
         self_e.x.mul_assign(P::ENDO_COEFF);
         self_e
-    }
-
-    fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error> {
-        let mut a: P::ScalarField = 2u64.into();
-        let mut b: P::ScalarField = 2u64.into();
-
-        let one = P::ScalarField::one();
-        let one_neg = one.neg();
-
-        let mut bits = bits;
-        if bits.len() % 2 == 1 {
-            bits.push(false);
-        }
-
-        if bits.len() > P::LAMBDA {
-            Err("Endo mul bits length exceeds LAMBDA")?
-        }
-
-        for i in (0..(bits.len() / 2)).rev() {
-            a.double_in_place();
-            b.double_in_place();
-
-            let s = if bits[i * 2] { &one } else { &one_neg };
-
-            if bits[i * 2 + 1] {
-                a.add_assign(s);
-            } else {
-                b.add_assign(s);
-            }
-        }
-
-        Ok(a.mul(P::ENDO_SCALAR) + &b)
-    }
-
-    /// Endomorphism-based multiplication of a curve point
-    /// with a scalar in little-endian endomorphism representation.
-    fn endo_mul(&self, bits: Vec<bool>) -> Result<Self, Error> {
-        let self_affine = self.into_affine()?;
-        let self_affine_neg = self_affine.neg();
-
-        let self_e = self.apply_endomorphism();
-        let self_affine_e = self_e.into_affine()?;
-
-        let self_affine_e_neg = self_affine_e.neg();
-
-        let mut acc = self_e;
-        acc.add_affine_assign(&self_affine);
-        acc.double_in_place();
-
-        let mut bits = bits;
-        if bits.len() % 2 == 1 {
-            bits.push(false);
-        }
-
-        if bits.len() > P::LAMBDA {
-            Err("Endo mul bits length exceeds LAMBDA")?
-        }
-
-        for i in (0..(bits.len() / 2)).rev() {
-            let s = if bits[i * 2 + 1] {
-                if bits[i * 2] {
-                    &self_affine_e
-                } else {
-                    &self_affine_e_neg
-                }
-            } else {
-                if bits[i * 2] {
-                    &self_affine
-                } else {
-                    &self_affine_neg
-                }
-            };
-
-            acc.double_in_place();
-            acc.add_affine_assign(s);
-        }
-
-        Ok(acc)
     }
 }

@@ -48,7 +48,7 @@ where
 
     pub fn verify<CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
-        pc_vk: &PCG::VerifierKey,
+        pc_vk: &PCG::VerifierKeyGadget,
         index_vk: &VerifierKeyGadget<G, PC, PCG>,
         public_input: PublicInputsGadget<G>,
         proof: &ProofGadget<G, PC, PCG>,
@@ -61,7 +61,7 @@ where
             res
         };
 
-        let x_poly_comm: PCG::Commitment = Self::compute_commit_from_lagrange_representation(
+        let x_poly_comm = Self::compute_commit_from_lagrange_representation(
             cs.ns(|| "enforce x_poly commitment"),
             &index_vk.lagrange_comms,
             &formatted_public_input,
@@ -81,8 +81,10 @@ where
                 .map_err(|err| SynthesisError::Other(err.to_string()))?
         };
 
-        let mut fs_rng =
-            PCG::RandomOracle::init_from_seed(cs.ns(|| "init Fiat-Shamir RNG"), fs_rng_init_seed)?;
+        let mut fs_rng = PCG::RandomOracleGadget::init_from_seed(
+            cs.ns(|| "init Fiat-Shamir RNG"),
+            fs_rng_init_seed,
+        )?;
         fs_rng.enforce_record(cs.ns(|| "absorb index_vk hash"), index_vk.get_hash())?;
         fs_rng.enforce_record(cs.ns(|| "absorb x_poly commitment"), x_poly_comm.clone())?;
 
@@ -134,9 +136,17 @@ where
                 verifier_state,
             )?;
 
+        let mut evaluation_keys = Vec::new();
+        for (point_label, (_, poly_set)) in query_map.iter() {
+            for poly_label in poly_set {
+                evaluation_keys.push((poly_label.clone(), point_label.clone()));
+            }
+        }
+        evaluation_keys.sort();
+
         let mut evaluations = Evaluations::new();
-        for ((labels, _point), eval) in query_map.iter().zip(&proof.evaluations) {
-            evaluations.insert(labels.clone(), eval.clone());
+        for (key, eval) in evaluation_keys.into_iter().zip(proof.evaluations.iter()) {
+            evaluations.insert(key, eval.clone());
         }
 
         IOPVerificationGadget::<G, GG>::verify_sumchecks(
@@ -146,7 +156,7 @@ where
             &verifier_state,
         )?;
 
-        let commitments: Vec<LabeledCommitmentGadget<PCG, G::BaseField, G, PC>> = index_vk
+        let commitments: Vec<_> = index_vk
             .iter()
             .chain(init_comms.iter())
             .chain(first_comms.iter())
@@ -175,7 +185,7 @@ where
         mut cs: CS,
         lagrange_poly_comms: &[PC::Commitment],
         poly_evals: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
-    ) -> Result<PCG::Commitment, SynthesisError> {
+    ) -> Result<PCG::CommitmentGadget, SynthesisError> {
         assert!(poly_evals.len() <= lagrange_poly_comms.len());
 
         // Get the bits from the non native field gadget
@@ -197,13 +207,13 @@ where
         // For the same reason we perform the first multiplication outside of the loop. Otherwise we
         // would have to initialize result to zero, which could be problematic when performing the
         // first addition inside the loop.
-        let mut result = PCG::Commitment::mul_bits_fixed_base(
+        let mut result = PCG::CommitmentGadget::mul_bits_fixed_base(
             &lagrange_poly_comms[0],
             cs.ns(|| format!("term_0 = x_0 * COMM(L_0)")),
             &poly_evals_bits[0],
         )?;
         for (i, bits) in poly_evals_bits.into_iter().enumerate().skip(1) {
-            let term_i = PCG::Commitment::mul_bits_fixed_base(
+            let term_i = PCG::CommitmentGadget::mul_bits_fixed_base(
                 &lagrange_poly_comms[i],
                 cs.ns(|| format!("term_{} = x_{} * COMM(L_{})", i, i, i)),
                 &bits,

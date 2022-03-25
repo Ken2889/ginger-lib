@@ -53,58 +53,37 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for Circuit<Constrai
 mod marlin {
     use super::*;
     use crate::Marlin;
+    use std::ops::MulAssign;
 
     use crate::error::Error as MarlinError;
     use crate::iop::Error as IOPError;
     use algebra::{
-        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize,
-        EndoMulCurve, SemanticallyValid, UniformRand,
+        curves::tweedle::dum::DumJacobian, serialize::test_canonical_serialize_deserialize, Group,
+        SemanticallyValid, UniformRand,
     };
 
     use blake2::Blake2s;
     use digest::Digest;
     use poly_commit::{
-        ipa_pc::{InnerProductArgPC, Parameters as IPAParameters},
-        DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PCVerifierKey,
-        PolynomialCommitment,
+        ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCKey, PolynomialCommitment,
     };
     use rand::thread_rng;
-    use std::ops::MulAssign;
 
-    trait TestUtils {
-        /// Copy other instance params into this
-        fn copy_params(&mut self, other: &Self);
-    }
-
-    impl<G: EndoMulCurve> TestUtils for IPAParameters<G> {
-        fn copy_params(&mut self, other: &Self) {
-            self.s = other.s.clone();
-            self.h = other.h.clone();
-            self.hash = other.hash.clone();
-        }
-    }
-
-    fn test_circuit<G: EndoMulCurve, PC: PolynomialCommitment<G>, D: Digest>(
+    fn test_circuit<G: Group, PC: PolynomialCommitment<G>, D: Digest>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
-    ) where
-        PC::Parameters: TestUtils,
-    {
+    ) {
         let rng = &mut thread_rng();
 
-        let universal_srs = PC::setup::<D>(num_constraints - 1).unwrap();
-        let (pc_pk, pc_vk) = universal_srs.trim((num_constraints - 1) / 2).unwrap();
-        assert_eq!(pc_pk.get_hash(), universal_srs.get_hash());
-        assert_eq!(pc_vk.get_hash(), universal_srs.get_hash());
-
-        // Fake parameters for opening proof fail test
-        let mut universal_srs_fake =
-            PC::setup_from_seed::<D>(num_constraints - 1, b"FAKE PROTOCOL").unwrap();
-
-        universal_srs_fake.copy_params(&universal_srs);
-        let (pc_pk_fake, _) = universal_srs_fake.trim((num_constraints - 1) / 2).unwrap();
+        let (original_pc_pk, original_pc_vk) = PC::setup::<D>(num_constraints - 1).unwrap();
+        let (pc_pk, pc_vk) = (
+            original_pc_pk.trim((num_constraints - 1) / 2).unwrap(),
+            original_pc_vk.trim((num_constraints - 1) / 2).unwrap(),
+        );
+        assert_eq!(original_pc_pk.get_hash(), pc_pk.get_hash());
+        assert_eq!(original_pc_vk.get_hash(), pc_vk.get_hash());
 
         for _ in 0..num_samples {
             let a = G::ScalarField::rand(rng);
@@ -157,42 +136,13 @@ mod marlin {
             // Fail verification
             assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
 
-            // Use a bigger vk derived from the same universal params and check verification is successful
-            let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
-            assert_eq!(pc_vk.get_hash(), universal_srs.get_hash());
-            assert!(Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
-
-            // Use a bigger vk derived from other universal params and check verification fails (absorbed hash won't be the same)
-            let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
-            let (_, pc_vk) = universal_srs.trim(num_constraints - 1).unwrap();
-            assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
-            assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
-
-            // Use a vk of the same size of the original one, but derived from bigger universal params
+            // Use a vk derived from bigger universal params
             // and check that verification fails (absorbed hash won't be the same)
-            let universal_srs = PC::setup::<D>((num_constraints - 1) * 2).unwrap();
-            let (_, pc_vk) = universal_srs.trim((num_constraints - 1) / 4).unwrap();
-            assert_ne!(pc_pk.get_hash(), universal_srs.get_hash());
+            let (original_pc_pk, original_pc_vk) =
+                PC::setup::<D>(2 * (num_constraints - 1)).unwrap();
+            let pc_vk = original_pc_vk.trim((num_constraints - 1) / 4).unwrap();
+            assert_ne!(pc_pk.get_hash(), original_pc_pk.get_hash());
             assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
-
-            // Fake indexes to pass the IOP part
-            let (index_pk_fake, index_vk_fake) =
-                Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk_fake, circ).unwrap();
-
-            let proof_fake = Marlin::<G, PC>::prove(
-                &index_pk_fake,
-                &pc_pk_fake,
-                circ,
-                zk,
-                if zk { Some(rng) } else { None },
-            )
-            .unwrap();
-
-            // Fail verification using fake proof at the level of opening proof
-            println!("\nShould not verify");
-            assert!(
-                !Marlin::<G, PC>::verify(&index_vk_fake, &pc_vk, &[c, d], &proof_fake).unwrap()
-            );
 
             // Check correct error assertion for the case when
             // witness assignment doesn't satisfy the circuit

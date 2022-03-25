@@ -21,7 +21,7 @@ pub struct VerifierKeyGadget<
     /// Stores R1CS metrics as usually supplied by the constraint system.
     pub index_info: IndexInfo<G::ScalarField>,
     /// Commitments to the indexed polynomials.
-    pub index_comms: Vec<PCG::Commitment>,
+    pub index_comms: Vec<PCG::CommitmentGadget>,
     /// Commitments to the Lagrange polynomials over the input domain.
     pub lagrange_comms: Vec<PC::Commitment>,
     /// Hash of the above elements
@@ -35,7 +35,7 @@ where
     PCG: PolynomialCommitmentVerifierGadget<G::BaseField, G, PC>,
 {
     /// Iterate over the commitments to indexed polynomials in `self`.
-    pub fn iter(&self) -> impl Iterator<Item = &PCG::Commitment> {
+    pub fn iter(&self) -> impl Iterator<Item = &PCG::CommitmentGadget> {
         self.index_comms.iter()
     }
 
@@ -71,7 +71,7 @@ where
             .iter()
             .enumerate()
             .map(|(i, comm)| {
-                PCG::Commitment::alloc::<_, PC::Commitment, _>(
+                PCG::CommitmentGadget::alloc::<_, PC::Commitment, _>(
                     cs.ns(|| format!("alloc index commitment {}", i)),
                     || Ok(comm.clone()),
                 )
@@ -108,7 +108,7 @@ where
             .iter()
             .enumerate()
             .map(|(i, comm)| {
-                PCG::Commitment::alloc_input::<_, PC::Commitment, _>(
+                PCG::CommitmentGadget::alloc_input::<_, PC::Commitment, _>(
                     cs.ns(|| format!("alloc index commitment {}", i)),
                     || Ok(comm.clone()),
                 )
@@ -133,11 +133,11 @@ pub struct ProofGadget<
     PCG: PolynomialCommitmentVerifierGadget<G::BaseField, G, PC>,
 > {
     /// Commitments to the polynomials produced by the prover
-    pub commitments: Vec<Vec<PCG::Commitment>>,
+    pub commitments: Vec<Vec<PCG::CommitmentGadget>>,
     /// Evaluations of these polynomials.
     pub evaluations: Vec<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
     /// A batch evaluation proof from the polynomial commitment.
-    pub pc_proof: PCG::MultiPointProof,
+    pub pc_proof: PCG::MultiPointProofGadget,
 }
 
 impl<G, PC, PCG> AllocGadget<Proof<G, PC>, G::BaseField> for ProofGadget<G, PC, PCG>
@@ -169,7 +169,7 @@ where
                 lst.iter()
                     .enumerate()
                     .map(|(j, comm)| {
-                        PCG::Commitment::alloc::<_, PC::Commitment, _>(
+                        PCG::CommitmentGadget::alloc::<_, PC::Commitment, _>(
                             cs.ns(|| format!("alloc commitment {}{}", i, j)),
                             || Ok(comm.clone()),
                         )
@@ -191,7 +191,9 @@ where
             .collect();
 
         let pc_proof =
-            PCG::MultiPointProof::alloc(cs.ns(|| "alloc multipoint PC proof"), || Ok(pc_proof))?;
+            PCG::MultiPointProofGadget::alloc(cs.ns(|| "alloc multipoint PC proof"), || {
+                Ok(pc_proof)
+            })?;
 
         Ok(Self {
             commitments: commitment_gadgets,
@@ -223,7 +225,7 @@ where
                 lst.iter()
                     .enumerate()
                     .map(|(j, comm)| {
-                        PCG::Commitment::alloc_input::<_, PC::Commitment, _>(
+                        PCG::CommitmentGadget::alloc_input::<_, PC::Commitment, _>(
                             cs.ns(|| format!("alloc commitment {}{}", i, j)),
                             || Ok(comm.clone()),
                         )
@@ -246,7 +248,7 @@ where
             .collect();
 
         let pc_proof =
-            PCG::MultiPointProof::alloc_input(cs.ns(|| "alloc multipoint PC proof"), || {
+            PCG::MultiPointProofGadget::alloc_input(cs.ns(|| "alloc multipoint PC proof"), || {
                 Ok(pc_proof)
             })?;
 

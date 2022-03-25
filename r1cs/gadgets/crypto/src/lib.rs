@@ -7,19 +7,17 @@
     clippy::not_unsafe_ptr_arg_deref,
     clippy::suspicious_op_assign_impl,
     clippy::suspicious_arithmetic_impl,
-    clippy::assertions_on_constants
+    clippy::assertions_on_constants,
+    clippy::op_ref,
+    clippy::many_single_char_names
 )]
+
 
 #[macro_use]
 extern crate derivative;
 
 pub mod crh;
 pub use self::crh::*;
-
-#[cfg(feature = "commitment")]
-pub mod commitment;
-#[cfg(feature = "commitment")]
-pub use self::commitment::*;
 
 #[cfg(feature = "merkle_tree")]
 pub mod merkle_tree;

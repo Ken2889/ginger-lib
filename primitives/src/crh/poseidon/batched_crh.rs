@@ -213,9 +213,10 @@ where
 #[cfg(test)]
 mod test {
     use crate::{BatchFieldBasedHash, FieldBasedHash};
-    use algebra::{Group, UniformRand};
+    use algebra::UniformRand;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
 
     #[cfg(feature = "tweedle")]
     mod tweedle {

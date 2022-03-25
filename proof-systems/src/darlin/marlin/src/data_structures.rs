@@ -7,10 +7,8 @@ use crate::{Vec, IOP};
 use algebra::serialize::*;
 use algebra::Group;
 use derivative::Derivative;
+use num_traits::Zero;
 use poly_commit::{LabeledRandomness, PolynomialCommitment};
-
-/// The universal public parameters for the argument system.
-pub type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
 
 /// The pre-processed verification key for a specific R1CS.
 #[derive(Derivative)]
@@ -103,30 +101,29 @@ impl<G: Group, PC: PolynomialCommitment<G>> Proof<G, PC> {
     /// Prints information about the size of the proof.
     pub fn print_size_info(&self) {
         let size_of_fe_in_bytes = G::ScalarField::zero().serialized_size();
-        let mut num_comms_without_degree_bounds = 0;
-        let mut size_bytes_comms_without_degree_bounds = 0;
+        let mut num_comms = 0;
+        let mut size_bytes_comms = 0;
         let mut size_bytes_proofs = 0;
         for c in self.commitments.iter().flatten() {
-            num_comms_without_degree_bounds += 1;
-            size_bytes_comms_without_degree_bounds += c.serialized_size();
+            num_comms += 1;
+            size_bytes_comms += c.serialized_size();
         }
 
         size_bytes_proofs += self.pc_proof.serialized_size();
 
         let num_evals = self.evaluations.len();
         let evals_size_in_bytes = num_evals * size_of_fe_in_bytes;
-        let arg_size =
-            size_bytes_comms_without_degree_bounds + size_bytes_proofs + evals_size_in_bytes;
+        let arg_size = size_bytes_comms + size_bytes_proofs + evals_size_in_bytes;
         let stats = format!(
             "Argument size in bytes: {}\n\n\
-             Number of commitments without degree bounds: {}\n\
-             Size (in bytes) of commitments without degree bounds: {}\n\
+             Number of commitments: {}\n\
+             Size (in bytes) of commitments: {}\n\n\
              Size (in bytes) of evaluation proofs: {}\n\n\
              Number of evaluations: {}\n\
              Size (in bytes) of evaluations: {}\n",
             arg_size,
-            num_comms_without_degree_bounds,
-            size_bytes_comms_without_degree_bounds,
+            num_comms,
+            size_bytes_comms,
             size_bytes_proofs,
             num_evals,
             evals_size_in_bytes,
@@ -147,7 +144,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Verif
             return false;
         }
 
-        // Check that each commitment is valid and non-shifted
+        // Check that each commitment is valid
         for comm in self.index_comms.iter() {
             if !comm.is_valid() {
                 return false;
@@ -197,6 +194,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof
 
 /*
     Serialization and Deserialization utilities.
+
 */
 
 impl<G: Group, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> {

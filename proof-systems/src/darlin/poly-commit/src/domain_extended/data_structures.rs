@@ -36,7 +36,7 @@ where
     pub h_commitment: GroupVec<G>,
 }
 
-impl<G, P> PCMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
+impl<G, P> BDFGMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
 where
     G: Group,
     P: PCProof,

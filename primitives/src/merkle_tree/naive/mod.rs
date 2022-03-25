@@ -1,7 +1,7 @@
 use crate::crh::FieldBasedHash;
 use crate::merkle_tree::*;
 use crate::Error;
-use algebra::Group;
+use num_traits::Zero;
 
 /// Merkle Tree whose leaves are field elements, best with hash functions
 /// that works with field elements, such as Poseidon. This implementation
@@ -220,6 +220,67 @@ impl<P: FieldBasedMerkleTreeParameters> NaiveMerkleTree<P> {
     }
 }
 
+/// Returns the height of the tree, given the size of the tree.
+#[inline]
+fn tree_height(tree_size: usize) -> usize {
+    if tree_size == 1 {
+        return 1;
+    }
+
+    algebra::log2_floor(tree_size) as usize
+}
+
+/// Returns true iff the index represents the root.
+#[inline]
+fn is_root(index: usize) -> bool {
+    index == 0
+}
+
+/// Returns the index of the left child, given an index.
+#[inline]
+fn left_child(index: usize) -> usize {
+    2 * index + 1
+}
+
+/// Returns the index of the right child, given an index.
+#[inline]
+fn right_child(index: usize) -> usize {
+    2 * index + 2
+}
+
+/// Returns the index of the sibling, given an index.
+#[inline]
+fn sibling(index: usize) -> Option<usize> {
+    if index == 0 {
+        None
+    } else if is_left_child(index) {
+        Some(index + 1)
+    } else {
+        Some(index - 1)
+    }
+}
+
+/// Returns true iff the given index represents a left child.
+#[inline]
+fn is_left_child(index: usize) -> bool {
+    index % 2 == 1
+}
+
+/// Returns the index of the parent, given an index.
+#[inline]
+fn parent(index: usize) -> Option<usize> {
+    if index > 0 {
+        Some((index - 1) >> 1)
+    } else {
+        None
+    }
+}
+
+#[inline]
+fn convert_index_to_last_level(index: usize, tree_height: usize) -> usize {
+    index + (1 << tree_height) - 1
+}
+
 /// Returns the output hash, given a left and right hash value.
 pub(crate) fn hash_inner_node<H: FieldBasedHash>(
     left: H::Data,
@@ -232,19 +293,22 @@ pub(crate) fn hash_inner_node<H: FieldBasedHash>(
 }
 
 pub(crate) fn hash_empty<H: FieldBasedHash>() -> Result<H::Data, Error> {
-    Ok(<H::Data as Group>::zero())
+    Ok(H::Data::zero())
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
         crh::parameters::{TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash},
-        merkle_tree::field_based_mht::*,
+       merkle_tree::*,
         FieldBasedHash,
     };
-    use algebra::{fields::tweedle::Fr, to_bytes, FromBytes, Group, ToBytes, UniformRand};
+    use algebra::{
+        fields::tweedle::Fr as Fr, to_bytes, FromBytes, ToBytes, UniformRand,
+    };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use num_traits::Zero;
 
     const TEST_HEIGHT: usize = 5;
 
@@ -354,7 +418,7 @@ mod test {
     ) {
         let mut tree = NaiveMerkleTree::<P>::new(height);
         tree.append(&leaves).unwrap();
-        let root = <P::Data as Group>::zero();
+        let root = P::Data::zero();
         for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.generate_proof(i, leaf).unwrap();
             assert!(!proof.verify(tree.height(), &leaf, &root).unwrap());

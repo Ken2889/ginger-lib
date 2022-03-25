@@ -10,6 +10,7 @@ use std::{
     ops::{Div, DivAssign, Mul, MulAssign},
     str::FromStr,
 };
+use num_traits::{Zero, One};
 
 #[macro_use]
 mod macros;
@@ -86,6 +87,8 @@ pub trait Field:
     + From<u32>
     + From<u16>
     + From<u8>
+    + Zero
+    + One
     + Mul<Self, Output = Self>
     + Div<Self, Output = Self>
     + MulAssign<Self>
@@ -94,16 +97,8 @@ pub trait Field:
     + for<'a> DivAssign<&'a Self>
     + std::iter::Sum<Self>
     + for<'a> std::iter::Sum<&'a Self>
-    + std::iter::Product<Self>
-    + for<'a> std::iter::Product<&'a Self>
 {
     type BasePrimeField: PrimeField;
-
-    /// Returns the one element of the field, a field generator.
-    fn one() -> Self;
-
-    /// Returns true if and only if `self == Self::one()`.
-    fn is_one(&self) -> bool;
 
     /// Returns true iff self is odd
     fn is_odd(&self) -> bool;
@@ -239,6 +234,10 @@ pub trait FpParameters: 'static + Send + Sync + Sized {
 
     // generator^((modulus-1) / (2^s * small_subgroup_base^small_subgroup_power))
     const FULL_ROOT_OF_UNITY: Option<Self::BigInt> = None;
+
+    // Set for prime fields where the prime p is Pseudo-Mersenne, that is p = 2^n - c
+    // for a "small" c. This constant is equal to the "small" c.
+    const DIFFERENCE_WITH_HIGHER_POWER_OF_TWO: Option<u64> = None;
 }
 
 /// The interface for a prime field.

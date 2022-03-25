@@ -27,7 +27,7 @@ pub mod verifier;
 /// algebraic oracle proof from [HGB].
 ///
 /// [HGB]: https://eprint.iacr.org/2021/930
-pub struct IOP<F: Field> {
+pub struct IOP<F: PrimeField> {
     field: PhantomData<F>,
 }
 
@@ -67,11 +67,10 @@ impl<F: PrimeField> IOP<F> {
     /// the constants of the arithmetic circuit.
     pub fn max_degree(
         num_constraints: usize,
-        num_variables: usize,
+        num_formatted_variables: usize,
         num_non_zero: usize,
         zk: bool,
     ) -> Result<usize, Error> {
-        let num_formatted_variables = num_variables;
         let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
         let domain_h_size = get_best_evaluation_domain::<F>(padded_matrix_dim)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
@@ -80,12 +79,12 @@ impl<F: PrimeField> IOP<F> {
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?
             .size();
         // The largest oracle degrees for the outer and inner sumcheck are
-        //      deg h_1(X) = if zk { 2|H| } else { 2|H| - 1 }.
-        //      deg h_2(X) = 3 * |K| - 4.
+        //      deg h_1(X) <= if zk { 2|H| - 1 } else { 2|H| - 3 }.
+        //      deg h_2(X) <= 3 * |K| - 4.
         // We hence return the max (deg h_1(X), deg h_2(X))
         Ok(*[
-            2 * domain_h_size - (1 - zk as usize), // h_1 max degree
-            3 * domain_k_size - 4,                 // h_2 max degree
+            2 * domain_h_size - 3 + 2 * zk as usize, // h_1 max degree
+            3 * domain_k_size - 4,                   // h_2 max degree
         ]
         .iter()
         .max()
@@ -134,12 +133,12 @@ impl<F: PrimeField> IOP<F> {
 
         let beta = match state.second_round_msg {
             Some(v) => v.beta,
-            None => Err(Error::Other("Second round message is empty".to_owned()))?,
+            None => return Err(Error::Other("Second round message is empty".to_owned())),
         };
 
         let gamma = match state.gamma {
             Some(v) => v,
-            None => Err(Error::Other("Gamma is empty".to_owned()))?,
+            None => return Err(Error::Other("Gamma is empty".to_owned())),
         };
 
         let v_H_at_alpha = domain_h.evaluate_vanishing_polynomial(alpha);
@@ -149,12 +148,12 @@ impl<F: PrimeField> IOP<F> {
         let l_alpha_beta = state.domain_h.eval_lagrange_kernel(alpha, beta);
         let v_X_at_beta = domain_x.evaluate_vanishing_polynomial(beta);
 
-        let w_at_beta = get_poly_eval(evals, "w".into(), "beta".into())?;
-        let y_a_at_beta = get_poly_eval(evals, "y_a".into(), "beta".into())?;
-        let y_b_at_beta = get_poly_eval(evals, "y_b".into(), "beta".into())?;
-        let u_1_at_beta = get_poly_eval(evals, "u_1".into(), "beta".into())?;
-        let u_1_at_g_beta = get_poly_eval(evals, "u_1".into(), "g_h * beta".into())?;
-        let h_1_at_beta = get_poly_eval(evals, "h_1".into(), "beta".into())?;
+        let w_at_beta = get_poly_eval(evals, "w", "beta")?;
+        let y_a_at_beta = get_poly_eval(evals, "y_a", "beta")?;
+        let y_b_at_beta = get_poly_eval(evals, "y_b", "beta")?;
+        let u_1_at_beta = get_poly_eval(evals, "u_1", "beta")?;
+        let u_1_at_g_beta = get_poly_eval(evals, "u_1", "g * beta")?;
+        let h_1_at_beta = get_poly_eval(evals, "h_1", "beta")?;
 
         // we compute the public input polynomial using FFT
         // That is, we compute
@@ -175,28 +174,31 @@ impl<F: PrimeField> IOP<F> {
 
         let v_2 = x_at_beta + v_X_at_beta * w_at_beta;
 
-        // We could safely consider v2 != 0, because it is overwhelmingly non-zero.
-        // However, considering the case v2 == 0 is more elegant as is guarantees
-        // the perfect completeness of the proving system.
-        if v_2.is_zero() && !v_1.is_zero() {
-            return Err(Error::VerificationEquationFailed(
-                // TODO: find a more descriptive error name
-                "Inner sumcheck".to_owned(),
-            ));
+        // Even though the case v_2 == 0 should never occur in practice, it is more elegant to
+        // explicitly consider it. In this way we guarantee the perfect completeness of the proving
+        // system.
+        if v_2.is_zero() {
+            if v_1.is_zero() {
+                return Ok(());
+            } else {
+                return Err(Error::VerificationEquationFailed(
+                    "Outer sumcheck".to_owned(),
+                ));
+            }
         } else {
             // Inner sumcheck, using the provided evaluation values:
-            //      a(X) == b(X)*(v/m + U_2(gX) - U_2(X)) + h_2(X)*(X^m-1)
+            //      a(X) == b(X) * (v/m + U_2(gX) - U_2(X)) + h_2(X) * (X^m-1)
             // at X=gamma, with
-            //      b(X) = Product_{M=A*,B*,C*} (beta - row_M(X))*(alpha - col_M(X)),
-            //      a(X) = (beta^n-1)*(alpha^n-1)*Sum_{M=A*,B*,C*} eta_M * val_M(X)*p_M(X),
-            //      v = v_1/v_2,
+            //      b(X) = Product_{M=A,B,C} (alpha - row_M(X)) * (beta - col_M(X)),
+            //      a(X) = (beta^n-1)*(alpha^n-1)/n^2 * Sum_{M=A,B,C} eta_M * val_M(X) * p_M(X),
+            //      v = v_1 / v_2,
             // where
-            //      p_M(X) =  prod_{N!=M}(beta-row_N(X))(alpha-col_N(X))
-            //             =  prod_{N!=M} (alpha*beta -alpha*row_N(X)-beta*col_N(X)+row.col_N(X))
+            //      p_M(X) =  prod_{N!=M} (alpha - row_N(X)) * (beta - col_N(X))
+            //             =  prod_{N!=M} (alpha*beta - beta*row_N(X) - alpha*col_N(X) + row.col_N(X))
             //
             // In order to avoid an expensive division by v_2, the following equality is
             // checked instead:
-            //      v_2*a(X) == b(X)*(v_1/m + v_2*(U_2(gX) - U_2(X))) + v_2*h_2(X)*(X^m-1)
+            //      v_2 * a(X) == b(X) * (v_1/m + v_2 * (U_2(gX) - U_2(X))) + v_2 * h_2(X) * (X^m-1)
             // at X=gamma.
             let inner_sumcheck = {
                 let alpha_beta = alpha * beta;
@@ -205,27 +207,24 @@ impl<F: PrimeField> IOP<F> {
 
                 let v_K_at_gamma = domain_k.evaluate_vanishing_polynomial(gamma);
 
-                let u_2_at_gamma = get_poly_eval(evals, "u_2".into(), "gamma".into())?;
-                let u_2_at_g_gamma = get_poly_eval(evals, "u_2".into(), "g_k * gamma".into())?;
-                let h_2_at_gamma = get_poly_eval(evals, "h_2".into(), "gamma".into())?;
+                let u_2_at_gamma = get_poly_eval(evals, "u_2", "gamma")?;
+                let u_2_at_g_gamma = get_poly_eval(evals, "u_2".into(), "g * gamma")?;
+                let h_2_at_gamma = get_poly_eval(evals, "h_2", "gamma")?;
 
-                let a_row_at_gamma = get_poly_eval(evals, "a_row".into(), "gamma".into())?;
-                let a_col_at_gamma = get_poly_eval(evals, "a_col".into(), "gamma".into())?;
-                let a_row_col_at_gamma = get_poly_eval(evals, "a_row_col".into(), "gamma".into())?;
-                let a_val_row_col_at_gamma =
-                    get_poly_eval(evals, "a_val_row_col".into(), "gamma".into())?;
+                let a_row_at_gamma = get_poly_eval(evals, "a_row", "gamma")?;
+                let a_col_at_gamma = get_poly_eval(evals, "a_col", "gamma")?;
+                let a_row_col_at_gamma = get_poly_eval(evals, "a_row_col", "gamma")?;
+                let a_val_row_col_at_gamma = get_poly_eval(evals, "a_val_row_col", "gamma")?;
 
-                let b_row_at_gamma = get_poly_eval(evals, "b_row".into(), "gamma".into())?;
-                let b_col_at_gamma = get_poly_eval(evals, "b_col".into(), "gamma".into())?;
-                let b_row_col_at_gamma = get_poly_eval(evals, "b_row_col".into(), "gamma".into())?;
-                let b_val_row_col_at_gamma =
-                    get_poly_eval(evals, "b_val_row_col".into(), "gamma".into())?;
+                let b_row_at_gamma = get_poly_eval(evals, "b_row", "gamma")?;
+                let b_col_at_gamma = get_poly_eval(evals, "b_col", "gamma")?;
+                let b_row_col_at_gamma = get_poly_eval(evals, "b_row_col", "gamma")?;
+                let b_val_row_col_at_gamma = get_poly_eval(evals, "b_val_row_col", "gamma")?;
 
-                let c_row_at_gamma = get_poly_eval(evals, "c_row".into(), "gamma".into())?;
-                let c_col_at_gamma = get_poly_eval(evals, "c_col".into(), "gamma".into())?;
-                let c_row_col_at_gamma = get_poly_eval(evals, "c_row_col".into(), "gamma".into())?;
-                let c_val_row_col_at_gamma =
-                    get_poly_eval(evals, "c_val_row_col".into(), "gamma".into())?;
+                let c_row_at_gamma = get_poly_eval(evals, "c_row", "gamma")?;
+                let c_col_at_gamma = get_poly_eval(evals, "c_col", "gamma")?;
+                let c_row_col_at_gamma = get_poly_eval(evals, "c_row_col", "gamma")?;
+                let c_val_row_col_at_gamma = get_poly_eval(evals, "c_val_row_col", "gamma")?;
 
                 // The denominator terms, using row.col_M(X)
 
@@ -267,16 +266,16 @@ impl<F: PrimeField> IOP<F> {
     }
 }
 
-fn get_poly_eval<F: Field>(
+fn get_poly_eval<F: PrimeField>(
     evals: &poly_commit::Evaluations<F>,
-    poly_label: String,
-    point_label: String,
+    label: &str,
+    point: &str,
 ) -> Result<F, Error> {
-    let key = (poly_label.clone(), point_label.clone());
-    evals.get(&key).copied().ok_or(Error::MissingEval(format!(
-        "polynomial {} at point {}",
-        poly_label, point_label
-    )))
+    let key = &(label.to_string(), point.to_string());
+    evals
+        .get(key)
+        .copied()
+        .ok_or(Error::MissingEval(label.to_string()))
 }
 
 /// Describes the failure modes of the IOP scheme.
@@ -303,16 +302,16 @@ impl std::fmt::Display for Error {
         match self {
             Error::MissingEval(err) => write!(f, "Evaluation {} missing", err),
             Error::VerificationEquationFailed(err) => {
-                write!(f, "Verification equation {} failed", err)
+                write!(f, "Proof is not verified with the supplied public inputs, due to {} failing. Either witnesses used to create the proof or public inputs used to verify it are not correct.", err)
             }
             Error::InstanceDoesNotMatchIndex => write!(
                 f,
-                "The instance generated during proving does not match that in the index"
+                "The circuit used to create the proof is different from the one used to generate the proving and verification keys. Are you passing data of the same length? Are you using the correct keys?"
             ),
             Error::ConstraintSystemError(err) => write!(f, "{}", err),
             Error::InvalidCoboundaryPolynomial => write!(
                 f,
-                "The given coboundary polynomial evaluations over a domain don't sum to zero"
+                "Attempt to create a proof with variables assignment that doesn't satisfy the circuit constraints. Are you passing correct values for variables?",
             ),
             Error::FiatShamirError(message) => write!(f, "{}", message),
             Error::Other(message) => write!(f, "{}", message),
@@ -408,7 +407,6 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
 /// A boundary polynomial `U(X)` for a polynomial `p(X)` over a cyclic subgroup
 /// of `F` is subject to `U(gX)-U(X) = p(X) mod (X^n-1)`, where `g` is a generator
 /// for the cyclic sugroup, and `n` is  its order.
-// TODO: Why do we need a separate struct for it? It is as any other polynomial.
 pub struct BoundaryPolynomial<F: PrimeField> {
     /// The boundary polynomial.
     poly: DensePolynomial<F>,
@@ -552,9 +550,10 @@ impl<F: PrimeField> BoundaryPolynomial<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use algebra::fields::tweedle::Fr;
     use algebra::UniformRand;
-    use algebra::{fields::tweedle::fr::Fr, Group};
     use algebra::{get_best_evaluation_domain, DenseOrSparsePolynomial, DensePolynomial};
+    use num_traits::{One, Zero};
     use rand::thread_rng;
 
     #[test]

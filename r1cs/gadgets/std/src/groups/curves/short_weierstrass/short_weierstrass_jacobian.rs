@@ -9,6 +9,7 @@ use algebra::{
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};
+use num_traits::{Zero, One};
 
 use crate::{
     groups::{check_mul_bits_fixed_base_inputs, check_mul_bits_inputs},
@@ -920,12 +921,25 @@ where
         Ok(acc)
     }
 
+    fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(
+        &mut self,
+        _cs: CS,
+        _scalar_bits_with_base_powers: I,
+    ) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        I: Iterator<Item = (B, &'a Jacobian<P>)>,
+        B: Borrow<Boolean>,
+    {
+        todo!()
+    }
+
     /// Useful in context when you have some signed representation of the scalar's digits, like
     /// in BH hash. I decided here to keep the same logic as TE implementation  for future extensibility:
     /// in fact there is no actual difference between "outer" and "inner" sums since they all
     /// are SW unsafe additions. The code could be simplified, but nothing changes from a number
     /// of constraints point of view.
-    fn precomputed_base_3_bit_signed_digit_scalar_mul<'a, CS, I, J, B>(
+    fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(
         mut cs: CS,
         bases: &[B],
         scalars: &[J],
@@ -1018,6 +1032,85 @@ where
             process_segment_result(cs.ns(|| "leftover"), &result.unwrap())?;
         }
         Ok(sw_result.unwrap())
+    }
+
+    fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(
+        _cs: CS,
+        _bases: &[B],
+        _scalars: I,
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+        I: Iterator<Item = &'a T>,
+        B: Borrow<[Jacobian<P>]>,
+    {
+        todo!()
+    }
+
+    fn fixed_base_msm<'a, CS, T, IS, IB>(
+        mut cs: CS,
+        mut bases: IB,
+        mut scalars: IS,
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+        IS: Iterator<Item = &'a T>,
+        IB: Iterator<Item = &'a Jacobian<P>>,
+    {
+        // Pre - check on sizes.
+        // Other checks on scalars and bases will be performed directly when calling the mul_bits_fixed_base.
+        // TODO: Other pre-checks we can perform ?
+        let scalars_len = scalars
+            .size_hint()
+            .1
+            .expect("Scalars iterator size should be known at this point");
+        
+        let bases_len = bases
+            .size_hint()
+            .1
+            .expect("Bases iterator size should be known at this point");
+
+        if bases_len < scalars_len || bases_len == 0 {
+            return Err(SynthesisError::Other(
+                format!(
+                    "Unable to enforce MSM. Bases are not enough for scalars. Number of bases: {}, number of scalars: {}",
+                    bases_len,
+                    scalars_len
+                )
+            ));
+        }
+
+        // Initialize result to avoid exceptional cases due to incomplete arithmetic
+        let mut scalar_bits = scalars
+            .next()
+            .unwrap() // Cannot fail as we checked scalars > bases and bases cannot be 0
+            .to_bits(cs.ns(|| "scalar 0 to bits"))?;
+        scalar_bits.reverse(); // mul_bits_fixed_base requires the bits in little endian form
+
+        let mut result = Self::mul_bits_fixed_base(
+            bases.next().unwrap(), // Cannot fail as we checked bases > 0
+            cs.ns(|| "base_0 ^ scalar_0"),
+            scalar_bits.as_slice(),
+        )?;
+
+        // Process remaining scalars and bases
+        for (i, (base, scalar)) in bases.zip(scalars).enumerate() {
+            scalar_bits = scalar.to_bits(
+                cs.ns(|| format!("Scalar {} to bits", i + 1))
+            )?;
+            scalar_bits.reverse();
+
+            let term_i = Self::mul_bits_fixed_base(
+                base,
+                cs.ns(|| format!("base_{} ^ scalar_{}", i + 1, i + 1)),
+                scalar_bits.as_slice(),
+            )?;
+            result = result.add(cs.ns(|| format!("add term_{}", i)), &term_i)?;
+        }
+
+        Ok(result)
     }
 
     fn cost_of_add() -> usize {

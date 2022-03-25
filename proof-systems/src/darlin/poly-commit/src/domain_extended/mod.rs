@@ -1,19 +1,20 @@
 //!
 //! A module for extending the domain of an arbitrary homomorphic commitment scheme beyond the
 //! maximum degree supported by it.
+
 mod constraints;
 pub use constraints::*;
 mod data_structures;
-use algebra::SquareRootField;
 pub use data_structures::*;
 
-use crate::{Error, LinearCombination, Polynomial, PolynomialCommitment};
-use crate::{PCCommitterKey, PCProof};
+use crate::{LinearCombination, PCKey, PCProof, Polynomial, PolynomialCommitment};
 use algebra::{
     fields::Field,
     groups::{Group, GroupVec},
 };
+
 use digest::Digest;
+use num_traits::Zero;
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
@@ -22,7 +23,7 @@ use std::marker::PhantomData;
 #[derivative(Clone(bound = ""))]
 pub struct DomainExtendedPolynomialCommitment<G: Group, PC: PolynomialCommitment<G, Commitment = G>>
 {
-    _projective: PhantomData<G>,
+    _group: PhantomData<G>,
     _pc: PhantomData<PC>,
 }
 
@@ -33,11 +34,9 @@ pub struct DomainExtendedPolynomialCommitment<G: Group, PC: PolynomialCommitment
 // degree of the scheme. The commitment of p(X) is the vector of the commitments of its
 // segment polynomials, and evaluation claims on p(X) are reduced to that of a query-point
 // dependent linear combination of the p_i(X).
-impl<G: Group, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G> for DomainExtendedPolynomialCommitment<G, PC>
-where
-    G::ScalarField: SquareRootField // Temporary
+impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G>
+    for DomainExtendedPolynomialCommitment<G, PC>
 {
-    type Parameters = PC::Parameters;
     type CommitterKey = PC::CommitterKey;
     type VerifierKey = PC::VerifierKey;
     type VerifierState = PC::VerifierState;
@@ -50,7 +49,10 @@ where
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup<D: Digest>(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
+
+    fn setup<D: Digest>(
+        max_degree: usize,
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
         PC::setup::<D>(max_degree)
     }
 
@@ -59,7 +61,7 @@ where
     fn setup_from_seed<D: Digest>(
         max_degree: usize,
         seed: &[u8],
-    ) -> Result<Self::Parameters, Self::Error> {
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
         PC::setup_from_seed::<D>(max_degree, seed)
     }
 
@@ -69,9 +71,9 @@ where
         is_hiding: bool,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(Self::Commitment, Self::Randomness), Self::Error> {
-        let rng = &mut crate::optional_rng::OptionalRng(rng);
+        let key_len = ck.degree() + 1;
 
-        let key_len = ck.get_key_len();
+        let rng = &mut crate::optional_rng::OptionalRng(rng);
         let p_len = polynomial.coeffs.len();
         let segments_count = std::cmp::max(
             1,
@@ -113,13 +115,7 @@ where
         fs_rng: &mut Self::RandomOracle,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<Self::Proof, Self::Error> {
-        let key_len = ck.get_key_len();
-
-        if key_len.next_power_of_two() != key_len {
-            Err(Error::Other(
-                "Commiter key length is not power of 2".to_owned(),
-            ))?
-        }
+        let key_len = ck.degree() + 1;
 
         let lc_time = start_timer!(|| "LC of polynomial and randomness");
 
@@ -132,33 +128,23 @@ where
         // Compute the query-point dependent linear combination of the segments,
         // both for witnesses, commitments (and their randomnesses, if hiding)
 
-        let mut polynomials_lc = LinearCombination::<Polynomial<G::ScalarField>>::new(vec![]);
-        let mut randomnesses_lc = LinearCombination::<PC::Randomness>::new(vec![]);
-
         let point_pow = point.pow(&[key_len as u64]);
-        let mut coeff = G::ScalarField::one();
 
+        let mut raw_polys = Vec::new();
+        let mut raw_rand_lc = Vec::new();
         for i in (0..segments_count).into_iter() {
-            if i > 0 {
-                coeff = coeff * &point_pow;
-            }
-            polynomials_lc.push(
-                coeff.clone(),
-                Polynomial::from_coefficients_slice(
-                    &polynomial.coeffs[i * key_len..core::cmp::min((i + 1) * key_len, p_len)],
-                ),
-            );
+            raw_polys.push(Polynomial::from_coefficients_slice(
+                &polynomial.coeffs[i * key_len..core::cmp::min((i + 1) * key_len, p_len)],
+            ));
+
             if is_hiding {
                 // TODO: check the situation when poly has one segment more comparing to
                 //  randomness segments
-                randomnesses_lc.push(
-                    coeff.clone(),
-                    if randomness.len() <= i {
-                        PC::Randomness::zero()
-                    } else {
-                        randomness[i].clone()
-                    },
-                );
+                raw_rand_lc.push(if randomness.len() <= i {
+                    PC::Randomness::zero()
+                } else {
+                    randomness[i].clone()
+                });
             }
         }
 
@@ -166,46 +152,35 @@ where
 
         PC::open_lc(
             ck,
-            &polynomials_lc,
+            LinearCombination::new_from_val(&point_pow, raw_polys.iter().collect()),
             point,
             is_hiding,
-            &randomnesses_lc,
+            LinearCombination::new_from_val(&point_pow, raw_rand_lc.iter().collect()),
             fs_rng,
             rng,
         )
     }
 
-    fn succinct_verify<'a>(
+    fn succinct_verify(
         vk: &Self::VerifierKey,
-        combined_commitment: &'a Self::Commitment,
+        combined_commitment: &Self::Commitment,
         point: G::ScalarField,
         value: G::ScalarField,
         proof: &Self::Proof,
         fs_rng: &mut Self::RandomOracle,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
-        let key_len = proof.get_key_len();
+        let log_key_len = proof.degree()? + 1;
 
         let lc_time = start_timer!(|| "LC of segmented commitment");
 
-        let point_pow = point.pow(&[key_len as u64]);
-        let mut coeff = G::ScalarField::one();
+        let point_pow = point.pow(&[1 << log_key_len as u64]);
 
-        let commitments_lc = LinearCombination::<PC::Commitment>::new(
-            combined_commitment
-                .iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    if i > 0 {
-                        coeff = coeff * &point_pow;
-                    }
-                    (coeff.clone(), item.clone())
-                })
-                .collect(),
-        );
+        let commitments_lc =
+            LinearCombination::new_from_val(&point_pow, combined_commitment.iter().collect());
 
         end_timer!(lc_time);
 
-        PC::succinct_verify_lc(vk, &commitments_lc, point, value, proof, fs_rng)
+        PC::succinct_verify_lc(vk, commitments_lc, point, value, proof, fs_rng)
     }
 
     fn hard_verify(vk: &Self::VerifierKey, vs: &Self::VerifierState) -> Result<bool, Self::Error> {
@@ -214,5 +189,5 @@ where
 
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
         PC::challenge_to_scalar(chal)
-    } 
+    }
 }

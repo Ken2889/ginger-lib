@@ -395,12 +395,13 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt8 {
 mod test {
     use super::UInt8;
     use crate::{boolean::AllocatedBit, prelude::*};
-    use algebra::{fields::tweedle::Fr, Group};
+    use algebra::fields::tweedle::Fr;
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
     use rand::{Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
+    use num_traits::{Zero, One};
 
     #[test]
     fn test_uint8_from_bits_to_bits() {
@@ -415,7 +416,7 @@ mod test {
 
     #[test]
     fn test_uint8_alloc_input_vec() {
-        use algebra::{to_bytes, Field, FpParameters, PrimeField, ToBytes, UniformRand};
+        use algebra::{to_bytes, FpParameters, PrimeField, ToBytes, UniformRand};
         use rand::thread_rng;
 
         let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);

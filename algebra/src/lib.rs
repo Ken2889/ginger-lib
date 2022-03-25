@@ -16,7 +16,9 @@
     clippy::not_unsafe_ptr_arg_deref,
     clippy::suspicious_op_assign_impl,
     clippy::suspicious_arithmetic_impl,
-    clippy::assertions_on_constants
+    clippy::assertions_on_constants,
+    clippy::op_ref,
+    clippy::many_single_char_names
 )]
 
 #[macro_use]
@@ -59,6 +61,9 @@ pub use self::rand::*;
 
 mod to_field_vec;
 pub use to_field_vec::ToConstraintField;
+
+pub mod linear_combination;
+pub use linear_combination::LinearCombination;
 
 #[cfg(feature = "parallel")]
 pub mod msm;

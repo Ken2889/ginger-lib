@@ -31,6 +31,7 @@ use std::{
     marker::PhantomData,
     ops::{Add, Mul, Neg},
 };
+use num_traits::{Zero, One};
 
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]
@@ -467,6 +468,61 @@ where
         Ok(acc)
     }
 
+    fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(
+        &mut self,
+        _cs: CS,
+        _scalar_bits_with_base_powers: I,
+    ) -> Result<(), SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        I: Iterator<Item = (B, &'a Jacobian<P>)>,
+        B: Borrow<Boolean>,
+    {
+        todo!();
+    }
+
+    fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(
+        _cs: CS,
+        _bases: &[B],
+        _powers: &[J],
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        I: Borrow<[Boolean]>,
+        J: Borrow<[I]>,
+        B: Borrow<[Jacobian<P>]>,
+    {
+        todo!();
+    }
+
+    fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(
+        _cs: CS,
+        _bases: &[B],
+        _scalars: I,
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+        I: Iterator<Item = &'a T>,
+        B: Borrow<[Jacobian<P>]>,
+    {
+        todo!();
+    }
+
+    fn fixed_base_msm<'a, CS, T, IS, IB>(
+        _cs: CS,
+        _bases: IB,
+        _scalars: IS,
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+        IS: Iterator<Item = &'a T>,
+        IB: Iterator<Item = &'a Jacobian<P>>,
+    {
+        todo!();
+    }
+
     fn get_value(&self) -> Option<<Self as GroupGadget<Jacobian<P>, ConstraintF>>::Value> {
         match (
             self.x.get_value(),
@@ -812,7 +868,7 @@ where
         let x3_plus_x1_plus_x2 = x_3
             .add(cs.ns(|| "x3 + x1"), &self.x)?
             .add(cs.ns(|| "x3 + x1 + x2"), &other.x)?;
-        // TODO: the default implementation for mul_equals() calls mul() and 
+        // TODO: the default implementation for mul_equals() calls mul() and
         // then enforce_equal(). Both do reduction. Let us improve here.
         lambda.mul_equals(cs.ns(|| "check x3"), &lambda, &x3_plus_x1_plus_x2)?;
 

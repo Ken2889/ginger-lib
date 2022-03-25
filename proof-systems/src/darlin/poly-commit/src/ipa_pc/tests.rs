@@ -2,23 +2,19 @@
 #![allow(non_camel_case_types)]
 
 use algebra::{
-    curves::tweedle::dee::DeeJacobian as TweedleDee,
-    serialize_no_metadata, CanonicalSerialize, EndoMulCurve,
+    curves::tweedle::dee::DeeJacobian as TweedleDee, serialize_no_metadata, CanonicalSerialize,
 };
 use blake2::Blake2s;
 use digest::Digest;
 
-use super::InnerProductArgPC;
-
+use super::{IPACurve, InnerProductArgPC};
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
 use crate::Error;
-use crate::{
-    DomainExtendedPolynomialCommitment, PCCommitterKey, PCParameters, PolynomialCommitment,
-};
+use crate::{DomainExtendedPolynomialCommitment, PCKey, PolynomialCommitment};
 use rand::thread_rng;
 
-impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
+impl<G: IPACurve> TestUtils for CommitterKey<G> {
     fn randomize(&mut self) {
         let mut rng = thread_rng();
         self.comm_key = self
@@ -81,27 +77,27 @@ macro_rules! generate_pc_tests {
 
             #[test]
             fn [<constant_poly_test_ $pc_inst_name>]() {
-                exec_tests(|test_type| constant_poly_test::<_, $pc, $digest>(test_type));
+                exec_tests(|test_type| constant_poly_test::<_, $pc, $digest>(test_type, true));
             }
 
             #[test]
             fn [<single_poly_test_ $pc_inst_name>]() {
-                exec_tests(|test_type| single_poly_test::<_, $pc, $digest>(test_type));
+                exec_tests(|test_type| single_poly_test::<_, $pc, $digest>(test_type, true));
             }
 
             #[test]
             fn [<two_poly_four_points_test_ $pc_inst_name>]() {
-                exec_tests(|test_type| two_poly_four_points_test::<_, $pc, $digest>(test_type));
+                exec_tests(|test_type| two_poly_four_points_test::<_, $pc, $digest>(test_type, true));
             }
 
             #[test]
             fn [<full_end_to_end_test_ $pc_inst_name>]() {
-                exec_tests(|test_type| full_end_to_end_test::<_, $pc, $digest>(test_type));
+                exec_tests(|test_type| full_end_to_end_test::<_, $pc, $digest>(test_type, true));
             }
 
             #[test]
             fn [<segmented_test_ $pc_inst_name>]() {
-                exec_tests(|test_type| segmented_test::<_, $de_pc, $digest>(test_type));
+                exec_tests(|test_type| segmented_test::<_, $de_pc, $digest>(test_type, true));
             }
 
             #[test]
@@ -109,14 +105,14 @@ macro_rules! generate_pc_tests {
                 let max_degree = 1 << 7;
                 let supported_degree = 1 << 5;
 
-                let pp = $pc::setup::<$digest>(max_degree).unwrap();
-                let (ck, _) = pp.trim(supported_degree).unwrap();
+                let (original_ck, _) = $pc::setup::<$digest>(max_degree).unwrap();
+                let ck = original_ck.trim(supported_degree).unwrap();
 
                 assert!($pc::check_key::<$digest>(&ck, max_degree));
                 assert!(!$pc::check_key::<$digest>(&ck, supported_degree));
-                assert!(ck.get_hash() == pp.get_hash());
+                assert!(ck.get_hash() == original_ck.get_hash());
 
-                let h = $digest::digest(&serialize_no_metadata![&ck.comm_key, &ck.h, &ck.s, ck.max_degree as u32].unwrap())
+                let h = $digest::digest(&serialize_no_metadata![&ck.comm_key, &ck.h, &ck.s].unwrap())
                     .to_vec();
                 assert_ne!(h.as_slice(), ck.get_hash());
             }
@@ -171,7 +167,7 @@ macro_rules! generate_pc_tests {
                     .zip(key_r)
                     .for_each(|(k_l, k_r)| *k_l += &k_r.mul(&round_challenge));
 
-                
+
                 {
                     $pc::round_reduce(
                         round_challenge,
@@ -225,7 +221,19 @@ mod poseidon_fs {
     type PC_DEE<FS> = PC<TweedleDee, FS>;
     // its domain extended variant
     type PC_DEE_DE<FS> = DomainExtendedPolynomialCommitment<TweedleDee, PC_DEE<FS>>;
-    
-    generate_pc_tests!(pc_dee_tweedle_fq_poseidon_fs, PC_DEE::<TweedleFqPoseidonFSRng>, PC_DEE_DE::<TweedleFqPoseidonFSRng>, Blake2s, TweedleFqPoseidonFSRng);
-    generate_pc_tests!(pc_dee_tweedle_fr_poseidon_fs, PC_DEE::<TweedleFrPoseidonFSRng>, PC_DEE_DE::<TweedleFrPoseidonFSRng>, Blake2s, TweedleFrPoseidonFSRng);
+
+    generate_pc_tests!(
+        pc_dee_tweedle_fq_poseidon_fs,
+        PC_DEE::<TweedleFqPoseidonFSRng>,
+        PC_DEE_DE::<TweedleFqPoseidonFSRng>,
+        Blake2s,
+        TweedleFqPoseidonFSRng
+    );
+    generate_pc_tests!(
+        pc_dee_tweedle_fr_poseidon_fs,
+        PC_DEE::<TweedleFrPoseidonFSRng>,
+        PC_DEE_DE::<TweedleFrPoseidonFSRng>,
+        Blake2s,
+        TweedleFrPoseidonFSRng
+    );
 }

@@ -10,6 +10,8 @@ use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::EndoMulCurveGadget;
 use r1cs_std::prelude::EqGadget;
 use r1cs_std::FromBitsGadget;
+use std::collections::BTreeSet;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 /// Gadget for the IOP.
@@ -460,12 +462,12 @@ where
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_map_gadget<CS: ConstraintSystemAbstract<G::BaseField>>(
+    pub fn verifier_query_map_gadget<'a, CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
         state: VerifierStateGadget<G::ScalarField, G::BaseField>,
     ) -> Result<
         (
-            QueryMap<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+            QueryMap<'a, NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
             VerifierStateGadget<G::ScalarField, G::BaseField>,
         ),
         SynthesisError,
@@ -492,39 +494,43 @@ where
         let g_h_times_beta = beta.mul_by_constant(cs.ns(|| "g_H * beta"), &g_h)?;
         let g_k_times_gamma = gamma.mul_by_constant(cs.ns(|| "g_K * beta"), &g_k)?;
 
-        let mut query_map = QueryMap::new();
+        let queries_at_beta = BTreeSet::from_iter(vec![
+            "w".to_string(),
+            "y_a".to_string(),
+            "y_b".to_string(),
+            "u_1".to_string(),
+            "h_1".to_string(),
+        ]);
+        let queries_at_gamma = BTreeSet::from_iter(vec![
+            "u_2".to_string(),
+            "h_2".to_string(),
+            "a_row".to_string(),
+            "a_col".to_string(),
+            "a_row_col".to_string(),
+            "a_val_row_col".to_string(),
+            "b_row".to_string(),
+            "b_col".to_string(),
+            "b_row_col".to_string(),
+            "b_val_row_col".to_string(),
+            "c_row".to_string(),
+            "c_col".to_string(),
+            "c_row_col".to_string(),
+            "c_val_row_col".to_string(),
+        ]);
+        let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
+        let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
-        // Outer sumcheck
-
-        // First round polys
-        query_map.insert(("x".into(), "beta".into()), beta.clone());
-        query_map.insert(("w".into(), "beta".into()), beta.clone());
-        query_map.insert(("y_a".into(), "beta".into()), beta.clone());
-        query_map.insert(("y_b".into(), "beta".into()), beta.clone());
-
-        // Second round polys
-        query_map.insert(("u_1".into(), "beta".into()), beta.clone());
-        query_map.insert(("u_1".into(), "g_h * beta".into()), g_h_times_beta);
-        query_map.insert(("h_1".into(), "beta".into()), beta.clone());
-
-        // Inner sumcheck
-
-        // Third round polys
-        query_map.insert(("u_2".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("u_2".into(), "g_k * gamma".into()), g_k_times_gamma);
-        query_map.insert(("h_2".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("a_row".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("a_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("a_row_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("a_val_row_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("b_row".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("b_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("b_row_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("b_val_row_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("c_row".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("c_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("c_row_col".into(), "gamma".into()), gamma.clone());
-        query_map.insert(("c_val_row_col".into(), "gamma".into()), gamma.clone());
+        let query_map = {
+            let mut map = QueryMap::new();
+            map.insert("beta".to_string(), (beta, queries_at_beta));
+            map.insert("gamma".to_string(), (gamma, queries_at_gamma));
+            map.insert("g * beta".to_string(), (g_h_times_beta, queries_at_g_beta));
+            map.insert(
+                "g * gamma".to_string(),
+                (g_k_times_gamma, queries_at_g_gamma),
+            );
+            map
+        };
 
         Ok((query_map, state))
     }

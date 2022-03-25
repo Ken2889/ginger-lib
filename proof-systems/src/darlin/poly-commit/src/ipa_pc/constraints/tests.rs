@@ -9,7 +9,7 @@ use algebra::{
     curves::tweedle::dee::{DeeJacobian, TweedledeeParameters},
     fields::tweedle::fq::Fq as tweedleFq,
 };
-use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, constraints::TweedleFqPoseidonFSRngGadget};
+use fiat_shamir::poseidon::{constraints::TweedleFqPoseidonFSRngGadget, TweedleFqPoseidonFSRng};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::groups::curves::short_weierstrass::AffineGadget;
 

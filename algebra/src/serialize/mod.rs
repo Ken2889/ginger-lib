@@ -10,7 +10,7 @@ use std::{
     convert::TryFrom,
     rc::Rc,
     string::String,
-    vec::Vec
+    vec::Vec,
 };
 
 #[cfg(feature = "derive")]

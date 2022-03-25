@@ -78,15 +78,15 @@ pub struct Index<F: PrimeField> {
     /// The `C` matrix for the R1CS instance, in sparse representation
     pub c: SparseMatrix<F>,
 
-    /// Arithmetization of the kernel-matrix product `R_A`, which essentially contains
+    /// Arithmetization of the matrix`A`, which essentially contains
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
-    pub a_star_arith: MatrixArithmetization<F>,
-    /// Arithmetization of the kernel-matrix product `R_B`, which essentially contains
+    pub a_arith: MatrixArithmetization<F>,
+    /// Arithmetization of the matrix`B`, which essentially contains
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
-    pub b_star_arith: MatrixArithmetization<F>,
-    /// Arithmetization of the kernel-matrix product `R_C`, which essentially contains
+    pub b_arith: MatrixArithmetization<F>,
+    /// Arithmetization of the matrix`C`, which essentially contains
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
-    pub c_star_arith: MatrixArithmetization<F>,
+    pub c_arith: MatrixArithmetization<F>,
 }
 
 impl<F: PrimeField> SemanticallyValid for Index<F> {
@@ -107,27 +107,25 @@ impl<F: PrimeField> SemanticallyValid for Index<F> {
             d.unwrap()
         };
 
-        let check_matrix = &|m_star_arith: &MatrixArithmetization<F>| -> bool {
+        let check_matrix = &|m_arith: &MatrixArithmetization<F>| -> bool {
             // Check indexer polys are not hiding and don't have any degree bound
-            !m_star_arith.row.is_hiding()
-                && !m_star_arith.col.is_hiding()
-                && !m_star_arith.row_col.is_hiding()
-                && !m_star_arith.val_row_col.is_hiding()
+            !m_arith.row.is_hiding()
+                && !m_arith.col.is_hiding()
+                && !m_arith.row_col.is_hiding()
+                && !m_arith.val_row_col.is_hiding()
 
             // Check correct number of evaluations on domain B
-            && m_star_arith.row_evals_on_domain_b.evals.len() == domain_b.size()
-                && &m_star_arith.row_evals_on_domain_b.domain == &domain_b
-                && m_star_arith.col_evals_on_domain_b.evals.len() == domain_b.size()
-                && &m_star_arith.col_evals_on_domain_b.domain == &domain_b
-                && m_star_arith.val_evals_on_domain_b.evals.len() == domain_b.size()
-                && &m_star_arith.val_evals_on_domain_b.domain == &domain_b
-                && m_star_arith.row_col_evals_on_domain_b.evals.len() == domain_b.size()
-                && &m_star_arith.row_col_evals_on_domain_b.domain == &domain_b
+            && m_arith.evals_on_domain_b.row.evals.len() == domain_b.size()
+                && &m_arith.evals_on_domain_b.row.domain == &domain_b
+                && m_arith.evals_on_domain_b.col.evals.len() == domain_b.size()
+                && &m_arith.evals_on_domain_b.col.domain == &domain_b
+                && m_arith.evals_on_domain_b.row_col.evals.len() == domain_b.size()
+                && &m_arith.evals_on_domain_b.row_col.domain == &domain_b
+                && m_arith.evals_on_domain_b.val_row_col.evals.len() == domain_b.size()
+                && &m_arith.evals_on_domain_b.val_row_col.domain == &domain_b
         };
 
-        check_matrix(&self.a_star_arith)
-            && check_matrix(&self.b_star_arith)
-            && check_matrix(&self.c_star_arith)
+        check_matrix(&self.a_arith) && check_matrix(&self.b_arith) && check_matrix(&self.c_arith)
     }
 }
 
@@ -140,24 +138,56 @@ impl<F: PrimeField> Index<F> {
     /// Iterate over the indexed polynomials.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
         vec![
-            &self.a_star_arith.row,
-            &self.a_star_arith.col,
-            &self.a_star_arith.row_col,
-            &self.a_star_arith.val_row_col,
-            &self.b_star_arith.row,
-            &self.b_star_arith.col,
-            &self.b_star_arith.row_col,
-            &self.b_star_arith.val_row_col,
-            &self.c_star_arith.row,
-            &self.c_star_arith.col,
-            &self.c_star_arith.row_col,
-            &self.c_star_arith.val_row_col,
+            &self.a_arith.row,
+            &self.a_arith.col,
+            &self.a_arith.row_col,
+            &self.a_arith.val_row_col,
+            &self.b_arith.row,
+            &self.b_arith.col,
+            &self.b_arith.row_col,
+            &self.b_arith.val_row_col,
+            &self.c_arith.row,
+            &self.c_arith.col,
+            &self.c_arith.row_col,
+            &self.c_arith.val_row_col,
         ]
         .into_iter()
     }
 }
 
 impl<F: PrimeField> IOP<F> {
+    /// Build the four domains used in the protocol.
+    /// `num_aux` is the number of private witnesses
+    /// `num_inputs` is the number of public inputs (including the one for the constants)
+    /// `num_non_zero` is the max number of non-zero values in any of the matrices A, B, and C
+    pub(crate) fn build_domains(
+        num_aux: usize,
+        num_inputs: usize,
+        num_constraints: usize,
+        num_non_zero: usize,
+    ) -> Result<
+        (
+            Box<dyn EvaluationDomain<F>>,
+            Box<dyn EvaluationDomain<F>>,
+            Box<dyn EvaluationDomain<F>>,
+            Box<dyn EvaluationDomain<F>>,
+        ),
+        Error,
+    > {
+        let num_formatted_variables = num_aux + num_inputs;
+        let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
+        let domain_h = get_best_evaluation_domain::<F>(padded_matrix_dim)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        let domain_k = get_best_evaluation_domain::<F>(num_non_zero)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        // FFT domain for the public inputs, typically small
+        let domain_x = get_best_evaluation_domain(num_inputs)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        // helper domain for the precomputations of the inner sumcheck
+        let domain_b = get_best_evaluation_domain(4 * (domain_k.size() - 1))
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        Ok((domain_h, domain_k, domain_x, domain_b))
+    }
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.
     pub fn index<C: ConstraintSynthesizer<F>>(c: C) -> Result<Index<F>, Error> {
@@ -170,7 +200,7 @@ impl<F: PrimeField> IOP<F> {
 
         // matrix post-processing: balance matrices
         let matrix_processing_time = start_timer!(|| "Processing matrices");
-        let (mut a, mut b, mut c) = post_process_matrices(&mut ics).expect("should not be `None`");
+        balance_matrices(&mut ics.at, &mut ics.bt);
         add_to_trace!(|| "number of (formatted) input_variables", || format!(
             "{}",
             ics.num_inputs
@@ -197,34 +227,26 @@ impl<F: PrimeField> IOP<F> {
 
             f: PhantomData,
         };
+        let (domain_h, domain_k, domain_x, domain_b) = Self::build_domains(
+            index_info.num_witness,
+            index_info.num_inputs,
+            index_info.num_constraints,
+            index_info.num_non_zero,
+        )?;
 
-        let num_formatted_variables = ics.num_aux + ics.num_inputs;
-        let num_constraints = ics.num_constraints;
-        let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
-        let domain_h = get_best_evaluation_domain::<F>(padded_matrix_dim)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        let domain_k = get_best_evaluation_domain::<F>(num_non_zero(&mut ics))
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        // FFT domain for the public inputs, typically small
-        let domain_x = get_best_evaluation_domain(ics.num_inputs)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        // helper domain for the precomputations of the inner sumcheck
-        let domain_b = get_best_evaluation_domain(4 * (domain_k.size() - 1))
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        let (mut a, mut b, mut c) =
+            post_process_matrices(&mut ics, &domain_h, &domain_x).expect("should not be `None`");
 
         let a_arithmetization_time = start_timer!(|| "Arithmetizing A");
-        let a_star_arith =
-            arithmetize_matrix("a", &mut a, &domain_k, &domain_h, &domain_x, &domain_b)?;
+        let a_arith = arithmetize_matrix("a", &mut a, &domain_k, &domain_h, &domain_b)?;
         end_timer!(a_arithmetization_time);
 
         let b_arithmetization_time = start_timer!(|| "Arithmetizing B");
-        let b_star_arith =
-            arithmetize_matrix("b", &mut b, &domain_k, &domain_h, &domain_x, &domain_b)?;
+        let b_arith = arithmetize_matrix("b", &mut b, &domain_k, &domain_h, &domain_b)?;
         end_timer!(b_arithmetization_time);
 
         let c_arithmetization_time = start_timer!(|| "Arithmetizing C");
-        let c_star_arith =
-            arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_x, &domain_b)?;
+        let c_arith = arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_b)?;
         end_timer!(c_arithmetization_time);
 
         end_timer!(index_time);
@@ -233,9 +255,9 @@ impl<F: PrimeField> IOP<F> {
             a,
             b,
             c,
-            a_star_arith,
-            b_star_arith,
-            c_star_arith,
+            a_arith,
+            b_arith,
+            c_arith,
         })
     }
 }
@@ -246,11 +268,10 @@ impl<F: PrimeField> IOP<F> {
 
 ****************************************************************************/
 
-/// Contains information about the arithmetization of the kernel-matrix product
-/// `R_M(X,Y) = sum_{z in H} R(X,z) * M(z,Y)` of a sparse matrix `M`, as obtained
-/// by the lincheck to sumcheck reduction.
-/// The arithmetization is again with respect to the kernel `R(X,Y)`, i.e.
-///     `R_M(X,Y) = Sum_{z in K} val(z)*R(X,row(z))*R(Y,col(z))`
+/// Contains information about the arithmetization of a sparse matrix `M`,
+/// as obtained by the lincheck to sumcheck reduction.
+/// The arithmetization is with respect to the Lagrange kernel `L_H(X,Y)`, i.e.
+///     `M(X,Y) = Sum_{z in K} val(z) * L_H(X,row(z)) * L_H(Y,col(z))`
 /// over an *indexer domain* `K`, large enough to index the non-zero entries in
 /// `M`.
 #[derive(Derivative)]
@@ -278,34 +299,40 @@ pub struct MatrixArithmetization<F: PrimeField> {
     //
     // Inner sumcheck precomputations:
     //
-    /// Evaluation of `self.row` over the product domain `domain_b` (of size `4*|K|`)
+    /// Evaluation of indexer polynomials over the product domain `domain_b` (of size `4*|K|`)
     /// used in the prover computation for the inner sumcheck.
-    pub row_evals_on_domain_b: EvaluationsOnDomain<F>,
-
-    /// Evaluation of `self.col` over the product domain `domain_b`.
-    pub col_evals_on_domain_b: EvaluationsOnDomain<F>,
-
-    /// Evaluation of `self.val` over the product domain `domain_b`.
-    pub val_evals_on_domain_b: EvaluationsOnDomain<F>,
-
-    /// Evaluation of `self.row_col` over the product domain `domain_b`.
-    pub row_col_evals_on_domain_b: EvaluationsOnDomain<F>,
-
-    /// Evaluation of `self.row_col` over the product domain `domain_b`.
-    pub val_row_col_evals_on_domain_b: EvaluationsOnDomain<F>,
+    pub evals_on_domain_b: MatrixEvals<F>,
 }
 
-/// Given a sparse matrix `M`, computes the polynomial representations `val(X)`,
-/// `row(X)`, `col(X)`, and `row.col(X)` modulo `K` of the kernel representation of the
-/// derivative `R_M`. (Actually it returns the transpose, i.e. `row(X)` and `col(X)`
-/// interchanged)
-// The relation between the kernel representation and the Lagrange representation is in
-// general given by
-//     `M(X,Y) = sum_{x,y in H} m(x,y) * R(X,y)*R(x,Y) =
-//            = sum_{x,y in H} m(x,y)*R(x,x)*R(y,y) * L(X,y)*L(x,Y)`,
-// and hence `m(x,y)= M(x,y)/(R(x,x)R(y,y))` over `H x H`.
-// As `R_M(X,Y) = R(X,X)*M(X,Y)`, we overall have `m(x,y) = M(x,y)/R(y,y)`.
-// TODO for debugging: add test that checks result of arithmetize_matrix(M).
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = ""),
+    Debug(bound = ""),
+    Eq(bound = ""),
+    PartialEq(bound = "")
+)]
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+/// Evaluations of indexer polynomials over a domain.
+pub struct MatrixEvals<F: PrimeField> {
+    /// Evaluation of `self.row`.
+    pub row: EvaluationsOnDomain<F>,
+
+    /// Evaluation of `self.col`.
+    pub col: EvaluationsOnDomain<F>,
+
+    /// Evaluation of `self.row_col`.
+    pub row_col: EvaluationsOnDomain<F>,
+
+    /// Evaluation of `self.val_row_col`.
+    pub val_row_col: EvaluationsOnDomain<F>,
+}
+
+/// Given a sparse matrix `M`, computes the polynomial representations `row(X)`, `col(X)`,
+/// `row.col(X)`, and `val.row.col(X)` of `M` such that
+///   M(X,Y) = sum_{w in K} val(w) * L_H(X,row(w)) * L_H(Y,col(w))
+/// where `K` is a domain large enough to index the non-zero entries of the matrix.
+/// In order to ease prover computations we provide `val.row.col(X)` instead of `val(X)`.
+/// For the same reason we also provide the polynomial `row.col(X)`.
 pub(crate) fn arithmetize_matrix<F: PrimeField>(
     matrix_name: &str,
     // The R1CS matrix.
@@ -314,69 +341,51 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
     domain_k: &Box<dyn EvaluationDomain<F>>,
     // The domain `H` for the Lagrange representation of `M` .
     domain_h: &Box<dyn EvaluationDomain<F>>,
-    // The input domain `X`, a subdomain of the Lagrange domain `H`.
-    domain_x: &Box<dyn EvaluationDomain<F>>,
     // An extension of the indexer domain `K`, at least 4 times larger.
     domain_b: &Box<dyn EvaluationDomain<F>>,
 ) -> Result<MatrixArithmetization<F>, Error> {
-    let matrix_time = start_timer!(|| "Computing row, col, and val LDEs");
+    let matrix_time = start_timer!(|| format!("Arithemtizing matrix {}", matrix_name));
 
     let elems: Vec<_> = domain_h.elements().collect();
 
-    let mut row_vec = Vec::new();
-    let mut col_vec = Vec::new();
-    let mut val_vec = Vec::new();
+    let mut row_vec = Vec::with_capacity(domain_k.size());
+    let mut col_vec = Vec::with_capacity(domain_k.size());
+    let mut val_vec = Vec::with_capacity(domain_k.size());
 
-    let lde_evals_time = start_timer!(|| "Computing row, col and val evals");
+    let lde_evals_time = start_timer!(|| "Computing row, col, row.col and val.row.col evals");
 
-    let mut count = 0;
-
-    // As `R_M(X,Y) = R(X,X)*M(X,Y)`, we overall have `m(x,y) = M(x,y)/R(y,y)`.
     for (r, row) in matrix.into_iter().enumerate() {
         if !is_in_ascending_order(&row, |(_, a), (_, b)| a < b) {
             row.sort_by(|(_, a), (_, b)| a.cmp(b));
         };
 
-        for &mut (val, i) in row {
-            // As we do not re-index the y_A and y_B vectors by the input domain,
-            // we simply take elems[r]
-            let row_val = elems[r];
-            // on the contrary, column vectors are re-indexed
-            let col_val = elems[domain_h
-                .reindex_by_subdomain(domain_x.size(), i)
-                .map_err(|e| Error::Other(e.to_string()))?];
-
-            row_vec.push(row_val);
-            col_vec.push(col_val);
+        for &mut (val, c) in row {
+            row_vec.push(elems[r]);
+            col_vec.push(elems[c]);
             val_vec.push(val);
-
-            count += 1;
         }
     }
 
-    end_timer!(lde_evals_time);
+    // pad to len equal to domain_k.size()
+    row_vec.resize(domain_k.size(), elems[0]);
+    col_vec.resize(domain_k.size(), elems[0]);
+    val_vec.resize(domain_k.size(), F::zero());
 
-    // pad with zeroes
-    for _ in 0..(domain_k.size() - count) {
-        col_vec.push(elems[0]);
-        row_vec.push(elems[0]);
-        val_vec.push(F::zero());
-    }
-    let row_col_vec: Vec<_> = row_vec
+    let (row_col_vec, val_row_col_vec): (Vec<_>, Vec<_>) = row_vec
         .par_iter()
         .zip(&col_vec)
-        .map(|(row, col)| *row * col)
-        .collect();
-    let val_row_col_vec: Vec<_> = row_col_vec
-        .par_iter()
         .zip(&val_vec)
-        .map(|(row_col, val)| *row_col * val)
+        .map(|((row, col), val)| {
+            let row_col = *row * col;
+            (row_col, row_col * val)
+        })
         .collect();
+
+    end_timer!(lde_evals_time);
 
     let interpolate_time = start_timer!(|| "Interpolating on K and B");
     let row_evals_on_K = EvaluationsOnDomain::from_vec_and_domain(row_vec, domain_k.clone());
     let col_evals_on_K = EvaluationsOnDomain::from_vec_and_domain(col_vec, domain_k.clone());
-    let val_evals_on_K = EvaluationsOnDomain::from_vec_and_domain(val_vec, domain_k.clone());
     let row_col_evals_on_K =
         EvaluationsOnDomain::from_vec_and_domain(row_col_vec, domain_k.clone());
     let val_row_col_evals_on_K =
@@ -384,20 +393,23 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
 
     let row = row_evals_on_K.clone().interpolate();
     let col = col_evals_on_K.clone().interpolate();
-    let val = val_evals_on_K.clone().interpolate();
     let row_col = row_col_evals_on_K.interpolate();
     let val_row_col = val_row_col_evals_on_K.interpolate();
 
-    let row_evals_on_domain_b =
-        EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&row), domain_b.clone());
-    let col_evals_on_domain_b =
-        EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&col), domain_b.clone());
-    let val_evals_on_domain_b =
-        EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&val), domain_b.clone());
-    let row_col_evals_on_domain_b =
-        EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&row_col), domain_b.clone());
-    let val_row_col_evals_on_domain_b =
-        EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&val_row_col), domain_b.clone());
+    let evals_on_domain_b = {
+        let row = EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&row), domain_b.clone());
+        let col = EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&col), domain_b.clone());
+        let row_col =
+            EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&row_col), domain_b.clone());
+        let val_row_col =
+            EvaluationsOnDomain::from_vec_and_domain(domain_b.fft(&val_row_col), domain_b.clone());
+        MatrixEvals {
+            row,
+            col,
+            row_col,
+            val_row_col,
+        }
+    };
     end_timer!(interpolate_time);
 
     end_timer!(matrix_time);
@@ -410,11 +422,7 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
         val_row_col: LabeledPolynomial::new(m_name.clone() + "_val_row_col", val_row_col, false),
         size_of_H: domain_h.size(),
         size_of_K: domain_k.size(),
-        row_evals_on_domain_b,
-        col_evals_on_domain_b,
-        val_evals_on_domain_b,
-        row_col_evals_on_domain_b,
-        val_row_col_evals_on_domain_b,
+        evals_on_domain_b,
     })
 }
 
@@ -439,23 +447,26 @@ fn is_in_ascending_order<T: Ord>(x_s: &[T], is_less_than: impl Fn(&T, &T) -> boo
 
 /// This function converts a R1CS matrix from ginger-lib into the sparse matrix representation
 /// `Matrix` as used in this crate.
+/// The columns of the matrix are re-arranged to be coherent with the treatment of input variables
+/// as a subdomain of the full variable vector.
 fn to_matrix_helper<F: PrimeField>(
     matrix: &[Vec<(F, VarIndex)>],
-    num_input_variables: usize,
+    domain_h: &Box<dyn EvaluationDomain<F>>,
+    domain_x: &Box<dyn EvaluationDomain<F>>,
 ) -> SparseMatrix<F> {
     let mut new_matrix = Vec::with_capacity(matrix.len());
-    let domain_x = get_best_evaluation_domain::<F>(num_input_variables).unwrap();
     let domain_x_size = domain_x.size();
     for row in matrix {
         let mut new_row = Vec::with_capacity(row.len());
         for (fe, column) in row {
             let column = match column {
-                // public inputs correspond to the first columns
                 VarIndex::Input(i) => *i,
-                // private witnesses start right after
                 VarIndex::Aux(i) => domain_x_size + i,
             };
-            new_row.push((*fe, column))
+            let index = domain_h
+                .reindex_by_subdomain(domain_x_size, column)
+                .unwrap();
+            new_row.push((*fe, index))
         }
         new_matrix.push(new_row)
     }
@@ -486,11 +497,12 @@ fn balance_matrices<F: Field>(
 
 pub(crate) fn post_process_matrices<F: PrimeField>(
     cs: &mut ConstraintSystem<F>,
+    domain_h: &Box<dyn EvaluationDomain<F>>,
+    domain_x: &Box<dyn EvaluationDomain<F>>,
 ) -> Option<(SparseMatrix<F>, SparseMatrix<F>, SparseMatrix<F>)> {
-    balance_matrices(&mut cs.at, &mut cs.bt);
-    let a = to_matrix_helper(&cs.at, cs.num_inputs);
-    let b = to_matrix_helper(&cs.bt, cs.num_inputs);
-    let c = to_matrix_helper(&cs.ct, cs.num_inputs);
+    let a = to_matrix_helper(&cs.at, domain_h, domain_x);
+    let b = to_matrix_helper(&cs.bt, domain_h, domain_x);
+    let c = to_matrix_helper(&cs.ct, domain_h, domain_x);
     Some((a, b, c))
 }
 
@@ -504,4 +516,191 @@ pub(crate) fn num_non_zero<F: Field>(cs: &mut ConstraintSystem<F>) -> usize {
         .max()
         .expect("iterator is not empty");
     max
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::iop::sparse_linear_algebra::test::DenseMatrix;
+    use crate::IOP;
+    use algebra::fields::tweedle::fq::Fq as F;
+    use algebra::UniformRand;
+    use num_traits::{One, Zero};
+    use rand::distributions::{Distribution, Uniform};
+    use rand::{thread_rng, RngCore};
+
+    fn build_random_matrix(
+        num_inputs: usize,
+        num_aux: usize,
+        num_constraints: usize,
+        fill_factor: f64,
+        rng: &mut dyn RngCore,
+    ) -> SparseMatrix<F> {
+        let num_padded_inputs = get_best_evaluation_domain::<F>(num_inputs).unwrap().size();
+        let mut matrix = DenseMatrix::<F>::generate_random(
+            num_constraints,
+            num_inputs + num_aux,
+            fill_factor,
+            rng,
+        );
+        for i in 0..matrix.num_rows {
+            for j in 0..matrix.num_cols {
+                if j >= num_inputs && j < num_padded_inputs {
+                    matrix.val[i * matrix.num_cols + j] = F::zero();
+                }
+            }
+        }
+        matrix.to_sparse()
+    }
+
+    #[test]
+    fn matrix_arithmetization() {
+        let num_rounds = 100;
+
+        let num_inputs_dist = Uniform::from(1..100);
+        let num_aux_dist = Uniform::from(1..100);
+        let num_constraints_dist = Uniform::from(1..200);
+        let fill_factor_dist = Uniform::new(0.0, 1.0);
+
+        let rng = &mut thread_rng();
+
+        for _ in 0..num_rounds {
+            let num_inputs = num_inputs_dist.sample(rng);
+            let num_aux = num_aux_dist.sample(rng);
+            let num_constraints = num_constraints_dist.sample(rng);
+            let fill_factor = fill_factor_dist.sample(rng);
+
+            let mut matrix =
+                build_random_matrix(num_inputs, num_aux, num_constraints, fill_factor, rng);
+            let num_non_zero = matrix.iter().map(|row| row.len()).sum();
+            let (domain_h, domain_k, _domain_x, domain_b) =
+                IOP::build_domains(num_aux, num_inputs, num_constraints, num_non_zero).unwrap();
+
+            let arithmetization =
+                arithmetize_matrix("m", &mut matrix, &domain_k, &domain_h, &domain_b).unwrap();
+
+            // Random points for checking that dense and sparse representations of the matrix coincide
+            let x = loop {
+                let x = F::rand(rng);
+                // check that x does not belong to domain_k
+                if !domain_k.evaluate_vanishing_polynomial(x).is_zero() {
+                    break x;
+                }
+            };
+            let y = loop {
+                let y = F::rand(rng);
+                // check that y does not belong to domain_k
+                if !domain_k.evaluate_vanishing_polynomial(y).is_zero() {
+                    break y;
+                }
+            };
+
+            // Evaluate M(x,y) using dense representation
+            //   M(X,Y) = \sum_{i,j = 1...n} M_{i,j} * L(X, z_i) * L(Y, z_j)
+            // where
+            //   n is the size of the Lagrange domain H
+            //   z_i for i = 1...n are the roots of unity associated to H
+            //   L(.,.) is the bivariate Lagrange kernel
+            let lagrange_h_x = domain_h.domain_eval_lagrange_kernel(x).unwrap();
+            let lagrange_h_y = domain_h.domain_eval_lagrange_kernel(y).unwrap();
+            let mut result_dense = F::zero();
+
+            for (i, row) in matrix.iter().enumerate() {
+                for &(val, j) in row {
+                    result_dense += val * lagrange_h_x[i] * lagrange_h_y[j];
+                }
+            }
+
+            // Evaluate M(x,y) using sparse representation.
+            //   M(X,Y) = (X^n - 1)*(Y^n - 1)/n^2
+            //            * \sum_{w \in K} val.row.col(w) / ((X - row(w))*(Y - col(w))) mod (X^m - 1)
+            // where
+            //   n is the size of the Lagrange domain H
+            //   m is the size of the domain K
+            let val_row_col_on_k = arithmetization
+                .val_row_col
+                .evaluate_over_domain_by_ref(domain_k.clone());
+            let row_on_k = arithmetization
+                .row
+                .evaluate_over_domain_by_ref(domain_k.clone());
+            let col_on_k = arithmetization.col.evaluate_over_domain_by_ref(domain_k);
+            let scaling_factor = (x.pow(&[domain_h.size() as u64]) - F::one())
+                * (y.pow(&[domain_h.size() as u64]) - F::one())
+                * domain_h.size_inv()
+                * domain_h.size_inv();
+            let sparse_repr: F = row_on_k
+                .evals
+                .iter()
+                .zip(col_on_k.evals.iter())
+                .zip(val_row_col_on_k.evals.iter())
+                .map(|((r, c), vrc)| *vrc / ((x - r) * (y - c)))
+                .sum();
+            let result_sparse = scaling_factor * sparse_repr;
+
+            assert_eq!(result_dense, result_sparse);
+        }
+    }
+
+    #[test]
+    // - Matrix A: exactly 2 non-zero elements in each constraint
+    // - Matrix B: exactly 1 non-zero element in each constraint
+    // - Even number of constraints
+    // In this situation the balancer should perfectly balance the matrices.
+    fn matrix_balancer_even() {
+        let num_constraints = 100;
+        let mut a = vec![vec![(F::one(), VarIndex::Aux(0)); 2]; num_constraints];
+        let mut b = vec![vec![(F::one(), VarIndex::Aux(0)); 1]; num_constraints];
+        balance_matrices(&mut a, &mut b);
+        let a_weight: usize = a.iter().map(|row| row.len()).sum();
+        let b_weight: usize = b.iter().map(|row| row.len()).sum();
+        assert_eq!(a_weight, b_weight);
+    }
+    #[test]
+    // - Matrix A: exactly 2 non-zero elements in each constraint
+    // - Matrix B: exactly 1 non-zero element in each constraint
+    // - Odd number of constraints
+    // In this situation the difference in the number of non-zero elements of A and B after
+    // balancing should be equal to 1.
+    fn matrix_balancer_odd() {
+        let num_constraints = 101;
+        let mut a = vec![vec![(F::one(), VarIndex::Aux(0)); 2]; num_constraints];
+        let mut b = vec![vec![(F::one(), VarIndex::Aux(0)); 1]; num_constraints];
+        balance_matrices(&mut a, &mut b);
+        let a_weight: usize = a.iter().map(|row| row.len()).sum();
+        let b_weight: usize = b.iter().map(|row| row.len()).sum();
+        assert_eq!((a_weight as i64 - b_weight as i64).abs(), 1);
+    }
+
+    #[test]
+    // Balancer should behave symmetrically with respect to its two arguments.
+    fn matrix_balancer_symmetry() {
+        let num_constraints = 10;
+        let num_elements = Uniform::from(0..100);
+        let rng = &mut thread_rng();
+        let a: Vec<_> = (0..num_constraints)
+            .into_iter()
+            .map(|_| {
+                let n = num_elements.sample(rng);
+                vec![(F::one(), VarIndex::Aux(0)); n]
+            })
+            .collect();
+        let b: Vec<_> = (0..num_constraints)
+            .into_iter()
+            .map(|_| {
+                let n = num_elements.sample(rng);
+                vec![(F::one(), VarIndex::Aux(0)); n]
+            })
+            .collect();
+
+        let mut a1 = a.clone();
+        let mut b1 = b.clone();
+        balance_matrices(&mut a1, &mut b1);
+
+        let mut a2 = a.clone();
+        let mut b2 = b.clone();
+        balance_matrices(&mut b2, &mut a2);
+
+        assert_eq!(a1, a2);
+        assert_eq!(b1, b2);
+    }
 }

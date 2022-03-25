@@ -8,7 +8,7 @@ mod verifier_gadget {
     use algebra::{EndoMulCurve, UniformRand};
     use digest::Digest;
     use poly_commit::constraints::PolynomialCommitmentVerifierGadget;
-    use poly_commit::{PCParameters, PolynomialCommitment};
+    use poly_commit::PolynomialCommitment;
     use r1cs_core::ConstraintSystemAbstract;
     use r1cs_core::{ConstraintSystem, ConstraintSystemDebugger, SynthesisMode};
     use r1cs_std::alloc::AllocGadget;
@@ -33,8 +33,7 @@ mod verifier_gadget {
     {
         let rng = &mut thread_rng();
 
-        let universal_srs = PC::setup::<D>(num_constraints - 1).unwrap();
-        let (pc_pk, pc_vk) = universal_srs.trim((num_constraints - 1) / 2).unwrap();
+        let (pc_pk, pc_vk) = PC::setup::<D>((num_constraints - 1) / 2).unwrap();
 
         for _ in 0..num_samples {
             let a = G::ScalarField::rand(rng);
@@ -77,8 +76,10 @@ mod verifier_gadget {
             .unwrap();
 
             let pc_verifier_key_gadget =
-                PCG::VerifierKey::alloc(cs.ns(|| "alloc pc verifier key"), || Ok(pc_vk.clone()))
-                    .unwrap();
+                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
+                    Ok(pc_vk.clone())
+                })
+                .unwrap();
 
             let proof_gadget =
                 ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
@@ -123,8 +124,10 @@ mod verifier_gadget {
             .unwrap();
 
             let pc_verifier_key_gadget =
-                PCG::VerifierKey::alloc(cs.ns(|| "alloc pc verifier key"), || Ok(pc_vk.clone()))
-                    .unwrap();
+                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
+                    Ok(pc_vk.clone())
+                })
+                .unwrap();
 
             let proof_gadget =
                 ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
