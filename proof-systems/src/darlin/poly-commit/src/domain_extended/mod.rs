@@ -1,9 +1,9 @@
 //!
 //! A module for extending the domain of an arbitrary homomorphic commitment scheme beyond the
 //! maximum degree supported by it.
-
+#[cfg(feature = "circuit-friendly")]
 mod constraints;
-
+#[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 mod data_structures;
 pub use data_structures::*;

@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use num_traits::Zero;
@@ -310,7 +311,22 @@ impl<ConstraintF: Field, G: Group, GG: GroupGadget<G, ConstraintF>> GroupGadget<
         todo!()
     }
 
-    fn fixed_base_msm<'a, CS, T, IS, IB>(_cs: CS, _bases: IB, _scalars: IS) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, IS: Iterator<Item=&'a T>, IB: Iterator<Item=&'a GroupVec<G>> {
-        todo!()
+    fn fixed_base_msm<'a, CS, T, IS, IB>(mut cs: CS, bases: IB, scalars: IS) -> Result<Self, SynthesisError> where CS: ConstraintSystemAbstract<ConstraintF>, T: 'a + ToBitsGadget<ConstraintF> + ?Sized, IS: Iterator<Item=&'a T>, IB: Iterator<Item=&'a GroupVec<G>> {
+        let mut result = Self::zero(cs.ns(|| "alloc zero"), 0)?;
+        let sorted_terms = bases
+            .zip(scalars)
+            .enumerate()
+            .map(|(i, (base, scalar))| {
+                let scalar_bits = scalar.to_bits_strict(cs.ns(|| format!("scalar {} to bits", i)))?;
+                Ok(((base.len(), format!("{}", i)), (base, scalar_bits)))
+            })
+            .collect::<Result<BTreeMap<_,_>, SynthesisError>>()?;
+
+        for ((_, i),(base, scalar)) in sorted_terms {
+            let prod = Self::mul_bits_fixed_base(base,cs.ns(|| format!("mul bits for product {}", i)), &scalar)?;
+            result = result.add(cs.ns(|| format!("add product {} to result", i)), &prod)?;
+        }
+
+        Ok(result)
     }
 }

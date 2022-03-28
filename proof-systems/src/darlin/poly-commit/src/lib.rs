@@ -74,7 +74,9 @@ pub use domain_extended::*;
 pub mod ipa_pc;
 
 /// Gadget to verify opening proofs of a linear polynomial commitment scheme
+#[cfg(feature = "circuit-friendly")]
 pub mod constraints;
+#[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 
 /// `QueryMap` is the set of queries that are to be made to a set of labeled polynomials or linear combinations.

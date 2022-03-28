@@ -15,7 +15,6 @@ pub mod data_structures;
 pub use data_structures::*;
 
 #[cfg(test)]
-#[cfg(feature = "circuit-friendly")]
 pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;

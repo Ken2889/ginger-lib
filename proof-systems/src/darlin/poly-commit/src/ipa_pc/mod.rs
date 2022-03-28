@@ -16,8 +16,10 @@ use algebra::{
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
+#[cfg(feature = "circuit-friendly")]
 mod constraints;
 mod data_structures;
+#[cfg(feature = "circuit-friendly")]
 pub use constraints::InnerProductArgGadget;
 pub use data_structures::*;
 
