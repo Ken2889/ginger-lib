@@ -1,22 +1,26 @@
 //! A test circuit which, besides processing additional data according to
 //! a simple quadratic relation, allocates a given instance of `FinalDarlinDeferredData`,
 //! and wires it to the outside via system inputs.
+use marlin::Marlin;
 use crate::darlin::{
     accumulators::ItemAccumulator,
-    data_structures::FinalDarlinDeferredData,
-    pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCD, PCDParameters},
-    FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
+    pcd::{
+        final_darlin::{FinalDarlinDeferredData, FinalDarlinProverKey, FinalDarlinVerifierKey, FinalDarlinPCD, FinalDarlinProof},
+        PCDNode, PCDCircuit, PCD, error::PCDError, simple_marlin::MarlinProof,
+    },
     DomainExtendedIpaPc,
 };
 use algebra::{Group, ToConstraintField, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
+    PCKey,
     ipa_pc::{CommitterKey, VerifierKey, IPACurve},
     Error as PCError,
 };
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
+use std::marker::PhantomData;
 use rand::Rng;
 use rand::RngCore;
 
@@ -87,6 +91,10 @@ where
         _vk: &Self::PCDVerifierKey,
     ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
         Ok(())
+    }
+
+    fn get_id() -> String {
+        "TestPrevPCD".to_string()
     }
 }
 
@@ -295,6 +303,107 @@ where
     }
 }
 
+// A final Darlin in G1, and the previous node in G2.
+pub struct TestFinalDarlinNode<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>(
+    #[doc(hidden)] PhantomData<G1>,
+    #[doc(hidden)] PhantomData<G2>,
+    #[doc(hidden)] PhantomData<FS>,
+    #[doc(hidden)] PhantomData<&'a ()>,
+);
+
+impl<'a, G1, G2, FS> PCDNode<G1, G2> for TestFinalDarlinNode<'a, G1, G2, FS>
+where
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
+    FS: FiatShamirRng + 'static,
+{
+    type ProverKey = FinalDarlinProverKey<
+        G1,
+        DomainExtendedIpaPc<G1, FS>,
+    >;
+    type VerifierKey = FinalDarlinVerifierKey<
+        G1,
+        DomainExtendedIpaPc<G1, FS>,
+    >;
+    type InputPCD = TestPrevPCD<G1, G2>;
+    type OutputPCD = FinalDarlinPCD<'a, G1, G2, FS>;
+    type Circuit = TestCircuit<G1, G2>;
+
+    /// Generate the index-specific (i.e., circuit-specific) prover and verifier
+    /// keys from the dedicated PCDCircuit.
+    /// This is a deterministic algorithm that anyone can rerun.
+    fn index<D: Digest>(
+        committer_key: &CommitterKey<G1>,
+        config: CircuitInfo<G1, G2>,
+    ) -> Result<
+        (
+            FinalDarlinProverKey<
+                G1,
+                DomainExtendedIpaPc<G1, FS>,
+            >,
+            FinalDarlinVerifierKey<
+                G1,
+                DomainExtendedIpaPc<G1, FS>,
+            >,
+        ),
+        PCDError,
+    > {
+        let c = TestCircuit::<G1, G2>::init(config);
+        let res = Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::circuit_specific_setup::<_, D>(
+            committer_key,
+            c
+        ).map_err(|e| PCDError::NodeSetupError(e.to_string()))?;
+
+        Ok(res)
+    }
+
+    /// Create and return a FinalDarlinPCD, given previous PCDs and a PCDCircuit
+    /// that (partially) verify them along with some additional data.
+    fn prove(
+        index_pk: &FinalDarlinProverKey<
+            G1,
+            DomainExtendedIpaPc<G1, FS>,
+        >,
+        pc_pk: &CommitterKey<G1>,
+        config: CircuitInfo<G1, G2>,
+        // In future, this will be explicitly a RainbowDarlinPCD
+        previous: Vec<TestPrevPCD<G1, G2>>,
+        // previous_vks: Vec<<C::PreviousPCD as PCD>::PCDVerifierKey>,
+        additional_data: (G1::ScalarField, G1::ScalarField),
+        zk: bool,
+        zk_rng: Option<&mut dyn RngCore>,
+    ) -> Result<FinalDarlinPCD<'a, G1, G2, FS>, PCDError>
+    {
+        // init the recursive circuit using the previous PCDs and the additional data.
+        let c = TestCircuit::<G1, G2>::init_state(
+            config,
+            previous,
+            vec![],
+            additional_data
+        );
+
+        // get the system and user inputs from the recursive circuit
+        let sys_ins = c.get_sys_ins()?.clone();
+
+        let usr_ins = c.get_usr_ins()?;
+
+        // run the Marlin prover on the initialized recursive circuit
+        let proof =
+            Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::prove(
+                index_pk, pc_pk, c, zk, zk_rng,
+            ).map_err(|e| PCDError::CreationFailure(e.to_string()))?;
+
+        let proof = FinalDarlinProof::<G1, G2, FS> {
+            proof: MarlinProof(proof),
+            deferred: sys_ins,
+        };
+
+        Ok(FinalDarlinPCD::<G1, G2, FS>::new(proof, usr_ins))
+    }
+}
+
 /// Generates a FinalDarlinPCD from TestCircuit1, given an instance of
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
@@ -332,12 +441,11 @@ where
     let a = G1::ScalarField::rand(rng);
     let b = G1::ScalarField::rand(rng);
 
-    FinalDarlin::<G1, G2, FS>::prove::<TestCircuit<G1, G2>>(
+    TestFinalDarlinNode::<G1, G2, FS>::prove(
         final_darlin_pk,
         pc_ck_g1,
         info,
         vec![prev_pcd],
-        vec![],
         (a, b),
         zk,
         if zk { Some(rng) } else { None },
@@ -378,9 +486,8 @@ where
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // Trim committer key and verifier key
-    let config = PCDParameters { segment_size };
-    let (committer_key_g1, _) = config.universal_setup(params_g1).unwrap();
-    let (committer_key_g2, _) = config.universal_setup(params_g2).unwrap();
+    let committer_key_g1 = params_g1.0.trim(segment_size - 1).unwrap();
+    let committer_key_g2 = params_g2.0.trim(segment_size - 1).unwrap();
 
     // Generate random (but valid) deferred data
     let dummy_deferred = FinalDarlinDeferredData::<G1, G2>::generate_random::<R, FS>(
@@ -396,7 +503,7 @@ where
     };
 
     let (index_pk, index_vk) =
-        FinalDarlin::<G1, G2, FS>::index::<TestCircuit<G1, G2>, D>(&committer_key_g1, info.clone())
+        TestFinalDarlinNode::<G1, G2, FS>::index::<D>(&committer_key_g1, info.clone())
             .unwrap();
 
     // Generate Final Darlin PCDs

@@ -4,7 +4,6 @@
 #![deny(unused_attributes, unused_imports, unused_mut)]
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
-#![forbid(unsafe_code)]
 #![allow(
     clippy::upper_case_acronyms,
     clippy::too_many_arguments,

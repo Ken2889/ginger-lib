@@ -78,6 +78,8 @@ impl<G: IPACurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
     }
 }
 
+const SIMPLE_MARLIN_PCD_IDENTIFIER: &str = "SimpleMarlin";
+
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 pub struct SimpleMarlinPCD<'a, G: IPACurve, FS: FiatShamirRng + 'static> {
@@ -181,5 +183,9 @@ where
 
         end_timer!(succinct_time);
         Ok(acc)
+    }
+
+    fn get_id() -> String {
+        SIMPLE_MARLIN_PCD_IDENTIFIER.to_string()
     }
 }

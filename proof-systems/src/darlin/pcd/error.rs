@@ -1,5 +1,8 @@
 #[derive(Debug)]
 pub enum PCDError {
+    SchemeSetupError(String),
+    NodeSetupError(String),
+    CreationFailure(String),
     FailedSuccinctVerification(String),
     FailedHardVerification(String),
     MissingSystemInputs(String),
@@ -9,6 +12,15 @@ pub enum PCDError {
 impl std::fmt::Display for PCDError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PCDError::SchemeSetupError(err) => {
+                write!(f, "Failed to bootstrap the PCDScheme: {}", err)
+            }
+            PCDError::NodeSetupError(err) => {
+                write!(f, "Failed to bootstrap the PCDNode: {}", err)
+            }
+            PCDError::CreationFailure(err) => {
+                write!(f, "Failed to create PCD: {}", err)
+            }
             PCDError::FailedSuccinctVerification(err) => {
                 write!(f, "Succinct check failed: {}", err)
             }

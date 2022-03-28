@@ -6,7 +6,6 @@ pub mod simple_marlin;
 #[cfg(test)]
 mod test {
     use crate::darlin::{
-        data_structures::FinalDarlinProof,
         pcd::GeneralPCD,
         proof_aggregator::{accumulate_proofs, batch_verify_proofs, verify_aggregated_proofs},
         tests::{
@@ -749,6 +748,8 @@ mod test {
     #[ignore]
     #[test]
     fn test_final_darlin_size() {
+        use crate::darlin::pcd::final_darlin::FinalDarlinProof;
+
         // Set params
         let num_constraints = 1 << 19;
         let segment_size = 1 << 17;

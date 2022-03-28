@@ -8,45 +8,25 @@ use crate::darlin::{
         dlog::{DualDLogItem, DualDLogItemAccumulator},
         ItemAccumulator,
     },
-    data_structures::FinalDarlinDeferredData,
     pcd::{
         error::PCDError,
-        final_darlin::{FinalDarlinPCD, FinalDarlinPCDVerifierKey},
+        final_darlin::{FinalDarlinPCD, FinalDarlinPCDVerifierKey, data_structures::FinalDarlinDeferredData},
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{Group, ToConstraintField, UniformRand};
+use algebra::{serialize::*, Group, ToConstraintField, UniformRand};
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey, IPACurve},
-    Error as PCError, PCKey,
-};
+use poly_commit::ipa_pc::{CommitterKey as DLogCommitterKey, IPACurve};
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
 use derivative::Derivative;
+use digest::Digest;
 
+pub mod scheme;
 pub mod error;
 pub mod final_darlin;
 pub mod simple_marlin;
-
-/// Configuration parameters for the PCD scheme: for now, just the size of the
-/// committer key to be used throughout the PCD scheme.
-pub struct PCDParameters {
-    pub segment_size: usize,
-}
-
-impl PCDParameters {
-    /// We assume the DLOG keys to be generated outside the PCD scheme,
-    /// so this function actually just trim them to the segment size
-    /// specified in the config.
-    pub fn universal_setup<G: IPACurve>(
-        &self,
-        params: (&DLogCommitterKey<G>, &DLogVerifierKey<G>),
-    ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
-        Ok((params.0.trim(self.segment_size - 1)?, params.1.trim(self.segment_size - 1)?))
-    }
-}
 
 /// Trait for the recursive circuit of a PCD node in G. Both witnesses and public inputs
 /// are derived from previous proofs (PCDs) and some additional data ("payload").
@@ -134,7 +114,59 @@ pub trait PCD: Sized + Send + Sync {
         let acc = self.succinct_verify(vk)?;
         self.hard_verify::<R>(acc, vk, rng)
     }
+
+    /// Return an identifier for this PCD
+    /// TODO: Return an enum instead of a String when everything will be ready ?
+    fn get_id() -> String;
 }
+
+/// Node of a PCD scheme, i.e. an entity able to verify and eventually accumulate
+/// incoming PCD(s) to produce a new one, defined over a cycle of curves.
+/// The kind of PCD(s) the node verifies, the circuit through which a proof of such
+/// verification is created, and the new one that it produces, must uniquely define
+/// its role inside the PCD scheme.
+pub trait PCDNode<
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
+> 
+{
+    /// The key used by the node to create proofs of `Self::Circuit`.
+    type ProverKey: Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize;
+    /// The key used by the node to verify proofs of `Self::Circuit`.
+    type VerifierKey: Clone + Debug + Eq + PartialEq + CanonicalSerialize + CanonicalDeserialize;
+    /// The PCD the node is able to verify. Its verification procedure should be enforced also in `Self::Circuit`.
+    type InputPCD: PCD;
+    /// The PCD the node is able to produce. A proof of `Self::Circuit` and the data required to verify
+    /// it, should be part of this PCD.
+    type OutputPCD: PCD;
+    /// The circuit that verifies Self::InputPCD. The proofs created with it and the public inputs required to verify
+    /// them should be part of Self::OutputPCD.
+    type Circuit: PCDCircuit<G1, PreviousPCD = Self::InputPCD>;
+
+    /// Generate the index-specific (i.e., circuit-specific) prover and verifier
+    /// keys from the dedicated PCDCircuit.
+    /// This is a deterministic algorithm that anyone can rerun.
+    fn index<D: Digest>(
+        committer_key: &DLogCommitterKey<G1>,
+        config: <Self::Circuit as PCDCircuit<G1>>::SetupData,
+    ) -> Result<(Self::ProverKey, Self::VerifierKey), PCDError>;
+
+    /// Create and return a new PCD, given previous PCDs and a PCDCircuit
+    /// that (partially) verify them along with some additional data.
+    fn prove(
+        index_pk: &Self::ProverKey,
+        pc_pk: &DLogCommitterKey<G1>,
+        config: <Self::Circuit as PCDCircuit<G1>>::SetupData,
+        previous: Vec<Self::InputPCD>,
+        additional_data: <Self::Circuit as PCDCircuit<G1>>::AdditionalData,
+        zk: bool,
+        zk_rng: Option<&mut dyn RngCore>,
+    ) -> Result<Self::OutputPCD, PCDError>;
+}
+
+const GENERAL_PCD_IDENTIFIER: &str = "General";
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
@@ -218,5 +250,9 @@ where
             }
             Self::FinalDarlin(final_darlin) => final_darlin.succinct_verify(vk),
         }
+    }
+
+    fn get_id() -> String {
+        GENERAL_PCD_IDENTIFIER.to_string()
     }
 }

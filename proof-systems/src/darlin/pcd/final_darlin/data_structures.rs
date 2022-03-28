@@ -10,6 +10,7 @@ use poly_commit::ipa_pc::{
     CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, IPACurve,
 };
 use derivative::Derivative;
+use marlin::{ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use rand::RngCore;
 
 /// The `FinalDarlinDeferredData`, assuming that the final node is in G1.
@@ -190,3 +191,6 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> SemanticallyValid
         self.proof.is_valid() && self.deferred.is_valid()
     }
 }
+
+pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
+pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
