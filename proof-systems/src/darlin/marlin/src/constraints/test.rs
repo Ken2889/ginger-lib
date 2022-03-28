@@ -171,21 +171,6 @@ mod verifier_gadget {
         }
     }
 
-    macro_rules! generate_tests {
-        ($pc_inst_name: ident, $curve: ty, $curve_gadget: ty, $pc_inst: ty, $pc_gadget: ty, $digest: ty) => {
-            paste::item! {
-                #[test]
-                fn [<prove_and_verify_with_square_matrix_ $pc_inst_name>]() {
-                    let num_constraints = 25;
-                    let num_variables = 25;
-
-                    test_circuit::<$curve, $curve_gadget, $pc_inst, $pc_gadget, $digest>(10, num_constraints, num_variables, false);
-                    test_circuit::<$curve, $curve_gadget, $pc_inst, $pc_gadget, $digest>(10, num_constraints, num_variables, true);
-                }
-            }
-        };
-    }
-
     mod poseidon_fs {
         use super::*;
         use algebra::curves::tweedle::dum::{DumJacobian, TweedledumParameters};
@@ -221,6 +206,13 @@ mod verifier_gadget {
         >;
         type D = Blake2s;
 
-        generate_tests!(dum_poseidon, G, GG, PC, PCG, D);
+        #[test]
+        fn prove_and_verify_with_square_matrix() {
+            let num_constraints = 25;
+            let num_variables = 25;
+
+            test_circuit::<G, GG, PC, PCG, D>(10, num_constraints, num_variables, false);
+            test_circuit::<G, GG, PC, PCG, D>(10, num_constraints, num_variables, true);
+        }
     }
 }
