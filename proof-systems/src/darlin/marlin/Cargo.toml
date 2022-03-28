@@ -24,8 +24,7 @@ algebra = { path = "../../../../algebra", features = ["parallel", "fft", "derive
 fiat-shamir = { path = "../fiat-shamir" }
 bench-utils = {  path = "../../../../bench-utils" }
 r1cs-core = {  path = "../../../../r1cs/core" }
-r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto" }
-r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"] }
+r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"], optional = true }
 poly-commit = {path = "../poly-commit" }
 
 rand = "=0.8.4"
@@ -40,6 +39,7 @@ num-traits = { version = "=0.2.14", default-features = false }
 algebra = { path = "../../../../algebra", features = ["tweedle", "derive"]}
 primitives = { path = "../../../../primitives" }
 r1cs-std = { path = "../../../../r1cs/gadgets/std", features = ["tweedle"]}
+r1cs-crypto = { path = "../../../../r1cs/gadgets/crypto" }
 fiat-shamir = { path = "../fiat-shamir", features = ["tweedle"] }
 paste = "=1.0.6"
 blake2 = { version = "=0.8.1", default-features = false }
@@ -50,7 +50,7 @@ num-traits = { version = "=0.2.14", default-features = false }
 [features]
 print-trace = [ "bench-utils/print-trace", "poly-commit/print-trace" ]
 asm = [ "poly-commit/asm", "algebra/llvm_asm" ]
-circuit-friendly = ["poly-commit/circuit-friendly"]
+circuit-friendly = ["poly-commit/circuit-friendly", "r1cs-std"]
 
 [[bench]]
 name = "tweedle_test_circuits"

@@ -1,5 +1,5 @@
 #[cfg(test)]
-#[cfg(feature = "circuit-friendly")]
+
 mod verifier_gadget {
     use crate::constraints::data_structures::{ProofGadget, VerifierKeyGadget};
     use crate::constraints::MarlinVerifierGadget;

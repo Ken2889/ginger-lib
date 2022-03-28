@@ -58,6 +58,7 @@ pub mod iop;
 use iop::LagrangeKernel;
 pub use iop::IOP;
 
+#[cfg(feature = "circuit-friendly")]
 pub mod constraints;
 
 #[cfg(test)]
