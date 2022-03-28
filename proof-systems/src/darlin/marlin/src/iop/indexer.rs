@@ -87,6 +87,10 @@ pub struct Index<F: PrimeField> {
     /// Arithmetization of the matrix`C`, which essentially contains
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
     pub c_arith: MatrixArithmetization<F>,
+
+    #[cfg(feature = "circuit-friendly")]
+    /// The vanishing polynomials over domains H, K, and X.
+    pub vanishing_polys: Vec<LabeledPolynomial<F>>,
 }
 
 impl<F: PrimeField> SemanticallyValid for Index<F> {
@@ -137,7 +141,7 @@ impl<F: PrimeField> Index<F> {
 
     /// Iterate over the indexed polynomials.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![
+        let result = vec![
             &self.a_arith.row,
             &self.a_arith.col,
             &self.a_arith.row_col,
@@ -151,7 +155,12 @@ impl<F: PrimeField> Index<F> {
             &self.c_arith.row_col,
             &self.c_arith.val_row_col,
         ]
-        .into_iter()
+        .into_iter();
+
+        #[cfg(feature = "circuit-friendly")]
+        let result = result.chain(self.vanishing_polys.iter());
+
+        result
     }
 }
 
@@ -249,6 +258,19 @@ impl<F: PrimeField> IOP<F> {
         let c_arith = arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_b)?;
         end_timer!(c_arithmetization_time);
 
+        #[cfg(feature = "circuit-friendly")]
+        let vanishing_polys = {
+            let vanishing_polys_time =
+                start_timer!(|| "Commit to vanishing polys on domains H, K, and X");
+            let vanishing_polys = vec![
+                LabeledPolynomial::new("v_h".into(), domain_h.vanishing_polynomial().into(), false),
+                LabeledPolynomial::new("v_k".into(), domain_k.vanishing_polynomial().into(), false),
+                LabeledPolynomial::new("v_x".into(), domain_x.vanishing_polynomial().into(), false),
+            ];
+            end_timer!(vanishing_polys_time);
+            vanishing_polys
+        };
+
         end_timer!(index_time);
         Ok(Index {
             index_info,
@@ -258,6 +280,8 @@ impl<F: PrimeField> IOP<F> {
             a_arith,
             b_arith,
             c_arith,
+            #[cfg(feature = "circuit-friendly")]
+            vanishing_polys,
         })
     }
 }
@@ -291,10 +315,6 @@ pub struct MatrixArithmetization<F: PrimeField> {
     pub row_col: LabeledPolynomial<F>,
     /// The reduced form of `val(X)*row(X)*col(X)`.
     pub val_row_col: LabeledPolynomial<F>,
-    /// The size of the domain H.
-    pub size_of_H: usize,
-    /// The size of the domain K.
-    pub size_of_K: usize,
 
     //
     // Inner sumcheck precomputations:
@@ -420,8 +440,6 @@ pub(crate) fn arithmetize_matrix<F: PrimeField>(
         col: LabeledPolynomial::new(m_name.clone() + "_col", col, false),
         row_col: LabeledPolynomial::new(m_name.clone() + "_row_col", row_col, false),
         val_row_col: LabeledPolynomial::new(m_name.clone() + "_val_row_col", val_row_col, false),
-        size_of_H: domain_h.size(),
-        size_of_K: domain_k.size(),
         evals_on_domain_b,
     })
 }

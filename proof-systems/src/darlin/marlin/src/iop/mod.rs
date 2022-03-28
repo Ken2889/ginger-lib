@@ -32,6 +32,7 @@ pub struct IOP<F: PrimeField> {
 }
 
 impl<F: PrimeField> IOP<F> {
+    #[cfg(not(feature="circuit-friendly"))]
     /// The labels for the polynomials output by the indexer.
     #[rustfmt::skip]
     pub const INDEXER_POLYNOMIALS: [&'static str; 12] = [
@@ -41,6 +42,20 @@ impl<F: PrimeField> IOP<F> {
         "b_row", "b_col", "b_row_col", "b_val_row_col",
         // Polynomials for C
         "c_row", "c_col", "c_row_col", "c_val_row_col",
+    ];
+
+    #[cfg(feature="circuit-friendly")]
+    /// The labels for the polynomials output by the indexer.
+    #[rustfmt::skip]
+    pub const INDEXER_POLYNOMIALS: [&'static str; 15] = [
+        // Polynomials for A
+        "a_row", "a_col", "a_row_col", "a_val_row_col",
+        // Polynomials for B
+        "b_row", "b_col", "b_row_col", "b_val_row_col",
+        // Polynomials for C
+        "c_row", "c_col", "c_row_col", "c_val_row_col",
+        // Vanishing polynomials over domains H, K, and X
+        "v_h", "v_k", "v_x",
     ];
 
     /// The labels for the polynomials output by the prover.

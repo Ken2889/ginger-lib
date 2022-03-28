@@ -167,6 +167,9 @@ where
     #[allow(non_snake_case)]
     pub(crate) fn verify_sumchecks<CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
+        // TODO: `formatted_public_input` is only used to get the size of domain_x. Should be
+        //  possible to remove it when merging into branch which keeps track of domain_x inside
+        //  verifier state.
         formatted_public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         evals: &Evaluations<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
         state: &VerifierStateGadget<G::ScalarField, G::BaseField>,
@@ -175,9 +178,6 @@ where
         let k_size_inv = state.domain_k.size_inv();
 
         let zero = NonNativeFieldGadget::<G::ScalarField, G::BaseField>::zero(cs.ns(|| "zero"))?;
-
-        let domain_x = get_best_evaluation_domain::<G::ScalarField>(formatted_public_input.len())
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
         if state.first_round_msg.is_none() {
             return Err(SynthesisError::Other(
@@ -197,34 +197,64 @@ where
             ))?,
         };
 
-        let gamma = match state.gamma.as_ref() {
-            Some(v) => v,
-            None => Err(SynthesisError::Other("Gamma is empty".to_owned()))?,
+        #[cfg(not(feature = "circuit-friendly"))]
+        let (v_H_at_alpha, v_H_at_beta, v_K_at_gamma, v_X_at_beta) = {
+            let domain_x =
+                get_best_evaluation_domain::<G::ScalarField>(formatted_public_input.len())
+                    .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+
+            let gamma = match state.gamma.as_ref() {
+                Some(v) => v,
+                None => Err(SynthesisError::Other("Gamma is empty".to_owned()))?,
+            };
+
+            let v_H_at_alpha = AlgebraForIOP::eval_vanishing_polynomial(
+                cs.ns(|| "alpha^|H| - 1"),
+                &alpha,
+                state.domain_h.size() as u64,
+            )?;
+
+            let v_H_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
+                cs.ns(|| "beta^|H| - 1"),
+                &beta,
+                state.domain_h.size() as u64,
+            )?;
+
+            let v_K_at_gamma = AlgebraForIOP::eval_vanishing_polynomial(
+                cs.ns(|| "gamma^|K| - 1"),
+                &gamma,
+                state.domain_k.size() as u64,
+            )?;
+
+            let v_X_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
+                cs.ns(|| "beta^|X| - 1"),
+                &beta,
+                domain_x.size() as u64,
+            )?;
+
+            (v_H_at_alpha, v_H_at_beta, v_K_at_gamma, v_X_at_beta)
         };
 
-        let v_H_at_alpha = AlgebraForIOP::eval_vanishing_polynomial(
-            cs.ns(|| "alpha^|H| - 1"),
-            &alpha,
-            state.domain_h.size() as u64,
-        )?;
+        #[cfg(feature = "circuit-friendly")]
+        let (v_H_at_alpha, v_H_at_beta, v_K_at_gamma, v_X_at_beta) = {
+            let v_H_at_alpha = evals
+                .get(&("v_h".into(), "alpha".into()))
+                .ok_or_else(|| SynthesisError::AssignmentMissing)?;
 
-        let v_H_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
-            cs.ns(|| "beta^|H| - 1"),
-            &beta,
-            state.domain_h.size() as u64,
-        )?;
+            let v_H_at_beta = evals
+                .get(&("v_h".into(), "beta".into()))
+                .ok_or_else(|| SynthesisError::AssignmentMissing)?;
 
-        let v_K_at_gamma = AlgebraForIOP::eval_vanishing_polynomial(
-            cs.ns(|| "gamma^|K| - 1"),
-            &gamma,
-            state.domain_k.size() as u64,
-        )?;
+            let v_K_at_gamma = evals
+                .get(&("v_k".into(), "gamma".into()))
+                .ok_or_else(|| SynthesisError::AssignmentMissing)?;
 
-        let v_X_at_beta = AlgebraForIOP::eval_vanishing_polynomial(
-            cs.ns(|| "beta^|X| - 1"),
-            &beta,
-            domain_x.size() as u64,
-        )?;
+            let v_X_at_beta = evals
+                .get(&("v_x".into(), "beta".into()))
+                .ok_or_else(|| SynthesisError::AssignmentMissing)?;
+
+            (v_H_at_alpha, v_H_at_beta, v_K_at_gamma, v_X_at_beta)
+        };
 
         // Evaluate polynomials at beta
         let l_alpha_beta = AlgebraForIOP::prepared_eval_lagrange_kernel(
@@ -512,6 +542,20 @@ where
         let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
         let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
+        #[cfg(feature = "circuit-friendly")]
+        let (queries_at_alpha, queries_at_beta, queries_at_gamma) = {
+            let queries_at_alpha = BTreeSet::from_iter(vec!["v_h".to_string()]);
+
+            let mut queries_at_beta = queries_at_beta;
+            queries_at_beta.insert("v_h".to_string());
+            queries_at_beta.insert("v_x".to_string());
+
+            let mut queries_at_gamma = queries_at_gamma;
+            queries_at_gamma.insert("v_k".to_string());
+
+            (queries_at_alpha, queries_at_beta, queries_at_gamma)
+        };
+
         let query_map = {
             let mut map = QueryMap::new();
             map.insert("beta".to_string(), (beta, queries_at_beta));
@@ -521,6 +565,11 @@ where
                 "g * gamma".to_string(),
                 (g_k_times_gamma, queries_at_g_gamma),
             );
+            #[cfg(feature = "circuit-friendly")]
+            {
+                let alpha = state.first_round_msg.as_ref().unwrap().clone().alpha;
+                map.insert("alpha".to_string(), (alpha, queries_at_alpha));
+            }
             map
         };
 
