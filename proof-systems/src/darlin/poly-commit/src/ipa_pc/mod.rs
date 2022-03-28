@@ -125,9 +125,10 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// Note: The entire opening assertions, i.e. the xi's and their G_fin's, are
     /// already bound the inner state of the Fiat-Shamir rng.
     // No segmentation here: Reduction polys are at most as big as the committer key.
+    #[cfg(not(feature = "circuit-friendly"))]
     pub fn open_reduction_polynomials<'a>(
         ck: &CommitterKey<G>,
-        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G>>,
+        xi_s: impl IntoIterator<Item = &'a LabeledSuccinctCheckPolynomial<'a, G>>,
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
@@ -139,9 +140,9 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
                 "Commiter key length is not power of 2".to_owned(),
             ));
         }
-
         let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
-        let xi_s_vec = xi_s.into_iter().collect::<Vec<_>>();
+
+        let xi_s_vec = xi_s.into_iter().map(|labeled_xi| labeled_xi.get_poly()).collect::<Vec<_>>();
 
         // Compute the evaluations of the Bullet polynomials at point starting from the xi_s
         let values = xi_s_vec
@@ -151,9 +152,13 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         // record evaluations
         fs_rng.record(values)?;
 
+
+
         // Sample new batching challenge
         let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
+
+
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -168,6 +173,79 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .into_par_iter()
             .zip(xi_s_vec)
             .map(|(chal, xi_s)| Polynomial::from_coefficients_vec(xi_s.compute_scaled_coeffs(chal)))
+            .reduce(Polynomial::zero, |acc, poly| &acc + &poly);
+
+        // It's not necessary to use the full length of the ck if all the Bullet Polys are smaller:
+        // trim the ck if that's the case
+        key_len = combined_check_poly.coeffs.len();
+        if key_len.next_power_of_two() != key_len {
+            return Err(Error::Other(
+                "Combined check poly length is not a power of 2".to_owned(),
+            ));
+        }
+
+        end_timer!(batch_time);
+
+        Self::open(
+            ck,
+            combined_check_poly,
+            point,
+            false,
+            G::ScalarField::zero(),
+            fs_rng,
+            None,
+        )
+    }
+
+    #[cfg(feature="circuit-friendly")]
+    pub fn open_reduction_polynomials<'a>(
+        ck: &CommitterKey<G>,
+        xi_s: impl IntoIterator<Item = &'a LabeledSuccinctCheckPolynomial<'a, G>>,
+        point: G::ScalarField,
+        // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
+        // fs_rng state.
+        fs_rng: &mut FS,
+    ) -> Result<Proof<G>, Error> {
+        let mut key_len = ck.comm_key.len();
+        if ck.comm_key.len().next_power_of_two() != key_len {
+            return Err(Error::Other(
+                "Commiter key length is not power of 2".to_owned(),
+            ));
+        }
+        let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
+
+        let mut xi_s_vec = xi_s.into_iter().collect::<Vec<_>>();
+
+        // Compute the evaluations of the Bullet polynomials at point starting from the xi_s
+        let values = xi_s_vec
+            .par_iter()
+            .map(|xi_s| xi_s.get_poly().evaluate(point))
+            .collect::<Vec<_>>();
+        // record evaluations
+        fs_rng.record(values)?;
+
+        // sort in reverse lexicographical order according to labels
+        xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));
+
+        // Sample new batching challenge
+        let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
+
+
+        // Collect the powers of the batching challenge in a vector
+        let mut batching_chal = G::ScalarField::one();
+        let mut batching_chals = vec![G::ScalarField::zero(); xi_s_vec.len()];
+        for i in 0..batching_chals.len() {
+            batching_chals[i] = batching_chal;
+            batching_chal *= &random_scalar;
+        }
+
+        // Compute combined check_poly
+        let combined_check_poly = batching_chals
+            .into_par_iter()
+            .zip(xi_s_vec)
+            .map(|(chal, xi_s)| Polynomial::from_coefficients_vec(xi_s.get_poly().compute_scaled_coeffs(chal)))
             .reduce(Polynomial::zero, |acc, poly| &acc + &poly);
 
         // It's not necessary to use the full length of the ck if all the Bullet Polys are smaller:

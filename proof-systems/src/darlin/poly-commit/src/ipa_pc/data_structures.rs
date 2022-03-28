@@ -726,6 +726,30 @@ impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
     }
 }
 
+/// Succinct check polynomial tagged with a label
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LabeledSuccinctCheckPolynomial<'a, G: IPACurve> {
+    label: PolynomialLabel,
+    check_poly: &'a SuccinctCheckPolynomial<G>,
+}
+
+impl<'a, G: IPACurve> LabeledSuccinctCheckPolynomial<'a, G> {
+    pub fn new(label: PolynomialLabel, check_poly: &'a SuccinctCheckPolynomial<G>) -> Self {
+        Self {
+            label,
+            check_poly
+        }
+    }
+
+    pub fn get_label(&self) -> &PolynomialLabel {
+        &self.label
+    }
+
+    pub fn get_poly(&self) -> &SuccinctCheckPolynomial<G> {
+        self.check_poly
+    }
+}
+
 /// The succinct part of the verifier returns a succinct-check polynomial and final comm key
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct DLogItem<G: IPACurve> {
