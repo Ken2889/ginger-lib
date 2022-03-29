@@ -167,10 +167,6 @@ where
     #[allow(non_snake_case)]
     pub(crate) fn verify_sumchecks<CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
-        // TODO: `formatted_public_input` is only used to get the size of domain_x. Should be
-        //  possible to remove it when merging into branch which keeps track of domain_x inside
-        //  verifier state.
-        formatted_public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         evals: &Evaluations<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
         state: &VerifierStateGadget<G::ScalarField, G::BaseField>,
     ) -> Result<(), SynthesisError> {

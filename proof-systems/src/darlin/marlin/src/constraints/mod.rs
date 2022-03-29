@@ -151,7 +151,6 @@ where
 
         IOPVerificationGadget::<G, GG>::verify_sumchecks(
             cs.ns(|| "verify sumchecks"),
-            &formatted_public_input,
             &evaluations,
             &verifier_state,
         )?;
