@@ -67,6 +67,8 @@ impl<G: IPACurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
         let num_polys = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len();
         let evaluations_num = num_polys + 2;
+        #[cfg(feature = "circuit-friendly")]
+        let evaluations_num = evaluations_num + 1; // Vanishing poly v_h is evaluated at two points.
 
         self.commitments.is_valid() &&  // Check that each commitment is valid
             self.evaluations.len() == evaluations_num && // Check correct number of evaluations
