@@ -74,7 +74,9 @@ pub use domain_extended::*;
 pub mod ipa_pc;
 
 /// Gadget to verify opening proofs of a linear polynomial commitment scheme
+#[cfg(feature = "circuit-friendly")]
 pub mod constraints;
+#[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 
 /// `QueryMap` is the set of queries that are to be made to a set of labeled polynomials or linear combinations.
@@ -90,6 +92,96 @@ pub type QueryMap<'a, F> = BTreeMap<PointLabel, (F, BTreeSet<PolynomialLabel>)>;
 /// It maps each element of `Q` to the resulting evaluation, e.g. `evaluation.get((label, query))`
 /// should equal to `p[label].evaluate(query)`.
 pub type Evaluations<'a, F> = BTreeMap<(PolynomialLabel, PointLabel), F>;
+
+/// Default implementation of `single_point_multi_poly_open` for `PolynomialCommitment`,
+/// employed as a building block also by domain extended polynomial commitments
+pub(crate) fn single_point_multi_poly_open<'a,
+    G: Group,
+    PC: PolynomialCommitment<G>,
+    IP: IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+    IR: IntoIterator<Item = &'a LabeledRandomness<PC::Randomness>>,
+>(
+        ck: &PC::CommitterKey,
+        labeled_polynomials: IP,
+        point: G::ScalarField,
+        fs_rng: &mut PC::RandomOracle,
+        labeled_randomnesses: IR,
+        // The optional rng for additional internal randomness of open()
+        rng: Option<&mut dyn RngCore>,
+    ) -> Result<PC::Proof, PC::Error> {
+        // as the statement/assertion of the opening proof is already bound to the interal state
+        // of the fr_rng, we simply sample the challenge scalar for the random linear combination
+        let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+        let mut is_hiding = false;
+
+        // compute the random linear combinations using the powers of lambda
+
+        let poly_lc = LinearCombination::new_from_val(
+            &lambda,
+            labeled_polynomials
+                .into_iter()
+                .map(|poly| {
+                    if poly.is_hiding() {
+                        is_hiding = true;
+                    }
+                    poly.polynomial()
+                })
+                .collect(),
+        );
+
+        let rands_lc = if is_hiding {
+            LinearCombination::new_from_val(
+                &lambda,
+                labeled_randomnesses
+                    .into_iter()
+                    .map(|rand| rand.randomness())
+                    .collect(),
+            )
+        } else {
+            LinearCombination::empty()
+        };
+
+        PC::open_lc(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
+    }
+
+/// Default implementation of `succinct_verify_single_point_multi_poly` for `PolynomialCommitment`,
+/// employed as a building block also by domain extended polynomial commitments
+pub(crate) fn single_point_multi_poly_succinct_verify<'a,
+    G: Group,
+    PC: PolynomialCommitment<G>,
+    IC: IntoIterator<Item = &'a LabeledCommitment<PC::Commitment>>,
+    IV: IntoIterator<Item = &'a G::ScalarField>,
+>(
+    vk: &PC::VerifierKey,
+    labeled_commitments: IC,
+    point: G::ScalarField,
+    values: IV,
+    proof: &PC::Proof,
+    // This implementation assumes that the commitments, point and evaluations are
+    // already bound to the internal state of the Fiat Shamir rng
+    fs_rng: &mut PC::RandomOracle,
+) -> Result<Option<PC::VerifierState>, PC::Error> {
+    let combine_time = start_timer!(|| "Single point multi poly verify combine time");
+
+    let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    let commitments_lc = LinearCombination::new_from_val(
+        &lambda,
+        labeled_commitments
+            .into_iter()
+            .map(|comm| comm.commitment())
+            .collect(),
+    );
+
+    let combined_value =
+        LinearCombination::new_from_val(&lambda, values.into_iter().collect()).combine();
+
+    end_timer!(combine_time);
+
+    PC::succinct_verify_lc(vk, commitments_lc, point, combined_value, proof, fs_rng)
+}
 
 /// Describes the interface for a homomorphic polynomial commitment scheme with values
 /// in a commitment group built on `G`, which means that the commitment is either `G` itself
@@ -357,40 +449,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         // The optional rng for additional internal randomness of open()
         rng: Option<&mut dyn RngCore>,
     ) -> Result<Self::Proof, Self::Error> {
-        // as the statement/assertion of the opening proof is already bound to the interal state
-        // of the fr_rng, we simply sample the challenge scalar for the random linear combination
-        let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-        let mut is_hiding = false;
-
-        // compute the random linear combinations using the powers of lambda
-
-        let poly_lc = LinearCombination::new_from_val(
-            &lambda,
-            labeled_polynomials
-                .into_iter()
-                .map(|poly| {
-                    if poly.is_hiding() {
-                        is_hiding = true;
-                    }
-                    poly.polynomial()
-                })
-                .collect(),
-        );
-
-        let rands_lc = if is_hiding {
-            LinearCombination::new_from_val(
-                &lambda,
-                labeled_randomnesses
-                    .into_iter()
-                    .map(|rand| rand.randomness())
-                    .collect(),
-            )
-        } else {
-            LinearCombination::empty()
-        };
-
-        Self::open_lc(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
+        single_point_multi_poly_open::<G, Self, _, _>(ck, labeled_polynomials, point, fs_rng, labeled_randomnesses, rng)
     }
 
     /// The batch evaluation protocol from Boneh et al. [HaloInfinite], for proving a multi-point
@@ -610,25 +669,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         // already bound to the internal state of the Fiat Shamir rng
         fs_rng: &mut Self::RandomOracle,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
-        let combine_time = start_timer!(|| "Single point multi poly verify combine time");
-
-        let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-
-        let commitments_lc = LinearCombination::new_from_val(
-            &lambda,
-            labeled_commitments
-                .into_iter()
-                .map(|comm| comm.commitment())
-                .collect(),
-        );
-
-        let combined_value =
-            LinearCombination::new_from_val(&lambda, values.into_iter().collect()).combine();
-
-        end_timer!(combine_time);
-
-        Self::succinct_verify_lc(vk, commitments_lc, point, combined_value, proof, fs_rng)
+        single_point_multi_poly_succinct_verify::<G, Self, _, _>(vk, labeled_commitments, point, values, proof, fs_rng)
     }
 
     /// The verifier for proofs generated by `fn single_point_multi_poly_open()`.

@@ -15,7 +15,6 @@ pub mod data_structures;
 pub use data_structures::*;
 
 #[cfg(test)]
-#[cfg(feature = "circuit-friendly")]
 pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
@@ -73,6 +72,98 @@ where
         &is_zero,
         &zero,
         &safe_mul_res,
+    )
+}
+
+/// Default implementation of `succinct_verify_single_point_multi_poly` for `PolynomialCommitmentVerifierGadget`,
+/// employed as a building block also by domain extended polynomial commitment gadget
+pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PCG, CS, IC, IV>(
+    mut cs: CS,
+    vk: &PCG::VerifierKeyGadget,
+    labeled_commitments: IC,
+    point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
+    values: IV, //&[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
+    proof: &PCG::ProofGadget,
+    random_oracle: &mut PCG::RandomOracleGadget,
+) -> Result<PCG::VerifierStateGadget, PCG::Error>
+    where
+        ConstraintF: PrimeField,
+        G: Group<BaseField = ConstraintF>,
+        PC: PolynomialCommitment<G>,
+        PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        IC: IntoIterator<
+            Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
+        >,
+        <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
+        IV: IntoIterator<Item = &'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+        <IV as IntoIterator>::IntoIter: DoubleEndedIterator,
+{
+    let lambda = random_oracle.enforce_get_challenge::<_, 128>(
+        cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
+    )?;
+    let lambda_non_native = PCG::challenge_to_non_native_field_element(
+        cs.ns(|| "convert lambda to non native field gadget"),
+        &lambda,
+    )?;
+    /*
+    Batching of commitments is performed with Horner scheme.
+    That is, to compute a batched commitment C=C_1+lambda*C_2+lambda2*C_3+..+lambda^(n-1)*C_n from a set of commitments
+    C_1,..,C_n we do as follows:
+    - initialize C to C_n
+    - for the commitment C_i,where i varies from n-1 to 1, we update C = C_i + lambda*C
+    Therefore, we need to iterate the set of labeled commitments in reverse order.
+    Same strategy is employed for values.
+    */
+    let mut commitments_iter = labeled_commitments.into_iter().rev();
+    let mut batched_commitment = commitments_iter
+        .next()
+        .ok_or(SynthesisError::Other("no commitment provided".to_string()))?
+        .commitment()
+        .clone();
+
+    let mut values_iter = values.into_iter().rev();
+    let mut batched_value = values_iter
+        .next()
+        .ok_or(SynthesisError::Other("no evaluation provided".to_string()))?
+        .clone();
+
+    for (i, (commitment, value)) in commitments_iter.zip(values_iter).enumerate() {
+        batched_commitment = PCG::mul_by_challenge(
+            cs.ns(|| format!("lambda*batched_commitment_{}", i)),
+            &batched_commitment,
+            lambda.iter(),
+        )?;
+        batched_commitment = batched_commitment.add(
+            cs.ns(|| format!("add commitment {} to batched_commitment", i)),
+            commitment.commitment(),
+        )?;
+
+        let batched_value_times_lambda = batched_value.mul_without_prereduce(
+            cs.ns(|| format!("lambda*batched_value_{}", i)),
+            &lambda_non_native,
+        )?;
+        //ToDo: This cast will be unnecessary after refactoring `NonNativeFieldGadget`
+        let value = FromGadget::from(value, cs.ns(|| format!("value {} to mul result", i)))?;
+        batched_value = batched_value_times_lambda
+            .add(
+                cs.ns(|| format!("add value {} to batched_value", i)),
+                &value,
+            )?
+            .reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
+    }
+
+    let batched_value_bits =
+        batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
+
+    PCG::succinct_verify(
+        &mut cs,
+        &vk,
+        &batched_commitment,
+        point,
+        &batched_value_bits,
+        &proof,
+        random_oracle,
     )
 }
 
@@ -324,7 +415,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// succinct check of the verification of an opening proof for multiple polynomials in the
     /// same point
     fn succinct_verify_single_point_multi_poly<'a, CS, IC, IV>(
-        mut cs: CS,
+        cs: CS,
         vk: &Self::VerifierKeyGadget,
         labeled_commitments: IC,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
@@ -341,72 +432,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         IV: IntoIterator<Item = &'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         <IV as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
-        let lambda = random_oracle.enforce_get_challenge::<_, 128>(
-            cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
-        )?;
-        let lambda_non_native = Self::challenge_to_non_native_field_element(
-            cs.ns(|| "convert lambda to non native field gadget"),
-            &lambda,
-        )?;
-        /*
-        Batching of commitments is performed with Horner scheme.
-        That is, to compute a batched commitment C=C_1+lambda*C_2+lambda2*C_3+..+lambda^(n-1)*C_n from a set of commitments
-        C_1,..,C_n we do as follows:
-        - initialize C to C_n
-        - for the commitment C_i,where i varies from n-1 to 1, we update C = C_i + lambda*C
-        Therefore, we need to iterate the set of labeled commitments in reverse order.
-        Same strategy is employed for values.
-        */
-        let mut commitments_iter = labeled_commitments.into_iter().rev();
-        let mut batched_commitment = commitments_iter
-            .next()
-            .ok_or(SynthesisError::Other("no commitment provided".to_string()))?
-            .commitment()
-            .clone();
-
-        let mut values_iter = values.into_iter().rev();
-        let mut batched_value = values_iter
-            .next()
-            .ok_or(SynthesisError::Other("no evaluation provided".to_string()))?
-            .clone();
-
-        for (i, (commitment, value)) in commitments_iter.zip(values_iter).enumerate() {
-            batched_commitment = Self::mul_by_challenge(
-                cs.ns(|| format!("lambda*batched_commitment_{}", i)),
-                &batched_commitment,
-                lambda.iter(),
-            )?;
-            batched_commitment = batched_commitment.add(
-                cs.ns(|| format!("add commitment {} to batched_commitment", i)),
-                commitment.commitment(),
-            )?;
-
-            let batched_value_times_lambda = batched_value.mul_without_prereduce(
-                cs.ns(|| format!("lambda*batched_value_{}", i)),
-                &lambda_non_native,
-            )?;
-            //ToDo: This cast will be unnecessary after refactoring `NonNativeFieldGadget`
-            let value = FromGadget::from(value, cs.ns(|| format!("value {} to mul result", i)))?;
-            batched_value = batched_value_times_lambda
-                .add(
-                    cs.ns(|| format!("add value {} to batched_value", i)),
-                    &value,
-                )?
-                .reduce(cs.ns(|| format!("reduce batched_value_{}", i)))?;
-        }
-
-        let batched_value_bits =
-            batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
-
-        Self::succinct_verify(
-            &mut cs,
-            &vk,
-            &batched_commitment,
-            point,
-            &batched_value_bits,
-            &proof,
-            random_oracle,
-        )
+        single_point_multi_poly_succinct_verify::<ConstraintF, G, PC, Self, _, _, _>(cs, vk, labeled_commitments, point, values, proof, random_oracle)
     }
 
     /// succinct check of the verification of an opening proof for multiple polynomials in

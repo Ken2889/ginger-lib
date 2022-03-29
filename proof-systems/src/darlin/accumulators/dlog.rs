@@ -21,6 +21,7 @@ use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use num_traits::{Zero, One};
+use poly_commit::ipa_pc::LabeledSuccinctCheckPolynomial;
 
 pub struct DLogItemAccumulator<G: IPACurve, FS: FiatShamirRng + 'static> {
     _group: PhantomData<G>,
@@ -256,8 +257,10 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 
         // Collect check_poly from the accumulators
         let check_poly = accumulators
-            .into_iter()
-            .map(|acc| acc.check_poly)
+            .iter()
+            .enumerate()
+            .map(|(i, acc)|
+            LabeledSuccinctCheckPolynomial::new(format!("check_poly_{}", i), &acc.check_poly))
             .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
