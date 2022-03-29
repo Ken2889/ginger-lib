@@ -78,16 +78,16 @@ impl<'a, F: PrimeField> ProverState<'a, F> {
     }
 }
 
-/// The "oracles" output by prover during initialization.
-pub struct ProverInitOracles<F: Field> {
+/// The "oracle" output by prover during initialization.
+pub struct ProverInitOracle<F: Field> {
     /// The public input polynomial `x`
     pub x: LabeledPolynomial<F>,
 }
 
-impl<F: Field> ProverInitOracles<F> {
+impl<F: Field> ProverInitOracle<F> {
     /// Iterate over the polynomials output by the prover during initialization.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
-        vec![&self.x].into_iter()
+        std::iter::once(&self.x)
     }
 }
 
@@ -145,7 +145,7 @@ impl<F: PrimeField> IOP<F> {
     pub fn prover_init<'a, C: ConstraintSynthesizer<F>>(
         index: &'a Index<F>,
         c: C,
-    ) -> Result<(ProverInitOracles<F>, ProverState<'a, F>), Error> {
+    ) -> Result<(ProverInitOracle<F>, ProverState<'a, F>), Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -204,7 +204,7 @@ impl<F: PrimeField> IOP<F> {
             domain_b,
         };
 
-        let oracles = ProverInitOracles { x: x_poly };
+        let oracles = ProverInitOracle { x: x_poly };
 
         end_timer!(init_time);
 

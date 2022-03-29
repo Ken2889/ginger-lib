@@ -179,7 +179,7 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let prover_time = start_timer!(|| "Marlin::Prover");
 
         // prover precomputations
-        let (prover_init_oracles, prover_init_state) = IOP::prover_init(&index_pk.index, c)?;
+        let (prover_init_oracle, prover_init_state) = IOP::prover_init(&index_pk.index, c)?;
 
         // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
@@ -194,16 +194,15 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         fs_rng.record::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
 
         let x_poly_comm_time = start_timer!(|| "Committing to input poly");
-        let (init_comms, init_comm_rands) =
-            PC::commit_many(pc_pk, prover_init_oracles.iter(), None).map_err(Error::from_pc_err)?;
+        let (init_comm, init_comm_rand) =
+            PC::commit(pc_pk, prover_init_oracle.x.polynomial(), false, None)
+                .map_err(Error::from_pc_err)?;
+
+        let init_comm_label = prover_init_oracle.x.label();
+        let init_comm_rand = LabeledRandomness::new(init_comm_label.clone(), init_comm_rand);
         end_timer!(x_poly_comm_time);
 
-        fs_rng.record(
-            init_comms
-                .iter()
-                .map(|labeled_comm| labeled_comm.commitment().clone())
-                .collect::<Vec<_>>(),
-        )?;
+        fs_rng.record(init_comm)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -291,7 +290,7 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
         let polynomials: Vec<_> = index_pk
             .index
             .iter()
-            .chain(prover_init_oracles.iter())
+            .chain(prover_init_oracle.iter())
             .chain(prover_first_oracles.iter())
             .chain(prover_second_oracles.iter())
             .chain(prover_third_oracles.iter())
@@ -310,7 +309,7 @@ impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
             .index_comm_rands
             .clone()
             .into_iter()
-            .chain(init_comm_rands)
+            .chain(std::iter::once(init_comm_rand))
             .chain(first_comm_rands)
             .chain(second_comm_rands)
             .chain(third_comm_rands)
