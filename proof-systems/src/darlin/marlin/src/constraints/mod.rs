@@ -201,25 +201,11 @@ where
             })
             .collect::<Result<Vec<_>, SynthesisError>>()?;
 
-        // Fixed Base MSM
-        // WARNING: If the addition for PCG::Commitment is incomplete and one of the bit sequences
-        // is all 0s, this will result in a crash.
-        // For the same reason we perform the first multiplication outside of the loop. Otherwise we
-        // would have to initialize result to zero, which could be problematic when performing the
-        // first addition inside the loop.
-        let mut result = PCG::CommitmentGadget::mul_bits_fixed_base(
-            &lagrange_poly_comms[0],
-            cs.ns(|| format!("term_0 = x_0 * COMM(L_0)")),
-            &poly_evals_bits[0],
+        let result = PCG::CommitmentGadget::fixed_base_msm(
+            cs.ns(|| "fixed base msm between lagrange comms and public inputs"),
+            lagrange_poly_comms.iter(),
+            poly_evals_bits.iter(),
         )?;
-        for (i, bits) in poly_evals_bits.into_iter().enumerate().skip(1) {
-            let term_i = PCG::CommitmentGadget::mul_bits_fixed_base(
-                &lagrange_poly_comms[i],
-                cs.ns(|| format!("term_{} = x_{} * COMM(L_{})", i, i, i)),
-                &bits,
-            )?;
-            result = result.add(cs.ns(|| format!("add term_{}", i)), &term_i)?;
-        }
 
         Ok(result)
     }
