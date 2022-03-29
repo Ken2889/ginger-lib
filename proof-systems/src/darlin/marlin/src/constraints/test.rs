@@ -5,7 +5,9 @@ mod verifier_gadget {
     use crate::constraints::MarlinVerifierGadget;
     use crate::test::Circuit;
     use crate::Marlin;
-    use algebra::{EndoMulCurve, UniformRand};
+    use algebra::{
+        test_canonical_serialize_deserialize, EndoMulCurve, SemanticallyValid, UniformRand,
+    };
     use digest::Digest;
     use poly_commit::constraints::PolynomialCommitmentVerifierGadget;
     use poly_commit::PolynomialCommitment;
@@ -55,6 +57,11 @@ mod verifier_gadget {
             let (index_pk, index_vk) =
                 Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk, circ).unwrap();
 
+            assert!(index_pk.is_valid());
+            assert!(index_vk.is_valid());
+            test_canonical_serialize_deserialize(true, &index_pk);
+            test_canonical_serialize_deserialize(true, &index_vk);
+
             let proof = Marlin::<G, PC>::prove(
                 &index_pk,
                 &pc_pk,
@@ -63,6 +70,9 @@ mod verifier_gadget {
                 if zk { Some(rng) } else { None },
             )
             .unwrap();
+
+            assert!(proof.is_valid());
+            test_canonical_serialize_deserialize(true, &proof);
 
             // Success verification
             let correct_inputs = vec![c, d];
