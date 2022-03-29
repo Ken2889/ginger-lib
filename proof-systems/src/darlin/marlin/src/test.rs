@@ -65,7 +65,8 @@ mod marlin {
     use blake2::Blake2s;
     use digest::Digest;
     use poly_commit::{
-        ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, PCKey, PolynomialCommitment,
+        ipa_pc::InnerProductArgPC, DomainExtendedPolynomialCommitment, LabeledCommitment, PCKey,
+        PolynomialCommitment,
     };
     use rand::thread_rng;
 
@@ -133,8 +134,27 @@ mod marlin {
             // Success verification
             assert!(Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[c, d], &proof).unwrap());
 
-            // Fail verification
-            assert!(!Marlin::<G, PC>::verify(&index_vk, &pc_vk, &[a, a], &proof).unwrap());
+            // Fail verification at the level of IOP because of wrong public inputs
+            assert!(Marlin::<G, PC>::verify_iop(&pc_vk, &index_vk, &[a, a], &proof).is_err());
+
+            // Check that IOP verification succeeds ...
+            let (query_map, evaluations, mut commitments, mut fs_rng) =
+                Marlin::<G, PC>::verify_iop(&pc_vk, &index_vk, &[c, d], &proof).unwrap();
+            // ... then tamper with a commitment and check that opening proof fails
+            let comm_last = commitments.pop().unwrap();
+            commitments.push(LabeledCommitment::new(
+                comm_last.label().into(),
+                comm_last.commitment().double(),
+            ));
+            assert!(Marlin::<G, PC>::verify_opening(
+                &pc_vk,
+                &proof,
+                commitments,
+                query_map,
+                evaluations,
+                &mut fs_rng
+            )
+            .is_err());
 
             // Use a vk derived from bigger universal params
             // and check that verification fails (absorbed hash won't be the same)

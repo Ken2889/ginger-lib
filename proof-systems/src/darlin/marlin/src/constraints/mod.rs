@@ -9,7 +9,7 @@ use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRngSeed;
 use poly_commit::constraints::PolynomialCommitmentVerifierGadget;
 use poly_commit::{
-    Evaluations, LabeledCommitmentGadget, PolynomialCommitment,
+    Evaluations, LabeledCommitmentGadget, PolynomialCommitment, QueryMap,
     VerifierKeyGadget as PCVerifierKeyGadget,
 };
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -46,13 +46,21 @@ where
 {
     pub const PROTOCOL_NAME: &'static [u8] = Marlin::<G, PC>::PROTOCOL_NAME;
 
-    pub fn verify<CS: ConstraintSystemAbstract<G::BaseField>>(
+    pub fn verify_iop<'a, CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
         pc_vk: &PCG::VerifierKeyGadget,
         index_vk: &VerifierKeyGadget<G, PC, PCG>,
         public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         proof: &ProofGadget<G, PC, PCG>,
-    ) -> Result<(), SynthesisError> {
+    ) -> Result<
+        (
+            QueryMap<'a, NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+            Evaluations<'a, NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+            Vec<LabeledCommitmentGadget<G::BaseField, PC::Commitment, PCG::CommitmentGadget>>,
+            PCG::RandomOracleGadget,
+        ),
+        SynthesisError,
+    > {
         // Check commitment to the input poly
         let one_ins = NonNativeFieldGadget::one(cs.ns(|| "pub ins 1"))?;
         let formatted_public_input = {
@@ -125,11 +133,6 @@ where
             &mut fs_rng,
         )?;
 
-        fs_rng.enforce_record(
-            cs.ns(|| "enforce absorb evaluations"),
-            proof.evaluations.as_slice(),
-        )?;
-
         let (query_map, verifier_state) =
             IOPVerificationGadget::<G, GG>::verifier_query_map_gadget(
                 cs.ns(|| "verifier query set"),
@@ -166,16 +169,58 @@ where
             .map(|(c, l)| LabeledCommitmentGadget::new(l, c))
             .collect();
 
+        Ok((query_map, evaluations, commitments, fs_rng))
+    }
+
+    pub fn succinct_verify_opening<CS: ConstraintSystemAbstract<G::BaseField>>(
+        mut cs: CS,
+        pc_vk: &PCG::VerifierKeyGadget,
+        proof: &ProofGadget<G, PC, PCG>,
+        labeled_comms: Vec<
+            LabeledCommitmentGadget<G::BaseField, PC::Commitment, PCG::CommitmentGadget>,
+        >,
+        query_map: QueryMap<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+        evaluations: Evaluations<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+        fs_rng: &mut PCG::RandomOracleGadget,
+    ) -> Result<(), SynthesisError> {
+        fs_rng.enforce_record(
+            cs.ns(|| "enforce absorb evaluations"),
+            proof.evaluations.as_slice(),
+        )?;
+
         PCG::succinct_verify_multi_poly_multi_point(
             cs.ns(|| "succinct opening proof check"),
             &pc_vk,
-            &commitments,
+            &labeled_comms,
             &query_map,
             &evaluations,
             &proof.pc_proof,
-            &mut fs_rng,
+            fs_rng,
         )
         .map_err(|err| SynthesisError::Other(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub fn succinct_verify<CS: ConstraintSystemAbstract<G::BaseField>>(
+        mut cs: CS,
+        pc_vk: &PCG::VerifierKeyGadget,
+        index_vk: &VerifierKeyGadget<G, PC, PCG>,
+        public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
+        proof: &ProofGadget<G, PC, PCG>,
+    ) -> Result<(), SynthesisError> {
+        let (query_map, evaluations, labeled_commitments, mut fs_rng) =
+            Self::verify_iop(cs.ns(|| "verify IOP"), pc_vk, index_vk, public_input, proof)?;
+
+        Self::succinct_verify_opening(
+            cs.ns(|| "succinct verify opening proof"),
+            pc_vk,
+            proof,
+            labeled_commitments,
+            query_map,
+            evaluations,
+            &mut fs_rng,
+        )?;
 
         Ok(())
     }
