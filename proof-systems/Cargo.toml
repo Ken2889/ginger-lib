@@ -35,6 +35,7 @@ marlin = { path = "./src/darlin/marlin" }
 poly-commit = { path = "./src/darlin/poly-commit" }
 fiat-shamir = { path = "./src/darlin/fiat-shamir" }
 r1cs-std = { path = "../r1cs/gadgets/std" }
+r1cs-crypto = { path = "../r1cs/gadgets/crypto" }
 
 rand = { version = "=0.8.4" }
 rayon = { version = "=1.5.1" }

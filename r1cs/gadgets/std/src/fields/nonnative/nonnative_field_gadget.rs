@@ -261,7 +261,7 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField>
     }
     /// Convert a `SimulationF` element into limbs having normal form.
     /// This is an internal function that would be reused by a number of other functions
-    pub(crate) fn get_limbs_representations(
+    pub fn get_limbs_representations(
         elem: &SimulationF,
     ) -> Result<Vec<ConstraintF>, SynthesisError> {
         Self::get_limbs_representations_from_big_integer(&elem.into_repr())

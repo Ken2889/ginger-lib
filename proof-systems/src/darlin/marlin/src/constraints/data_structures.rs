@@ -8,7 +8,9 @@ use poly_commit::constraints::PolynomialCommitmentVerifierGadget;
 use poly_commit::PolynomialCommitment;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::alloc::AllocGadget;
+use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
+use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::uint8::UInt8;
 use std::borrow::Borrow;
 
@@ -123,6 +125,26 @@ where
             lagrange_comms: lagrange_comms.clone(),
             vk_hash: vk_hash_gadget,
         })
+    }
+}
+
+impl<G, PC, PCG> ToConstraintFieldGadget<G::BaseField> for VerifierKeyGadget<G, PC, PCG>
+where
+    G: EndoMulCurve,
+    PC: PolynomialCommitment<G>,
+    PCG: PolynomialCommitmentVerifierGadget<G::BaseField, G, PC>,
+{
+    type FieldGadget = FpGadget<G::BaseField>;
+
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<G::BaseField>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, SynthesisError> {
+        // For our purposes it's good enough to convert only the vk digest to field elements
+        self
+            .vk_hash
+            .as_slice()
+            .to_field_gadget_elements(cs.ns(|| "vk digest to fes"))
     }
 }
 

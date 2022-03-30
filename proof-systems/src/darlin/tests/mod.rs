@@ -2,6 +2,8 @@
 
 pub mod final_darlin;
 pub mod simple_marlin;
+#[cfg(feature = "circuit-friendly")]
+pub mod simple_recursion;
 
 #[cfg(test)]
 mod test {
