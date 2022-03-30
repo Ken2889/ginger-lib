@@ -4,7 +4,7 @@ mod verifier_gadget {
     use crate::constraints::data_structures::{ProofGadget, VerifierKeyGadget};
     use crate::constraints::MarlinVerifierGadget;
     use crate::test::Circuit;
-    use crate::Marlin;
+    use crate::{Marlin, Proof, VerifierKey};
     use algebra::{
         test_canonical_serialize_deserialize, EndoMulCurve, SemanticallyValid, UniformRand,
     };
@@ -20,6 +20,66 @@ mod verifier_gadget {
     use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
     use rand::thread_rng;
     use std::ops::MulAssign;
+
+    /// Auxiliary function to allocate all the data necessary to verify a Marlin proof in circuit.
+    /// Take in input a marlin verifier key, a poly-commit verifier key, a marlin proof, and public
+    /// inputs, allocate them in circuit, and return the respective gadgets.
+    fn alloc_data<CS, G, GG, PC, PCG, D>(
+        mut cs: CS,
+        index_vk: &VerifierKey<G, PC>,
+        pc_vk: &PC::VerifierKey,
+        proof: &Proof<G, PC>,
+        public_inputs: &[G::ScalarField],
+    ) -> (
+        VerifierKeyGadget<G, PC, PCG>,
+        PCG::VerifierKeyGadget,
+        ProofGadget<G, PC, PCG>,
+        Vec<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
+    )
+    where
+        CS: ConstraintSystemAbstract<G::BaseField>,
+        G: EndoMulCurve,
+        GG: EndoMulCurveGadget<G, G::BaseField>
+            + ToConstraintFieldGadget<G::BaseField, FieldGadget = FpGadget<G::BaseField>>,
+        PC: PolynomialCommitment<G>,
+        PCG: PolynomialCommitmentVerifierGadget<G::BaseField, G, PC>,
+        D: Digest,
+    {
+        let verifier_key_gadget =
+            VerifierKeyGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc verifier key"), || {
+                Ok(index_vk.clone())
+            })
+            .unwrap();
+
+        let pc_verifier_key_gadget =
+            PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || Ok(pc_vk.clone()))
+                .unwrap();
+
+        let proof_gadget =
+            ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || Ok(proof.clone()))
+                .unwrap();
+
+        let public_inputs = {
+            let mut result = Vec::new();
+            for (i, input) in public_inputs.iter().enumerate() {
+                result.push(
+                    NonNativeFieldGadget::<G::ScalarField, G::BaseField>::alloc_input(
+                        cs.ns(|| format!("alloc public input {}", i)),
+                        || Ok(input),
+                    )
+                    .unwrap(),
+                )
+            }
+            result
+        };
+
+        (
+            verifier_key_gadget,
+            pc_verifier_key_gadget,
+            proof_gadget,
+            public_inputs,
+        )
+    }
 
     fn test_circuit<G, GG, PC, PCG, D>(
         num_samples: usize,
@@ -86,37 +146,14 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let verifier_key_gadget = VerifierKeyGadget::<G, PC, PCG>::alloc_input(
-                cs.ns(|| "alloc verifier key"),
-                || Ok(index_vk.clone()),
-            )
-            .unwrap();
-
-            let pc_verifier_key_gadget =
-                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
-                    Ok(pc_vk.clone())
-                })
-                .unwrap();
-
-            let proof_gadget =
-                ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
-                    Ok(proof.clone())
-                })
-                .unwrap();
-
-            let public_inputs = {
-                let mut public_inputs = Vec::new();
-                for (i, input) in correct_inputs.iter().enumerate() {
-                    public_inputs.push(
-                        NonNativeFieldGadget::alloc_input(
-                            cs.ns(|| format!("alloc public input {}", i)),
-                            || Ok(input),
-                        )
-                        .unwrap(),
-                    )
-                }
-                public_inputs
-            };
+            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+                alloc_data::<_, G, GG, PC, PCG, D>(
+                    cs.ns(|| "alloc data"),
+                    &index_vk,
+                    &pc_vk,
+                    &proof,
+                    &correct_inputs,
+                );
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::succinct_verify(
                 cs.ns(|| "proof verification"),
@@ -142,37 +179,14 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let verifier_key_gadget = VerifierKeyGadget::<G, PC, PCG>::alloc_input(
-                cs.ns(|| "alloc verifier key"),
-                || Ok(index_vk.clone()),
-            )
-            .unwrap();
-
-            let pc_verifier_key_gadget =
-                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
-                    Ok(pc_vk.clone())
-                })
-                .unwrap();
-
-            let proof_gadget =
-                ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
-                    Ok(proof.clone())
-                })
-                .unwrap();
-
-            let public_inputs = {
-                let mut public_inputs = Vec::new();
-                for (i, input) in wrong_inputs.iter().enumerate() {
-                    public_inputs.push(
-                        NonNativeFieldGadget::alloc_input(
-                            cs.ns(|| format!("alloc public input {}", i)),
-                            || Ok(input),
-                        )
-                        .unwrap(),
-                    )
-                }
-                public_inputs
-            };
+            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+                alloc_data::<_, G, GG, PC, PCG, D>(
+                    cs.ns(|| "alloc data"),
+                    &index_vk,
+                    &pc_vk,
+                    &proof,
+                    &wrong_inputs,
+                );
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify_iop(
                 cs.ns(|| "proof verification"),
@@ -185,39 +199,17 @@ mod verifier_gadget {
 
             assert!(!cs.is_satisfied());
 
+            // Test that tampering with output of verify_iop() makes succinct opening proof fail.
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let verifier_key_gadget = VerifierKeyGadget::<G, PC, PCG>::alloc_input(
-                cs.ns(|| "alloc verifier key"),
-                || Ok(index_vk.clone()),
-            )
-            .unwrap();
-
-            let pc_verifier_key_gadget =
-                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
-                    Ok(pc_vk.clone())
-                })
-                .unwrap();
-
-            let proof_gadget =
-                ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
-                    Ok(proof.clone())
-                })
-                .unwrap();
-
-            let public_inputs = {
-                let mut public_inputs = Vec::new();
-                for (i, input) in correct_inputs.iter().enumerate() {
-                    public_inputs.push(
-                        NonNativeFieldGadget::alloc_input(
-                            cs.ns(|| format!("alloc public input {}", i)),
-                            || Ok(input),
-                        )
-                        .unwrap(),
-                    )
-                }
-                public_inputs
-            };
+            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+                alloc_data::<_, G, GG, PC, PCG, D>(
+                    cs.ns(|| "alloc data"),
+                    &index_vk,
+                    &pc_vk,
+                    &proof,
+                    &correct_inputs,
+                );
 
             // Check that IOP verification succeeds ...
             let (query_map, evaluations, mut commitments, mut fs_rng) =
@@ -231,7 +223,7 @@ mod verifier_gadget {
                 .unwrap();
             assert!(cs.is_satisfied());
 
-            // ... then tamper with a commitment and check that opening proof fails
+            // ... then tamper with a commitment and check that succinct opening proof fails
             let last_labeled_comm = commitments.pop().unwrap();
             let mut last_comm = last_labeled_comm.commitment().clone();
             last_comm
@@ -262,37 +254,14 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let verifier_key_gadget = VerifierKeyGadget::<G, PC, PCG>::alloc_input(
-                cs.ns(|| "alloc verifier key"),
-                || Ok(index_vk.clone()),
-            )
-            .unwrap();
-
-            let pc_verifier_key_gadget =
-                PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || {
-                    Ok(pc_vk.clone())
-                })
-                .unwrap();
-
-            let proof_gadget =
-                ProofGadget::<G, PC, PCG>::alloc_input(cs.ns(|| "alloc proof"), || {
-                    Ok(proof.clone())
-                })
-                .unwrap();
-
-            let public_inputs = {
-                let mut public_inputs = Vec::new();
-                for (i, input) in correct_inputs.iter().enumerate() {
-                    public_inputs.push(
-                        NonNativeFieldGadget::alloc_input(
-                            cs.ns(|| format!("alloc public input {}", i)),
-                            || Ok(input),
-                        )
-                        .unwrap(),
-                    )
-                }
-                public_inputs
-            };
+            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+                alloc_data::<_, G, GG, PC, PCG, D>(
+                    cs.ns(|| "alloc data"),
+                    &index_vk,
+                    &pc_vk,
+                    &proof,
+                    &correct_inputs,
+                );
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify_iop(
                 cs.ns(|| "IOP verification"),
