@@ -523,7 +523,6 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         // we simply sample the challenge scalar for the random linear combination
         let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
-        let mut cur_challenge = G::ScalarField::one();
 
         let mut has_hiding = false;
 
@@ -538,9 +537,12 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         for (_point_label, (point, poly_labels)) in query_map.iter() {
             eval_points.insert(*point);
 
+            let mut cur_challenge = G::ScalarField::one();
+
             // (X - x_i)
             let x_polynomial =
                 Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
+            let mut cur_h_polynomial = Polynomial::zero();
 
             for label in poly_labels {
                 let labeled_polynomial = *poly_map.get(label).ok_or(Error::MissingPolynomial {
@@ -555,16 +557,17 @@ pub trait PolynomialCommitment<G: Group>: Sized {
                 let y_i = labeled_polynomial.polynomial().evaluate(*point);
 
                 // (p_i(X) - y_i) / (X - x_i)
-                let polynomial = &(labeled_polynomial.polynomial()
-                    - &Polynomial::from_coefficients_slice(&[y_i]))
-                    / &x_polynomial;
+                let polynomial = labeled_polynomial.polynomial()
+                    - &Polynomial::from_coefficients_slice(&[y_i]);
 
                 // h(X) = SUM( lambda^i * ((p_i(X) - y_i) / (X - x_i)) )
-                h_polynomial += (cur_challenge, &polynomial);
+                cur_h_polynomial += (cur_challenge, &polynomial);
 
                 // lambda^i
                 cur_challenge = cur_challenge * &lambda;
             }
+
+            h_polynomial += &cur_h_polynomial/&x_polynomial;
         }
 
         end_timer!(h_poly_time);
@@ -624,9 +627,9 @@ pub trait PolynomialCommitment<G: Group>: Sized {
             let mut lc_polynomial = Polynomial::zero();
             let mut lc_randomness = Self::Randomness::zero();
 
-            let mut cur_challenge = G::ScalarField::one();
 
             for (_point_label, (point, poly_labels)) in query_map {
+                let mut cur_challenge = G::ScalarField::one();
                 let z_i_over_z_value = (x_point - point).inverse().unwrap();
                 for label in poly_labels {
                     let labeled_polynomial = *poly_map.get(label).ok_or(Error::MissingPolynomial {
@@ -774,7 +777,6 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         // lambda
         let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
-        let mut cur_challenge = G::ScalarField::one();
 
         // Fresh random challenge x
         fs_rng
@@ -807,6 +809,8 @@ pub trait PolynomialCommitment<G: Group>: Sized {
             // z_i(x)/z(x) = 1 / (x - x_i).
             // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
             let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
+
+            let mut cur_challenge = G::ScalarField::one();
 
             for label in poly_labels {
                 let labeled_commitment =
@@ -860,7 +864,6 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         // lambda
         let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
-        let mut cur_challenge = G::ScalarField::one();
 
         let h_commitment = LabeledCommitment::new(H_POLY_LABEL.to_string(), multi_point_proof.get_h_commitment().clone());
 
@@ -898,6 +901,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
         for (point_label, (point, poly_labels)) in query_map {
             let z_i_over_z_value = (x_point - point).inverse().ok_or(Error::Other(format!("batch evaluation point equal to point with label {}", point_label)))?;
+            let mut cur_challenge = G::ScalarField::one();
             for label in poly_labels {
                 let v_i = values[*labels_map.get(label).ok_or(Error::MissingEvaluation {label: label.clone()})?];
 

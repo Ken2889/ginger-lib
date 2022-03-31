@@ -16,6 +16,7 @@ use crate::H_POLY_LABEL;
 #[cfg(feature = "boneh-with-single-point-batch")]
 use std::collections::HashMap;
 
+
 pub mod data_structures;
 pub use data_structures::*;
 
@@ -214,20 +215,24 @@ where
         &lambda_bits,
     )?;
     /*
-    Given a set of points x_1, ..., x_n and an evaluation point x distinct from all the other
-    points, we need to batch the commitments C_1, ..., C_n in a single commitment
-    C=C_1*(x-x_1)^-1+lambda*C_2*(x-x_2)^-1+lambda^2*C_3*(x-x_3)^-1 + ... + lambda^(n-1)*C_n*(x-x_n)^-1.
-    To do this, we again use Horner scheme:
-    - Initialize C = C_n*(x-x_n)^-1
-    - For each point x_i, where i varies from n-1 to 1, we update C = C_i*(x-x_i)^-1 + lambda*C
-    Therefore, we iterate over the set of points in reverse order, fetching the corresponding
-    commitment from `commitment_map`. The same strategy is applied to batch values
+    Given a set of points x_1, ..., x_n, an evaluation point x distinct from all the other
+    points and m commitments C_1, ..., C_m of m polynomials, we need to compute a single batched
+    commitment as follows. For a point x_i, consider the set S_i as the set of commitments of
+    polynomials whose evaluation in x_i must be proven in this assertion.
+    For each set S_i, we need to compute a batched commitment C'_i out of the C_{i,1}, ..., C_{i,m_i}
+    commitments of S_i as C'_i = C_{i,1}+lambda*C_{i,2}+...+lambda^(m_i-1)*C_{i,m_i}. We do this with
+    Horner scheme:
+    - Initialize C'_i = C_{i,m_i}
+    - For each commitment C_{i,j}, where j varies from m_i-1 to 1, we update C'_i = C_{i,j} + lambda*C'_i
+    Therefore, for each set S_i we iterate over the commitments in reverse order,
+    fetching the corresponding commitment from `commitment_map`.
+    The same strategy is applied to batch values.
+    Then, we combine commitments C'_i in a single commitment C by computing
+    C=(x-x_1)^-1*C'_1 + ... + (x-x_n)^-1*C'_n
     */
 
-    // here we fetch the point x_n to initialize both the batched commitment and the batched
-
     // batched_commitment and batched_value are initialized to None as in the first iteration
-    // we need to proper initialize them for the Horner scheme
+    // we need to proper initialize them
     let mut batched_commitment = None;
     let mut batched_value = None;
 
@@ -245,7 +250,6 @@ where
             }),
             &point,
         )?;
-
         let z_i_over_z_value = evaluation_point
             .sub(
                 cs.ns(|| format!("evaluation_point - point with label {}", point_label)),
@@ -257,7 +261,27 @@ where
         let z_i_over_z_bits = z_i_over_z_value.to_bits_for_normal_form(
             cs.ns(|| format!("z_i_over_z to bits for label {}", point_label)),
         )?;
-        for label in poly_labels.iter().rev() {
+        // initialize batched_commitment and batched_value for the current point to properly
+        // bootstrap the Horner scheme
+        let mut labels_iter = poly_labels.iter().rev();
+
+        let label = labels_iter.next().ok_or(SynthesisError::Other(format!("no polynomial found for point with label {}", point_label)))?;
+        let mut batched_commitment_for_point =
+            (*commitment_map
+                .get(label)
+                .ok_or(SynthesisError::Other(String::from(format!(
+                    "commitment with label {} not found",
+                    label
+                ))))?).clone();
+        let mut batched_value_for_point =
+            values
+                .get(&(label.clone(), point_label.clone()))
+                .ok_or(SynthesisError::Other(String::from(format!(
+                    "evaluation for label {}:{} not found",
+                    label, point_label
+                ))))?.clone();
+
+        for label in labels_iter {
             let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
             let commitment =
                 *commitment_map
@@ -273,59 +297,63 @@ where
                         "evaluation for label {} not found",
                         combined_label
                     ))))?;
-            match (batched_commitment, batched_value) {
-                (None, None) => {
-                    batched_commitment = Some(safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
-                        cs.ns(|| "commitment*z_i_over_z for last point"),
-                        &commitment,
-                        z_i_over_z_bits.iter().rev(),
-                    )?); // reverse order of bits since mul_bits requires little endian representation
-                    batched_value = Some(value.mul(
-                        cs.ns(|| "value*z_i_over_z for last point"),
-                        &z_i_over_z_value,
-                    )?);
-                }
-                (Some(comm), Some(val)) => {
-                    let to_be_added_commitment = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
-                        cs.ns(|| format!("commitment*z_i_over_z for label {}", combined_label)),
-                        &commitment,
-                        z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
-                    )?;
-                    let to_be_added_value = value.mul_without_prereduce(
-                        cs.ns(|| format!("value*z_i_over_z for label {}", combined_label)),
-                        &z_i_over_z_value,
-                    )?;
 
-                    let batched_commitment_times_lambda = PCG::mul_by_challenge(
-                        cs.ns(|| format!("batched_commitment*lambda for label {}", combined_label)),
-                        &comm,
-                        lambda_bits.iter(),
-                    )?;
-                    batched_commitment = Some(batched_commitment_times_lambda.add(
-                        cs.ns(|| format!("add commitment for label {}", combined_label)),
-                        &to_be_added_commitment,
-                    )?);
+            let batched_commitment_times_lambda = PCG::mul_by_challenge(
+                cs.ns(|| format!("batched_commitment*lambda for label {}", combined_label)),
+                &batched_commitment_for_point,
+                lambda_bits.iter(),
+            )?;
+            batched_commitment_for_point = batched_commitment_times_lambda.add(
+                cs.ns(|| format!("add commitment for label {}", combined_label)),
+                &commitment,
+            )?;
 
-                    let batched_value_times_lambda = val.mul_without_prereduce(
-                        cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
-                        &lambda,
-                    )?;
-                    batched_value = Some(
-                        batched_value_times_lambda
-                            .add(
-                                cs.ns(|| {
-                                    format!("add value for point for label {}", combined_label)
-                                }),
-                                &to_be_added_value,
-                            )?
-                            .reduce(cs.ns(|| {
-                                format!("reduce batched value for label {}", combined_label)
-                            }))?,
-                    );
-                }
-                _ => unreachable!(),
-            }
+            let batched_value_times_lambda = batched_value_for_point.mul_without_prereduce(
+                cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
+                &lambda,
+            )?;
+            //ToDo: This cast will be unnecessary after refactoring `NonNativeFieldGadget`
+            let to_be_added_value = FromGadget::from(value, cs.ns(|| format!("value for label {} to mul result", combined_label)))?;
+            batched_value_for_point = batched_value_times_lambda
+                    .add(
+                        cs.ns(|| {
+                            format!("add value for point for label {}", combined_label)
+                        }),
+                        &to_be_added_value,
+                    )?
+                    .reduce(cs.ns(|| {
+                        format!("reduce batched value for label {}", combined_label)
+                    }))?;
         }
+        batched_commitment_for_point = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
+            cs.ns(|| format!("batched_commitment*z_i_over_z for point {}", point_label)),
+            &batched_commitment_for_point,
+            z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
+        )?;
+        let batched_value_for_point = batched_value_for_point.mul_without_prereduce(
+            cs.ns(|| format!("value*z_i_over_z for point {}", point_label)),
+            &z_i_over_z_value,
+        )?;
+        match (batched_commitment, batched_value) {
+            (None, None) => {
+                batched_commitment = Some(batched_commitment_for_point);
+                batched_value = Some(batched_value_for_point.reduce(cs.ns(|| format!("reduce batched_value for point {}", point_label)))?);
+            },
+            (Some(comm), Some(val)) => {
+                batched_commitment = Some(comm.add(
+                    cs.ns(|| format!("add batched_commitment for point {}", point_label)),
+                    &batched_commitment_for_point,
+                )?);
+
+                let val_to_be_added = FromGadget::from(&val, cs.ns(|| format!("batched_value for point {} to mul result", point_label)))?;
+                batched_value = Some(batched_value_for_point.add(
+                    cs.ns(|| format!("add batched_value for point {}", point_label)),
+                    &val_to_be_added,
+                )?.reduce(cs.ns(|| format!("reduce batched_value for point {}", point_label)))?);
+            },
+            _ => unreachable!(),
+        }
+
     }
     if batched_commitment.is_none() || batched_value.is_none() {
         Err(SynthesisError::Other(
@@ -576,20 +604,26 @@ pub trait PolynomialCommitmentVerifierGadget<
         ).collect::<Result<Vec<_>, SynthesisError>>()?;
 
         /*
-        Given a set of points x_1, ..., x_n and an evaluation point x distinct from all the other
-        points, we need to batch the commitments C_1, ..., C_n in a single commitment
-        C=C_1*(x-x_1)^-1+lambda*C_2*(x-x_2)^-1+lambda^2*C_3*(x-x_3)^-1 + ... + lambda^(n-1)*C_n*(x-x_n)^-1.
-        To do this, we again use Horner scheme:
-        - Initialize C = C_n*(x-x_n)^-1
-        - For each point x_i, where i varies from n-1 to 1, we update C = C_i*(x-x_i)^-1 + lambda*C
-        Therefore, we iterate over the set of points in reverse order, fetching the corresponding
-        commitment from `commitment_map`. The same strategy is applied to batch values
+        Given a set of points x_1, ..., x_n, an evaluation point x distinct from all the other
+        points, m evaluations v_1, ..., v_m of m polynomials over x and a set of evaluations of the
+        m polynomials over some points x_1, ..., x_n, we need to compute a single batched
+        value as follows. For a point x_i, consider the set S_i as the set of evaluations (y_{i,j}, v_{i,j})
+        in points x_i, x, respectively, of the polynomials whose opening value y_j must be proven
+        in this multi-point assertion.
+        For each set S_i, we need to compute a batched evaluation v'_i out of the
+        (y_{i,1}, v_{i,1}), ..., (y_{i,m_i}, v_{i,m_i}) evaluations found in S_i
+        as v'_i = (v_{i,1}-y_{i,1})+lambda*(v_{i,2}-y_{i,2})+...+lambda^(m_i-1)*(v_{i,m_i}-y_{i,m_i}).
+        We do this with Horner scheme:
+        - Initialize v'_i = v_{i,m_i} - y_{i, m_i}
+        - For each pair of evaluations in S_i (y_{i,j}, v_{i,j}), where j varies from m_i-1 to 1,
+            we update v'_i = (v_{i,j}-y_{i,j}) + lambda*v'_i
+        Therefore, for each set S_i we iterate over the evaluations in reverse order.
+        Then, we combine evaluations v'_i in a single evaluation v by computing
+        v=(x-x_1)^-1*v'_1 + ... + (x-x_n)^-1*v'_n
         */
 
-        // here we fetch the point x_n to initialize both the batched commitment and the batched
-
         // batched_value is initialized to None as in the first iteration
-        // we need to proper initialize them for the Horner scheme
+        // we need to proper initialize them
         let mut batched_value = None;
 
         for (point_label, (point, poly_labels)) in points.iter().rev() {
@@ -615,6 +649,11 @@ pub trait PolynomialCommitmentVerifierGadget<
                 .inverse(
                     cs.ns(|| format!("(evaluation_point - point with label {})^-1", point_label)),
                 )?;
+
+            // batched_value_for_point is initialized to None as in the first iteration
+            // we need to proper initialize them for the Horner scheme
+            let mut batched_value_for_point= None;
+
             for label in poly_labels.iter().rev() {
                 let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
                 let v_i = evaluations.get(
@@ -631,24 +670,17 @@ pub trait PolynomialCommitmentVerifierGadget<
                             combined_label
                         ))))?;
                 let v_i_minus_y_i = v_i.sub(cs.ns(|| format!("v_i-y_i for label {}", combined_label)), y_i)?;
-                match batched_value {
+                match batched_value_for_point {
                     None => {
-                        batched_value = Some(v_i_minus_y_i.mul(
-                            cs.ns(|| format!("(v_i-y_i)*z_i_over_z for label {}", combined_label)),
-                            &z_i_over_z_value,
-                        )?);
+                        batched_value_for_point = Some(v_i_minus_y_i);
                     }
                     Some(val) => {
-                        let to_be_added_value = v_i_minus_y_i.mul_without_prereduce(
-                            cs.ns(|| format!("(v_i-y_i)*z_i_over_z for label {}", combined_label)),
-                            &z_i_over_z_value,
-                        )?;
-
                         let batched_value_times_lambda = val.mul_without_prereduce(
                             cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
                             &lambda,
                         )?;
-                        batched_value = Some(
+                        let to_be_added_value = FromGadget::from(&v_i_minus_y_i, cs.ns(|| format!("v_i - y_i for label {} to mul result", combined_label)))?;
+                        batched_value_for_point = Some(
                             batched_value_times_lambda
                                 .add(
                                     cs.ns(|| {
@@ -663,6 +695,26 @@ pub trait PolynomialCommitmentVerifierGadget<
                     }
                 }
             }
+
+            let batched_value_for_point = batched_value_for_point.ok_or(
+                SynthesisError::Other(format!("no polynomial found for point {}", point_label))
+            )?.mul_without_prereduce(
+                cs.ns(|| format!("batched_value*z_i_over_z for point {}", point_label)),
+                &z_i_over_z_value
+            )?;
+
+            batched_value = Some(
+                match batched_value {
+                    None => batched_value_for_point.reduce(cs.ns(|| format!("reduce batched_value for point {}", point_label)))?,
+                    Some(val) => {
+                        let val_to_be_added = FromGadget::from(&val, cs.ns(|| format!("batched_value for point {} to mul result", point_label)))?;
+                        batched_value_for_point.add(
+                            cs.ns(|| format!("add batched_value for point {}", point_label)),
+                            &val_to_be_added,
+                        )?.reduce(cs.ns(|| format!("reduce batched_value for point {}", point_label)))?
+                    },
+                }
+            );
         }
         let batched_value = batched_value.ok_or(SynthesisError::Other(
                 "no evaluation points provided".to_string(),
