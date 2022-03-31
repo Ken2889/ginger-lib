@@ -447,6 +447,8 @@ pub struct IPAMultiPointProofGadget<
 > {
     proof: IPAProofGadgetType<ConstraintF, G, GG, FS, FSG>,
     h_commitment: IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>,
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    evaluations: Vec<Vec<Boolean>>
 }
 
 impl<
@@ -479,10 +481,29 @@ impl<
             Ok(mp_proof.h_commitment)
         })?;
 
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+            return Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        );
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return {
+            let mut evaluations = Vec::with_capacity(mp_proof.evaluations.len());
+            for (i, value) in mp_proof.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -505,10 +526,29 @@ impl<
                 Ok(mp_proof.h_commitment)
             })?;
 
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+            return Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        );
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return {
+            let mut evaluations = Vec::with_capacity(mp_proof.evaluations.len());
+            for (i, value) in mp_proof.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc_input(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }
 
@@ -532,5 +572,10 @@ impl<
 
     fn get_h_commitment(&self) -> &Self::CommitmentGadget {
         &self.h_commitment
+    }
+
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    fn get_evaluations(&self) -> &Vec<Vec<Boolean>> {
+        &self.evaluations
     }
 }

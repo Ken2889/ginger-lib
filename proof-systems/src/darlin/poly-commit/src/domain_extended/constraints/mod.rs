@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
-use crate::{multi_poly_multi_point_batching, safe_mul_bits, DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget, sort_commitments_and_values};
+use crate::{safe_mul_bits, DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, sort_commitments_and_values};
 use algebra::{Group, PrimeField};
-use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
@@ -10,8 +9,14 @@ use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
 use std::marker::PhantomData;
-use r1cs_std::FromBitsGadget;
 use crate::constraints::single_point_multi_poly_succinct_verify;
+
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use crate::{multi_poly_multi_point_batching, QueryMap, Evaluations, MultiPointProofGadget};
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use fiat_shamir::constraints::FiatShamirRngGadget;
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use r1cs_std::FromBitsGadget;
 
 mod data_structures;
 
@@ -212,6 +217,7 @@ impl<
 
     // Override default implementation of PolynomialCommitmentVerifierGadget to combine the
     // commitments of the segments of each polynomial before batching the polynomials.
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &Self::VerifierKeyGadget,

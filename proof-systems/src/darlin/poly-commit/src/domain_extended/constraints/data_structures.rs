@@ -7,6 +7,10 @@ use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::AllocGadget;
 use std::borrow::Borrow;
+#[cfg(feature = "boneh-with-single-point-batch")]
+use r1cs_std::boolean::Boolean;
+#[cfg(feature = "boneh-with-single-point-batch")]
+use algebra::ToBits;
 
 /// Gadget for multi-point proof for domain extended poly-commit verifier gadget
 pub struct DomainExtendedMultiPointProofGadget<
@@ -17,6 +21,8 @@ pub struct DomainExtendedMultiPointProofGadget<
 > {
     proof: PCG::ProofGadget,
     h_commitment: GroupGadgetVec<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    evaluations: Vec<Vec<Boolean>>,
 }
 
 impl<ConstraintF, G, PC, PCG>
@@ -50,10 +56,30 @@ where
                 cs.ns(|| "alloc h-commitment for multi-point proof"),
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+            return Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        );
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return {
+            let mut evaluations = Vec::with_capacity(mpp.evaluations.len());
+            for (i, value) in mpp.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -77,10 +103,30 @@ where
                 cs.ns(|| "alloc h-commitment for multi-point proof"),
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        return Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        );
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return {
+            let mut evaluations = Vec::with_capacity(mpp.evaluations.len());
+            for (i, value) in mpp.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc_input(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }
 
@@ -104,5 +150,10 @@ where
     }
     fn get_h_commitment(&self) -> &Self::CommitmentGadget {
         &self.h_commitment
+    }
+
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    fn get_evaluations(&self) -> &Vec<Vec<Boolean>> {
+        &self.evaluations
     }
 }

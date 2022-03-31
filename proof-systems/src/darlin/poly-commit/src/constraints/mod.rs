@@ -11,6 +11,11 @@ use rand_core::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::collections::BTreeMap;
 
+#[cfg(feature = "boneh-with-single-point-batch")]
+use crate::H_POLY_LABEL;
+#[cfg(feature = "boneh-with-single-point-batch")]
+use std::collections::HashMap;
+
 pub mod data_structures;
 pub use data_structures::*;
 
@@ -171,6 +176,7 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
 /// given as inputs the commitments and the evaluations of the polynomials for
 /// a `multi_point` succinct verification, batches the commitments and the evaluation in a single
 /// commitment and in a single value, respectively.
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
 pub(crate) fn multi_poly_multi_point_batching<
     'a,
     ConstraintF: PrimeField,
@@ -437,6 +443,7 @@ pub trait PolynomialCommitmentVerifierGadget<
 
     /// succinct check of the verification of an opening proof for multiple polynomials in
     /// multiple points
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &Self::VerifierKeyGadget,
@@ -446,12 +453,12 @@ pub trait PolynomialCommitmentVerifierGadget<
         proof: &Self::MultiPointProofGadget,
         random_oracle: &mut Self::RandomOracleGadget,
     ) -> Result<Self::VerifierStateGadget, Self::Error>
-    where
-        CS: ConstraintSystemAbstract<ConstraintF>,
-        I: IntoIterator<
-            Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
-        >,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+        where
+            CS: ConstraintSystemAbstract<ConstraintF>,
+            I: IntoIterator<
+                Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
+            >,
+            <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
@@ -497,6 +504,187 @@ pub trait PolynomialCommitmentVerifierGadget<
             &batched_value_bits,
             &proof.get_proof(),
             random_oracle,
+        )
+    }
+
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
+        mut cs: CS,
+        vk: &Self::VerifierKeyGadget,
+        labeled_commitments: I,
+        points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+        values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+        proof: &Self::MultiPointProofGadget,
+        random_oracle: &mut Self::RandomOracleGadget,
+    ) -> Result<Self::VerifierStateGadget, Self::Error>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        I: IntoIterator<
+            Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
+        >,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
+        // sort commitments according to their labels
+        let commitment_map: BTreeMap<_, _> = labeled_commitments
+            .into_iter()
+            .map(|commitment| (commitment.label(), commitment))
+            .collect();
+
+        // collect commitments sorted to their labels in a vector and construct a map which binds
+        // a label of a commitment to its order in the sorted vector
+        let (label_map, mut sorted_commitments): (HashMap<_,_>, Vec<_>) = commitment_map.into_iter().enumerate().map(|(i, (label, comm))| {
+            ((label, i), comm)
+        }
+        ).unzip();
+
+        let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
+            cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
+        )?;
+
+        let lambda = Self::challenge_to_non_native_field_element(
+            cs.ns(|| "convert lambda to non native field gadget"),
+            &lambda_bits,
+        )?;
+
+        random_oracle.enforce_record(
+            cs.ns(|| "absorb commitment to polynomial h"),
+            proof.get_h_commitment().clone(),
+        )?;
+        let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
+            cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
+        )?;
+
+        let evaluation_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+            cs.ns(|| "evaluation point to field gadget"),
+            evaluation_point_bits
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )?;
+
+        /* fetch evaluations of the input polynomials over the evaluation point from the proof.
+        Note that evaluations are sorted in the proof according to the lexicographical order of
+        the labels of the polynomials they refers to
+        (i.e., evaluation_bits[i] is the evaluation for the polynomial with commitment sorted_commitments[i])
+        */
+        let evaluations_bits = proof.get_evaluations();
+
+        let mut evaluations = evaluations_bits.iter().enumerate().map(|(i, eval_bits)|
+            NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| format!("convert {}-th evaluation in multi-point proof to field element",i)), eval_bits)
+        ).collect::<Result<Vec<_>, SynthesisError>>()?;
+
+        /*
+        Given a set of points x_1, ..., x_n and an evaluation point x distinct from all the other
+        points, we need to batch the commitments C_1, ..., C_n in a single commitment
+        C=C_1*(x-x_1)^-1+lambda*C_2*(x-x_2)^-1+lambda^2*C_3*(x-x_3)^-1 + ... + lambda^(n-1)*C_n*(x-x_n)^-1.
+        To do this, we again use Horner scheme:
+        - Initialize C = C_n*(x-x_n)^-1
+        - For each point x_i, where i varies from n-1 to 1, we update C = C_i*(x-x_i)^-1 + lambda*C
+        Therefore, we iterate over the set of points in reverse order, fetching the corresponding
+        commitment from `commitment_map`. The same strategy is applied to batch values
+        */
+
+        // here we fetch the point x_n to initialize both the batched commitment and the batched
+
+        // batched_value is initialized to None as in the first iteration
+        // we need to proper initialize them for the Horner scheme
+        let mut batched_value = None;
+
+        for (point_label, (point, poly_labels)) in points.iter().rev() {
+            // check that evaluation point is different than the current point, as we later need
+            // to compute the inverse of `evaluation_point - point`
+            //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
+            // to be confirmed in review
+            evaluation_point.enforce_not_equal(
+                cs.ns(|| {
+                    format!(
+                        "enforce evaluation_point != point with label {}",
+                        point_label
+                    )
+                }),
+                &point,
+            )?;
+
+            let z_i_over_z_value = evaluation_point
+                .sub(
+                    cs.ns(|| format!("evaluation_point - point with label {}", point_label)),
+                    &point,
+                )?
+                .inverse(
+                    cs.ns(|| format!("(evaluation_point - point with label {})^-1", point_label)),
+                )?;
+            for label in poly_labels.iter().rev() {
+                let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
+                let v_i = evaluations.get(
+                    *label_map.get(label).ok_or(SynthesisError::Other(format!(
+                        "evaluation over batch point for polynomial with label {} not found",
+                        label
+                    )))?
+                ).ok_or(SynthesisError::Other(format!("evaluation for polynomial with label {} not found in multi-point proof", label)))?;
+                let y_i =
+                    values
+                        .get(&(label.clone(), point_label.clone()))
+                        .ok_or(SynthesisError::Other(String::from(format!(
+                            "evaluation for label {} not found",
+                            combined_label
+                        ))))?;
+                let v_i_minus_y_i = v_i.sub(cs.ns(|| format!("v_i-y_i for label {}", combined_label)), y_i)?;
+                match batched_value {
+                    None => {
+                        batched_value = Some(v_i_minus_y_i.mul(
+                            cs.ns(|| format!("(v_i-y_i)*z_i_over_z for label {}", combined_label)),
+                            &z_i_over_z_value,
+                        )?);
+                    }
+                    Some(val) => {
+                        let to_be_added_value = v_i_minus_y_i.mul_without_prereduce(
+                            cs.ns(|| format!("(v_i-y_i)*z_i_over_z for label {}", combined_label)),
+                            &z_i_over_z_value,
+                        )?;
+
+                        let batched_value_times_lambda = val.mul_without_prereduce(
+                            cs.ns(|| format!("batched_value*lambda for label {}", combined_label)),
+                            &lambda,
+                        )?;
+                        batched_value = Some(
+                            batched_value_times_lambda
+                                .add(
+                                    cs.ns(|| {
+                                        format!("add value for point for label {}", combined_label)
+                                    }),
+                                    &to_be_added_value,
+                                )?
+                                .reduce(cs.ns(|| {
+                                    format!("reduce batched value for label {}", combined_label)
+                                }))?,
+                        );
+                    }
+                }
+            }
+        }
+        let batched_value = batched_value.ok_or(SynthesisError::Other(
+                "no evaluation points provided".to_string(),
+            ))?;
+
+        // absorb the evaluations of the polynomials in the random oracle
+        let to_be_absorbed = evaluations_bits.iter().flatten().cloned().collect::<Vec<_>>();
+        random_oracle.enforce_record(cs.ns(|| "absorb evaluations over batch point"), to_be_absorbed.as_slice())?;
+
+        evaluations.push(batched_value);
+        let labeled_h_commitment = LabeledCommitmentGadget::new(H_POLY_LABEL.to_string(), proof.get_h_commitment().clone());
+
+        sorted_commitments.push(&labeled_h_commitment);
+
+
+        Self::succinct_verify_single_point_multi_poly(cs.ns(|| "succinct verify on batched"),
+        vk,
+        sorted_commitments,
+        &evaluation_point,
+  evaluations.as_slice(),
+  proof.get_proof(),
+        random_oracle,
         )
     }
 }
