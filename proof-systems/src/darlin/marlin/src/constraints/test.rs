@@ -166,6 +166,12 @@ mod verifier_gadget {
         H: FieldBasedHash<Data = G::BaseField>,
         HG: FieldBasedHashGadget<H, G::BaseField, DataGadget = FpGadget<G::BaseField>>,
     {
+        /// This circuit allocates the Coboundary Marlin proof `self.proof` as witness and enforces
+        /// that its succinct verification with verification key `self.index_vk` and public input
+        /// `self.public_input` is successful. The verifer key and the public inputs are passed to
+        /// the circuit as a single hash. This allows to expose a single public input, simplifying the
+        /// interface of the circuit, and also mimicks how we intend to treat public inputs in the
+        /// upcoming PCD scheme.
         fn generate_constraints<CS: ConstraintSystemAbstract<G::BaseField>>(
             self,
             cs: &mut CS,
@@ -208,7 +214,6 @@ mod verifier_gadget {
 
             actual_digest.enforce_equal(cs.ns(|| "check pub ins"), &expected_digest)?;
 
-            // Enforce proof verification
             // TODO: No need to allocate it in the future, should be hardcoded
             let pc_verifier_key_gadget = PCG::VerifierKeyGadget::alloc(
                 cs.ns(|| "alloc pc verifier key"),
@@ -524,7 +529,7 @@ mod verifier_gadget {
             let mut d = c;
             d.mul_assign(&b);
 
-            let circ = Circuit {
+            let base_circuit = Circuit {
                 a: Some(a),
                 b: Some(b),
                 c: Some(c),
@@ -533,17 +538,17 @@ mod verifier_gadget {
                 num_variables,
             };
             let (index_pk, index_vk) =
-                Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk, circ).unwrap();
+                Marlin::<G, PC>::circuit_specific_setup::<_, D>(&pc_pk, base_circuit).unwrap();
 
             assert!(index_pk.is_valid());
             assert!(index_vk.is_valid());
             test_canonical_serialize_deserialize(true, &index_pk);
             test_canonical_serialize_deserialize(true, &index_vk);
 
-            let proof = Marlin::<G, PC>::prove(
+            let base_proof = Marlin::<G, PC>::prove(
                 &index_pk,
                 &pc_pk,
-                circ,
+                base_circuit,
                 zk,
                 if zk { Some(rng) } else { None },
             )
@@ -551,18 +556,22 @@ mod verifier_gadget {
 
             println!("Created base proof");
 
-            assert!(proof.is_valid());
-            test_canonical_serialize_deserialize(true, &proof);
+            assert!(base_proof.is_valid());
+            test_canonical_serialize_deserialize(true, &base_proof);
 
             // Success verification
             let correct_inputs = vec![c, d];
-            assert!(Marlin::<G, PC>::verify(&index_vk, &pc_vk, &correct_inputs, &proof).unwrap());
+            assert!(
+                Marlin::<G, PC>::verify(&index_vk, &pc_vk, &correct_inputs, &base_proof).unwrap()
+            );
 
+            // Now that we have successfully created and verified a base proof, we create and verify
+            // a recursive proof which wraps the base proof.
             let recursive_circuit =
                 TestRecursiveCircuit::<'_, G, GDual, GG, PC, PCG, D, H, HG>::new(
                     &index_vk,
                     &pc_vk,
-                    &proof,
+                    &base_proof,
                     &correct_inputs,
                 );
 
@@ -592,7 +601,12 @@ mod verifier_gadget {
             assert!(recursive_proof.is_valid());
             test_canonical_serialize_deserialize(true, &recursive_proof);
 
-            // Success verification
+            // Success verification of `recursive_proof`. Since `recursive_circuit` encodes only the
+            // succinct part of the full Marlin verification process, the hard part of the verification
+            // is still missing. For efficiency reasons, the hard part of the verification will not
+            // happen inside circuit, but by means of accumulators processed outside of circuit.
+            // Since the scope of this test is to check the correctness of the MarlinVerifierGadget,
+            // the processing of accumulators is not included.
             assert!(Marlin::<GDual, PCDual>::verify(
                 &index_vk_recursive,
                 &pc_dual_vk,
