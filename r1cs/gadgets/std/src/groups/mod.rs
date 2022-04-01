@@ -1,4 +1,4 @@
-use crate::{prelude::*, Assignment};
+use crate::prelude::*;
 use algebra::{BigInteger, Field, FpParameters, Group, PrimeField, EndoMulCurve, ToBits};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
@@ -178,8 +178,8 @@ pub trait EndoMulCurveGadget<G: EndoMulCurve, ConstraintF: Field>: GroupGadget<G
             || {
                 let native_bits = bits
                     .iter()
-                    .map(|b| b.get_value().get())
-                    .collect::<Result<Vec<bool>, _>>()?;
+                    .map(|b| b.get_value().unwrap_or(false))
+                    .collect::<Vec<bool>>();
 
                 let mut endo_scalar_bits = G::endo_rep_to_scalar(native_bits)?.write_bits();
                 endo_scalar_bits.reverse();
