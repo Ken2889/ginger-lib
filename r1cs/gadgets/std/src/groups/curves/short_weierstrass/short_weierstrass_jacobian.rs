@@ -322,8 +322,7 @@ where
             } else {
                 Jacobian::<P>::from_affine(&AffineRep::<P>::new(x, y))
             }),
-            (None, None, None) => None,
-            _ => unreachable!(),
+            _ => None,
         }
     }
 
