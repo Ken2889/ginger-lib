@@ -77,7 +77,7 @@ fn variable_msm(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         let (v, g) = load_data(samples);
-                        (v, DeeJacobian::batch_into_affine(g.as_slice()).unwrap())
+                        (v, DeeJacobian::batch_into_affine(g).unwrap())
                     },
                     |(v, g)| {
                         add_to_trace!(

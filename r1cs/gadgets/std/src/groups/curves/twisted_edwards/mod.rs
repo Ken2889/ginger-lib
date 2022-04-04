@@ -473,6 +473,8 @@ mod projective_impl {
             ))
         }
 
+        // TODO: This is an ordinary double-and-add. We should investigate if there are more
+        //       efficient algorithms like in the SW case.
         fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
             &self,
             mut cs: CS,

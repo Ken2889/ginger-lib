@@ -184,6 +184,80 @@ impl<P: Parameters> TEExtended<P> {
             _params: PhantomData,
         }
     }
+
+    #[inline]
+    pub fn is_normalized(&self) -> bool {
+        self.is_zero() || self.z.is_one()
+    }
+
+    #[inline]
+    pub fn normalize(&self) -> Self {
+        let mut copy = *self;
+        copy.normalize_assign();
+        copy
+    }
+
+    pub fn normalize_assign(&mut self) {
+        if !self.is_normalized() {
+            let dz = self.z.inverse().unwrap();
+            self.x *= &dz; // x/z
+            self.y *= &dz; // y/z
+            self.t *= &dz; // y/z
+            self.z = P::BaseField::one(); // z = 1
+        }
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub fn batch_normalization(v: &mut [Self]) {
+        // Montgomery’s Trick and Fast Implementation of Masked AES
+        // Genelle, Prouff and Quisquater
+        // Section 3.2
+
+        // First pass: compute [a, ab, abc, ...]
+        let mut prod = Vec::with_capacity(v.len());
+        let mut tmp = P::BaseField::one();
+        for g in v
+            .iter_mut()
+            // Ignore normalized elements
+            .filter(|g| !g.is_normalized())
+        {
+            tmp.mul_assign(&g.z);
+            prod.push(tmp);
+        }
+
+        // Invert `tmp`.
+        tmp = tmp.inverse().unwrap(); // Guaranteed to be nonzero.
+
+        // Second pass: iterate backwards to compute inverses
+        for (g, s) in v
+            .iter_mut()
+            // Backwards
+            .rev()
+            // Ignore normalized elements
+            .filter(|g| !g.is_normalized())
+            // Backwards, skip last element, fill in one for last term.
+            .zip(
+                prod.into_iter()
+                    .rev()
+                    .skip(1)
+                    .chain(Some(P::BaseField::one())),
+            )
+        {
+            // tmp := tmp * g.z; g.z := tmp * s = 1/z
+            let newtmp = tmp * &g.z;
+            g.z = tmp * &s;
+            tmp = newtmp;
+        }
+
+        // Perform affine transformations
+        for g in v.iter_mut().filter(|g| !g.is_normalized()) {
+            g.x *= &g.z; // x/z
+            g.y *= &g.z;
+            g.t *= &g.z;
+            g.z = P::BaseField::one(); // z = 1
+        }
+    }
 }
 
 impl<P: Parameters> Display for TEExtended<P> {
@@ -564,6 +638,15 @@ impl<P: Parameters> Curve for TEExtended<P> {
     type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
+    #[inline]
+    fn batch_into_affine<'a>(mut vec_self: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
+        Self::batch_normalization(vec_self.as_mut_slice());
+        vec_self
+            .into_iter()
+            .map(|projective| projective.into_affine())
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
         copy.add_assign_affine(other);
@@ -669,79 +752,6 @@ impl<P: Parameters> Curve for TEExtended<P> {
             .is_zero()
     }
 
-    #[inline]
-    fn is_normalized(&self) -> bool {
-        self.is_zero() || self.z.is_one()
-    }
-
-    #[inline]
-    fn normalize(&self) -> Self {
-        let mut copy = *self;
-        copy.normalize_assign();
-        copy
-    }
-
-    fn normalize_assign(&mut self) {
-        if !self.is_normalized() {
-            let dz = self.z.inverse().unwrap();
-            self.x *= &dz; // x/z
-            self.y *= &dz; // y/z
-            self.t *= &dz; // y/z
-            self.z = P::BaseField::one(); // z = 1
-        }
-    }
-
-    #[inline]
-    fn batch_normalization(v: &mut [Self]) {
-        // Montgomery’s Trick and Fast Implementation of Masked AES
-        // Genelle, Prouff and Quisquater
-        // Section 3.2
-
-        // First pass: compute [a, ab, abc, ...]
-        let mut prod = Vec::with_capacity(v.len());
-        let mut tmp = P::BaseField::one();
-        for g in v
-            .iter_mut()
-            // Ignore normalized elements
-            .filter(|g| !g.is_normalized())
-        {
-            tmp.mul_assign(&g.z);
-            prod.push(tmp);
-        }
-
-        // Invert `tmp`.
-        tmp = tmp.inverse().unwrap(); // Guaranteed to be nonzero.
-
-        // Second pass: iterate backwards to compute inverses
-        for (g, s) in v
-            .iter_mut()
-            // Backwards
-            .rev()
-            // Ignore normalized elements
-            .filter(|g| !g.is_normalized())
-            // Backwards, skip last element, fill in one for last term.
-            .zip(
-                prod.into_iter()
-                    .rev()
-                    .skip(1)
-                    .chain(Some(P::BaseField::one())),
-            )
-        {
-            // tmp := tmp * g.z; g.z := tmp * s = 1/z
-            let newtmp = tmp * &g.z;
-            g.z = tmp * &s;
-            tmp = newtmp;
-        }
-
-        // Perform affine transformations
-        for g in v.iter_mut().filter(|g| !g.is_normalized()) {
-            g.x *= &g.z; // x/z
-            g.y *= &g.z;
-            g.t *= &g.z;
-            g.z = P::BaseField::one(); // z = 1
-        }
-    }
-
     /// Attempts to construct an affine point given an x-coordinate. The
     /// point is not guaranteed to be in the prime order subgroup.
     ///
@@ -776,18 +786,6 @@ impl<P: Parameters> Curve for TEExtended<P> {
             let negy = -y;
             let y = if y.is_odd() ^ parity { negy } else { y };
             Self::new(x, y, x * &y, P::BaseField::one())
-        })
-    }
-
-    fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
-        P::BaseField::from_random_bytes_with_flags::<EdwardsFlags>(bytes).and_then(|(x, flags)| {
-            // if x is valid and is zero, then parse this
-            // point as infinity.
-            if x.is_zero() {
-                Some(Self::zero())
-            } else {
-                Self::get_point_from_x_and_parity(x, flags.is_odd())
-            }
         })
     }
 }

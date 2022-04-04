@@ -1,4 +1,5 @@
 use crate::{bytes_to_bits, CryptoError, Error};
+use num_bigint::BigUint;
 use rand::Rng;
 use rayon::prelude::*;
 use std::{
@@ -7,7 +8,7 @@ use std::{
 };
 
 use crate::crh::FixedLengthCRH;
-use algebra::{Group, fields::{PrimeField, FpParameters}};
+use algebra::{Group, fields::PrimeField};
 use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: usize = 3;
@@ -29,6 +30,20 @@ pub struct BoweHopwoodPedersenCRH<G: Group, W: PedersenWindow> {
 }
 
 impl<G: Group, W: PedersenWindow> BoweHopwoodPedersenCRH<G, W> {
+    
+    /// Zcash protocol specification - section 5.4.1.7
+    fn calculate_num_chunks_in_segment<F: PrimeField>() -> usize {
+        let upper_limit: BigUint = F::modulus_minus_one_div_two().into();
+        let mut c = 0;
+        let mut range = BigUint::from(2usize);
+        while range < upper_limit {
+            range <<= 4;
+            c += 1;
+        }
+
+        c
+    }
+
     pub fn create_generators<R: Rng>(rng: &mut R) -> Vec<Vec<G>> {
         let mut generators = Vec::new();
         for _ in 0..W::NUM_WINDOWS {
@@ -54,9 +69,7 @@ impl<G: Group, W: PedersenWindow> FixedLengthCRH for BoweHopwoodPedersenCRH<G, W
     fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, Error> {
         assert_eq!(CHUNK_SIZE, 3);
 
-        // Rough approximation (safe though, as it's an overestimate) of the bound on WINDOW_SIZE described
-        // in section 5.4.1.7 of the Zcash protocol specification.
-        let maximum_num_chunks_in_segment = <G::ScalarField as PrimeField>::Params::CAPACITY as usize/4;
+        let maximum_num_chunks_in_segment = Self::calculate_num_chunks_in_segment::<G::ScalarField>();
         if W::WINDOW_SIZE > maximum_num_chunks_in_segment {
             return Err(format!(
                 "Bowe-Hopwood hash must have a window size resulting in scalars < (p-1)/2, \

@@ -2,6 +2,7 @@ use crate::{fields::Field, groups::Group, MontgomeryModelParameters, SWModelPara
 use num_traits::One;
 
 #[allow(dead_code)]
+/// Tests correct value for Montgomery curve equation coefficients A and B, given the TE curve equation coefficients A, D.
 pub(crate) fn montgomery_conversion_test<P>()
 where
     P: TEModelParameters,
@@ -18,7 +19,7 @@ where
 }
 
 #[allow(dead_code)]
-/// Tests correct Montgomery -> SW conversion.
+/// Tests correct value for SW curve equation coefficients A and B, given the Montgomery curve equation coefficients A, B. 
 /// TODO: Would be more correct to include an associated type SWModelParameters to
 /// the TEModelParameters or MontgomeryModelParameters trait. We use the workaround
 /// below instead for the moment.

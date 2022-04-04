@@ -29,6 +29,10 @@ pub mod tests;
 pub use self::models::*;
 
 /// Projective representation of an elliptic curve point.
+/// This trait t serves curve-specific functions not covered
+/// by the Group trait, in particular representation-specific
+/// (i.e. mixed-type) arithmetic functions, that usually are
+/// significantly faster.
 pub trait Curve:
     Group
     + Copy // TODO: Let's consider removing this
@@ -71,16 +75,16 @@ pub trait Curve:
 
     /// Convert, if possible, a batch of `self` points to their affine equivalent.
     #[inline]
-    fn batch_into_affine<'a>(vec_self: &'a [Self]) -> Result<Vec<Self::AffineRep>, Error> {
+    fn batch_into_affine<'a>(vec_self: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
         vec_self
-            .iter()
-            .map(|&projective| projective.into_affine())
+            .into_iter()
+            .map(|projective| projective.into_affine())
             .collect::<Result<Vec<_>, _>>()
     }
 
     /// Construct `self` points from a batch of their affine representation.
     #[inline]
-    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
+    fn batch_from_affine<'a>(vec_affine:Vec<Self::AffineRep>) -> Vec<Self> {
         vec_affine
             .iter()
             .map(|&affine| affine.into())
@@ -93,7 +97,8 @@ pub trait Curve:
     /// Add assign an affine point `other` to `self`, using mixed addition formulas.
     fn add_assign_affine(&mut self, other: &Self::AffineRep);
 
-    /// Add, pairwise, the elements of each vector in `to_add`
+    /// Given a batch of vectors, collapses them into single-element vectors carrying
+    /// their respective additive totals.   
     fn add_in_place_affine_many(to_add: &mut [Vec<Self::AffineRep>]);
 
     /// Multiply `self` by the scalar represented by `bits`. 
@@ -116,24 +121,6 @@ pub trait Curve:
 
     /// Multiply `self` by the inverse of the cofactor in `Self::ScalarField`.
     fn scale_by_cofactor_inv(&self) -> Self;
-
-    /// Normalize `self` so that conversion to affine is cheap. Output the normalized point.
-    fn normalize(&self) -> Self;
-
-    /// Normalize `self` so that conversion to affine is cheap.
-    fn normalize_assign(&mut self);
-
-    /// Return true if `self` is normalized, false otherwise.
-    fn is_normalized(&self) -> bool;
-
-    /// Normalize a slice of projective elements so that conversion to affine is cheap.
-    fn batch_normalization(v: &mut [Self]);
-
-    /// Normalize a slice of projective elements and outputs a vector containing the affine equivalents.
-    fn batch_normalization_into_affine(mut v: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
-        Self::batch_normalization(v.as_mut_slice());
-        Self::batch_into_affine(v.as_slice())
-    }
 
     /// Returns a fixed generator of unknown exponent.
     #[must_use]
@@ -163,12 +150,6 @@ pub trait Curve:
     ///
     /// If and only if `parity` is set will the odd y-coordinate be selected.
     fn get_point_from_x_and_parity(x: Self::BaseField, parity: bool) -> Option<Self>;
-
-    /// Returns a curve point if the set of bytes forms a valid curve point,
-    /// otherwise returns None. This function is primarily intended for sampling
-    /// random group elements from a hash-function or RNG output.
-    /// The sampled point is not guaranteed to be in the prime order subgroup.
-    fn from_random_bytes(bytes: &[u8]) -> Option<Self>;
 }
 
 /// The `EndoMulCurve` trait for curves that have a non-trivial endomorphism

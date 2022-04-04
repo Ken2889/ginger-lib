@@ -4,6 +4,7 @@ use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomai
 use crate::{
     serialize::*, Field, PrimeField, FromBytes, FromBytesChecked, SemanticallyValid, ToBytes,
 };
+use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
@@ -12,7 +13,7 @@ use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, S
 use num_traits::Zero;
 
 /// Stores a polynomial in coefficient form.
-#[derive(Clone, PartialEq, Eq, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DensePolynomial<F: Field> {
     /// The coefficient of `x^i` is stored at location `i` in `self.coeffs`.
     pub coeffs: Vec<F>,
@@ -29,6 +30,25 @@ impl<F: Field> Zero for DensePolynomial<F> {
         self.coeffs.is_empty() || self.coeffs.iter().all(|fe| fe.is_zero())
     }
 }
+
+// The trait PartialEq cannot be simply derived, because this would cause wrong results when
+// comparing vectors which are equal apart from a different number of trailing zeros (in
+// particular when comparing different representations of the zero vector).
+impl<F: Field> PartialEq<Self> for DensePolynomial<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self
+            .coeffs
+            .iter()
+            .zip_longest(other.coeffs.iter())
+            .all(|elems| match elems {
+                EitherOrBoth::Both(fe1, fe2) => fe1 == fe2,
+                EitherOrBoth::Left(fe) => fe.is_zero(),
+                EitherOrBoth::Right(fe) => fe.is_zero(),
+            })
+    }
+}
+
+impl<F: Field> Eq for DensePolynomial<F> {}
 
 impl<F: Field> ToBytes for DensePolynomial<F> {
     fn write<W: Write>(&self, mut w: W) -> std::io::Result<()> {
@@ -521,10 +541,12 @@ mod tests {
     use rand::thread_rng;
     use num_traits::{Zero, One};
 
+    const MAX_DEGREE: usize = 50;
+
     #[test]
     fn double_polynomials_random() {
         let rng = &mut thread_rng();
-        for degree in 0..70 {
+        for degree in 0..MAX_DEGREE {
             let p = DensePolynomial::<Fr>::rand(degree, rng);
             let p_double = &p + &p;
             let p_quad = &p_double + &p_double;
@@ -535,8 +557,8 @@ mod tests {
     #[test]
     fn add_polynomials() {
         let rng = &mut thread_rng();
-        for a_degree in 0..70 {
-            for b_degree in 0..70 {
+        for a_degree in 0..MAX_DEGREE {
+            for b_degree in 0..MAX_DEGREE {
                 let p1 = DensePolynomial::<Fr>::rand(a_degree, rng);
                 let p2 = DensePolynomial::<Fr>::rand(b_degree, rng);
                 let res1 = &p1 + &p2;
@@ -549,8 +571,8 @@ mod tests {
     #[test]
     fn add_polynomials_with_mul() {
         let rng = &mut thread_rng();
-        for a_degree in 0..70 {
-            for b_degree in 0..70 {
+        for a_degree in 0..MAX_DEGREE {
+            for b_degree in 0..MAX_DEGREE {
                 let mut p1 = DensePolynomial::rand(a_degree, rng);
                 let p2 = DensePolynomial::rand(b_degree, rng);
                 let f = Fr::rand(rng);
@@ -602,8 +624,8 @@ mod tests {
     fn divide_polynomials_random() {
         let rng = &mut thread_rng();
 
-        for a_degree in 0..70 {
-            for b_degree in 0..70 {
+        for a_degree in 0..MAX_DEGREE {
+            for b_degree in 0..MAX_DEGREE {
                 let dividend = DensePolynomial::<Fr>::rand(a_degree, rng);
                 let divisor = DensePolynomial::<Fr>::rand(b_degree, rng);
                 if let Some((quotient, remainder)) = DenseOrSparsePolynomial::divide_with_q_and_r(
@@ -619,7 +641,7 @@ mod tests {
     #[test]
     fn evaluate_polynomials() {
         let rng = &mut thread_rng();
-        for a_degree in 0..70 {
+        for a_degree in 0..MAX_DEGREE {
             let p = DensePolynomial::rand(a_degree, rng);
             let point: Fr = Fr::from(10u64);
             let mut total = Fr::zero();
@@ -633,8 +655,8 @@ mod tests {
     #[test]
     fn mul_polynomials_random() {
         let rng = &mut thread_rng();
-        for a_degree in 0..70 {
-            for b_degree in 0..70 {
+        for a_degree in 0..MAX_DEGREE {
+            for b_degree in 0..MAX_DEGREE {
                 let a = DensePolynomial::<Fr>::rand(a_degree, rng);
                 let b = DensePolynomial::<Fr>::rand(b_degree, rng);
                 assert_eq!(&a * &b, a.naive_mul(&b))
@@ -647,12 +669,39 @@ mod tests {
         let rng = &mut thread_rng();
         for size in 1..18 {
             let domain = get_best_evaluation_domain::<Fr>(1 << size).unwrap();
-            for degree in 0..70 {
+            for degree in 0..MAX_DEGREE {
                 let p = DensePolynomial::<Fr>::rand(degree, rng);
                 let ans1 = p.mul_by_vanishing_poly(domain.size());
                 let ans2 = &p * &domain.vanishing_polynomial().into();
                 assert_eq!(ans1, ans2);
             }
+        }
+    }
+
+    #[test]
+    fn cmp_polynomials() {
+        use rand::Rng;
+
+        let rng = &mut thread_rng();
+
+        for coeffs_len in 0..MAX_DEGREE {
+            // Sample random coeffs
+            let mut coeffs = (0..coeffs_len).map(|_| Fr::rand(rng)).collect::<Vec<_>>();
+
+            // Init poly a with such coeffs
+            let a = DensePolynomial::<Fr>::from_coefficients_vec(coeffs.clone());
+
+            // Pad with 0s up to max_degree
+            coeffs.append(&mut vec![Fr::zero(); MAX_DEGREE - coeffs_len]);
+            let mut b = DensePolynomial::<Fr>{ coeffs: coeffs.clone() };
+
+            // We expect polys to be considered equal
+            assert_eq!(a, b);
+
+            // Changing one coeff will lead to inequality
+            let random_idx: usize = rng.gen_range(coeffs_len..MAX_DEGREE);
+            b.coeffs[random_idx] = Fr::one();
+            assert_ne!(a, b);
         }
     }
 }

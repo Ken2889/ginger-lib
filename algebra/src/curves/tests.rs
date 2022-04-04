@@ -1,4 +1,4 @@
-use crate::UniformRand;
+use crate::{UniformRand, Group};
 use crate::{
     curves::Curve,
     fields::{BitIterator, PrimeField},
@@ -7,6 +7,7 @@ use crate::{
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use std::convert::TryInto;
 use std::io::Cursor;
 use num_traits::Zero;
 
@@ -180,68 +181,7 @@ fn random_negation_test<G: Curve>() {
     }
 }
 
-fn random_transformation_test<G: Curve>(is_twisted_edwards: bool) {
-    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
-
-    for _ in 0..ITERATIONS {
-        let g = G::rand(&mut rng);
-        let g_affine = g.try_into().unwrap();
-        let g_projective = G::from_affine(&g_affine);
-        assert_eq!(g, g_projective);
-    }
-
-    // Batch normalization
-    for _ in 0..10 {
-        let mut v = (0..ITERATIONS)
-            .map(|_| {
-                let mut r = G::rand(&mut rng);
-                while r.is_normalized() {
-                    r.double_in_place();
-                }
-                r
-            })
-            .collect::<Vec<_>>();
-
-        for i in &v {
-            assert!(!i.is_normalized());
-        }
-
-        use rand::distributions::{Distribution, Uniform};
-        let between = Uniform::from(0..ITERATIONS);
-        // Sprinkle in some normalized points
-        for _ in 0..5 {
-            v[between.sample(&mut rng)] = G::zero();
-        }
-        for _ in 0..5 {
-            let s = between.sample(&mut rng);
-            if v[s].is_zero() && !is_twisted_edwards {
-                assert!(v[s].into_affine().is_err());
-            } else {
-                v[s] = G::from_affine(&v[s].into_affine().unwrap());
-            }
-        }
-
-        let expected_v = v
-            .iter()
-            .map(|v| {
-                if v.is_zero() && !is_twisted_edwards {
-                    G::zero()
-                } else {
-                    G::from_affine(&v.into_affine().unwrap())
-                }
-            })
-            .collect::<Vec<_>>();
-        G::batch_normalization(&mut v);
-
-        for i in &v {
-            assert!(i.is_normalized());
-        }
-
-        assert_eq!(v, expected_v);
-    }
-}
-
-pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
+pub fn curve_tests<G: Curve>() {
     let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
 
     // Negation edge case with zero.
@@ -294,34 +234,11 @@ pub fn curve_tests<G: Curve>(is_twisted_edwards: bool) {
     random_multiplication_test::<G>();
     random_doubling_test::<G>();
     random_negation_test::<G>();
-    random_transformation_test::<G>(is_twisted_edwards);
 }
 
 pub fn sw_jacobian_tests<P: SWModelParameters>() {
     sw_jacobian_curve_serialization_test::<P>();
-    sw_jacobian_from_random_bytes::<P>();
-}
-
-pub fn sw_jacobian_from_random_bytes<P: SWModelParameters>() {
-    use crate::curves::models::short_weierstrass_jacobian::Jacobian;
-
-    let buf_size = Jacobian::<P>::zero().serialized_size();
-
-    let rng = &mut thread_rng();
-
-    for _ in 0..ITERATIONS {
-        let a = Jacobian::<P>::rand(rng);
-        {
-            let mut serialized = vec![0; buf_size];
-            let mut cursor = Cursor::new(&mut serialized[..]);
-            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-
-            let mut cursor = Cursor::new(&serialized[..]);
-            let p1 = <Jacobian<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-            let p2 = Jacobian::<P>::from_random_bytes(&serialized).unwrap();
-            assert_eq!(p1, p2);
-        }
-    }
+    sw_jacobian_random_transformation_test::<P>();
 }
 
 pub fn sw_jacobian_curve_serialization_test<P: SWModelParameters>() {
@@ -420,34 +337,73 @@ pub fn sw_jacobian_curve_serialization_test<P: SWModelParameters>() {
     }
 }
 
+fn sw_jacobian_random_transformation_test<P: SWModelParameters>() {
+    use crate::curves::models::short_weierstrass_jacobian::Jacobian;
+    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+
+    for _ in 0..ITERATIONS {
+        let g = Jacobian::<P>::rand(&mut rng);
+        let g_affine = g.try_into().unwrap();
+        let g_projective = Jacobian::<P>::from_affine(&g_affine);
+        assert_eq!(g, g_projective);
+    }
+
+    // Batch normalization
+    for _ in 0..10 {
+        let mut v = (0..ITERATIONS)
+            .map(|_| {
+                let mut r = Jacobian::<P>::rand(&mut rng);
+                while r.is_normalized() {
+                    r.double_in_place();
+                }
+                r
+            })
+            .collect::<Vec<_>>();
+
+        for i in &v {
+            assert!(!i.is_normalized());
+        }
+
+        use rand::distributions::{Distribution, Uniform};
+        let between = Uniform::from(0..ITERATIONS);
+        // Sprinkle in some normalized points
+        for _ in 0..5 {
+            v[between.sample(&mut rng)] = Jacobian::<P>::zero();
+        }
+        for _ in 0..5 {
+            let s = between.sample(&mut rng);
+            if v[s].is_zero() {
+                assert!(v[s].into_affine().is_err());
+            } else {
+                v[s] = Jacobian::<P>::from_affine(&v[s].into_affine().unwrap());
+            }
+        }
+
+        let expected_v = v
+            .iter()
+            .map(|v| {
+                if v.is_zero() {
+                   Jacobian::<P>::zero()
+                } else {
+                    Jacobian::<P>::from_affine(&v.into_affine().unwrap())
+                }
+            })
+            .collect::<Vec<_>>();
+        Jacobian::<P>::batch_normalization(&mut v);
+
+        for i in &v {
+            assert!(i.is_normalized());
+        }
+
+        assert_eq!(v, expected_v);
+    }
+}
 
 // Currently we don't have any SWProjective curve
 #[allow(unused)]
 pub fn sw_projective_tests<P: SWModelParameters>() {
     sw_projective_curve_serialization_test::<P>();
-    sw_projective_from_random_bytes::<P>();
-}
-
-fn sw_projective_from_random_bytes<P: SWModelParameters>() {
-    use crate::curves::models::short_weierstrass_projective::Projective;
-
-    let buf_size = Projective::<P>::zero().serialized_size();
-
-    let rng = &mut thread_rng();
-
-    for _ in 0..ITERATIONS {
-        let a = Projective::<P>::rand(rng);
-        {
-            let mut serialized = vec![0; buf_size];
-            let mut cursor = Cursor::new(&mut serialized[..]);
-            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-
-            let mut cursor = Cursor::new(&serialized[..]);
-            let p1 = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-            let p2 = Projective::<P>::from_random_bytes(&serialized).unwrap();
-            assert_eq!(p1, p2);
-        }
-    }
+    sw_projective_random_transformation_test::<P>();
 }
 
 fn sw_projective_curve_serialization_test<P: SWModelParameters>() {
@@ -546,51 +502,74 @@ fn sw_projective_curve_serialization_test<P: SWModelParameters>() {
     }
 }
 
-// Currently we don't have any TE curve
-#[allow(unused)]
+fn sw_projective_random_transformation_test<P: SWModelParameters>() {
+    use crate::curves::models::short_weierstrass_projective::Projective;
+    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+
+    for _ in 0..ITERATIONS {
+        let g = Projective::<P>::rand(&mut rng);
+        let g_affine = g.try_into().unwrap();
+        let g_projective = Projective::<P>::from_affine(&g_affine);
+        assert_eq!(g, g_projective);
+    }
+
+    // Batch normalization
+    for _ in 0..10 {
+        let mut v = (0..ITERATIONS)
+            .map(|_| {
+                let mut r = Projective::<P>::rand(&mut rng);
+                while r.is_normalized() {
+                    r.double_in_place();
+                }
+                r
+            })
+            .collect::<Vec<_>>();
+
+        for i in &v {
+            assert!(!i.is_normalized());
+        }
+
+        use rand::distributions::{Distribution, Uniform};
+        let between = Uniform::from(0..ITERATIONS);
+        // Sprinkle in some normalized points
+        for _ in 0..5 {
+            v[between.sample(&mut rng)] = Projective::<P>::zero();
+        }
+        for _ in 0..5 {
+            let s = between.sample(&mut rng);
+            if v[s].is_zero() {
+                assert!(v[s].into_affine().is_err());
+            } else {
+                v[s] = Projective::<P>::from_affine(&v[s].into_affine().unwrap());
+            }
+        }
+
+        let expected_v = v
+            .iter()
+            .map(|v| {
+                if v.is_zero() {
+                    Projective::<P>::zero()
+                } else {
+                    Projective::<P>::from_affine(&v.into_affine().unwrap())
+                }
+            })
+            .collect::<Vec<_>>();
+        Projective::<P>::batch_normalization(&mut v);
+
+        for i in &v {
+            assert!(i.is_normalized());
+        }
+
+        assert_eq!(v, expected_v);
+    }
+}
+
 pub fn edwards_tests<P: crate::curves::models::TEModelParameters>()
 where
     P::BaseField: PrimeField,
 {
     edwards_curve_serialization_test::<P>();
-    edwards_from_random_bytes::<P>();
-}
-
-fn edwards_from_random_bytes<P: crate::curves::models::TEModelParameters>()
-where
-    P::BaseField: PrimeField,
-{
-    use crate::curves::models::twisted_edwards_extended::TEExtended;
-    use crate::ToBytes;
-
-    let buf_size = TEExtended::<P>::zero().serialized_size();
-
-    let rng = &mut thread_rng();
-
-    for _ in 0..ITERATIONS {
-        let a = TEExtended::<P>::rand(rng);
-        {
-            let mut serialized = vec![0; buf_size];
-            let mut cursor = Cursor::new(&mut serialized[..]);
-            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
-
-            let mut cursor = Cursor::new(&serialized[..]);
-            let p1 = <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
-            let p2 = TEExtended::<P>::from_random_bytes(&serialized).unwrap();
-            assert_eq!(p1, p2);
-        }
-    }
-
-    for _ in 0..ITERATIONS {
-        let biginteger = <<TEExtended<P> as Curve>::BaseField as PrimeField>::BigInt::rand(rng);
-        let mut bytes = to_bytes![biginteger].unwrap();
-        let mut g = TEExtended::<P>::from_random_bytes(&bytes);
-        while g.is_none() {
-            bytes.iter_mut().for_each(|i| *i = i.wrapping_sub(1));
-            g = TEExtended::<P>::from_random_bytes(&bytes);
-        }
-        let _g = g.unwrap();
-    }
+    edwards_random_transformation_test::<P>();
 }
 
 fn edwards_curve_serialization_test<P: crate::curves::models::TEModelParameters>() {
@@ -654,5 +633,59 @@ fn edwards_curve_serialization_test<P: crate::curves::models::TEModelParameters>
             let b = TEExtended::<P>::deserialize_uncompressed(&mut cursor).unwrap();
             assert_eq!(a, b);
         }
+    }
+}
+
+fn edwards_random_transformation_test<P: crate::curves::models::TEModelParameters>() {
+    use crate::curves::models::twisted_edwards_extended::TEExtended;
+    let mut rng = XorShiftRng::seed_from_u64(1231275789u64);
+
+    for _ in 0..ITERATIONS {
+        let g = TEExtended::<P>::rand(&mut rng);
+        let g_affine = g.try_into().unwrap();
+        let g_projective = TEExtended::<P>::from_affine(&g_affine);
+        assert_eq!(g, g_projective);
+    }
+
+    // Batch normalization
+    for _ in 0..10 {
+        let mut v = (0..ITERATIONS)
+            .map(|_| {
+                let mut r = TEExtended::<P>::rand(&mut rng);
+                while r.is_normalized() {
+                    r.double_in_place();
+                }
+                r
+            })
+            .collect::<Vec<_>>();
+
+        for i in &v {
+            assert!(!i.is_normalized());
+        }
+
+        use rand::distributions::{Distribution, Uniform};
+        let between = Uniform::from(0..ITERATIONS);
+        // Sprinkle in some normalized points
+        for _ in 0..5 {
+            v[between.sample(&mut rng)] = TEExtended::<P>::zero();
+        }
+        for _ in 0..5 {
+            let s = between.sample(&mut rng);
+            v[s] = TEExtended::<P>::from_affine(&v[s].into_affine().unwrap());
+        }
+
+        let expected_v = v
+            .iter()
+            .map(|v| {
+                    TEExtended::<P>::from_affine(&v.into_affine().unwrap())
+            })
+            .collect::<Vec<_>>();
+        TEExtended::<P>::batch_normalization(&mut v);
+
+        for i in &v {
+            assert!(i.is_normalized());
+        }
+
+        assert_eq!(v, expected_v);
     }
 }

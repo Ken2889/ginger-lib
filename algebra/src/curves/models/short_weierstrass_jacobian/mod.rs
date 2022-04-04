@@ -187,6 +187,96 @@ impl<P: Parameters> Jacobian<P> {
             _params: PhantomData,
         }
     }
+
+    #[inline]
+    pub fn is_normalized(&self) -> bool {
+        self.is_zero() || self.z.is_one()
+    }
+
+    #[inline]
+    pub fn normalize(&self) -> Self {
+        let mut copy = *self;
+        copy.normalize_assign();
+        copy
+    }
+
+    pub fn normalize_assign(&mut self) {
+        if !self.is_normalized() {
+            let dz = self.z.inverse().unwrap();
+            let dz2 = dz.square(); // 1/z
+            self.x *= &dz2; // x/z^2
+            self.y *= &(dz2 * &dz); // y/z^3
+            self.z = P::BaseField::one(); // z = 1
+        }
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub fn batch_normalization(v: &mut [Self]) {
+        // Montgomery’s Trick and Fast Implementation of Masked AES
+        // Genelle, Prouff and Quisquater
+        // Section 3.2
+
+        // First pass: compute [a, ab, abc, ...]
+        let mut prod = Vec::with_capacity(v.len());
+        let mut tmp = P::BaseField::one();
+        for g in v
+            .iter_mut()
+            // Ignore normalized elements
+            .filter(|g| !g.is_normalized())
+        {
+            tmp.mul_assign(&g.z);
+            prod.push(tmp);
+        }
+
+        // Invert `tmp`.
+        tmp = tmp.inverse().unwrap(); // Guaranteed to be nonzero.
+
+        // Second pass: iterate backwards to compute inverses
+        for (g, s) in v
+            .iter_mut()
+            // Backwards
+            .rev()
+            // Ignore normalized elements
+            .filter(|g| !g.is_normalized())
+            // Backwards, skip last element, fill in one for last term.
+            .zip(
+                prod.into_iter()
+                    .rev()
+                    .skip(1)
+                    .chain(Some(P::BaseField::one())),
+            )
+        {
+            // tmp := tmp * g.z; g.z := tmp * s = 1/z
+            let newtmp = tmp * &g.z;
+            g.z = tmp * &s;
+            tmp = newtmp;
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            // Perform affine transformations
+            for g in v.iter_mut().filter(|g| !g.is_normalized()) {
+                let z2 = g.z.square(); // 1/z
+                g.x *= &z2; // x/z^2
+                g.y *= &(z2 * &g.z); // y/z^3
+                g.z = P::BaseField::one(); // z = 1
+            }
+        }
+
+        #[cfg(feature = "parallel")]
+        {
+            use rayon::prelude::*;
+            // Perform affine transformations
+            v.par_iter_mut()
+                .filter(|g| !g.is_normalized())
+                .for_each(|g| {
+                    let z2 = g.z.square(); // 1/z
+                    g.x *= &z2; // x/z^2
+                    g.y *= &(z2 * &g.z); // y/z^3
+                    g.z = P::BaseField::one(); // z = 1
+                });
+        }
+    }
 }
 
 impl<P: Parameters> Display for Jacobian<P> {
@@ -552,7 +642,7 @@ impl<P: Parameters> TryFrom<Jacobian<P>> for AffineRep<P> {
     #[inline]
     fn try_from(p: Jacobian<P>) -> Result<AffineRep<P>, Error> {
         if p.is_zero() {
-            Err("Zero projective cannot be convrted to affine".to_owned())?
+            Err("Zero projective cannot be converted to affine".to_owned())?
         } else if p.z.is_one() {
             // If Z is one, the point is already normalized.
             Ok(AffineRep::new(p.x, p.y))
@@ -718,6 +808,15 @@ impl<P: Parameters> Curve for Jacobian<P> {
     type BaseField = P::BaseField;
     type AffineRep = AffineRep<P>;
 
+    #[inline]
+    fn batch_into_affine<'a>(mut vec_self: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
+        Self::batch_normalization(vec_self.as_mut_slice());
+        vec_self
+            .into_iter()
+            .map(|projective| projective.into_affine())
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     fn add_affine<'a>(&self, other: &'a Self::AffineRep) -> Self {
         let mut copy = *self;
         copy.add_assign_affine(other);
@@ -790,6 +889,9 @@ impl<P: Parameters> Curve for Jacobian<P> {
         }
     }
 
+    /// Given a batch of vectors, compute their totals (i.e. the sums of their elements) by a pairwise
+    /// clustering-and-add strategy using batch inversion.
+    /// Algorithm adapted from [O1-Labs](https://github.com/o1-labs/zexe/blob/master/algebra-core/src/msm/variable_base.rs#L11)
     fn add_in_place_affine_many(to_add: &mut [Vec<Self::AffineRep>]) {
         let zero = P::BaseField::zero();
         let one = P::BaseField::one();
@@ -945,95 +1047,6 @@ impl<P: Parameters> Curve for Jacobian<P> {
             .is_zero()
     }
 
-    #[inline]
-    fn is_normalized(&self) -> bool {
-        self.is_zero() || self.z.is_one()
-    }
-
-    #[inline]
-    fn normalize(&self) -> Self {
-        let mut copy = *self;
-        copy.normalize_assign();
-        copy
-    }
-
-    fn normalize_assign(&mut self) {
-        if !self.is_normalized() {
-            let dz = self.z.inverse().unwrap();
-            let dz2 = dz.square(); // 1/z
-            self.x *= &dz2; // x/z^2
-            self.y *= &(dz2 * &dz); // y/z^3
-            self.z = P::BaseField::one(); // z = 1
-        }
-    }
-
-    #[inline]
-    fn batch_normalization(v: &mut [Self]) {
-        // Montgomery’s Trick and Fast Implementation of Masked AES
-        // Genelle, Prouff and Quisquater
-        // Section 3.2
-
-        // First pass: compute [a, ab, abc, ...]
-        let mut prod = Vec::with_capacity(v.len());
-        let mut tmp = P::BaseField::one();
-        for g in v
-            .iter_mut()
-            // Ignore normalized elements
-            .filter(|g| !g.is_normalized())
-        {
-            tmp.mul_assign(&g.z);
-            prod.push(tmp);
-        }
-
-        // Invert `tmp`.
-        tmp = tmp.inverse().unwrap(); // Guaranteed to be nonzero.
-
-        // Second pass: iterate backwards to compute inverses
-        for (g, s) in v
-            .iter_mut()
-            // Backwards
-            .rev()
-            // Ignore normalized elements
-            .filter(|g| !g.is_normalized())
-            // Backwards, skip last element, fill in one for last term.
-            .zip(
-                prod.into_iter()
-                    .rev()
-                    .skip(1)
-                    .chain(Some(P::BaseField::one())),
-            )
-        {
-            // tmp := tmp * g.z; g.z := tmp * s = 1/z
-            let newtmp = tmp * &g.z;
-            g.z = tmp * &s;
-            tmp = newtmp;
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
-            // Perform affine transformations
-            for g in v.iter_mut().filter(|g| !g.is_normalized()) {
-                let z2 = g.z.square(); // 1/z
-                g.x *= &z2; // x/z^2
-                g.y *= &(z2 * &g.z); // y/z^3
-                g.z = P::BaseField::one(); // z = 1
-            }
-        }
-
-        #[cfg(feature = "parallel")]
-        {
-            use rayon::prelude::*;
-            // Perform affine transformations
-            v.par_iter_mut()
-                .filter(|g| !g.is_normalized())
-                .for_each(|g| {
-                    let z2 = g.z.square(); // 1/z
-                    g.x *= &z2; // x/z^2
-                    g.y *= &(z2 * &g.z); // y/z^3
-                    g.z = P::BaseField::one(); // z = 1
-                });
-        }
-    }
-
     /// Attempts to construct an affine point given an x-coordinate. The
     /// point is not guaranteed to be in the prime order subgroup.
     ///
@@ -1064,20 +1077,6 @@ impl<P: Parameters> Curve for Jacobian<P> {
             let negy = -y;
             let y = if y.is_odd() ^ parity { negy } else { y };
             Self::new(x, y, P::BaseField::one())
-        })
-    }
-
-    fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
-        P::BaseField::from_random_bytes_with_flags::<SWFlags>(bytes).and_then(|(x, flags)| {
-            // if x is valid and is zero and only the infinity flag is set, then parse this
-            // point as infinity. For all other choices, get the original point.
-            if x.is_zero() && flags.is_infinity() {
-                Some(Self::zero())
-            } else if let Some(y_is_odd) = flags.is_odd() {
-                Self::get_point_from_x_and_parity(x, y_is_odd) // Unwrap is safe because it's not zero.
-            } else {
-                None
-            }
         })
     }
 }

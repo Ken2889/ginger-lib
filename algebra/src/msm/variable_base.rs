@@ -5,6 +5,16 @@ use num_traits::One;
 pub struct VariableBaseMSM;
 
 impl VariableBaseMSM {
+    /// Multi-scalar multiplication (MSM), based on the bucket method of
+    /// [Yao's 1976 paper](https://www.ii.uni.wroc.pl/~aje/WordEq2015/papers/addition_chains_Yao.pdf).
+    /// This implementation uses affine arithmetics and batch inversion. 
+    /// Given base points `G[i]` together with scalars `c[i]`, `i=1,..n`, we write 
+    ///    c[i] = sum  c[i,j] * D^j,
+    ///    s[j] = Sum_i c[i,j] * G[i],
+    /// for each order `j`. 
+    /// The final result of the multi-scalar multiplication is then combined by 
+    ///    s = Sum_j  A^j * s[j], 
+    /// using double-and-add.
     /// WARNING: This function allows scalars and bases to have different length
     /// (as long as scalars.len() <= bases.len()): internally, bases are trimmed
     /// to have the same length of the scalars; this may lead to potential message
@@ -172,7 +182,7 @@ mod test {
             .collect::<Vec<_>>();
         let g = (0..samples).map(|_| G::rand(rng)).collect::<Vec<_>>();
 
-        let g_affine = G::batch_into_affine(g.as_slice()).unwrap();
+        let g_affine = G::batch_into_affine(g.clone()).unwrap();
 
         let naive = naive_var_base_msm(g.as_slice(), v.as_slice());
 

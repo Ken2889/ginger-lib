@@ -77,17 +77,17 @@ where
 
     /// Combine LC
     pub fn combine(self) -> E {
-        let mut combined = E::zero();
+        // Nothing to combine for empty LC
+        if self.items.is_empty() {
+            return E::zero();
+        }
 
-        // Small optimization: check first element, if coeff is one,
-        // then we don't need to perform the addition
-        if !self.items.is_empty(){
-            if self.items[0].0.is_one() {
-                combined = self.items[0].1.clone();
-            } else {
-                combined += self.items[0].1;
-            }
-        } 
+        // Specific initialization of the combined value (saves at least an addition)
+        let mut combined = if self.items[0].0.is_one() {
+            self.items[0].1.clone() // Coeff is one, so we can return the item directly
+        } else {
+            self.items[0].1.clone() * &self.items[0].0 // (c0 * e0)
+        };
 
         // Compute (c_0 * e_0) + ... + (c_n * e_n) 
         for (coeff, item) in self.items.into_iter().skip(1) {
@@ -98,5 +98,110 @@ where
             }
         }
         combined
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::thread_rng;
+
+    use super::*;
+    use crate::{
+        fields::tweedle::Fr,
+        curves::tweedle::dee::DeeJacobian as TweedleDee, UniformRand, Group, GroupVec
+    };
+
+    const MAX_LENGTH: usize = 10;
+
+    /// Initialize a random LC of scalars and points and checks that the result of combine is indeed
+    /// given by (scalar_0 * point_0) + ... + (scalar_n-1 * point_n-1) 
+    fn test_scalar_point_random_lc_combine<G: Group>(scalars: Vec<G::ScalarField>, points: Vec<G>) {
+        let raw_lc = scalars
+            .clone()
+            .into_iter()
+            .zip(
+                points
+                    .iter()
+            )
+            .collect::<Vec<_>>();
+
+        // Initialize LC and combine
+        let lc = LinearCombination::new(raw_lc);
+        let combined_value = lc.combine();
+
+        // Compute the LC manually, instead, and check that the combined value is indeed the sum of the scalars times the points
+        let expected_combined_value = scalars
+            .into_iter()
+            .zip(
+                points
+                    .into_iter()
+            )
+            .map(|(scalar, point)| point * &scalar)
+            .fold(G::zero(), |acc, val| acc + val);
+
+        assert_eq!(combined_value, expected_combined_value);
+    }
+
+    /// Initialize a random LC from a single batching scalar and a vector of  points and checks that the result of combine is indeed
+    /// given by (0 * point_0) + (scalar * point_1) + (scalar^2 * point_2) + ... + (scalar^n-1 * point_n-1) 
+    fn test_scalar_point_algebraic_lc_combine<G: Group>(batching_scalar: G::ScalarField, points: Vec<G>) {
+        let points_ref = points.iter().collect::<Vec<_>>();
+
+        // Initialize LC and combine
+        let lc = LinearCombination::new_from_val(&batching_scalar, points_ref);
+        let combined_value = lc.combine();
+
+        // Compute the LC manually, instead, and check that the combined value is indeed the sum of the scalars times the points
+        let mut batching_scalar_pows = vec![G::ScalarField::one()];
+        (1..points.len())
+            .for_each(|i| {
+                batching_scalar_pows.push(batching_scalar_pows[i - 1] * &batching_scalar);
+            });
+        let expected_combined_value = batching_scalar_pows
+            .into_iter()
+            .zip(
+                points
+                    .into_iter()
+            )
+            .map(|(scalar, point)| point * &scalar)
+            .fold(G::zero(), |acc, val| acc + val);
+
+        assert_eq!(combined_value, expected_combined_value);
+    }
+
+    #[test]
+    fn test_scalar_point_lc() {
+        let rng = &mut thread_rng();
+
+        // Generate random scalars and points
+        let scalars = (0..MAX_LENGTH)
+            .map(|_| Fr::rand(rng))
+            .collect::<Vec<_>>();
+        let points = (0..MAX_LENGTH)
+            .map(|_| TweedleDee::rand(rng))
+            .collect::<Vec<_>>();
+
+        // Execute tests
+        let batching_scalar = scalars[0];
+        test_scalar_point_random_lc_combine(scalars, points.clone());
+        test_scalar_point_algebraic_lc_combine(batching_scalar, points)
+    }
+
+    #[test]
+    fn test_scalar_point_vec_lc() {
+        let rng = &mut thread_rng();
+
+        // Generate random scalars and points
+        let scalars = (0..MAX_LENGTH)
+            .map(|_| Fr::rand(rng))
+            .collect::<Vec<_>>();
+        let points = (0..MAX_LENGTH)
+            .map(|_| GroupVec::<TweedleDee>::rand(MAX_LENGTH as u16, rng))
+            .collect::<Vec<_>>();
+
+        // Execute tests
+        let batching_scalar = scalars[0];
+        test_scalar_point_random_lc_combine(scalars, points.clone());
+        test_scalar_point_algebraic_lc_combine(batching_scalar, points)
     }
 }

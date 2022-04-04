@@ -116,7 +116,7 @@ impl<G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
             if generators.len() != W::WINDOW_SIZE {
                 return Err(SynthesisError::Other(format!(
                     "Number of generators: {} not enough for the selected window size: {}",
-                    params.generators.len(),
+                    generators.len(),
                     W::WINDOW_SIZE
                 )));
             }
@@ -154,7 +154,7 @@ impl<G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
             if generators.len() != W::WINDOW_SIZE {
                 return Err(SynthesisError::Other(format!(
                     "Number of generators: {} not enough for the selected window size: {}",
-                    params.generators.len(),
+                    generators.len(),
                     W::WINDOW_SIZE
                 )));
             }

@@ -17,7 +17,7 @@ use rand_xorshift::XorShiftRng;
 
 #[test]
 fn test_secp256k1_curve() {
-    curve_tests::<Secp256k1Jacobian>(false);
+    curve_tests::<Secp256k1Jacobian>();
     sw_jacobian_curve_serialization_test::<Secp256k1Parameters>();
 }
 
@@ -52,7 +52,7 @@ fn to_internal_repr(mut x: Vec<u8>, mut y: Vec<u8>) -> Secp256k1Jacobian {
 
 #[test]
 /// Repeated addition with the generator. Test vectors are taken from
-/// https://github.com/RustCrypto/elliptic-curves/blob/master/k256/src/test_vectors/group.rs
+/// https://web.archive.org/web/20190724010836/https://chuckbatson.wordpress.com/2014/11/26/secp256k1-test-vectors/
 fn test_secp256k1_addition_correctness() {
     const ADD_TEST_VECTORS: &[([u8; 32], [u8; 32])] = &[
         (
