@@ -60,6 +60,7 @@ filename = sys.argv[1]
 with open(filename) as myfile:
     readfile = myfile.read()
 
+# TODO: Handle the Montgomery and Twisted Edwards parameters too.
 #### Checking if the file contains Short Weierstrass parameters. If not, the check is interrupted.
 #### If there are Twisted Edwards and Montgomery parameters, they are discarded.
 if 'SWModelParameters' in readfile:
@@ -199,19 +200,21 @@ if endo_mul_is_used:
         print("WARNING! ENDO_COEFF AND ENDO_SCALAR ARE NOT CONSISTENT!")
 
 
-########## Checking that shortest vector in the lattice ([1,zeta_r),[0,r]) is long enough #########
-## The Halo paper (https://eprint.iacr.org/2019/1021.pdf) proves the injectivity of the endo_mul map.
-## The injectivity of the map (a,b) |-> a\zeta_r + b for a,b in [0,A] (essential for using add_unsafe)
-## is equivalent the lattice condition below.
+# ########## Checking that shortest vector in the lattice ([1,zeta_r),[0,r]) is long enough #########
+# The security of the endomorphism-based scalar multiplication(as well as its optimized gadget) relies on the injectivity of the map 
+#                           L: (a,b) -> a * zeta_r + b, 
+# restricted to scalars a, b from the interval [0, A], where A = 2^(lambda/2 + 1) + 2^(lambda/2) -1, 
+# see https://eprint.iacr.org/2019/1021.pdf. Unlike in this paper, we conclude the injectivity from the following lattice argument:
 ## a*zeta_r + b = a'*zeta_r + b' mod r   for a,a',b,b' in [0,A] 
 ## is equivalent to the fact that there are non-zero solutions to 
 ##      a * zeta_r = b mod r      for a,b in [-A,A].
 ## Then it would exists c such that
 ##      b = a * zeta_r + c * r.
-## Any such solution correspond to a point of the lattice spanned by (1, zeta_r) and (0, r).
+## Observe that, if (a,b) is a solution of the equation above, then it is also a point
+## of the lattice spanned by (1, zeta_r) and (0, r) of length at most \sqrt(2) * A.
 ##      (a, b) = (a, c) * (1  zeta_r)
 ##                        (0    r )
-## The injectivity is equivalent to the fact that the intersection between this lattice and [-A, A]^2
+## The injectivity of the map L is equivalent to the fact that the intersection between this lattice and [-A, A]^2
 ## is trivial. To verify this we first compute a LLL reduced basis {v,w} and
 ## then check if at least one of v, w, v + w, v - w is belongs to such a square.
 ## If not, there can't be other lattice points in the square.

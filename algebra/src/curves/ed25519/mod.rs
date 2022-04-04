@@ -55,7 +55,7 @@ const TE_Y: Fq = field_new!(
     ])
 );
 
-/// The curve ed25519 in https://en.wikipedia.org/wiki/EdDSA#Ed25519
+/// The curve ed25519 describe in https://en.wikipedia.org/wiki/Curve25519.
 /// is a twisted Edwards curve. These curves have equations of the
 /// form: ax² + y² = 1 - dx²y².
 /// over some base finite field Fq.
