@@ -4,8 +4,20 @@
 set -xeo pipefail
 
 retval=0
-cd proof-systems
-cargo $CARGOARGS check --features "print-trace" || retval="$?"
-cargo $CARGOARGS check --features "darlin" || retval="$?"
-cargo $CARGOARGS check --features "llvm_asm" || retval="$?"
+
+cd proof-systems/src/darlin/fiat-shamir
+cargo $CARGOARGS check || retval="$?"
+
+cd ../poly-commit
+cargo $CARGOARGS check || retval="$?"
+cargo $CARGOARGS check --features="circuit-friendly" || retval="$?"
+
+cd ../marlin
+cargo $CARGOARGS check || retval="$?"
+cargo $CARGOARGS check --features="circuit-friendly" || retval="$?"
+
+cd ..
+cargo $CARGOARGS check || retval="$?"
+cargo $CARGOARGS check --features="circuit-friendly" || retval="$?"
+
 exit "$retval"

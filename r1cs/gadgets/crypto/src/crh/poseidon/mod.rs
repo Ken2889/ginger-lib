@@ -13,6 +13,9 @@ pub mod tweedle;
 #[cfg(feature = "tweedle")]
 pub use self::tweedle::*;
 
+pub mod density_optimized;
+pub use density_optimized::*;
+
 use primitives::SBox;
 
 pub struct PoseidonHashGadget<
@@ -258,90 +261,31 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
 
+    use crate::tweedle::*;
     use crate::crh::test::constant_length_field_based_hash_gadget_native_test;
-    use algebra::PrimeField;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
 
-    pub(crate) fn generate_inputs<F: PrimeField>(num: usize) -> Vec<F> {
-        let mut inputs = Vec::with_capacity(num);
-        for i in 1..=num {
-            let input = F::from(i as u32);
-            inputs.push(input);
-        }
-        inputs
-    }
-
-    #[cfg(feature = "mnt4_753")]
     #[test]
-    fn poseidon_mnt4_753_gadget_native_test() {
-        use crate::MNT4PoseidonHashGadget;
+    fn poseidon_tweedle_fr_gadget_test() {
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, MNT4PoseidonHashGadget>(
-                generate_inputs(ins),
-            );
+        for ins in 1..=5 {
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget, _>(rng, ins);
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrDensityOptimizedPoseidonHashGadget, _>(rng, ins);
         }
     }
 
-    #[cfg(feature = "mnt6_753")]
     #[test]
-    fn poseidon_mnt6_753_gadget_native_test() {
-        use crate::MNT6PoseidonHashGadget;
+    fn poseidon_tweedle_fq_gadget_test() {
+        let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
 
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, MNT6PoseidonHashGadget>(
-                generate_inputs(ins),
-            );
-        }
-    }
-
-    #[cfg(feature = "bn_382")]
-    #[test]
-    fn crh_bn382_fr_primitive_gadget_test() {
-        use crate::BN382FrPoseidonHashGadget;
-
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FrPoseidonHashGadget>(
-                generate_inputs(ins),
-            );
-        }
-    }
-
-    #[cfg(feature = "bn_382")]
-    #[test]
-    fn crh_bn382_fq_primitive_gadget_test() {
-        use crate::BN382FqPoseidonHashGadget;
-
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, BN382FqPoseidonHashGadget>(
-                generate_inputs(ins),
-            );
-        }
-    }
-
-    #[cfg(feature = "tweedle")]
-    #[test]
-    fn crh_tweedle_fr_primitive_gadget_test() {
-        use crate::TweedleFrPoseidonHashGadget;
-
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFrPoseidonHashGadget>(
-                generate_inputs(ins),
-            );
-        }
-    }
-
-    #[cfg(feature = "tweedle")]
-    #[test]
-    fn crh_tweedle_fq_primitive_gadget_test() {
-        use crate::TweedleFqPoseidonHashGadget;
-
-        for ins in 1..=3 {
-            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget>(
-                generate_inputs(ins),
-            );
+        for ins in 1..=5 {
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqPoseidonHashGadget, _>(rng, ins);
+            constant_length_field_based_hash_gadget_native_test::<_, _, TweedleFqDensityOptimizedPoseidonHashGadget, _>(rng, ins);
         }
     }
 }

@@ -5,8 +5,6 @@ use rand;
 use rand::Rng;
 use std::cmp::min;
 
-// Test multiplying various (low degree) polynomials together and
-// comparing with naive evaluations.
 #[test]
 fn fft_composition() {
     fn test_fft_composition<Fr: PrimeField, R: Rng>(rng: &mut R) {

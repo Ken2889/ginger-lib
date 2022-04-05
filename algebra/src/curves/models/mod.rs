@@ -1,11 +1,11 @@
-use crate::fields::{Field, PrimeField, SquareRootField};
+use crate::fields::{PrimeField, SquareRootField};
 
 pub mod short_weierstrass_jacobian;
 pub mod short_weierstrass_projective;
 pub mod twisted_edwards_extended;
 
 pub trait ModelParameters: Send + Sync + 'static {
-    type BaseField: Field + SquareRootField;
+    type BaseField: PrimeField + SquareRootField;// + ToConstraintField<<Self as ModelParameters>::BaseField>;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInt>;
 }
 
@@ -55,8 +55,9 @@ pub trait MontgomeryModelParameters: ModelParameters {
     type TEModelParameters: TEModelParameters<BaseField = Self::BaseField>;
 }
 
+/// Parameters for endomorphism-based scalar multiplication [Halo](https://eprint.iacr.org/2019/1021).
 pub trait EndoMulParameters: SWModelParameters {
-    /// Parameters for endomorphism-based scalar multiplication [Halo](https://eprint.iacr.org/2019/1021).
+    
     /// A non-trivial cubic root of unity `ENDO_COEFF` for a curve endomorphism of the form
     ///     (x, y) -> (ENDO_COEFF * x, y).
     const ENDO_COEFF: Self::BaseField;

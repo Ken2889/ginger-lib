@@ -1,13 +1,16 @@
 use crate::prelude::*;
-use algebra::{BigInteger, Field, FpParameters, Group, PrimeField};
+use algebra::{BigInteger, Field, FpParameters, Group, PrimeField, EndoMulCurve, ToBits};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 
 use std::{borrow::Borrow, fmt::Debug};
+use num_traits::{Zero, One};
 
 pub mod curves;
 
 #[cfg(feature = "nonnative")]
 pub mod nonnative;
+
+pub mod group_vec;
 
 pub trait GroupGadget<G: Group, ConstraintF: Field>:
     Sized
@@ -76,31 +79,26 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
 
     /// Variable base exponentiation.
     /// Inputs must be specified in *little-endian* form.
-    /// If the addition law is incomplete for the identity element,
-    /// `result` must not be the identity element.
     fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
-        mut cs: CS,
+        cs: CS,
         bits: impl Iterator<Item = &'a Boolean>,
-    ) -> Result<Self, SynthesisError> {
-        let mut power = self.clone();
-        let mut acc = Self::zero(cs.ns(|| "alloc acc"))?;
-        for (i, bit) in bits.enumerate() {
-            let new_encoded = acc.add(&mut cs.ns(|| format!("Add {}-th power", i)), &power)?;
-            acc = Self::conditionally_select(
-                &mut cs.ns(|| format!("Select {}", i)),
-                bit.borrow(),
-                &new_encoded,
-                &acc,
-            )?;
-            power.double_in_place(&mut cs.ns(|| format!("{}-th Doubling", i)))?;
-        }
-        Ok(acc)
-    }
+    ) -> Result<Self, SynthesisError>;
 
-    fn precomputed_base_scalar_mul<'a, CS, I, B>(
+    /// Fixed base exponentiation.
+    /// Inputs must be specified in *little-endian* form.
+    fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(
+        base: &G,
+        cs: CS,
+        bits: &[Boolean],
+    ) -> Result<Self, SynthesisError>;
+
+    /// Fixed base exponentiation.
+    /// Bases powers' are already supplied as input to this function.
+    /// Inputs must be specified in *little-endian* form.
+    fn mul_bits_fixed_base_with_precomputed_base_powers<'a, CS, I, B>(
         &mut self,
-        mut cs: CS,
+        cs: CS,
         scalar_bits_with_base_powers: I,
     ) -> Result<(), SynthesisError>
     where
@@ -108,51 +106,28 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         I: Iterator<Item = (B, &'a G)>,
         B: Borrow<Boolean>,
         G: 'a,
-    {
-        for (i, (bit, base_power)) in scalar_bits_with_base_powers.enumerate() {
-            let new_encoded = self.add_constant(
-                &mut cs.ns(|| format!("Add {}-th base power", i)),
-                &base_power,
-            )?;
-            *self = Self::conditionally_select(
-                &mut cs.ns(|| format!("Conditional Select {}", i)),
-                bit.borrow(),
-                &new_encoded,
-                &self,
-            )?;
-        }
-        Ok(())
-    }
+    ;
 
-    /// Fixed base exponentiation, slighlty different interface from
-    /// `precomputed_base_scalar_mul`. Inputs must be specified in
-    /// *little-endian* form. If the addition law is incomplete for
-    /// the identity element, `result` must not be the identity element.
-    fn mul_bits_fixed_base<CS: ConstraintSystemAbstract<ConstraintF>>(
-        base: &G,
-        mut cs: CS,
-        bits: &[Boolean],
-    ) -> Result<Self, SynthesisError> {
-        let base_g = Self::from_value(cs.ns(|| "hardcode base"), base);
-        base_g.mul_bits(cs, bits.iter())
-    }
-
-    fn precomputed_base_3_bit_signed_digit_scalar_mul<'a, CS, I, J, B>(
-        _: CS,
-        _: &[B],
-        _: &[J],
+    /// Fixed base exponentiation.
+    /// Bases powers' are already supplied as input to this function, and computed
+    /// assuming scalar bits are chunked into 3 bit windows and interpreted as signed digits.
+    /// Inputs must be specified in *little-endian* form.
+    fn mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers<'a, CS, I, J, B>(
+        cs: CS,
+        bases: &[B],
+        powers: &[J],
     ) -> Result<Self, SynthesisError>
     where
         CS: ConstraintSystemAbstract<ConstraintF>,
         I: Borrow<[Boolean]>,
         J: Borrow<[I]>,
         B: Borrow<[G]>,
-    {
-        Err(SynthesisError::AssignmentMissing)
-    }
+    ;
 
-    fn precomputed_base_multiscalar_mul<'a, CS, T, I, B>(
-        mut cs: CS,
+    /// Fixed base multi scalar multiplication,
+    /// where the powers of the bases have already been precomputed.
+    fn fixed_base_msm_with_precomputed_base_powers<'a, CS, T, I, B>(
+        cs: CS,
         bases: &[B],
         scalars: I,
     ) -> Result<Self, SynthesisError>
@@ -161,30 +136,86 @@ pub trait GroupGadget<G: Group, ConstraintF: Field>:
         T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
         I: Iterator<Item = &'a T>,
         B: Borrow<[G]>,
-    {
-        let mut result = Self::zero(&mut cs.ns(|| "Declare Result"))?;
-        // Compute ∏(h_i^{m_i}) for all i.
-        for (i, (bits, base_powers)) in scalars.zip(bases).enumerate() {
-            let base_powers = base_powers.borrow();
-            let bits = bits.to_bits(&mut cs.ns(|| format!("Convert Scalar {} to bits", i)))?;
-            result.precomputed_base_scalar_mul(
-                cs.ns(|| format!("Chunk {}", i)),
-                bits.iter().zip(base_powers),
-            )?;
-        }
-        Ok(result)
-    }
+    ;
+
+    /// Fixed base multi scalar multiplication.
+    fn fixed_base_msm<'a, CS, T, IS, IB>(
+        cs: CS,
+        bases: IB,
+        scalars: IS,
+    ) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystemAbstract<ConstraintF>,
+        T: 'a + ToBitsGadget<ConstraintF> + ?Sized,
+        IS: Iterator<Item = &'a T>,
+        IB: Iterator<Item = &'a G>,
+    ;
 
     fn cost_of_add() -> usize;
 
     fn cost_of_double() -> usize;
 }
 
-pub trait EndoMulCurveGadget<G: Group, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
+pub trait EndoMulCurveGadget<G: EndoMulCurve, ConstraintF: Field>: GroupGadget<G, ConstraintF> {
     fn apply_endomorphism<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         cs: CS,
     ) -> Result<Self, SynthesisError>;
+
+    /// Enforce conversion of a bit sequence used in `endo_mul()` into its equivalent
+    /// scalar (bits) and return them in little-endian form.
+    /// We assume 'bits' being in little-endian form too.
+    fn endo_rep_to_scalar_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
+        mut cs: CS,
+        bits: Vec<Boolean>
+    ) -> Result<Vec<Boolean>, SynthesisError> 
+    {
+        // Let's use non-determinism and let the prover allocate the endo scalar
+        // obtained by transforming 'bits'. We enforce this being indeed the endo
+        // representation of bits by enforcing that fbSM(G, endo_scalar_bits) == endoMul(G, bits).
+        let endo_scalar_bits = Vec::<Boolean>::alloc(
+            cs.ns(|| "alloc endo scalar bits"),
+            || {
+                let native_bits = bits
+                    .iter()
+                    .map(|b| b.get_value().unwrap_or(false))
+                    .collect::<Vec<bool>>();
+
+                let mut endo_scalar_bits = G::endo_rep_to_scalar(native_bits)?.write_bits();
+                endo_scalar_bits.reverse();
+
+                Ok(endo_scalar_bits)
+            }
+        )?;
+
+        // Hardcode generator
+        let generator = G::prime_subgroup_generator();
+        let generator_g = Self::from_value(
+            cs.ns(|| "hardcode generator"),
+            &generator
+        );
+
+        // Enforce fbSM(G, endo_scalar_bits)
+        let endo_scalar_bits_times_g = Self::mul_bits_fixed_base(
+            &generator,
+            cs.ns(|| "fbSM(G, endo_scalar_bits)"),
+            endo_scalar_bits.as_slice()
+        )?;
+
+        // Enforce endoMul(G, bits)
+        let endo_mul_bits = generator_g.endo_mul(
+            cs.ns(|| "endoMul(G, bits)"),
+            bits.as_slice()
+        )?;
+
+        // Enforce fbSM(G, endo_scalar_bits) == endoMul(G, bits)
+        endo_scalar_bits_times_g.enforce_equal(
+            cs.ns(|| "fbSM(G, endo_scalar_bits) == endoMul(G, bits)"),
+            &endo_mul_bits
+        )?;
+                
+        Ok(endo_scalar_bits)
+    }
 
     fn endo_mul<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
@@ -485,7 +516,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -504,6 +535,11 @@ pub(crate) mod test {
         assert_eq!(a.sub(cs.ns(|| "a_minus_zero"), &zero).unwrap(), a);
         // a - a = 0
         assert_eq!(a.sub(cs.ns(|| "a_minus_a"), &a).unwrap(), zero);
+
+        // 0 + b = b
+        assert_eq!(zero.add(cs.ns(|| "zero_plus_b"), &b).unwrap(), b);
+        // 0 - b = -b
+        assert_eq!(zero.sub(cs.ns(|| "zero_minus_b"), &b).unwrap(), b.negate(cs.ns(|| "-b")).unwrap());
 
         // a + b = b + a
         let a_b = a.add(cs.ns(|| "a_plus_b"), &b).unwrap();
@@ -525,6 +561,11 @@ pub(crate) mod test {
         let b_b = b.add(cs.ns(|| "b + b"), &b).unwrap();
         assert_eq!(b2, b_b);
 
+        // 0 + 0 = 0
+        assert_eq!(zero.add(cs.ns(|| "0+0"), &zero).unwrap(), zero);
+        // 0 - 0 = 0
+        assert_eq!(zero.sub(cs.ns(|| "0-0"), &zero).unwrap(), zero);
+
         let _ = a.to_bytes(&mut cs.ns(|| "ToBytes")).unwrap();
         let _ = a.to_bytes_strict(&mut cs.ns(|| "ToBytes Strict")).unwrap();
 
@@ -543,18 +584,18 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn group_test_with_incomplete_add<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+        let rng = &mut thread_rng();
 
-        let a_native: G = UniformRand::rand(&mut thread_rng());
-        let b_native: G = UniformRand::rand(&mut thread_rng());
+        let a_native: G = UniformRand::rand(rng);
+        let b_native: G = UniformRand::rand(rng);
 
         let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
         let b = GG::alloc(&mut cs.ns(|| "generate_b"), || Ok(b_native)).unwrap();
 
-        // let _zero = GG::zero(cs.ns(|| "Zero")).unwrap();
 
         // a + b = b + a
         let a_b = a.add(cs.ns(|| "a_plus_b"), &b).unwrap();
@@ -597,6 +638,9 @@ pub(crate) mod test {
         let _ = b
             .to_bytes_strict(&mut cs.ns(|| "b ToBytes Strict"))
             .unwrap();
+        if !cs.is_satisfied() {
+            println!("{:?}", cs.which_is_unsatisfied());
+        }
         assert!(cs.is_satisfied());
 
         scalar_bits_to_constant_length_test::<<ConstraintF as Field>::BasePrimeField, G>();
@@ -677,7 +721,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_native_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -685,7 +729,7 @@ pub(crate) mod test {
 
         // Sample random base
         let g: G = UniformRand::rand(rng);
-        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g)).unwrap();
+        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g.clone())).unwrap();
 
         // Sample random scalar
         let a = G::ScalarField::rand(rng);
@@ -706,7 +750,7 @@ pub(crate) mod test {
         // Fixed base scalar multiplication
         let x = cs.num_constraints();
         let a_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
         println!(
             "Fixed base SM exponent len {}, num_constraints: {}",
             a_bits.len(),
@@ -714,7 +758,7 @@ pub(crate) mod test {
         );
 
         // Compare with native results
-        assert_eq!(a_times_gg_vb.get_value().unwrap(), g.mul(&a));
+        assert_eq!(a_times_gg_vb.get_value().unwrap(), g.clone().mul(&a));
         assert_eq!(a_times_gg_fb.get_value().unwrap(), g.mul(&a));
 
         assert!(cs.is_satisfied());
@@ -723,14 +767,14 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_additivity_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
         let rng = &mut thread_rng();
 
         let g: G = UniformRand::rand(rng);
-        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g)).unwrap();
+        let gg = GG::alloc(cs.ns(|| "generate_g"), || Ok(g.clone())).unwrap();
 
         let a = G::ScalarField::rand(rng);
         let b = G::ScalarField::rand(rng);
@@ -751,11 +795,11 @@ pub(crate) mod test {
         // Additivity test: a * G + b * G = (a + b) * G
         let a_times_gg_vb = gg.mul_bits(cs.ns(|| "a * G"), a_bits.iter()).unwrap();
         let a_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb a * G"), a_bits.as_slice()).unwrap();
 
         let b_times_gg_vb = gg.mul_bits(cs.ns(|| "b * G"), b_bits.iter()).unwrap();
         let b_times_gg_fb =
-            GG::mul_bits_fixed_base(&g, cs.ns(|| "fb b * G"), b_bits.as_slice()).unwrap();
+            GG::mul_bits_fixed_base(&g.clone(), cs.ns(|| "fb b * G"), b_bits.as_slice()).unwrap();
 
         let a_plus_b_times_gg_vb = gg
             .mul_bits(cs.ns(|| "(a + b) * G"), a_plus_b_bits.iter())
@@ -787,7 +831,7 @@ pub(crate) mod test {
     #[allow(dead_code)]
     pub(crate) fn mul_bits_test<
         ConstraintF: Field,
-        G: Curve,
+        G: Group,
         GG: GroupGadget<G, ConstraintF, Value = G>,
     >() {
         for _ in 0..10 {
@@ -801,27 +845,99 @@ pub(crate) mod test {
         ConstraintF: Field,
         G: EndoMulCurve,
         GG: EndoMulCurveGadget<G, ConstraintF, Value = G>,
-    >() {
+    >() 
+    {
+        for _ in 0..10 {
+            let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+
+            let a_native = G::rand(&mut thread_rng());
+            let a_g = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
+    
+            let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
+            let mut scalar_bits_native = scalar.write_bits();
+            scalar_bits_native.reverse();
+            scalar_bits_native = scalar_bits_native.as_slice()[..128].to_vec();
+            
+            assert!(scalar_bits_native.len() == 128);
+            assert!(!scalar_bits_native.iter().all(|b| !b));
+    
+            let scalar_bits_g = Vec::<Boolean>::alloc(
+                cs.ns(|| "alloc scalar bits"),
+                || Ok(scalar_bits_native.clone())
+            ).unwrap();
+    
+            let r_native_endo = a_native.endo_mul(scalar_bits_native).unwrap();
+            let r_endo = a_g
+                .endo_mul(cs.ns(|| "endo mul"), &scalar_bits_g)
+                .unwrap()
+                .get_value()
+                .unwrap();
+    
+            // Native test
+            assert_eq!(r_native_endo, r_endo);
+    
+            // Endo rep test
+            let scalar_to_endo_scalar_bits = GG::endo_rep_to_scalar_bits(
+                cs.ns(|| "scalar bits to endo scalar bits"),
+                scalar_bits_g
+            ).unwrap();
+    
+            let r_normal_mul = a_g.mul_bits(
+                cs.ns(|| "a ^ endo_scalar_bits"),
+                scalar_to_endo_scalar_bits.iter()
+            ).unwrap();
+    
+            println!("{:?}", cs.which_is_unsatisfied());
+            assert_eq!(r_normal_mul.get_value().unwrap(), r_endo);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn fixed_base_msm_test<
+        ConstraintF: Field,
+        G: Curve,
+        GG: GroupGadget<G, ConstraintF, Value = G>,
+    >() 
+    {
+        use algebra::msm::VariableBaseMSM;
+
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
+        let rng = &mut thread_rng();
 
-        let a_native = G::rand(&mut thread_rng());
-        let a = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
+        // Allocate random scalars and basis
+        let bases = (0..10).map(|_| G::rand(rng)).collect::<Vec<_>>();
+        let scalars = (0..10).map(|_| G::ScalarField::rand(rng)).collect::<Vec<_>>();
+        let scalars_bits = scalars.iter().map(|scalar| scalar.write_bits()).collect::<Vec<_>>();
 
-        let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
-
-        let b_native = scalar.into_repr().to_bits().as_slice()[0..128].to_vec();
-        let b = b_native
+        let scalars_g = scalars_bits
             .iter()
-            .map(|&bit| Boolean::constant(bit))
+            .enumerate()
+            .map(|(i, scalar)| Vec::<Boolean>::alloc(cs.ns(|| format!("alloc scalar {}", i)), || Ok(scalar.as_slice())).unwrap())
             .collect::<Vec<_>>();
 
-        let r_native = a_native.endo_mul(b_native).unwrap();
-        let r = a
-            .endo_mul(cs.ns(|| "endo mul"), &b)
-            .unwrap()
-            .get_value()
-            .unwrap();
+        // Compute native result (let's use vbMSM as it's easier to call)
+        let bases_affine = bases.iter().map(|base| base.into_affine().unwrap()).collect::<Vec<_>>();
+        let scalars = scalars.into_iter().map(|scalar| scalar.into_repr()).collect::<Vec<_>>();
 
-        assert_eq!(r_native, r);
+        let primitive_result: G = VariableBaseMSM::multi_scalar_mul(
+            bases_affine.as_slice(),
+            scalars.as_slice()
+        ).unwrap();
+
+        // Compute result with gadget
+        let gadget_result = GG::fixed_base_msm(
+            cs.ns(|| "enforce msm"),
+            bases.iter(),
+            scalars_g.iter()
+        )
+        .unwrap()
+        .get_value()
+        .unwrap();
+
+        // Compare results
+        assert_eq!(primitive_result, gadget_result);
+
+        // Assert cs satisfied
+        assert!(cs.is_satisfied());
     }
 }

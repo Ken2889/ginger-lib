@@ -7,8 +7,6 @@ use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::prelude::*;
 
 pub mod bowe_hopwood;
-pub mod injective_map;
-pub mod pedersen;
 
 pub mod sbox;
 pub use self::sbox::*;
@@ -65,16 +63,21 @@ mod test {
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
-    use r1cs_std::{alloc::AllocGadget, fields::fp::FpGadget};
+    use r1cs_std::{
+        alloc::AllocGadget,
+        fields::fp::FpGadget,
+    };
+    use rand::RngCore;
 
     pub(crate) fn constant_length_field_based_hash_gadget_native_test<
         F: PrimeField,
         H: FieldBasedHash<Data = F>,
         HG: FieldBasedHashGadget<H, F, DataGadget = FpGadget<F>>,
-    >(
-        inputs: Vec<F>,
-    ) {
+        R: RngCore,
+    >(rng: &mut R, num_inputs: usize)
+    {
         let mut cs = ConstraintSystem::<F>::new(SynthesisMode::Debug);
+        let inputs = (0..num_inputs).map(|_| F::rand(rng)).collect::<Vec<_>>();
 
         let primitive_result = {
             let mut digest = H::init_constant_length(inputs.len(), None);

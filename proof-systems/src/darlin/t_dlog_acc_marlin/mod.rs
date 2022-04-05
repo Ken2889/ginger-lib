@@ -1,21 +1,26 @@
 use crate::darlin::accumulators::dlog::{DLogItem, DualDLogItem};
 use crate::darlin::t_dlog_acc_marlin::data_structures::{
-    DualSumcheckItem, Proof, ProverKey, SumcheckItem, UniversalSRS, VerifierKey, PC,
+    DualSumcheckItem, Proof, ProverKey, SumcheckItem, VerifierKey, PC,
 };
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use crate::darlin::IPACurve;
+use algebra::CanonicalSerialize;
 use algebra::{
-    get_best_evaluation_domain, to_bytes, Curve, DensePolynomial,
-    Evaluations as EvaluationsOnDomain, Group, GroupVec, ToBytes,
+    get_best_evaluation_domain, serialize_no_metadata, DensePolynomial,
+    Evaluations as EvaluationsOnDomain, Group, GroupVec, ToConstraintField,
 };
+use bench_utils::{end_timer, start_timer};
 use digest::Digest;
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use marlin::iop::Error::VerificationEquationFailed;
 use marlin::iop::LagrangeKernel;
 use marlin::Error;
-use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
+use num_traits::Zero;
+use poly_commit::ipa_pc::CommitterKey;
 use poly_commit::optional_rng::OptionalRng;
 use poly_commit::{
-    evaluate_query_set_to_vec, Evaluations, LabeledCommitment, LabeledPolynomial,
-    LabeledRandomness, PCVerifierKey, PolynomialCommitment,
+    evaluate_query_map_to_vec, Evaluations, LabeledCommitment, LabeledPolynomial,
+    LabeledRandomness, PCKey, PolynomialCommitment,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
@@ -28,13 +33,22 @@ mod test;
 
 /// A helper struct to bundle the t-dlog accumulator Marlin functions for setup, prove and
 /// verify.
-pub struct TDLogAccMarlin<G1: Curve, G2: Curve, D: Digest>(
+pub struct TDLogAccMarlin<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, D: Digest>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
+    #[doc(hidden)] PhantomData<FS>,
     #[doc(hidden)] PhantomData<D>,
 );
 
-impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
+impl<G1, G2, FS, D> TDLogAccMarlin<G1, G2, FS, D>
+where
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
+    FS: FiatShamirRng + 'static,
+    D: Digest,
+{
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"T-DLOG-ACC-MARLIN-2022";
@@ -45,8 +59,13 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
-    ) -> Result<UniversalSRS<G1, PC<G1, D>>, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>>
-    {
+    ) -> Result<
+        (
+            CommitterKey<G1>,
+            <PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        ),
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
+    > {
         let max_degree = IOP::<G1, G2>::max_degree(num_constraints, num_variables, zk)?;
         let setup_time = start_timer!(|| {
             format!(
@@ -55,7 +74,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         )
         });
 
-        let srs = PC::<G1, D>::setup(max_degree).map_err(Error::from_pc_err);
+        let srs = PC::<G1, FS>::setup::<D>(max_degree).map_err(Error::from_pc_err);
         end_timer!(setup_time);
         srs
     }
@@ -64,11 +83,11 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     /// commitment scheme, generate the key material for the circuit. The latter is split into
     /// a prover key and a verifier key.
     pub fn circuit_specific_setup<C: ConstraintSynthesizer<G1::ScalarField>>(
-        committer_key: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        committer_key: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
         c: C,
     ) -> Result<
-        (ProverKey<G1, G2, D>, VerifierKey<G1, G2, D>),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+        (ProverKey<G1, G2, FS>, VerifierKey<G1, G2, FS>),
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
     > {
         let index_time = start_timer!(|| "Marlin::Index");
 
@@ -85,15 +104,23 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .into_iter()
             .map(|y| domain_x.slice_lagrange_kernel(y))
             .map(|poly| {
-                <PC<G1, D> as PolynomialCommitment<G1>>::commit(committer_key, &poly, false, None)
+                <PC<G1, FS> as PolynomialCommitment<G1>>::commit(committer_key, &poly, false, None)
                     .unwrap()
                     .0
             })
             .collect();
 
+        let vk_hash = D::digest(
+            &serialize_no_metadata![index.index_info, index.a, index.b, index.c]
+                .map_err(|e| Error::Other(format!("Unable to serialize vk elements: {:?}", e)))?,
+        )
+        .as_ref()
+        .to_vec();
+
         let index_vk = VerifierKey {
             index,
             lagrange_comms,
+            vk_hash,
         };
 
         let index_pk = ProverKey {
@@ -104,29 +131,27 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     }
 
     fn fiat_shamir_rng_init(
-        pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        _index_vk: &VerifierKey<G1, G2, D>,
-        x_poly_comm: &<PC<G1, D> as PolynomialCommitment<G1>>::Commitment,
+        pc_vk: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        index_vk: &VerifierKey<G1, G2, FS>,
+        x_poly_comm: &<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment,
         inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         dlog_acc: &DualDLogItem<G2, G1>,
-    ) -> Result<<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle, poly_commit::error::Error>
+    ) -> Result<<PC<G1, FS> as PolynomialCommitment<G1>>::RandomOracle, poly_commit::error::Error>
     {
+        // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
-            let mut seed_builder =
-                <<PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle as FiatShamirRng>::Seed::new(
-                );
-            seed_builder.add_bytes(&Self::PROTOCOL_NAME)?;
-            seed_builder.add_bytes(&PCVerifierKey::get_hash(pc_vk))?;
-            seed_builder.add_bytes(inner_sumcheck_acc)?;
-            seed_builder.add_bytes(dlog_acc)?;
-            // FIXME: uncomment when get_hash() is implemented
-            // seed_builder.add_bytes(&index_vk.get_hash())?;
-            seed_builder.add_bytes(x_poly_comm)?;
-
-            seed_builder.finalize()
+            let mut seed_builder = FiatShamirRngSeed::new();
+            seed_builder
+                .add_bytes(&Self::PROTOCOL_NAME)?
+                .add_bytes(&pc_vk.get_hash())?;
+            seed_builder.finalize()?
         };
-        let fs_rng =
-            <PC<G1, D> as PolynomialCommitment<G1>>::RandomOracle::from_seed(fs_rng_init_seed);
+        let mut fs_rng =
+            <PC<G1, FS> as PolynomialCommitment<G1>>::RandomOracle::from_seed(fs_rng_init_seed)?;
+        fs_rng.record(inner_sumcheck_acc.clone())?;
+        fs_rng.record(dlog_acc.clone())?;
+        fs_rng.record::<G1::BaseField, _>(index_vk.get_hash())?;
+        fs_rng.record(x_poly_comm.clone())?;
         Ok(fs_rng)
     }
 
@@ -138,8 +163,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     /// by running the full verifier `fn verify()` on the proof generated by a previous call to
     /// `fn prove()`.
     pub fn prove<C: ConstraintSynthesizer<G1::ScalarField>>(
-        index_pk: &ProverKey<G1, G2, D>,
-        pc_pk: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
+        index_pk: &ProverKey<G1, G2, FS>,
+        pc_pk: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
         c: C,
         previous_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         previous_dlog_acc: &DualDLogItem<G2, G1>,
@@ -147,7 +172,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         previous_bullet_poly: &DensePolynomial<G1::ScalarField>,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
-    ) -> Result<Proof<G1, G2, D>, Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>> {
+    ) -> Result<Proof<G1, G2, FS>, Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>> {
         if zk_rng.is_some() && !zk || zk_rng.is_none() && zk {
             return Err(Error::Other("If ZK is enabled, a RNG must be passed (and viceversa); conversely, if ZK is disabled, a RNG must NOT be passed (and viceversa)".to_owned()));
         }
@@ -159,7 +184,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             IOP::prover_init(&index_pk.index_vk.index, c, previous_inner_sumcheck_acc)?;
 
         let x_poly_comm_time = start_timer!(|| "Committing to input poly");
-        let (init_comms, init_comm_rands) = <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
+        let (init_comms, init_comm_rands) = <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
             pc_pk,
             prover_init_oracles.iter(),
             None,
@@ -191,16 +216,22 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             })?;
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
-        let (first_comms, first_comm_rands) = <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
-            pc_pk,
-            prover_first_oracles.iter(),
-            Some(zk_rng),
-        )
-        .map_err(Error::from_pc_err)?;
+        let (first_comms, first_comm_rands) =
+            <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
+                pc_pk,
+                prover_first_oracles.iter(),
+                Some(zk_rng),
+            )
+            .map_err(Error::from_pc_err)?;
         end_timer!(first_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            first_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let (verifier_first_msg, verifier_state) =
             IOP::verifier_first_round(verifier_init_state, &mut fs_rng)?;
@@ -218,7 +249,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_comms, second_comm_rands) =
-            <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
+            <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
                 pc_pk,
                 prover_second_oracles.iter(),
                 Some(zk_rng),
@@ -226,8 +257,13 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .map_err(Error::from_pc_err)?;
         end_timer!(second_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            second_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let (verifier_second_msg, verifier_state) =
             IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
@@ -242,16 +278,22 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             })?;
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
-        let (third_comms, third_comm_rands) = <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
-            pc_pk,
-            prover_third_oracles.iter(),
-            Some(zk_rng),
-        )
-        .map_err(Error::from_pc_err)?;
+        let (third_comms, third_comm_rands) =
+            <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
+                pc_pk,
+                prover_third_oracles.iter(),
+                Some(zk_rng),
+            )
+            .map_err(Error::from_pc_err)?;
         end_timer!(third_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            third_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let (verifier_third_msg, verifier_state) =
             IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
@@ -267,7 +309,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
         let fourth_round_comm_time = start_timer!(|| "Committing to fourth round polys");
         let (fourth_comms, fourth_comm_rands) =
-            <PC<G1, D> as PolynomialCommitment<G1>>::commit_vec(
+            <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
                 pc_pk,
                 prover_fourth_oracles.iter(),
                 Some(zk_rng),
@@ -275,8 +317,13 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .map_err(Error::from_pc_err)?;
         end_timer!(fourth_round_comm_time);
 
-        // absorb the prover oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![fourth_comms].unwrap());
+        // record the prover oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            fourth_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let prover_accumulator_oracles = vec![
             LabeledPolynomial::new(
@@ -290,24 +337,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
                 false,
             ),
         ];
-        let accumulator_comms = vec![
-            LabeledCommitment::new(
-                "prev_t_acc_poly".to_string(),
-                previous_inner_sumcheck_acc.1.c.clone(),
-            ),
-            LabeledCommitment::new(
-                "prev_bullet_poly".to_string(),
-                GroupVec::new(vec![previous_dlog_acc.1[0].g_final.clone()]),
-            ),
-        ];
         let accumulator_comm_rands = vec![
             LabeledRandomness::new(
                 "prev_t_acc_poly".to_string(),
-                <PC<G1, D> as PolynomialCommitment<G1>>::Randomness::zero(),
+                <PC<G1, FS> as PolynomialCommitment<G1>>::Randomness::zero(),
             ),
             LabeledRandomness::new(
                 "prev_bullet_poly".to_string(),
-                <PC<G1, D> as PolynomialCommitment<G1>>::Randomness::zero(),
+                <PC<G1, FS> as PolynomialCommitment<G1>>::Randomness::zero(),
             ),
         ];
 
@@ -319,16 +356,6 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .chain(prover_third_oracles.iter())
             .chain(prover_fourth_oracles.iter())
             .chain(prover_accumulator_oracles.iter())
-            .collect();
-
-        let labeled_comms: Vec<_> = init_comms
-            .iter()
-            .cloned()
-            .chain(first_comms.iter().cloned())
-            .chain(second_comms.iter().cloned())
-            .chain(third_comms.iter().cloned())
-            .chain(fourth_comms.iter().cloned())
-            .chain(accumulator_comms.iter().cloned())
             .collect();
 
         // Gather commitment randomness together.
@@ -353,12 +380,12 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         ];
 
         // Set up the IOP verifier's query set.
-        let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, _) = IOP::verifier_query_map(verifier_state)?;
 
         // Compute the queried values
         let eval_time = start_timer!(|| "Evaluating polynomials over query set");
 
-        let mut evaluations = evaluate_query_set_to_vec(polynomials.clone(), &query_set);
+        let mut evaluations = evaluate_query_map_to_vec(polynomials.clone(), &query_map);
 
         evaluations.sort_by(|a, b| a.0.cmp(&b.0));
         let evaluations = evaluations
@@ -367,8 +394,8 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .collect::<Vec<G1::ScalarField>>();
         end_timer!(eval_time);
 
-        // absorb the evalution claims.
-        fs_rng.absorb(&evaluations);
+        // record the evalution claims.
+        fs_rng.record(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
@@ -377,8 +404,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         let pc_proof = PC::multi_point_multi_poly_open(
             pc_pk,
             polynomials.clone(),
-            &labeled_comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &comm_rands,
             Some(zk_rng),
@@ -401,14 +427,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     // TODO: The return type of this function is quite ugly. Maybe we can improve by bundling
     //  together the accumulators and the respective polys
     pub fn verify(
-        index_vk_g1: &VerifierKey<G1, G2, D>,
-        index_vk_g2: &VerifierKey<G2, G1, D>,
-        pc_vk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        pc_vk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::VerifierKey,
+        index_vk_g1: &VerifierKey<G1, G2, FS>,
+        index_vk_g2: &VerifierKey<G2, G1, FS>,
+        pc_vk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        pc_vk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::VerifierKey,
         public_input: &[G1::ScalarField],
         prev_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         prev_dlog_acc: &DualDLogItem<G2, G1>,
-        proof: &Proof<G1, G2, D>,
+        proof: &Proof<G1, G2, FS>,
     ) -> Result<
         (
             DualSumcheckItem<G1, G2>,
@@ -422,7 +448,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
                 DensePolynomial<G2::ScalarField>,
             ),
         ),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
     > {
         let verifier_time = start_timer!(|| "Marlin Verifier");
         let (inner_sumcheck_acc, dlog_acc) = Self::succinct_verify(
@@ -457,15 +483,15 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     /// Perform the IOP verification, and check the succinct part of the polynomial opening proof.
     /// If successful, return the new accumulators.
     pub fn succinct_verify<'a>(
-        pc_vk: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        index_vk: &VerifierKey<G1, G2, D>,
+        pc_vk: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        index_vk: &VerifierKey<G1, G2, FS>,
         public_input: &[G1::ScalarField],
         prev_inner_sumcheck_acc: &DualSumcheckItem<G2, G1>,
         prev_dlog_acc: &DualDLogItem<G2, G1>,
-        proof: &Proof<G1, G2, D>,
+        proof: &Proof<G1, G2, FS>,
     ) -> Result<
         (DualSumcheckItem<G1, G2>, DualDLogItem<G1, G2>),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
     > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
@@ -497,7 +523,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let first_comms = &proof.commitments[0];
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        fs_rng.record(first_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_first_round(verifier_init_state, &mut fs_rng)?;
 
@@ -505,25 +531,25 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         The verification of the outer sumcheck equation is postponed to below
         */
         let second_comms = &proof.commitments[1];
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        fs_rng.record(second_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
 
         /*  Third round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let third_comms = &proof.commitments[2];
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        fs_rng.record(third_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
 
         /*  Fourth round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let fourth_comms = &proof.commitments[3];
-        fs_rng.absorb(&to_bytes![fourth_comms].unwrap());
+        fs_rng.record(fourth_comms.clone())?;
 
         let accumulator_comms = &vec![
             prev_inner_sumcheck_acc.1.c.clone(),
-            GroupVec::new(vec![prev_dlog_acc.1[0].g_final.clone()]),
+            GroupVec::new(vec![prev_dlog_acc.1[0].final_comm_key.clone()]),
         ];
 
         // Gather commitments in one vector.
@@ -540,17 +566,19 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             .collect();
 
         // Check sumchecks equations
-        let (query_set, verifier_state) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, verifier_state) = IOP::verifier_query_map(verifier_state)?;
+
+        let mut evaluation_keys = Vec::new();
+        for (point_label, (_, poly_set)) in query_map.iter() {
+            for poly_label in poly_set {
+                evaluation_keys.push((poly_label.clone(), point_label.clone()));
+            }
+        }
+        evaluation_keys.sort();
 
         let mut evaluations = Evaluations::new();
-        let mut evaluation_labels = Vec::new();
-        for (poly_label, (point_label, point)) in query_set.iter().cloned() {
-            evaluation_labels.push(((poly_label, point_label), point));
-        }
-
-        evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
-        for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
-            evaluations.insert(((q.0).0, q.1), *eval);
+        for (key, &eval) in evaluation_keys.into_iter().zip(proof.evaluations.iter()) {
+            evaluations.insert(key, eval);
         }
 
         let result = IOP::verify_outer_sumcheck(&public_input, &evaluations, &verifier_state);
@@ -567,14 +595,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
             return Err(Error::IOPError(result.unwrap_err()));
         }
 
-        fs_rng.absorb(&proof.evaluations);
+        fs_rng.record(proof.evaluations.clone())?;
 
         // Perform succinct verification of opening proof
         let result =
-            <PC<G1, D> as PolynomialCommitment<G1>>::succinct_multi_point_multi_poly_verify(
+            <PC<G1, FS> as PolynomialCommitment<G1>>::succinct_multi_point_multi_poly_verify(
                 pc_vk,
                 &commitments,
-                &query_set,
+                &query_map,
                 &evaluations,
                 &proof.pc_proof,
                 &mut fs_rng,
@@ -594,13 +622,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
 
         let dlog_verifier_state = opening_result.unwrap();
 
-        let new_dlog_acc = DualDLogItem(
-            vec![DLogItem {
-                g_final: dlog_verifier_state.final_comm_key,
-                xi_s: dlog_verifier_state.check_poly,
-            }],
-            prev_dlog_acc.0.clone(),
-        );
+        let new_dlog_acc = DualDLogItem(vec![dlog_verifier_state], prev_dlog_acc.0.clone());
 
         let mut eta = verifier_state.first_round_msg.unwrap().get_etas();
         for (eta, eta_prime) in eta.iter_mut().zip(prev_inner_sumcheck_acc.1.eta.iter()) {
@@ -624,10 +646,10 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
     /// Perform the full check of both the inner-sumcheck and dlog accumulators.
     /// If succesful, return the polynomials associated to the accumulators.
     pub fn hard_verify(
-        pc_vk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::VerifierKey,
-        pc_vk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::VerifierKey,
-        index_vk_g1: &VerifierKey<G1, G2, D>,
-        index_vk_g2: &VerifierKey<G2, G1, D>,
+        pc_vk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        pc_vk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::VerifierKey,
+        index_vk_g1: &VerifierKey<G1, G2, FS>,
+        index_vk_g2: &VerifierKey<G2, G1, FS>,
         inner_sumcheck_acc: &DualSumcheckItem<G1, G2>,
         dlog_acc: &DualDLogItem<G1, G2>,
     ) -> Result<
@@ -641,7 +663,7 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
                 DensePolynomial<G2::ScalarField>,
             ),
         ),
-        Error<<PC<G1, D> as PolynomialCommitment<G1>>::Error>,
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
     > {
         let dlog_poly_g1 = Self::check_dlog_item(pc_vk_g1, &dlog_acc.0[0])?;
         let inner_sumcheck_poly_g1 =
@@ -657,19 +679,14 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         Ok((inner_sumcheck_polys, dlog_polys))
     }
 
-    fn check_dlog_item<G: Curve>(
-        pc_vk: &<PC<G, D> as PolynomialCommitment<G>>::VerifierKey,
+    fn check_dlog_item<G: IPACurve>(
+        pc_vk: &<PC<G, FS> as PolynomialCommitment<G>>::VerifierKey,
         dlog_item: &DLogItem<G>,
-    ) -> Result<DensePolynomial<G::ScalarField>, Error<<PC<G, D> as PolynomialCommitment<G>>::Error>>
+    ) -> Result<DensePolynomial<G::ScalarField>, Error<<PC<G, FS> as PolynomialCommitment<G>>::Error>>
     {
         let time = start_timer!(|| "Checking dlog accumulator item");
-        let verifier_state = poly_commit::ipa_pc::VerifierState {
-            check_poly: dlog_item.xi_s.clone(),
-            final_comm_key: dlog_item.g_final.clone(),
-        };
-        let verifier_output =
-            <PC<G, D> as PolynomialCommitment<G>>::hard_verify(pc_vk, &verifier_state)
-                .map_err(Error::from_pc_err)?;
+        let verifier_output = <PC<G, FS> as PolynomialCommitment<G>>::hard_verify(pc_vk, dlog_item)
+            .map_err(Error::from_pc_err)?;
 
         if verifier_output.is_none() {
             end_timer!(time);
@@ -684,18 +701,18 @@ impl<G1: Curve, G2: Curve, D: Digest + 'static> TDLogAccMarlin<G1, G2, D> {
         Ok(result)
     }
 
-    fn check_inner_sumcheck_item<Ga: Curve, Gb: Curve>(
-        pc_vk: &<PC<Ga, D> as PolynomialCommitment<Ga>>::VerifierKey,
-        index_vk: &VerifierKey<Ga, Gb, D>,
+    fn check_inner_sumcheck_item<Ga: IPACurve, Gb: IPACurve>(
+        pc_vk: &<PC<Ga, FS> as PolynomialCommitment<Ga>>::VerifierKey,
+        index_vk: &VerifierKey<Ga, Gb, FS>,
         inner_sumcheck_item: &SumcheckItem<Ga>,
     ) -> Result<
         DensePolynomial<Ga::ScalarField>,
-        Error<<PC<Ga, D> as PolynomialCommitment<Ga>>::Error>,
+        Error<<PC<Ga, FS> as PolynomialCommitment<Ga>>::Error>,
     > {
         let time = start_timer!(|| "Checking inner sumcheck accumulator item");
 
         let t_poly = inner_sumcheck_item.compute_poly(&index_vk.index);
-        let t_comm = <PC<Ga, D> as PolynomialCommitment<Ga>>::commit(&pc_vk, &t_poly, false, None)
+        let t_comm = <PC<Ga, FS> as PolynomialCommitment<Ga>>::commit(&pc_vk, &t_poly, false, None)
             .map_err(Error::from_pc_err)?;
 
         if t_comm.0 != inner_sumcheck_item.c {

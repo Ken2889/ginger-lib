@@ -36,13 +36,11 @@ jobs:
   include:
     - name: bionic_rust-1.51.0_latest-CHECK
       env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='000,001,003,005,006,008,009,011,012,013,014,015,016,020'
-    - name: bionic_rust-1.51.0_latest-TEST
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='017,018'
-    - name: bionic_rust-1.51.0_latest-TEST_INTENSIVE
+    - name: bionic_rust-1.51.0_latest-TEST_BACKEND
+      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='017'
+    - name: bionic_rust-1.51.0_latest-TEST_BACKEND_NONNATIVE
       env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='019'
+    - name: bionic_rust-1.51.0_latest-TEST_DARLIN
+      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='018'
     - name: bionic_rust-nightly-2021-04-25_latest-CHECK
       env: IMAGE_TAG=bionic_rust-nightly-2021-04-25_latest TESTS='002,004,007,010' CARGOARGS='+nightly-2021-04-25'
-    - name: bionic_rust-1.51.0_latest-MARLIN
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='021'
-    - name: bionic_rust-1.51.0_latest-POLY_COMMIT
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='022'

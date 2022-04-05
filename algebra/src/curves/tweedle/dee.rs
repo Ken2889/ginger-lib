@@ -6,8 +6,8 @@ use crate::{
         EndoMulParameters, ModelParameters, SWModelParameters,
     },
     fields::tweedle::*,
-    Group,
 };
+use num_traits::Zero;
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct TweedledeeParameters;

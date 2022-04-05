@@ -1,25 +1,31 @@
-use algebra::{Group, Curve, ToConstraintField};
-use blake2::Blake2s;
+use algebra::{Group, ToConstraintField};
+use blake2::{Blake2s, Digest};
 use criterion::*;
-use digest::Digest;
-use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
+use fiat_shamir::chacha20::FiatShamirChaChaRng;
+use fiat_shamir::FiatShamirRng;
+use poly_commit::{ipa_pc::{IPACurve, InnerProductArgPC}, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
-    tests::{final_darlin::generate_test_data as generate_final_darlin_test_data, get_keys},
+    tests::final_darlin::generate_test_data as generate_final_darlin_test_data,
 };
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
+fn bench_batch_verification<
+    G1: IPACurve,
+    G2: IPACurve,
+    D: Digest,
+    FS: FiatShamirRng + 'static,
+>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
@@ -27,16 +33,14 @@ fn bench_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let params_g1 = InnerProductArgPC::<G1, D>::setup(segment_size - 1).unwrap();
-    let params_g2 = InnerProductArgPC::<G2, D>::setup(segment_size - 1).unwrap();
+    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
-    let (_, verifier_key_g1, _, verifier_key_g2) = get_keys::<_, _, D>(&params_g1, &params_g2);
-
-    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<G1, G2, D, _>(
+    let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
         num_constraints - 1,
         segment_size,
-        &params_g1,
-        &params_g2,
+        (&committer_key_g1, &verifier_key_g1),
+        (&committer_key_g2, &verifier_key_g2),
         1,
         rng,
     );
@@ -52,7 +56,7 @@ fn bench_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
             &num_proofs,
             |bn, _num_proofs| {
                 bn.iter(|| {
-                    assert!(batch_verify_proofs::<G1, G2, D, _>(
+                    assert!(batch_verify_proofs::<G1, G2, FS, _>(
                         pcds.as_slice(),
                         vks.as_slice(),
                         &verifier_key_g1,
@@ -71,23 +75,25 @@ fn bench_batch_verification<G1: Curve, G2: Curve, D: Digest + 'static>(
 // Segment size |H| => 42, segment size |H|/2 => 84
 
 fn bench_batch_verification_tweedle(c: &mut Criterion) {
-    use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
+    use algebra::curves::tweedle::{
+        dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
+    };
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = segment_size = 1 << 19, proofs",
         1 << 19,
         vec![10, 50, 100, 200],
     );
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/2, proofs",
         1 << 18,
         vec![10, 50, 100, 200],
     );
 
-    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s>(
+    bench_batch_verification::<TweedleDee, TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>(
         c,
         "tweedle-dee, |H| = 1 << 19, segment_size = |H|/4, proofs",
         1 << 17,

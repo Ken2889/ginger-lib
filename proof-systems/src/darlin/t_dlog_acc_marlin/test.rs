@@ -56,70 +56,45 @@ mod t_dlog_acc_marlin {
     use crate::darlin::accumulators::dlog::DualDLogItem;
     use crate::darlin::t_dlog_acc_marlin::data_structures::{DualSumcheckItem, PC};
     use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
+    use crate::darlin::IPACurve;
     use algebra::{
-        curves::tweedle::dee::DeeJacobian, curves::tweedle::dum::DumJacobian,
-        serialize::test_canonical_serialize_deserialize, Curve, Group, SemanticallyValid,
+        serialize::test_canonical_serialize_deserialize, Group, SemanticallyValid,
         ToConstraintField, UniformRand,
     };
-    use blake2::Blake2s;
     use digest::Digest;
-    use poly_commit::{
-        ipa_pc::Parameters as IPAParameters, PCCommitterKey, PCParameters, PCVerifierKey,
-        PolynomialCommitment,
-    };
+    use fiat_shamir::FiatShamirRng;
+    use poly_commit::{PCKey, PolynomialCommitment};
     use rand::thread_rng;
     use std::ops::MulAssign;
 
-    trait TestUtils {
-        /// Copy other instance params into this
-        fn copy_params(&mut self, other: &Self);
-    }
-
-    impl<G: Curve> TestUtils for IPAParameters<G> {
-        fn copy_params(&mut self, other: &Self) {
-            self.s = other.s.clone();
-            self.h = other.h.clone();
-            self.hash = other.hash.clone();
-        }
-    }
-
-    fn test_circuit<G1, G2, D>(
+    fn test_circuit<G1, G2, FS, D>(
         num_samples: usize,
         num_constraints: usize,
         num_variables: usize,
         zk: bool,
     ) where
-        G1: Curve<BaseField = <G2 as Group>::ScalarField>
+        G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
             + ToConstraintField<<G2 as Group>::ScalarField>,
-        G2: Curve<BaseField = <G1 as Group>::ScalarField>
+        G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
             + ToConstraintField<<G1 as Group>::ScalarField>,
+        FS: FiatShamirRng + 'static,
         D: Digest + 'static,
     {
         let rng = &mut thread_rng();
 
-        let universal_srs_g1 =
-            <PC<G1, D> as PolynomialCommitment<G1>>::setup(num_constraints - 1).unwrap();
-        let (pc_pk_g1, pc_vk_g1) = universal_srs_g1.trim((num_constraints - 1) / 2).unwrap();
-        assert_eq!(
-            PCCommitterKey::get_hash(&pc_pk_g1),
-            universal_srs_g1.get_hash()
-        );
-        assert_eq!(
-            PCVerifierKey::get_hash(&pc_vk_g1),
-            universal_srs_g1.get_hash()
-        );
+        let (pc_pk_g1_original, pc_vk_g1_original) =
+            <PC<G1, FS> as PolynomialCommitment<G1>>::setup::<D>(num_constraints - 1).unwrap();
+        let pc_pk_g1 = pc_pk_g1_original.trim((num_constraints - 1) / 2).unwrap();
+        let pc_vk_g1 = pc_vk_g1_original.trim((num_constraints - 1) / 2).unwrap();
+        assert_eq!(pc_pk_g1.get_hash(), pc_pk_g1_original.get_hash());
+        assert_eq!(pc_vk_g1.get_hash(), pc_vk_g1_original.get_hash());
 
-        let universal_srs_g2 =
-            <PC<G2, D> as PolynomialCommitment<G2>>::setup(num_constraints - 1).unwrap();
-        let (pc_pk_g2, pc_vk_g2) = universal_srs_g2.trim((num_constraints - 1) / 2).unwrap();
-        assert_eq!(
-            PCCommitterKey::get_hash(&pc_pk_g2),
-            universal_srs_g2.get_hash()
-        );
-        assert_eq!(
-            PCVerifierKey::get_hash(&pc_vk_g2),
-            universal_srs_g2.get_hash()
-        );
+        let (pc_pk_g2_original, pc_vk_g2_original) =
+            <PC<G2, FS> as PolynomialCommitment<G2>>::setup::<D>(num_constraints - 1).unwrap();
+        let pc_pk_g2 = pc_pk_g2_original.trim((num_constraints - 1) / 2).unwrap();
+        let pc_vk_g2 = pc_vk_g2_original.trim((num_constraints - 1) / 2).unwrap();
+        assert_eq!(pc_pk_g2.get_hash(), pc_pk_g2_original.get_hash());
+        assert_eq!(pc_vk_g2.get_hash(), pc_vk_g2_original.get_hash());
 
         for _ in 0..num_samples {
             let a = G1::ScalarField::rand(rng);
@@ -155,9 +130,11 @@ mod t_dlog_acc_marlin {
             };
 
             let (index_pk_g1, index_vk_g1) =
-                TDLogAccMarlin::<G1, G2, D>::circuit_specific_setup(&pc_pk_g1, circ_g1).unwrap();
+                TDLogAccMarlin::<G1, G2, FS, D>::circuit_specific_setup(&pc_pk_g1, circ_g1)
+                    .unwrap();
             let (index_pk_g2, index_vk_g2) =
-                TDLogAccMarlin::<G2, G1, D>::circuit_specific_setup(&pc_pk_g2, circ_g2).unwrap();
+                TDLogAccMarlin::<G2, G1, FS, D>::circuit_specific_setup(&pc_pk_g2, circ_g2)
+                    .unwrap();
 
             assert!(index_pk_g1.is_valid());
             assert!(index_vk_g1.is_valid());
@@ -171,8 +148,8 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &index_pk_g2);
             test_canonical_serialize_deserialize(true, &index_vk_g2);
 
-            let dlog_acc = DualDLogItem::generate_random::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<D>(
+            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
+            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
                 rng,
                 &index_pk_g2.index_vk.index,
                 &index_pk_g1.index_vk.index,
@@ -183,7 +160,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -206,7 +183,7 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &proof);
 
             // Success verification
-            assert!(TDLogAccMarlin::<G1, G2, D>::verify(
+            assert!(TDLogAccMarlin::<G1, G2, FS, D>::verify(
                 &index_vk_g1,
                 &index_vk_g2,
                 &pc_vk_g1,
@@ -219,7 +196,7 @@ mod t_dlog_acc_marlin {
             .is_ok());
 
             // Fail verification (wrong public input)
-            assert!(!TDLogAccMarlin::<G1, G2, D>::verify(
+            assert!(!TDLogAccMarlin::<G1, G2, FS, D>::verify(
                 &index_vk_g1,
                 &index_vk_g2,
                 &pc_vk_g1,
@@ -235,8 +212,8 @@ mod t_dlog_acc_marlin {
             Generate a dual dlog accumulator which is invalid in its native part and check that
             the succinct verification of the proof fails.
              */
-            let dlog_acc = DualDLogItem::generate_invalid_right::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<D>(
+            let dlog_acc = DualDLogItem::generate_invalid_right::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
+            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
                 rng,
                 &index_pk_g2.index_vk.index,
                 &index_pk_g1.index_vk.index,
@@ -247,7 +224,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -260,7 +237,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -274,8 +251,8 @@ mod t_dlog_acc_marlin {
             Generate a dual inner-sumcheck accumulator which is invalid in its native part and check
             that the succinct verification of the proof fails.
              */
-            let dlog_acc = DualDLogItem::generate_random::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_right::<D>(
+            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
+            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_right::<FS>(
                 rng,
                 &index_pk_g2.index_vk.index,
                 &index_pk_g1.index_vk.index,
@@ -286,7 +263,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -299,7 +276,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -314,8 +291,8 @@ mod t_dlog_acc_marlin {
             that the succinct verification of the proof succeeds (the non-native part of the
             accumulator is merely forwarded).
              */
-            let dlog_acc = DualDLogItem::generate_invalid_left::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<D>(
+            let dlog_acc = DualDLogItem::generate_invalid_left::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
+            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
                 rng,
                 &index_pk_g2.index_vk.index,
                 &index_pk_g1.index_vk.index,
@@ -326,7 +303,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -339,7 +316,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -354,8 +331,8 @@ mod t_dlog_acc_marlin {
             check that the succinct verification of the proof succeeds (the non-native part of the
             accumulator is merely forwarded).
              */
-            let dlog_acc = DualDLogItem::generate_random::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_left::<D>(
+            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
+            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_left::<FS>(
                 rng,
                 &index_pk_g2.index_vk.index,
                 &index_pk_g1.index_vk.index,
@@ -366,7 +343,7 @@ mod t_dlog_acc_marlin {
             let (_, t_poly_g1) = inner_sumcheck_acc
                 .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
 
-            let proof = TDLogAccMarlin::<G1, G2, D>::prove(
+            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
@@ -379,7 +356,7 @@ mod t_dlog_acc_marlin {
             )
             .unwrap();
 
-            assert!(TDLogAccMarlin::<G1, G2, D>::succinct_verify(
+            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
@@ -391,20 +368,65 @@ mod t_dlog_acc_marlin {
         }
     }
 
-    #[test]
-    fn prove_and_verify() {
-        let num_constraints = 25;
-        let num_variables = 25;
+    #[cfg(feature = "circuit-friendly")]
+    mod poseidon_fs {
+        use super::*;
+        use algebra::curves::tweedle::dee::DeeJacobian;
+        use algebra::curves::tweedle::dum::DumJacobian;
+        use blake2::Blake2s;
+        use fiat_shamir::poseidon::TweedleFrPoseidonFSRng;
 
-        test_circuit::<DumJacobian, DeeJacobian, Blake2s>(
-            25,
-            num_constraints,
-            num_variables,
-            false,
-        );
-        println!("Marlin No ZK passed");
+        #[test]
+        fn prove_and_verify() {
+            let num_constraints = 25;
+            let num_variables = 25;
 
-        test_circuit::<DumJacobian, DeeJacobian, Blake2s>(25, num_constraints, num_variables, true);
-        println!("Marlin ZK passed");
+            test_circuit::<DumJacobian, DeeJacobian, TweedleFrPoseidonFSRng, Blake2s>(
+                25,
+                num_constraints,
+                num_variables,
+                false,
+            );
+            println!("Marlin No ZK passed");
+
+            test_circuit::<DumJacobian, DeeJacobian, TweedleFrPoseidonFSRng, Blake2s>(
+                25,
+                num_constraints,
+                num_variables,
+                true,
+            );
+            println!("Marlin ZK passed");
+        }
+    }
+
+    #[cfg(not(feature = "circuit-friendly"))]
+    mod chachafs {
+        use super::*;
+        use algebra::curves::tweedle::dee::DeeJacobian;
+        use algebra::curves::tweedle::dum::DumJacobian;
+        use blake2::Blake2s;
+        use fiat_shamir::chacha20::FiatShamirChaChaRng;
+
+        #[test]
+        fn prove_and_verify() {
+            let num_constraints = 25;
+            let num_variables = 25;
+
+            test_circuit::<DumJacobian, DeeJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                25,
+                num_constraints,
+                num_variables,
+                false,
+            );
+            println!("Marlin No ZK passed");
+
+            test_circuit::<DumJacobian, DeeJacobian, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                25,
+                num_constraints,
+                num_variables,
+                true,
+            );
+            println!("Marlin ZK passed");
+        }
     }
 }

@@ -1,95 +1,21 @@
 //! Data structures for the dlog commitment scheme from [BCMS20]:
-//! * [`Parameters`], [`VerifierKey`], [`CommitterKey`]
+//! * [`VerifierKey`], [`CommitterKey`]
 //! * [`Commitment`], [`Randomness`], [`Proof`], [`MultiPointProof`]
 //! and the implementation of their corresponding traits from [data_structures.rs](/src/data_structures.rs).
 //! In addition scheme-specific structs [`SuccinctCheckPolynomial`] and [`VerifierState`] are
 //! introduced.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
+use super::IPACurve;
+use crate::ipa_pc::InnerProductArgPC;
 use crate::*;
-use crate::{PCCommitterKey, PCVerifierKey, Vec};
-use algebra::{Curve, DensePolynomial, PrimeField};
+use crate::{PCKey, Vec};
+use algebra::{DensePolynomial, PrimeField, UniformRand};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
     vec,
 };
-
-/// `Parameters` are the polynomial commitment parameters for the inner product arg scheme.
-// TODO: it seems to be artificial to have a `Parameters` struct which is the same as
-// the committer key. Let us investigate if this struct is really needed.
-// (Can't we simply implement the PCParameters trait for the struct PCCommitterKey?)
-#[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-    Debug(bound = ""),
-    Eq(bound = ""),
-    PartialEq(bound = "")
-)]
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct Parameters<G: Curve> {
-    /// The key used to commit to polynomials.
-    pub comm_key: Vec<G::AffineRep>,
-
-    /// The base point that carries the inner products evaluations.
-    /// Used by the prover and verifier.
-    pub h: G,
-
-    /// The base point used for hiding.
-    pub s: G,
-
-    /// The finger print  H(comm_key, h, s, max_degree)
-    pub hash: Vec<u8>,
-}
-
-impl<G: Curve> PCParameters<G> for Parameters<G> {
-    type CommitterKey = CommitterKey<G>;
-    type VerifierKey = VerifierKey<G>;
-    type Error = Error;
-
-    fn max_degree(&self) -> usize {
-        self.comm_key.len() - 1
-    }
-
-    fn get_hash(&self) -> &[u8] {
-        self.hash.as_slice()
-    }
-
-    /// Trims the base point vector of the setup function to a custom segment size
-    fn trim(
-        &self,
-        segment_size: usize,
-    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
-        // Ensure that supported_degree + 1 is a power of two
-        let supported_degree = (segment_size + 1).next_power_of_two() - 1;
-        if supported_degree > self.max_degree() {
-            return Err(Error::TrimmingDegreeTooLarge);
-        }
-
-        let trim_time =
-            start_timer!(|| format!("Trimming to supported degree of {}", supported_degree));
-
-        let ck = CommitterKey {
-            comm_key: self.comm_key[0..(supported_degree + 1)].to_vec(),
-            h: self.h.clone(),
-            s: self.s.clone(),
-            max_degree: self.max_degree(),
-            hash: self.hash.clone(),
-        };
-
-        let vk = VerifierKey {
-            comm_key: self.comm_key[0..(supported_degree + 1)].to_vec(),
-            h: self.h.clone(),
-            s: self.s.clone(),
-            max_degree: self.max_degree(),
-            hash: self.hash.clone(),
-        };
-
-        end_timer!(trim_time);
-
-        Ok((ck, vk))
-    }
-}
 
 /// `CommitterKey` is used to commit to, and create evaluation proofs for, a given
 /// polynomial.
@@ -102,7 +28,7 @@ impl<G: Curve> PCParameters<G> for Parameters<G> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct CommitterKey<G: Curve> {
+pub struct CommitterKey<G: IPACurve> {
     /// The base point vector used for the coefficients of the polynomial.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -113,60 +39,58 @@ pub struct CommitterKey<G: Curve> {
     /// The base point that is to be used for hiding.
     pub s: G,
 
-    /// The maximum degree supported by the parameters
-    /// this key was derived from.
-    pub max_degree: usize,
-
-    /// A fingerprint of the CommitterKey, H(max_degree_comm_key, h, s, max_degree).
-    /// Used for reference.
+    /// The hash of the universal parameters from which this key was derived from
     pub hash: Vec<u8>,
 }
 
-impl<G: Curve> SemanticallyValid for CommitterKey<G> {
+impl<G: IPACurve> SemanticallyValid for CommitterKey<G> {
     // Technically this function is redundant, since the keys are generated
     // through a deterministic procedure starting from a public string.
     fn is_valid(&self) -> bool {
-        G::batch_from_affine(&self.comm_key).is_valid()
-            && self.h.is_valid()
-            && self.s.is_valid()
-            && PCCommitterKey::segment_size(self) <= self.max_degree
+        G::batch_from_affine(&self.comm_key).is_valid() && self.h.is_valid() && self.s.is_valid()
     }
 }
 
-impl<G: Curve> PCCommitterKey for CommitterKey<G> {
-    fn max_degree(&self) -> usize {
-        self.max_degree
-    }
-
-    fn segment_size(&self) -> usize {
+impl<G: IPACurve> PCKey for CommitterKey<G> {
+    /// Outputs the maximum degree supported by this key
+    fn degree(&self) -> usize {
         self.comm_key.len() - 1
     }
 
+    /// Returns the hash of `self` instance.
     fn get_hash(&self) -> &[u8] {
         self.hash.as_slice()
     }
 
-    fn get_key_len(&self) -> usize {
-        self.comm_key.len()
+    fn trim(&self, degree: usize) -> Result<Self, Error> {
+        // Passing degree 0
+        if degree == 0 {
+            return Err(Error::DegreeIsZero);
+        }
+
+        // Ensure that degree + 1 is a power of two
+        let degree = (degree + 1).next_power_of_two() - 1;
+        if degree > self.degree() {
+            return Err(Error::TrimmingDegreeTooLarge);
+        }
+
+        let trim_time = start_timer!(|| format!("Trimming to supported degree of {}", degree));
+
+        let ck = CommitterKey {
+            comm_key: self.comm_key[..(degree + 1)].to_vec(),
+            h: self.h.clone(),
+            s: self.s.clone(),
+            hash: self.hash.clone(),
+        };
+
+        end_timer!(trim_time);
+
+        Ok(ck)
     }
 }
 
 /// `VerifierKey` is used to check evaluation proofs for a given commitment.
 pub type VerifierKey<G> = CommitterKey<G>;
-
-impl<G: Curve> PCVerifierKey for VerifierKey<G> {
-    fn max_degree(&self) -> usize {
-        self.max_degree
-    }
-
-    fn segment_size(&self) -> usize {
-        self.comm_key.len() - 1
-    }
-
-    fn get_hash(&self) -> &[u8] {
-        self.hash.as_slice()
-    }
-}
 
 /// An opening proof for a single-point multi-poly assertion.
 #[derive(Derivative)]
@@ -178,7 +102,7 @@ impl<G: Curve> PCVerifierKey for VerifierKey<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: Curve> {
+pub struct Proof<G: IPACurve> {
     /// Vector of left elements for each of the log_d iterations in `open`
     pub l_vec: Vec<G>,
 
@@ -199,13 +123,22 @@ pub struct Proof<G: Curve> {
     pub rand: Option<G::ScalarField>,
 }
 
-impl<G: Curve> PCProof for Proof<G> {
-    fn get_key_len(&self) -> usize {
-        1 << self.l_vec.len()
+impl<G: IPACurve> PCProof for Proof<G> {
+    fn degree(&self) -> Result<usize, Error> {
+        if self.l_vec.len() != self.r_vec.len() {
+            Err(Error::IncorrectInputLength(
+                format!(
+                    "expected l_vec size and r_vec size to be equal; instead l_vec size is {:} and r_vec size is {:}",
+                    self.l_vec.len(),
+                    self.r_vec.len()
+                )
+            ))?
+        }
+        Ok(self.l_vec.len() - 1)
     }
 }
 
-impl<G: Curve> SemanticallyValid for Proof<G> {
+impl<G: IPACurve> SemanticallyValid for Proof<G> {
     fn is_valid(&self) -> bool {
         self.l_vec.is_valid() &&
             self.r_vec.is_valid() &&
@@ -230,7 +163,7 @@ impl<G: Curve> SemanticallyValid for Proof<G> {
     }
 }
 
-impl<G: Curve> CanonicalSerialize for Proof<G> {
+impl<G: IPACurve> CanonicalSerialize for Proof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // l_vec
         // More than enough for practical applications
@@ -345,7 +278,7 @@ impl<G: Curve> CanonicalSerialize for Proof<G> {
     }
 }
 
-impl<G: Curve> CanonicalDeserialize for Proof<G> {
+impl<G: IPACurve> CanonicalDeserialize for Proof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read l_vec
         let l_vec_len: u8 = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -501,7 +434,7 @@ impl<G: Curve> CanonicalDeserialize for Proof<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct MultiPointProof<G: Curve> {
+pub struct MultiPointProof<G: IPACurve> {
     /// This is a "classical" single-point multi-poly proof which involves all commitments:
     /// commitments from the initial claim and the new "h_comm"
     pub proof: Proof<G>,
@@ -510,7 +443,7 @@ pub struct MultiPointProof<G: Curve> {
     pub h_commitment: G,
 }
 
-impl<G: Curve> PCMultiPointProof<G> for MultiPointProof<G> {
+impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
     type Commitment = G;
     type Proof = Proof<G>;
 
@@ -533,13 +466,13 @@ impl<G: Curve> PCMultiPointProof<G> for MultiPointProof<G> {
     }
 }
 
-impl<G: Curve> SemanticallyValid for MultiPointProof<G> {
+impl<G: IPACurve> SemanticallyValid for MultiPointProof<G> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.h_commitment.is_valid()
     }
 }
 
-impl<G: Curve> CanonicalSerialize for MultiPointProof<G> {
+impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
         CanonicalSerialize::serialize(&self.proof, &mut writer)?;
@@ -586,7 +519,7 @@ impl<G: Curve> CanonicalSerialize for MultiPointProof<G> {
     }
 }
 
-impl<G: Curve> CanonicalDeserialize for MultiPointProof<G> {
+impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read proof
         let proof: Proof<G> = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -652,14 +585,63 @@ impl<G: Curve> CanonicalDeserialize for MultiPointProof<G> {
 /// This polynomial has the special property that it has a succinct description
 /// and can be evaluated in `O(log(degree))` time, and the final committer key
 /// G_final can be computed via an MSM from its coefficients.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SuccinctCheckPolynomial<F: PrimeField>(pub Vec<F>);
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct SuccinctCheckPolynomial<G: IPACurve> {
+    #[doc(hidden)]
+    pub chals: Vec<G::ScalarField>,
+    #[cfg(feature = "circuit-friendly")]
+    #[doc(hidden)]
+    pub endo_chals: Vec<G::ScalarField>,
+}
 
-impl<F: PrimeField> SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> SuccinctCheckPolynomial<G> {
+    /// Construct Self starting from the challenges.
+    /// Will automatically calculate also the endo versions of them
+    #[cfg(feature = "circuit-friendly")]
+    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
+        use algebra::ToBits;
+
+        let endo_chals = chals
+            .iter()
+            .map(|chal| {
+                // Serialize FE
+                let mut bits = chal.write_bits();
+                // Reverse bits as endo_rep_to_scalar requires them to be in LE
+                bits.reverse();
+                // We know that only the first 128 bits are relevant
+                bits = bits[..128].to_vec();
+                // Read endo scalar
+                G::endo_rep_to_scalar(bits).unwrap()
+            })
+            .collect();
+        Self { chals, endo_chals }
+    }
+
+    /// Construct Self starting from the challenges
+    #[cfg(not(feature = "circuit-friendly"))]
+    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
+        Self { chals }
+    }
+
+    /// Get endo chals from this polynomial
+    #[cfg(feature = "circuit-friendly")]
+    pub fn get_chals(&self) -> &[G::ScalarField] {
+        self.endo_chals.as_slice()
+    }
+
+    /// Get chals from this polynomial
+    #[cfg(not(feature = "circuit-friendly"))]
+    pub fn get_chals(&self) -> &[G::ScalarField] {
+        self.chals.as_slice()
+    }
+
     /// Slightly optimized way to compute it, taken from
     /// [o1-labs/marlin](https://github.com/o1-labs/marlin/blob/master/dlog/commitment/src/commitment.rs#L175)
-    fn _compute_succinct_poly_coeffs(&self, mut init_coeffs: Vec<F>) -> Vec<F> {
-        let challenges = &self.0;
+    fn _compute_succinct_poly_coeffs(
+        &self,
+        mut init_coeffs: Vec<G::ScalarField>,
+    ) -> Vec<G::ScalarField> {
+        let challenges = self.get_chals();
         let log_d = challenges.len();
         let mut k: usize = 0;
         let mut pow: usize = 1;
@@ -672,39 +654,39 @@ impl<F: PrimeField> SuccinctCheckPolynomial<F> {
     }
 
     /// Computes the coefficients of the underlying degree `d` polynomial.
-    pub fn compute_coeffs(&self) -> Vec<F> {
-        self._compute_succinct_poly_coeffs(vec![F::one(); 1 << self.0.len()])
+    pub fn compute_coeffs(&self) -> Vec<G::ScalarField> {
+        self._compute_succinct_poly_coeffs(vec![G::ScalarField::one(); 1 << self.chals.len()])
     }
 
     /// Computes the coefficients of the underlying degree `d` polynomial, scaled by
     /// a factor `scale`.
-    pub fn compute_scaled_coeffs(&self, scale: F) -> Vec<F> {
-        self._compute_succinct_poly_coeffs(vec![scale; 1 << self.0.len()])
+    pub fn compute_scaled_coeffs(&self, scale: G::ScalarField) -> Vec<G::ScalarField> {
+        self._compute_succinct_poly_coeffs(vec![scale; 1 << self.chals.len()])
     }
 
     /// Evaluate `self` at `point` in time `O(log_d)`.
-    pub fn evaluate(&self, point: F) -> F {
-        let challenges = &self.0;
+    pub fn evaluate(&self, point: G::ScalarField) -> G::ScalarField {
+        let challenges = self.get_chals();
         let log_d = challenges.len();
 
-        let mut product = F::one();
+        let mut product = G::ScalarField::one();
         for (i, challenge) in challenges.iter().enumerate() {
             let i = i + 1;
             let elem_degree: u64 = (1 << (log_d - i)) as u64;
             let elem = point.pow([elem_degree]);
-            product *= &(F::one() + &(elem * challenge));
+            product *= &(G::ScalarField::one() + &(elem * challenge));
         }
 
         product
     }
 }
 
-impl<F: PrimeField> CanonicalSerialize for SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> CanonicalSerialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        let len = self.0.len() as u8;
+        let len = self.chals.len() as u8;
         CanonicalSerialize::serialize(&len, &mut writer)?;
-        for item in self.0.iter() {
+        for item in self.chals.iter() {
             // Each field element is, in reality, only 128 bits long
             let fe128 = item.into_repr().as_ref()[0] as u128
                 + ((item.into_repr().as_ref()[1] as u128) << 64);
@@ -715,11 +697,11 @@ impl<F: PrimeField> CanonicalSerialize for SuccinctCheckPolynomial<F> {
 
     #[inline]
     fn serialized_size(&self) -> usize {
-        1 + self.0.len() * 16
+        1 + self.chals.len() * 16
     }
 }
 
-impl<F: PrimeField> CanonicalDeserialize for SuccinctCheckPolynomial<F> {
+impl<G: IPACurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let len = <u8 as CanonicalDeserialize>::deserialize(&mut reader)?;
@@ -729,26 +711,208 @@ impl<F: PrimeField> CanonicalDeserialize for SuccinctCheckPolynomial<F> {
             let fe128 = u128::deserialize(&mut reader)?;
             values.push(fe128.into());
         }
-        Ok(SuccinctCheckPolynomial(values))
+        Ok(SuccinctCheckPolynomial::<G>::from_chals(values))
+    }
+}
+
+impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
+    #[cfg(feature = "circuit-friendly")]
+    fn is_valid(&self) -> bool {
+        self.chals.is_valid() && self.endo_chals.is_valid()
+    }
+
+    #[cfg(not(feature = "circuit-friendly"))]
+    fn is_valid(&self) -> bool {
+        self.chals.is_valid()
+    }
+}
+
+/// Succinct check polynomial tagged with a label
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LabeledSuccinctCheckPolynomial<'a, G: IPACurve> {
+    label: PolynomialLabel,
+    check_poly: &'a SuccinctCheckPolynomial<G>,
+}
+
+impl<'a, G: IPACurve> LabeledSuccinctCheckPolynomial<'a, G> {
+    pub fn new(label: PolynomialLabel, check_poly: &'a SuccinctCheckPolynomial<G>) -> Self {
+        Self { label, check_poly }
+    }
+
+    pub fn get_label(&self) -> &PolynomialLabel {
+        &self.label
+    }
+
+    pub fn get_poly(&self) -> &SuccinctCheckPolynomial<G> {
+        self.check_poly
     }
 }
 
 /// The succinct part of the verifier returns a succinct-check polynomial and final comm key
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifierState<G: Curve> {
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct DLogItem<G: IPACurve> {
     /// check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-    pub check_poly: SuccinctCheckPolynomial<G::ScalarField>,
+    pub check_poly: SuccinctCheckPolynomial<G>,
     /// final comm key
     pub final_comm_key: G,
 }
 
-impl<G: Curve> PCVerifierState for VerifierState<G> {}
+impl<G: IPACurve> DLogItem<G> {
+    /// Generate a random (but valid) instance of `DLogItem`, for test purposes only.
+    pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
+        rng: &mut R,
+        committer_key: &CommitterKey<G>,
+    ) -> Self {
+        // Generate valid accumulator over G1 starting from random xi_s
+        let log_key_len = algebra::log2(committer_key.comm_key.len());
+        let chals = (0..log_key_len as usize)
+            .map(|_| u128::rand(rng).into())
+            .collect();
+        let check_poly = SuccinctCheckPolynomial::from_chals(chals);
+        let final_comm_key = InnerProductArgPC::<G, FS>::inner_commit(
+            committer_key.comm_key.as_slice(),
+            check_poly.compute_coeffs().as_slice(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        Self {
+            check_poly,
+            final_comm_key,
+        }
+    }
+
+    /// Generate a random invalid instance of `DLogItem`, for test purposes only.
+    pub fn generate_invalid<R: RngCore, FS: FiatShamirRng>(
+        rng: &mut R,
+        committer_key: &CommitterKey<G>,
+    ) -> Self {
+        let mut result = Self::generate_random::<_, FS>(rng, committer_key);
+        result.final_comm_key = G::rand(rng);
+        result
+    }
+
+    /// Generate the trivial `DLogItem`.
+    pub fn generate_trivial(committer_key: &CommitterKey<G>) -> Self {
+        // We define a trivial DLogItem as having all `xi_s` equal to zero.
+        // This corresponds to a degree-0 bullet polynomial identically equal to one, which in turn
+        // implies that the `g_final` is equal to the first element of the committer key.
+        let check_poly = SuccinctCheckPolynomial::from_chals(vec![]);
+        let final_comm_key = G::from_affine(&committer_key.comm_key[0]);
+        Self {
+            check_poly,
+            final_comm_key,
+        }
+    }
+
+    /// Compute the polynomial associated to the accumulator.
+    pub fn compute_poly(&self) -> DensePolynomial<G::ScalarField> {
+        let coeffs = self.check_poly.compute_coeffs();
+        DensePolynomial::from_coefficients_vec(coeffs)
+    }
+}
+
+impl<G: IPACurve> CanonicalSerialize for DLogItem<G> {
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        CanonicalSerialize::serialize(&self.final_comm_key, &mut writer)?;
+
+        CanonicalSerialize::serialize(&self.check_poly, &mut writer)
+    }
+
+    fn serialized_size(&self) -> usize {
+        self.final_comm_key.serialized_size() + self.check_poly.serialized_size()
+    }
+
+    fn serialize_without_metadata<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), SerializationError> {
+        CanonicalSerialize::serialize_without_metadata(&self.final_comm_key, &mut writer)?;
+
+        CanonicalSerialize::serialize_without_metadata(&self.check_poly, &mut writer)
+    }
+
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        CanonicalSerialize::serialize_uncompressed(&self.final_comm_key, &mut writer)?;
+
+        CanonicalSerialize::serialize_uncompressed(&self.check_poly, &mut writer)
+    }
+
+    fn uncompressed_size(&self) -> usize {
+        self.final_comm_key.uncompressed_size() + self.check_poly.uncompressed_size()
+    }
+}
+
+impl<G: IPACurve> CanonicalDeserialize for DLogItem<G> {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        let final_comm_key = CanonicalDeserialize::deserialize(&mut reader)?;
+
+        let check_poly = CanonicalDeserialize::deserialize(&mut reader)?;
+
+        Ok(Self {
+            final_comm_key,
+            check_poly,
+        })
+    }
+
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        let final_comm_key = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+
+        let check_poly = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+
+        Ok(Self {
+            final_comm_key,
+            check_poly,
+        })
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        let final_comm_key = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+
+        let check_poly = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+
+        Ok(Self {
+            final_comm_key,
+            check_poly,
+        })
+    }
+
+    #[inline]
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
+        // GFinal will always be 1 segment and without any shift
+        let final_comm_key = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
+
+        let check_poly = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
+
+        Ok(Self {
+            final_comm_key,
+            check_poly,
+        })
+    }
+}
+
+impl<G: IPACurve> SemanticallyValid for DLogItem<G> {
+    fn is_valid(&self) -> bool {
+        self.final_comm_key.is_valid() && self.check_poly.is_valid()
+    }
+}
+
+impl<G: IPACurve> PCVerifierState for DLogItem<G> {}
 
 /// The hard part of the verifier returns the bullet polynomial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifierOutput<G: Curve> {
+pub struct VerifierOutput<G: IPACurve> {
     /// the bullet_poly in coefficient form
     pub bullet_poly: DensePolynomial<G::ScalarField>,
 }
 
-impl<G: Curve> PCVerifierOutput for VerifierOutput<G> {}
+impl<G: IPACurve> PCVerifierOutput for VerifierOutput<G> {}

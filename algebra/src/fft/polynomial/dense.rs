@@ -1,20 +1,33 @@
 //! A polynomial represented in coefficient form.
-
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
 use crate::{
-    serialize::*, Field, FromBytes, FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBytes,
+    serialize::*, Field, FromBytes, FromBytesChecked,
+    PrimeField, SemanticallyValid, ToBytes, ToConstraintField, Error
 };
 use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
 use std::io::{Read, Result as IoResult, Write};
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
+use num_traits::Zero;
 
 /// Stores a polynomial in coefficient form.
 #[derive(Clone, PartialEq, Eq, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DensePolynomial<F: Field> {
     /// The coefficient of `x^i` is stored at location `i` in `self.coeffs`.
     pub coeffs: Vec<F>,
+}
+
+impl<F: Field> Zero for DensePolynomial<F> {
+    #[inline]
+    fn zero() -> Self {
+        Self { coeffs: vec![] }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.coeffs.is_empty() || self.coeffs.iter().all(|fe| fe.is_zero())
+    }
 }
 
 impl<F: Field> ToBytes for DensePolynomial<F> {
@@ -158,7 +171,7 @@ impl<F: Field> DensePolynomial<F> {
 
     /// Outputs a polynomial of degree `d` where each coefficient is sampled uniformly at random
     /// from the field `F`.
-    pub fn rand<R: Rng>(d: usize, rng: &mut R) -> Self {
+    pub fn rand<R: Rng + ?Sized>(d: usize, rng: &mut R) -> Self {
         let mut random_coeffs = Vec::new();
         for _ in 0..(d + 1) {
             random_coeffs.push(F::rand(rng));
@@ -432,6 +445,17 @@ impl<'a, F: PrimeField> MulAssign<&'a F> for DensePolynomial<F> {
     }
 }
 
+impl<F: PrimeField> Mul<F> for DensePolynomial<F> {
+    type Output = DensePolynomial<F>;
+
+    fn mul(self, other: F) -> DensePolynomial<F> {
+        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
+            &self,
+            &DensePolynomial::from_coefficients_slice(&[other]),
+        )
+    }
+}
+
 impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
@@ -443,7 +467,7 @@ impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
     }
 }
 
-impl<'a, F: PrimeField> Add<&'a DensePolynomial<F>> for DensePolynomial<F> {
+impl<'a, F: Field> Add<&'a DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn add(self, other: &'a DensePolynomial<F>) -> DensePolynomial<F> {
@@ -451,7 +475,7 @@ impl<'a, F: PrimeField> Add<&'a DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<F: PrimeField> Add<DensePolynomial<F>> for DensePolynomial<F> {
+impl<F: Field> Add<DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn add(self, other: DensePolynomial<F>) -> DensePolynomial<F> {
@@ -459,7 +483,7 @@ impl<F: PrimeField> Add<DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<'a, F: PrimeField> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
+impl<'a, F: Field> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn sub(self, other: &'a DensePolynomial<F>) -> DensePolynomial<F> {
@@ -467,7 +491,7 @@ impl<'a, F: PrimeField> Sub<&'a DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<F: PrimeField> Sub<DensePolynomial<F>> for DensePolynomial<F> {
+impl<F: Field> Sub<DensePolynomial<F>> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn sub(self, other: DensePolynomial<F>) -> DensePolynomial<F> {
@@ -475,32 +499,21 @@ impl<F: PrimeField> Sub<DensePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<F: PrimeField> FromBytesChecked for DensePolynomial<F> {
+impl<F: Field> FromBytesChecked for DensePolynomial<F> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
         Self::read(&mut reader)
     }
 }
 
-impl<F: PrimeField> SemanticallyValid for DensePolynomial<F> {
+impl<F: Field> SemanticallyValid for DensePolynomial<F> {
     fn is_valid(&self) -> bool {
         return true;
     }
 }
 
-impl<F: PrimeField> Group for DensePolynomial<F> {
-    type ScalarField = F;
-
-    fn zero() -> Self {
-        DensePolynomial::zero()
-    }
-
-    fn is_zero(&self) -> bool {
-        self.is_zero()
-    }
-
-    fn double_in_place(&mut self) -> &mut Self {
-        self.add_assign(&self.clone());
-        self
+impl<F: PrimeField> ToConstraintField<F> for DensePolynomial<F> {
+    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
+        ToConstraintField::<F>::to_field_elements(&self.coeffs)
     }
 }
 
@@ -509,10 +522,10 @@ mod tests {
     use crate::domain::get_best_evaluation_domain;
     use crate::fields::tweedle::fr::Fr;
     use crate::fields::Field;
-    use crate::groups::Group;
     use crate::polynomial::*;
     use crate::UniformRand;
     use rand::thread_rng;
+    use num_traits::{Zero, One};
 
     #[test]
     fn double_polynomials_random() {

@@ -6,8 +6,8 @@
 //! from both groups of the EC cycle (the "current", and the "collected" ones).
 //! Although within recursion we do not separate accumulation strategy from the SNARK on protocol level,
 //! we nevertheless serve this functionality for post processing outside the PCD.
-use algebra::{serialize::*, Curve};
-use poly_commit::{ipa_pc::Proof, Error};
+use algebra::serialize::*;
+use poly_commit::{ipa_pc::{IPACurve, Proof}, Error};
 use rand::RngCore;
 
 pub mod dlog;
@@ -15,7 +15,7 @@ pub mod dlog;
 /// General struct of an aggregation proof. Typically, such proof stems from an
 /// interactive oracle protocol (IOP) and a polynomial commitment scheme.
 #[derive(Clone, Default, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct AccumulationProof<G: Curve> {
+pub struct AccumulationProof<G: IPACurve> {
     /// Commitments to the polynomials produced by the prover.
     pub commitments: Vec<Vec<G>>,
     /// Evaluations of these polynomials.

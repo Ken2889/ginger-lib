@@ -6,19 +6,21 @@ use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
     VerifierFirstMsg, VerifierSecondMsg, VerifierThirdMsg,
 };
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use crate::darlin::IPACurve;
 use algebra::{
-    get_best_evaluation_domain, Curve, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
-    Group,
+    get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
 };
-use marlin::iop::sparse_linear_algebra::{mat_vec_mul, SparseMatrix};
+use bench_utils::{end_timer, start_timer};
+use marlin::iop::sparse_linear_algebra::mat_vec_mul;
 use marlin::iop::{BoundaryPolynomial, Error, LagrangeKernel};
+use num_traits::Zero;
 use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand_core::RngCore;
 use rayon::prelude::*;
 
 /// State for the IOP prover.
-pub struct ProverState<'a, G1: Curve, G2: Curve> {
+pub struct ProverState<'a, G1: IPACurve, G2: IPACurve> {
     formatted_input_assignment: Vec<G1::ScalarField>,
     witness_assignment: Vec<G1::ScalarField>,
 
@@ -48,19 +50,31 @@ pub struct ProverState<'a, G1: Curve, G2: Curve> {
     domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
 }
 
-impl<'a, G1: Curve, G2: Curve> ProverState<'a, G1, G2> {
+impl<'a, G1: IPACurve, G2: IPACurve> ProverState<'a, G1, G2> {
     /// Get the public input.
     pub fn public_input(&self) -> Vec<G1::ScalarField> {
         IOP::<G1, G2>::unformat_public_input(&self.formatted_input_assignment)
     }
-    /// Return the concatenation of public input (padded with zeros to match the
-    /// size of domain X) and witness variables.
-    pub fn padded_variables(&self) -> Vec<G1::ScalarField> {
-        let padding_size = self.domain_x.size() - self.formatted_input_assignment.len();
-        let mut padded_public_input = self.formatted_input_assignment.clone();
-        padded_public_input.extend(vec![G1::ScalarField::zero(); padding_size]);
-        let mut witness_assignment = self.witness_assignment.clone();
-        padded_public_input.append(&mut witness_assignment);
+    /// Return the variable vector, with input variables and witness variables already indexed
+    /// according to the treatment of the input domain `domain_x` as a subdomain of the full
+    /// Lagrange domain `domain_h`.
+    pub fn full_variable_vector(&self) -> Vec<G1::ScalarField> {
+        let domain_x_size = self.domain_x.size();
+        let mut padded_public_input = vec![G1::ScalarField::zero(); self.domain_h.size()];
+        for (i, el) in self.formatted_input_assignment.iter().enumerate() {
+            let idx = self
+                .domain_h
+                .reindex_by_subdomain(domain_x_size, i)
+                .unwrap();
+            padded_public_input[idx] = *el;
+        }
+        for (i, el) in self.witness_assignment.iter().enumerate() {
+            let idx = self
+                .domain_h
+                .reindex_by_subdomain(domain_x_size, i + domain_x_size)
+                .unwrap();
+            padded_public_input[idx] = *el;
+        }
         padded_public_input
     }
 }
@@ -155,7 +169,7 @@ impl<F: Field> ProverAccumulatorOracles<F> {
 
 /* The prover rounds
 */
-impl<G1: Curve, G2: Curve> IOP<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// Preparation of the prover, computes the witness vector `y`.
     pub fn prover_init<'a, C: ConstraintSynthesizer<G1::ScalarField>>(
         index: &'a Index<G1, G2>,
@@ -300,7 +314,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         // For M=A,B, compute domain evaluations of y_M(X) = Sum_{z in H} M(X,z)*y(z)
         // over H
-        let variable_vector = state.padded_variables();
+        let variable_vector = state.full_variable_vector();
 
         let eval_y_a_time = start_timer!(|| "Evaluating y_A");
         let y_a = mat_vec_mul(&state.index.a, &variable_vector);
@@ -362,36 +376,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         end_timer!(round_time);
 
         Ok((oracles, state))
-    }
-
-    /// Given the Lagrange representation M(X,Y) for the R1CS matrices M=A,B,C,
-    /// batching challenges eta_M, M=A,B,C, and L(alpha,Y) over H, computes
-    /// the circuit polynomial
-    ///     t(X) = Sum_M eta_M * r_M(alpha,X),
-    /// where r_M(X,Y) = Sum_{z in H}  r(X,z)* M(z,Y) = <r(X, .), M(.,Y)> =
-    /// = < L(X,.), u_H(.)M(.,Y) > = u_H(X,X) * M(X,Y)
-    pub(crate) fn calculate_t<'a>(
-        matrices: impl Iterator<Item = &'a SparseMatrix<G1::ScalarField>>,
-        matrix_randomizers: &[G1::ScalarField],
-        input_domain: &Box<dyn EvaluationDomain<G1::ScalarField>>,
-        domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
-        l_x_alpha_on_h: &Vec<G1::ScalarField>,
-    ) -> Result<Vec<G1::ScalarField>, Error> {
-        let mut t_evals_on_h = vec![G1::ScalarField::zero(); domain_h.size()];
-        for (matrix, eta) in matrices.zip(matrix_randomizers) {
-            // t(X) = Sum_{M} eta_M * M(alpha, X)
-            // with
-            //      M(alpha, X) = Sum_{z in H} L(alpha,z) * M(z,X)
-            for (r, row) in matrix.iter().enumerate() {
-                for (coeff, c) in row.iter() {
-                    let index = domain_h
-                        .reindex_by_subdomain(input_domain.size(), *c)
-                        .map_err(|e| Error::Other(e.to_string()))?;
-                    t_evals_on_h[index] += *eta * coeff * l_x_alpha_on_h[r];
-                }
-            }
-        }
-        Ok(t_evals_on_h)
     }
 
     /// Returns the ratio of the sizes of `domain` and `subdomain` or an Error if
@@ -477,10 +461,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         // TODO: why not keep the domain evals of T also?
         // It might be more efficient to compute the domain evals of the outer_poly
         // by using the domains evals of its components (which are already present anyway)
-        let t_evals_on_h = Self::calculate_t(
+        let t_evals_on_h = marlin::IOP::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
             &eta,
-            &state.domain_x,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
         )?;
@@ -674,15 +657,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let beta = ver_message.beta;
 
         let l_x_beta_evals_time = start_timer!(|| "Compute l_x_beta evals");
-        let l_x_beta_evals_on_h_tmp = state.domain_h.domain_eval_lagrange_kernel(beta)?;
-        let mut l_x_beta_evals_on_h = vec![G1::ScalarField::zero(); l_x_beta_evals_on_h_tmp.len()];
-        for i in 0..l_x_beta_evals_on_h_tmp.len() {
-            let idx = state
-                .domain_h
-                .reindex_by_subdomain(state.domain_x.size(), i)
-                .unwrap();
-            l_x_beta_evals_on_h[i] = l_x_beta_evals_on_h_tmp[idx];
-        }
+        let l_x_beta_evals_on_h = state.domain_h.domain_eval_lagrange_kernel(beta)?;
         end_timer!(l_x_beta_evals_time);
 
         let curr_bridging_poly_time = start_timer!(|| "Compute curr_bridging_poly");
@@ -771,10 +746,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         let curr_t_acc_poly_time = start_timer!(|| "Compute curr_t_acc_poly evaluations");
 
-        let curr_t_acc_poly_on_h = Self::calculate_t(
+        let curr_t_acc_poly_on_h = marlin::IOP::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
             &eta_second,
-            &state.domain_x,
             state.domain_h.clone(),
             &l_x_gamma_evals_on_h,
         )?;

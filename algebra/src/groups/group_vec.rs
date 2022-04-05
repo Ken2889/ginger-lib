@@ -1,29 +1,41 @@
 use super::Group;
 use crate::{
-    bytes::{FromBytes, ToBytes, FromBytesChecked},
-    serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError},
-    SemanticallyValid,
+    bytes::{FromBytes, FromBytesChecked, ToBytes},
+    serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError},
+    Error, SemanticallyValid, ToConstraintField,
 };
+use core::slice::Iter;
+use itertools::{EitherOrBoth, Itertools};
+use num_traits::Zero;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
+use serde::*;
+use std::slice::IterMut;
 use std::{
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign, Index},
-    io::{Read, Write, Error as IoError, ErrorKind, Result as IoResult},
     fmt::{Display, Formatter, Result as FmtResult},
+    io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
+    ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
     vec::IntoIter,
 };
-use core::slice::{Iter, IterMut};
 
-#[derive(Clone, Debug, Hash, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, Hash, CanonicalSerialize, CanonicalDeserialize, Serialize, Deserialize)]
+#[serde(bound(deserialize = "G: Group"))]
 pub struct GroupVec<G: Group>(Vec<G>);
 
 impl<G: Group> GroupVec<G> {
-
-    pub fn new(items: Vec<G>) -> Self { GroupVec(items) }
+    pub fn new(items: Vec<G>) -> Self {
+        GroupVec(items)
+    }
 
     pub fn with_capacity(capacity: usize) -> Self {
         GroupVec(Vec::with_capacity(capacity))
     }
 
-    pub fn get_vec(&self) -> Vec<G> { self.0.clone() }
+    pub fn get_vec(&self) -> Vec<G> {
+        self.0.clone()
+    }
 
     pub fn len(&self) -> usize {
         self.0.len()
@@ -43,6 +55,19 @@ impl<G: Group> GroupVec<G> {
 
     pub fn into_iter(&self) -> IntoIter<G> {
         self.0.clone().into_iter()
+    }
+
+    pub fn rand<R: Rng + ?Sized>(len: u16, rng: &mut R) -> Self {
+        Self::new((0..len).map(|_| G::rand(rng)).collect::<Vec<G>>())
+    }
+}
+
+impl<G: Group> Distribution<GroupVec<G>> for Standard {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, _rng: &mut R) -> GroupVec<G> {
+        unimplemented!(
+            "use the specific function `rand` which allows to specify the length of the vector"
+        )
     }
 }
 
@@ -64,8 +89,9 @@ impl<G: Group> Default for GroupVec<G> {
 impl<G: Group> FromBytes for GroupVec<G> {
     #[inline]
     fn read<R: Read>(mut reader: R) -> IoResult<Self> {
-        Ok(GroupVec(CanonicalDeserialize::deserialize_unchecked(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        Ok(GroupVec(
+            CanonicalDeserialize::deserialize_unchecked(&mut reader)
+                .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?,
         ))
     }
 }
@@ -74,14 +100,15 @@ impl<G: Group> ToBytes for GroupVec<G> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         CanonicalSerialize::serialize(&self.0, &mut writer)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))
+            .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))
     }
 }
 
 impl<G: Group> FromBytesChecked for GroupVec<G> {
     fn read_checked<R: Read>(mut reader: R) -> IoResult<Self> {
-        Ok(GroupVec(CanonicalDeserialize::deserialize(&mut reader)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!{"{:?}", e}))?
+        Ok(GroupVec(
+            CanonicalDeserialize::deserialize(&mut reader)
+                .map_err(|e| IoError::new(ErrorKind::Other, format! {"{:?}", e}))?,
         ))
     }
 }
@@ -106,6 +133,27 @@ impl<G: Group> Display for GroupVec<G> {
     }
 }
 
+impl<G: Group> ToConstraintField<G::BaseField> for GroupVec<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+        self.0.to_field_elements()
+    }
+}
+
+impl<G: Group> Zero for GroupVec<G> {
+    #[inline]
+    fn zero() -> Self {
+        GroupVec(vec![])
+    }
+
+    // A GroupVec is zero iff
+    // - all its elements are zero, or
+    // - (by convention) it is the empty vector
+    // The following implementation covers both cases.
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|el| el.is_zero())
+    }
+}
 
 impl<G: Group> Neg for GroupVec<G> {
     type Output = Self;
@@ -193,7 +241,6 @@ impl<G: Group> Sub<Self> for GroupVec<G> {
 }
 
 impl<'a, G: Group> MulAssign<&'a G::ScalarField> for GroupVec<G> {
-
     fn mul_assign(&mut self, other: &'a G::ScalarField) {
         for i in 0..self.0.len() {
             self.0[i] *= other;
@@ -213,53 +260,26 @@ impl<'a, G: Group> Mul<&'a G::ScalarField> for GroupVec<G> {
 }
 
 // The trait PartialEq cannot be simply derived, because this would cause wrong results when
-// comparing different representations of the zero element of GroupVec<G> (which can be represented
-// both as an empty vector and as a vector of zero elements of the underlying group G).
+// comparing vectors which are equal apart from a different number of trailing zeros (in
+// particular when comparing different representations of the zero vector).
 impl<G: Group> PartialEq<Self> for GroupVec<G> {
     fn eq(&self, other: &Self) -> bool {
-        if self.is_zero() {
-            return other.is_zero();
-        }
-        if other.is_zero() {
-            return false;
-        }
-        if self.len() != other.len() {
-            return false;
-        }
-        for (el_self, el_other) in self.0.iter().zip(other.0.iter()) {
-            if el_self != el_other {
-                return false;
-            }
-        }
-        true
+        self.0
+            .iter()
+            .zip_longest(other.0.iter())
+            .all(|elems| match elems {
+                EitherOrBoth::Both(g1, g2) => g1 == g2,
+                EitherOrBoth::Left(g) => g.is_zero(),
+                EitherOrBoth::Right(g) => g.is_zero(),
+            })
     }
 }
 
 impl<G: Group> Eq for GroupVec<G> {}
 
 impl<G: Group> Group for GroupVec<G> {
+    type BaseField = G::BaseField;
     type ScalarField = G::ScalarField;
-
-    fn zero() -> Self {
-        GroupVec(vec![])
-    }
-
-    // We allow multiple representations of the zero element of the `GroupVec`:
-    // - as an empty vector
-    // - as a vector whose elements are all equal to the zero element of the underlying group G
-    fn is_zero(&self) -> bool {
-        if self.0.is_empty() {
-            return true;
-        } else {
-            for el in self.0.iter() {
-                if !el.is_zero() {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
     fn double_in_place(&mut self) -> &mut Self {
         for (i, item) in self.0.clone().iter().enumerate() {
             self.0[i] += item;

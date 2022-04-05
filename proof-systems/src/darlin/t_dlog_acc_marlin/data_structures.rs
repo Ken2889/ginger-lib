@@ -5,20 +5,22 @@
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::EvaluationsOnDomain;
 use crate::darlin::t_dlog_acc_marlin::IOP;
+use crate::darlin::IPACurve;
 use algebra::serialize::*;
 use algebra::{
-    get_best_evaluation_domain, Curve, DensePolynomial, Group, GroupVec, ToBytes, UniformRand,
+    get_best_evaluation_domain, DensePolynomial, Group, GroupVec, PrimeField, ToBits, ToBytes,
+    ToConstraintField, UniformRand,
 };
+use bench_utils::add_to_trace;
 use derivative::Derivative;
-use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use marlin::iop::LagrangeKernel;
+use num_traits::Zero;
 use poly_commit::ipa_pc::InnerProductArgPC;
 use poly_commit::{DomainExtendedPolynomialCommitment, PolynomialCommitment};
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
-/// The universal public parameters for the argument system.
-pub(crate) type UniversalSRS<G, PC> = <PC as PolynomialCommitment<G>>::Parameters;
 /// Our proving system uses IPA/DLOG polynomial commitment scheme.
 pub(crate) type PC<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, D>>;
 
@@ -31,11 +33,19 @@ pub(crate) type PC<G, D> = DomainExtendedPolynomialCommitment<G, InnerProductArg
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct VerifierKey<G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct VerifierKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// The index itself.
     pub index: Index<G1, G2>,
     /// Commitments of the lagrange polynomials over the input domain.
-    pub lagrange_comms: Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>,
+    pub lagrange_comms: Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>,
+    /// Hash of the above elements
+    pub vk_hash: Vec<u8>,
+}
+
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> VerifierKey<G1, G2, FS> {
+    pub fn get_hash(&self) -> &[u8] {
+        &self.vk_hash
+    }
 }
 
 /// The prover key for a specific R1CS.
@@ -47,9 +57,9 @@ pub struct VerifierKey<G1: Curve, G2: Curve, D: Digest + 'static> {
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct ProverKey<G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct ProverKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// The index verifier key.
-    pub index_vk: VerifierKey<G1, G2, D>,
+    pub index_vk: VerifierKey<G1, G2, FS>,
 }
 
 /// The SNARK proof itself.
@@ -60,20 +70,20 @@ pub struct ProverKey<G1: Curve, G2: Curve, D: Digest + 'static> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct Proof<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// Commitments to the polynomials produced by the prover
-    pub commitments: Vec<Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>>,
+    pub commitments: Vec<Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
     /// Evaluations of these polynomials.
     pub evaluations: Vec<G1::ScalarField>,
     /// A batch evaluation proof from the polynomial commitment.
-    pub pc_proof: <PC<G1, D> as PolynomialCommitment<G1>>::MultiPointProof,
+    pub pc_proof: <PC<G1, FS> as PolynomialCommitment<G1>>::MultiPointProof,
 
     g2: PhantomData<G2>,
 }
 
 /// An item to be collected in an inner-sumcheck accumulator.
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct SumcheckItem<G: Curve> {
+pub struct SumcheckItem<G: IPACurve> {
     /// Sampling point.
     pub alpha: G::ScalarField,
     /// Batching randomness.
@@ -82,7 +92,7 @@ pub struct SumcheckItem<G: Curve> {
     pub c: GroupVec<G>,
 }
 
-impl<G: Curve> ToBytes for SumcheckItem<G> {
+impl<G: IPACurve> ToBytes for SumcheckItem<G> {
     fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
         use std::io::{Error, ErrorKind};
 
@@ -91,14 +101,15 @@ impl<G: Curve> ToBytes for SumcheckItem<G> {
     }
 }
 
-impl<G: Curve> SumcheckItem<G> {
+impl<G: IPACurve> SumcheckItem<G> {
     /// Generate a random (but valid) inner sumcheck accumulator item.
-    pub fn generate_random<G2: Curve, D: Digest + 'static>(
+    pub fn generate_random<G2: IPACurve, FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index: &Index<G, G2>,
-        pc_pk: &<PC<G, D> as PolynomialCommitment<G>>::CommitterKey,
+        pc_pk: &<PC<G, FS> as PolynomialCommitment<G>>::CommitterKey,
     ) -> Self {
-        let alpha = G::ScalarField::rand(rng);
+        // alpha is a random 128 bit challenge.
+        let alpha: G::ScalarField = u128::rand(rng).into();
         let eta: Vec<_> = (0..3)
             .into_iter()
             .map(|_| G::ScalarField::rand(rng))
@@ -108,7 +119,6 @@ impl<G: Curve> SumcheckItem<G> {
         let num_witness = index.index_info.num_witness;
         let num_constraints = index.index_info.num_constraints;
 
-        let domain_x = get_best_evaluation_domain::<G::ScalarField>(num_inputs).unwrap();
         let domain_h = get_best_evaluation_domain::<G::ScalarField>(std::cmp::max(
             num_inputs + num_witness,
             num_constraints,
@@ -117,28 +127,28 @@ impl<G: Curve> SumcheckItem<G> {
 
         let l_x_alpha_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha).unwrap();
 
-        let t_evals_on_h = IOP::<G, G2>::calculate_t(
+        let t_evals_on_h = marlin::IOP::calculate_t(
             vec![&index.a, &index.b, &index.c].into_iter(),
             &eta,
-            &domain_x,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
         )
         .unwrap();
         let t = EvaluationsOnDomain::from_vec_and_domain(t_evals_on_h.clone(), domain_h.clone())
             .interpolate();
-        let (c, _) = <PC<G, D> as PolynomialCommitment<G>>::commit(pc_pk, &t, false, None).unwrap();
+        let (c, _) =
+            <PC<G, FS> as PolynomialCommitment<G>>::commit(pc_pk, &t, false, None).unwrap();
 
         Self { alpha, eta, c }
     }
 
     /// Generate a random invalid inner sumcheck accumulator item.
-    pub fn generate_invalid<G2: Curve, D: Digest + 'static>(
+    pub fn generate_invalid<G2: IPACurve, FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index: &Index<G, G2>,
-        pc_pk: &<PC<G, D> as PolynomialCommitment<G>>::CommitterKey,
+        pc_pk: &<PC<G, FS> as PolynomialCommitment<G>>::CommitterKey,
     ) -> Self {
-        let mut result = Self::generate_random::<_, D>(rng, index, pc_pk);
+        let mut result = Self::generate_random::<_, FS>(rng, index, pc_pk);
         for el in result.c.iter_mut() {
             *el = G::rand(rng);
         }
@@ -155,12 +165,14 @@ impl<G: Curve> SumcheckItem<G> {
     }
 
     /// Compute the polynomial associated to the accumulator.
-    pub fn compute_poly<G2: Curve>(&self, index: &Index<G, G2>) -> DensePolynomial<G::ScalarField> {
+    pub fn compute_poly<G2: IPACurve>(
+        &self,
+        index: &Index<G, G2>,
+    ) -> DensePolynomial<G::ScalarField> {
         let num_inputs = index.index_info.num_inputs;
         let num_witness = index.index_info.num_witness;
         let num_constraints = index.index_info.num_constraints;
 
-        let domain_x = get_best_evaluation_domain::<G::ScalarField>(num_inputs).unwrap();
         let domain_h = get_best_evaluation_domain::<G::ScalarField>(std::cmp::max(
             num_constraints,
             num_inputs + num_witness,
@@ -170,10 +182,9 @@ impl<G: Curve> SumcheckItem<G> {
         let alpha = self.alpha;
         let l_x_alpha_evals_on_h = domain_h.domain_eval_lagrange_kernel(alpha).unwrap();
 
-        let t_evals_on_h = IOP::<G, G2>::calculate_t(
+        let t_evals_on_h = marlin::IOP::calculate_t(
             vec![&index.a, &index.b, &index.c].into_iter(),
             &self.eta,
-            &domain_x,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
         )
@@ -187,65 +198,65 @@ impl<G: Curve> SumcheckItem<G> {
 
 /// A dual inner-sumcheck accumulator item.
 #[derive(Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualSumcheckItem<G1: Curve, G2: Curve>(pub SumcheckItem<G1>, pub SumcheckItem<G2>);
+pub struct DualSumcheckItem<G1: IPACurve, G2: IPACurve>(pub SumcheckItem<G1>, pub SumcheckItem<G2>);
 
-impl<G1: Curve, G2: Curve> DualSumcheckItem<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> DualSumcheckItem<G1, G2> {
     /// Generate a random (but valid) dual inner sumcheck accumulator
-    pub fn generate_random<D: Digest + 'static>(
+    pub fn generate_random<FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index_g1: &Index<G1, G2>,
         index_g2: &Index<G2, G1>,
-        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
-        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+        pc_pk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::CommitterKey,
     ) -> Self {
         Self(
-            SumcheckItem::generate_random::<G2, D>(rng, index_g1, pc_pk_g1),
-            SumcheckItem::generate_random::<G1, D>(rng, index_g2, pc_pk_g2),
+            SumcheckItem::generate_random::<G2, FS>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_random::<G1, FS>(rng, index_g2, pc_pk_g2),
         )
     }
 
     /// Generate a random invalid instance of `DualSumcheckItem`, for test purposes only.
     /// The "left" accumulator (`self.0`) is invalid, while the "right" one (`self.1`) is valid.
-    pub fn generate_invalid_left<D: Digest + 'static>(
+    pub fn generate_invalid_left<FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index_g1: &Index<G1, G2>,
         index_g2: &Index<G2, G1>,
-        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
-        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+        pc_pk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::CommitterKey,
     ) -> Self {
         Self(
-            SumcheckItem::generate_invalid::<G2, D>(rng, index_g1, pc_pk_g1),
-            SumcheckItem::generate_random::<G1, D>(rng, index_g2, pc_pk_g2),
+            SumcheckItem::generate_invalid::<G2, FS>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_random::<G1, FS>(rng, index_g2, pc_pk_g2),
         )
     }
 
     /// Generate a random invalid instance of `DualSumcheckItem`, for test purposes only.
     /// The "left" accumulator (`self.0`) is valid, while the "right" one (`self.1`) is invalid.
-    pub fn generate_invalid_right<D: Digest + 'static>(
+    pub fn generate_invalid_right<FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index_g1: &Index<G1, G2>,
         index_g2: &Index<G2, G1>,
-        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
-        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+        pc_pk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::CommitterKey,
     ) -> Self {
         Self(
-            SumcheckItem::generate_random::<G2, D>(rng, index_g1, pc_pk_g1),
-            SumcheckItem::generate_invalid::<G1, D>(rng, index_g2, pc_pk_g2),
+            SumcheckItem::generate_random::<G2, FS>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_invalid::<G1, FS>(rng, index_g2, pc_pk_g2),
         )
     }
 
     /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
     /// Both accumulators are invalid.
-    pub fn generate_invalid<D: Digest + 'static>(
+    pub fn generate_invalid<FS: FiatShamirRng + 'static>(
         rng: &mut dyn RngCore,
         index_g1: &Index<G1, G2>,
         index_g2: &Index<G2, G1>,
-        pc_pk_g1: &<PC<G1, D> as PolynomialCommitment<G1>>::CommitterKey,
-        pc_pk_g2: &<PC<G2, D> as PolynomialCommitment<G2>>::CommitterKey,
+        pc_pk_g1: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
+        pc_pk_g2: &<PC<G2, FS> as PolynomialCommitment<G2>>::CommitterKey,
     ) -> Self {
         Self(
-            SumcheckItem::generate_invalid::<G2, D>(rng, index_g1, pc_pk_g1),
-            SumcheckItem::generate_invalid::<G1, D>(rng, index_g2, pc_pk_g2),
+            SumcheckItem::generate_invalid::<G2, FS>(rng, index_g1, pc_pk_g1),
+            SumcheckItem::generate_invalid::<G1, FS>(rng, index_g2, pc_pk_g2),
         )
     }
 
@@ -270,21 +281,65 @@ impl<G1: Curve, G2: Curve> DualSumcheckItem<G1, G2> {
     }
 }
 
-impl<G1: Curve, G2: Curve> ToBytes for DualSumcheckItem<G1, G2> {
-    fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
-        use std::io::{Error, ErrorKind};
+impl<G2, G1> ToConstraintField<G1::ScalarField> for DualSumcheckItem<G2, G1>
+where
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
+{
+    fn to_field_elements(&self) -> Result<Vec<G1::ScalarField>, Box<dyn std::error::Error>> {
+        let to_skip = <G1::ScalarField as PrimeField>::size_in_bits() - 128;
+        let mut fes = Vec::new();
 
-        self.serialize_without_metadata(&mut writer)
-            .map_err(|e| Error::new(ErrorKind::Other, format! {"{:?}", e}))
+        // Convert self.0 into G1::ScalarField field elements
+
+        // The commitment c of self.0 consists of native field elements only
+        fes.append(&mut self.0.c.to_field_elements()?);
+
+        let mut challenge_bits = Vec::new();
+        // The alpha challenge of self.0 is a 128 bit element from G2::ScalarField.
+        {
+            let bits = self.0.alpha.write_bits();
+            challenge_bits.extend_from_slice(&bits[to_skip..]);
+        }
+        // The eta challenges of self.0 are 3 random elements from G2::ScalarField.
+        for fe in self.0.eta.iter() {
+            let bits = fe.write_bits();
+            challenge_bits.extend_from_slice(&bits);
+        }
+
+        // We pack the full bit vector into native field elements as efficient as possible (yet
+        // still secure).
+        fes.append(&mut challenge_bits.to_field_elements()?);
+
+        // Convert self.1 into G1::ScalarField field elements.
+
+        // The commitments c of self.1 are over G2::ScalarField.
+        // We serialize them all to bits and pack them safely into native field elements
+        let mut c_g1_bits = Vec::new();
+        let c_fes = self.1.c.to_field_elements()?;
+        for fe in c_fes {
+            c_g1_bits.append(&mut fe.write_bits());
+        }
+        fes.append(&mut c_g1_bits.to_field_elements()?);
+
+        // The challenges alpha and eta of self.1 are already over G1::ScalarField. Since only alpha
+        // is a 128-bit challenge, we wouldn't save anything from packing the challenges into bits
+        // as done for the challenges in self.0. Therefore we keep them as they are.
+        fes.push(self.1.alpha);
+        fes.append(&mut self.1.eta.clone());
+
+        Ok(fes)
     }
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> Proof<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> Proof<G1, G2, FS> {
     /// Construct a new proof.
     pub fn new(
-        commitments: Vec<Vec<<PC<G1, D> as PolynomialCommitment<G1>>::Commitment>>,
+        commitments: Vec<Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
         evaluations: Vec<G1::ScalarField>,
-        pc_proof: <PC<G1, D> as PolynomialCommitment<G1>>::MultiPointProof,
+        pc_proof: <PC<G1, FS> as PolynomialCommitment<G1>>::MultiPointProof,
     ) -> Self {
         Self {
             commitments,
@@ -333,19 +388,25 @@ impl<G1: Curve, G2: Curve, D: Digest> Proof<G1, G2, D> {
     Implement SemanticallyValid for VerifierKey, ProverKey, and Proof.
 */
 
-impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for VerifierKey<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
+    for VerifierKey<G1, G2, FS>
+{
     fn is_valid(&self) -> bool {
         true
     }
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for ProverKey<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
+    for ProverKey<G1, G2, FS>
+{
     fn is_valid(&self) -> bool {
         self.index_vk.is_valid()
     }
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for Proof<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
+    for Proof<G1, G2, FS>
+{
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 4;
@@ -384,7 +445,7 @@ impl<G1: Curve, G2: Curve, D: Digest> algebra::SemanticallyValid for Proof<G1, G
     Serialization and Deserialization utilities.
 */
 
-impl<G1: Curve, G2: Curve, D: Digest> ToBytes for VerifierKey<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> ToBytes for VerifierKey<G1, G2, FS> {
     #[inline]
     fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
         self.serialize_without_metadata(writer)
@@ -392,7 +453,7 @@ impl<G1: Curve, G2: Curve, D: Digest> ToBytes for VerifierKey<G1, G2, D> {
     }
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> CanonicalSerialize for Proof<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalSerialize for Proof<G1, G2, FS> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize commitments: we know in advance exactly how many polynomials will be
         // committed, so we can skip writing the corresponding sizes.
@@ -489,7 +550,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalSerialize for Proof<G1, G2, D> {
     }
 }
 
-impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> {
+impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Proof<G1, G2, FS> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;
@@ -501,7 +562,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
             let mut round_comms = Vec::with_capacity(comms_per_round[i]);
 
             for _ in 0..comms_per_round[i] {
-                let comm: <PC<G1, D> as PolynomialCommitment<G1>>::Commitment =
+                let comm: <PC<G1, FS> as PolynomialCommitment<G1>>::Commitment =
                     CanonicalDeserialize::deserialize(&mut reader)?;
                 round_comms.push(comm);
             }
@@ -541,7 +602,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
             let mut round_comms = Vec::with_capacity(comms_per_round[i]);
 
             for _ in 0..comms_per_round[i] {
-                let comm: <PC<G1, D> as PolynomialCommitment<G1>>::Commitment =
+                let comm: <PC<G1, FS> as PolynomialCommitment<G1>>::Commitment =
                     CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
                 round_comms.push(comm);
             }
@@ -582,7 +643,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
             let mut round_comms = Vec::with_capacity(comms_per_round[i]);
 
             for _ in 0..comms_per_round[i] {
-                let comm: <PC<G1, D> as PolynomialCommitment<G1>>::Commitment =
+                let comm: <PC<G1, FS> as PolynomialCommitment<G1>>::Commitment =
                     CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
                 round_comms.push(comm);
             }
@@ -626,7 +687,7 @@ impl<G1: Curve, G2: Curve, D: Digest> CanonicalDeserialize for Proof<G1, G2, D> 
             let mut round_comms = Vec::with_capacity(comms_per_round[i]);
 
             for _ in 0..comms_per_round[i] {
-                let comm: <PC<G1, D> as PolynomialCommitment<G1>>::Commitment =
+                let comm: <PC<G1, FS> as PolynomialCommitment<G1>>::Commitment =
                     CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
                 round_comms.push(comm);
             }

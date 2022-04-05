@@ -1,11 +1,8 @@
 use crate::crh::FixedLengthCRHGadget;
-use algebra::{Curve, Field};
+use algebra::{Group, Field};
 use std::hash::Hash;
 
-use primitives::{
-    bowe_hopwood::{BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters, CHUNK_SIZE},
-    crh::pedersen::PedersenWindow,
-};
+use primitives::crh::{FixedLengthCRH, bowe_hopwood::*};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, groups::GroupGadget, uint8::UInt8};
 
@@ -14,10 +11,10 @@ use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Derivative)]
 #[derivative(Clone(
-    bound = "G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"
+    bound = "G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>"
 ))]
 pub struct BoweHopwoodPedersenCRHGadgetParameters<
-    G: Curve,
+    G: Group,
     W: PedersenWindow,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
@@ -29,7 +26,7 @@ pub struct BoweHopwoodPedersenCRHGadgetParameters<
 }
 
 pub struct BoweHopwoodPedersenCRHGadget<
-    G: Curve,
+    G: Group,
     ConstraintF: Field,
     GG: GroupGadget<G, ConstraintF>,
 > {
@@ -42,7 +39,7 @@ impl<ConstraintF, G, GG, W> FixedLengthCRHGadget<BoweHopwoodPedersenCRH<G, W>, C
     for BoweHopwoodPedersenCRHGadget<G, ConstraintF, GG>
 where
     ConstraintF: Field,
-    G: Curve + Hash,
+    G: Group + Hash,
     GG: GroupGadget<G, ConstraintF>,
     W: PedersenWindow,
 {
@@ -54,38 +51,26 @@ where
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
     ) -> Result<Self::OutputGadget, SynthesisError> {
+
         // Pad the input if it is not the current length.
         let mut input_in_bits: Vec<_> = input.iter().flat_map(|byte| byte.into_bits_le()).collect();
-        if (input_in_bits.len()) % CHUNK_SIZE != 0 {
-            let current_length = input_in_bits.len();
-            for _ in 0..(CHUNK_SIZE - current_length % CHUNK_SIZE) {
-                input_in_bits.push(Boolean::constant(false));
-            }
+        let input_len = input_in_bits.len();
+        
+        if input_len > BoweHopwoodPedersenCRH::<G, W>::INPUT_SIZE_BITS {
+            return Err(SynthesisError::Other(
+                format!(
+                    "incorrect input length of {:?} bits for window params {:?}x{:?}x{}",
+                    input_len,
+                    W::WINDOW_SIZE,
+                    W::NUM_WINDOWS,
+                    CHUNK_SIZE,
+                )
+                .to_owned(),
+            ));
         }
-        if input_in_bits.len() % CHUNK_SIZE != 0 {
-            return Err(SynthesisError::Other(format!(
-                "Input is not multiple of the chunk size. Input len: {}, chunk size: {}",
-                input_in_bits.len(),
-                CHUNK_SIZE,
-            )));
-        }
-        if parameters.params.generators.len() != W::NUM_WINDOWS {
-            return Err(SynthesisError::Other(format!(
-                "Incorrect pp of size {:?} for window params {:?}x{:?}x{}",
-                parameters.params.generators.len(),
-                W::WINDOW_SIZE,
-                W::NUM_WINDOWS,
-                CHUNK_SIZE
-            )));
-        }
-        for generators in parameters.params.generators.iter() {
-            if generators.len() != W::WINDOW_SIZE {
-                return Err(SynthesisError::Other(format!(
-                    "Number of generators: {} not enough for the selected window size: {}",
-                    parameters.params.generators.len(),
-                    W::WINDOW_SIZE
-                )));
-            }
+
+        if input_len < BoweHopwoodPedersenCRH::<G, W>::INPUT_SIZE_BITS {
+            input_in_bits.append(&mut vec![Boolean::constant(false); BoweHopwoodPedersenCRH::<G, W>::INPUT_SIZE_BITS - input_len]);
         }
 
         // Allocate new variable for the result.
@@ -93,7 +78,7 @@ where
             .chunks(W::WINDOW_SIZE * CHUNK_SIZE)
             .map(|x| x.chunks(CHUNK_SIZE).into_iter().collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        let result = GG::precomputed_base_3_bit_signed_digit_scalar_mul(
+        let result = GG::mul_bits_fixed_base_with_3_bit_signed_digit_precomputed_base_powers(
             cs,
             &parameters.params.generators,
             &input_in_bits,
@@ -103,7 +88,7 @@ where
     }
 }
 
-impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
+impl<G: Group, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, ConstraintF>>
     AllocGadget<BoweHopwoodPedersenParameters<G>, ConstraintF>
     for BoweHopwoodPedersenCRHGadgetParameters<G, W, ConstraintF, GG>
 {
@@ -116,6 +101,27 @@ impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
         T: Borrow<BoweHopwoodPedersenParameters<G>>,
     {
         let params = value_gen()?.borrow().clone();
+
+        if params.generators.len() != W::NUM_WINDOWS {
+            return Err(SynthesisError::Other(format!(
+                "Incorrect pp of size {:?} for window params {:?}x{:?}x{}",
+                params.generators.len(),
+                W::WINDOW_SIZE,
+                W::NUM_WINDOWS,
+                CHUNK_SIZE
+            )));
+        }
+
+        for generators in params.generators.iter() {
+            if generators.len() != W::WINDOW_SIZE {
+                return Err(SynthesisError::Other(format!(
+                    "Number of generators: {} not enough for the selected window size: {}",
+                    params.generators.len(),
+                    W::WINDOW_SIZE
+                )));
+            }
+        }
+        
         Ok(BoweHopwoodPedersenCRHGadgetParameters {
             params,
             _group_g: PhantomData,
@@ -133,6 +139,27 @@ impl<G: Curve, W: PedersenWindow, ConstraintF: Field, GG: GroupGadget<G, Constra
         T: Borrow<BoweHopwoodPedersenParameters<G>>,
     {
         let params = value_gen()?.borrow().clone();
+
+        if params.generators.len() != W::NUM_WINDOWS {
+            return Err(SynthesisError::Other(format!(
+                "Incorrect pp of size {:?} for window params {:?}x{:?}x{}",
+                params.generators.len(),
+                W::WINDOW_SIZE,
+                W::NUM_WINDOWS,
+                CHUNK_SIZE
+            )));
+        }
+
+        for generators in params.generators.iter() {
+            if generators.len() != W::WINDOW_SIZE {
+                return Err(SynthesisError::Other(format!(
+                    "Number of generators: {} not enough for the selected window size: {}",
+                    params.generators.len(),
+                    W::WINDOW_SIZE
+                )));
+            }
+        }
+
         Ok(BoweHopwoodPedersenCRHGadgetParameters {
             params,
             _group_g: PhantomData,
@@ -148,7 +175,7 @@ mod test {
     use algebra::fields::tweedle::Fq;
     use algebra::{curves::tweedle::dee::DeeJacobian, Curve};
     use primitives::crh::{
-        bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, FixedLengthCRH,
+        bowe_hopwood::*, FixedLengthCRH,
     };
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
@@ -163,8 +190,8 @@ mod test {
     pub(super) struct Window;
 
     impl PedersenWindow for Window {
-        const WINDOW_SIZE: usize = 90;
-        const NUM_WINDOWS: usize = 8;
+        const WINDOW_SIZE: usize = 63;
+        const NUM_WINDOWS: usize = 12;
     }
 
     fn generate_input<CS: ConstraintSystemAbstract<Fq>, R: Rng>(
@@ -188,7 +215,6 @@ mod test {
         let mut cs = ConstraintSystem::<Fq>::new(SynthesisMode::Debug);
 
         let (input, input_bytes) = generate_input(&mut cs, rng);
-        println!("number of constraints for input: {}", cs.num_constraints());
 
         let parameters = TestCRH::setup(rng).unwrap();
         let primitive_result = TestCRH::evaluate(&parameters, &input).unwrap();
@@ -200,10 +226,11 @@ mod test {
             )
             .unwrap();
         println!(
-            "number of constraints for input + params: {}",
+            "number of constraints for allocating input + params: {}",
             cs.num_constraints()
         );
 
+        let x = cs.num_constraints();
         let gadget_result =
             <TestCRHGadget as FixedLengthCRHGadget<TestCRH, Fq>>::check_evaluation_gadget(
                 &mut cs.ns(|| "gadget_evaluation"),
@@ -212,7 +239,7 @@ mod test {
             )
             .unwrap();
 
-        println!("number of constraints total: {}", cs.num_constraints());
+        println!("number of constraints to enforce hash: {}", cs.num_constraints() - x);
 
         let primitive_result = primitive_result.into_affine().unwrap();
         assert_eq!(primitive_result.x, gadget_result.x.value.unwrap());

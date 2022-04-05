@@ -1,12 +1,12 @@
 //! Submodule that implements the algebraic oracle proof for t-dlog-accumulator Marlin.
 
-use algebra::Field;
-use algebra::{get_best_evaluation_domain, Curve, Group};
-use poly_commit::PolynomialLabel;
+use crate::darlin::IPACurve;
+use algebra::get_best_evaluation_domain;
+use num_traits::{One, Zero};
 use r1cs_core::SynthesisError;
 use std::marker::PhantomData;
 
-use marlin::iop::{Error, LagrangeKernel};
+use marlin::iop::{get_poly_eval, Error, LagrangeKernel};
 
 /// Describes data structures and the algorithms used by the indexer.
 pub mod indexer;
@@ -19,12 +19,12 @@ pub mod verifier;
 /// algebraic oracle proof from [HGB].
 ///
 /// [HGB]: https://eprint.iacr.org/2021/930
-pub struct IOP<G1: Curve, G2: Curve> {
+pub struct IOP<G1: IPACurve, G2: IPACurve> {
     g1: PhantomData<G1>,
     g2: PhantomData<G2>,
 }
 
-impl<G1: Curve, G2: Curve> IOP<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
     pub const PROVER_POLYNOMIALS: [&'static str; 12] = [
@@ -87,7 +87,6 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         state: &verifier::VerifierState<G1, G2>,
     ) -> Result<(), Error> {
         let domain_h = &state.domain_h;
-        let g_h = domain_h.group_gen();
 
         let public_input = Self::format_public_input(public_input);
         let domain_x = get_best_evaluation_domain::<G1::ScalarField>(public_input.len())
@@ -112,14 +111,14 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         let l_alpha_beta = state.domain_h.eval_lagrange_kernel(alpha, beta);
         let v_X_at_beta = domain_x.evaluate_vanishing_polynomial(beta);
 
-        let w_at_beta = get_poly_eval(evals, "w".into(), beta)?;
-        let y_a_at_beta = get_poly_eval(evals, "y_a".into(), beta)?;
-        let y_b_at_beta = get_poly_eval(evals, "y_b".into(), beta)?;
-        let u_1_at_beta = get_poly_eval(evals, "u_1".into(), beta)?;
-        let u_1_at_g_beta = get_poly_eval(evals, "u_1".into(), g_h * beta)?;
-        let h_1_at_beta = get_poly_eval(evals, "h_1".into(), beta)?;
-        let t_at_beta = get_poly_eval(evals, "t".into(), beta)?;
-        let x_at_beta = get_poly_eval(evals, "x".into(), beta)?;
+        let w_at_beta = get_poly_eval(evals, "w", "beta")?;
+        let y_a_at_beta = get_poly_eval(evals, "y_a", "beta")?;
+        let y_b_at_beta = get_poly_eval(evals, "y_b", "beta")?;
+        let u_1_at_beta = get_poly_eval(evals, "u_1", "beta")?;
+        let u_1_at_g_beta = get_poly_eval(evals, "u_1", "g * beta")?;
+        let h_1_at_beta = get_poly_eval(evals, "h_1", "beta")?;
+        let t_at_beta = get_poly_eval(evals, "t", "beta")?;
+        let x_at_beta = get_poly_eval(evals, "x", "beta")?;
 
         let y_at_beta = x_at_beta + v_X_at_beta * w_at_beta;
 
@@ -154,21 +153,16 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             return Err(Error::Other("Third round message is empty".to_owned()));
         }
 
-        let alpha = state.first_round_msg.as_ref().unwrap().alpha;
-        let beta = state.second_round_msg.unwrap().beta;
-        let gamma = state.third_round_msg.unwrap().gamma;
         let lambda = state.third_round_msg.unwrap().lambda;
 
-        let prev_alpha = state.previous_inner_sumcheck_acc.1.alpha;
-
-        let curr_bridging_poly_at_alpha = get_poly_eval(evals, "curr_bridging_poly".into(), alpha)?;
-        let curr_bridging_poly_at_gamma = get_poly_eval(evals, "curr_bridging_poly".into(), gamma)?;
+        let curr_bridging_poly_at_alpha = get_poly_eval(evals, "curr_bridging_poly", "alpha")?;
+        let curr_bridging_poly_at_gamma = get_poly_eval(evals, "curr_bridging_poly", "gamma")?;
         let prev_bridging_poly_at_prev_alpha =
-            get_poly_eval(evals, "prev_bridging_poly".into(), prev_alpha)?;
-        let prev_bridging_poly_at_gamma = get_poly_eval(evals, "prev_bridging_poly".into(), gamma)?;
-        let t_at_beta = get_poly_eval(evals, "t".into(), beta)?;
-        let prev_t_acc_poly_at_beta = get_poly_eval(evals, "prev_t_acc_poly".into(), beta)?;
-        let curr_t_acc_poly_at_beta = get_poly_eval(evals, "curr_t_acc_poly".into(), beta)?;
+            get_poly_eval(evals, "prev_bridging_poly", "prev_alpha")?;
+        let prev_bridging_poly_at_gamma = get_poly_eval(evals, "prev_bridging_poly", "gamma")?;
+        let t_at_beta = get_poly_eval(evals, "t", "beta")?;
+        let prev_t_acc_poly_at_beta = get_poly_eval(evals, "prev_t_acc_poly", "beta")?;
+        let curr_t_acc_poly_at_beta = get_poly_eval(evals, "curr_t_acc_poly", "beta")?;
 
         let check_first_round_1 = curr_bridging_poly_at_alpha - t_at_beta;
         let check_first_round_2 = prev_bridging_poly_at_prev_alpha - prev_t_acc_poly_at_beta;
@@ -195,12 +189,4 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         Ok(())
     }
-}
-fn get_poly_eval<F: Field>(
-    evals: &poly_commit::Evaluations<F>,
-    label: PolynomialLabel,
-    point: F,
-) -> Result<F, Error> {
-    let key = (label.clone(), point);
-    evals.get(&key).copied().ok_or(Error::MissingEval(label))
 }

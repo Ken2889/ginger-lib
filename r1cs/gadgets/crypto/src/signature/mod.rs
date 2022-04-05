@@ -1,26 +1,10 @@
-use algebra::{Field, PrimeField};
-use primitives::signature::{FieldBasedSignatureScheme, SignatureScheme};
+use algebra::PrimeField;
+use primitives::signature::FieldBasedSignatureScheme;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::prelude::*;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 
 pub mod schnorr;
-
-pub trait SigRandomizePkGadget<S: SignatureScheme, ConstraintF: Field> {
-    type ParametersGadget: AllocGadget<S::Parameters, ConstraintF> + Clone;
-
-    type PublicKeyGadget: ToBytesGadget<ConstraintF>
-        + EqGadget<ConstraintF>
-        + AllocGadget<S::PublicKey, ConstraintF>
-        + Clone;
-
-    fn check_randomization_gadget<CS: ConstraintSystemAbstract<ConstraintF>>(
-        cs: CS,
-        parameters: &Self::ParametersGadget,
-        public_key: &Self::PublicKeyGadget,
-        randomness: &[UInt8],
-    ) -> Result<Self::PublicKeyGadget, SynthesisError>;
-}
 
 pub trait FieldBasedSigGadget<S: FieldBasedSignatureScheme, ConstraintF: PrimeField> {
     type DataGadget: FieldGadget<ConstraintF, ConstraintF>;

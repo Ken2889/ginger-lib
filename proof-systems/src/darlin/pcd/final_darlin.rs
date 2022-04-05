@@ -2,42 +2,44 @@
 //! exiting/conversion chain of our Darlin PCD scheme, and provides a (coboundary)
 //! Marlin proof plus the dlog accumulators of the previous and pre-previous node.
 use crate::darlin::{
-    accumulators::dlog::{DLogItem, DualDLogItem, DualDLogItemAccumulator},
+    accumulators::dlog::{DualDLogItem, DualDLogItemAccumulator},
     accumulators::ItemAccumulator,
     data_structures::*,
     pcd::{error::PCDError, PCD},
     FinalDarlin, FinalDarlinVerifierKey,
+    DomainExtendedIpaPc,
 };
-use algebra::{Curve, Group, ToConstraintField};
-use digest::Digest;
+use algebra::{Group, ToConstraintField};
+use bench_utils::*;
+use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    fiat_shamir_rng::FiatShamirRng,
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
+use derivative::Derivative;
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
-    pub final_darlin_proof: FinalDarlinProof<G1, G2, D>,
+    pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
     pub usr_ins: Vec<G1::ScalarField>,
     _lifetime: PhantomData<&'a ()>,
 }
 
-impl<'a, G1, G2, D> FinalDarlinPCD<'a, G1, G2, D>
+impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'a,
+    FS: FiatShamirRng + 'static,
 {
     pub fn new(
-        final_darlin_proof: FinalDarlinProof<G1, G2, D>,
+        final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
         usr_ins: Vec<G1::ScalarField>,
     ) -> Self {
         Self {
@@ -50,32 +52,38 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
+pub struct FinalDarlinPCDVerifierKey<
+    'a,
+    G1: IPACurve,
+    G2: IPACurve,
+    FS: FiatShamirRng + 'static,
+> {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
-        DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+        DomainExtendedIpaPc<G1, FS>,
     >,
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: Curve, G2: Curve, D: Digest> AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
-    for FinalDarlinPCDVerifierKey<'a, G1, G2, D>
+impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
+    AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
+    for FinalDarlinPCDVerifierKey<'a, G1, G2, FS>
 {
     fn as_ref(&self) -> &(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>) {
         &self.dlog_vks
     }
 }
 
-impl<'a, G1, G2, D> PCD for FinalDarlinPCD<'a, G1, G2, D>
+impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
-    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;
-    type PCDVerifierKey = FinalDarlinPCDVerifierKey<'a, G1, G2, D>;
+    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
+    type PCDVerifierKey = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;
 
     fn succinct_verify(
         &self,
@@ -86,8 +94,8 @@ where
         let ahp_verify_time = start_timer!(|| "AHP verify");
 
         // Verify sumchecks
-        let (query_set, evaluations, labeled_comms, mut fs_rng) =
-            FinalDarlin::<G1, G2, D>::verify_ahp(
+        let (query_map, evaluations, labeled_comms, mut fs_rng) =
+            FinalDarlin::<G1, G2, FS>::verify_ahp(
                 vk.dlog_vks.0,
                 vk.final_darlin_vk,
                 self.usr_ins.as_slice(),
@@ -101,16 +109,21 @@ where
 
         end_timer!(ahp_verify_time);
 
-        // Absorb evaluations and sample new challenge
-        fs_rng.absorb(&self.final_darlin_proof.proof.evaluations);
+        // record evaluations and sample new challenge
+        fs_rng
+            .record(self.final_darlin_proof.proof.evaluations.clone())
+            .map_err(|e| {
+                end_timer!(succinct_time);
+                PCDError::FailedSuccinctVerification(format!("{:?}", e))
+            })?;
 
         let pc_verify_time = start_timer!(|| "PC succinct verify");
 
         // Succinct verify DLOG proof
-        let verifier_state = DomainExtendedPolynomialCommitment::<G1, InnerProductArgPC::<G1, D>>::succinct_multi_point_multi_poly_verify(
+        let verifier_state = DomainExtendedPolynomialCommitment::<G1, InnerProductArgPC::<G1, FS>>::succinct_multi_point_multi_poly_verify(
             vk.dlog_vks.0,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &self.final_darlin_proof.proof.pc_proof,
             &mut fs_rng,
@@ -129,13 +142,8 @@ where
             ))?
         }
 
-        let verifier_state = verifier_state.unwrap();
-
         // Verification successfull: return new accumulator
-        let acc = DLogItem::<G1> {
-            g_final: verifier_state.final_comm_key.clone(),
-            xi_s: verifier_state.check_poly.clone(),
-        };
+        let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
         Ok(DualDLogItem::<G1, G2>(

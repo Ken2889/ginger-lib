@@ -1,4 +1,7 @@
-use crate::fields::{ed25519::{fq::Fq, fr::Fr}, tests::{field_test, primefield_test, sqrt_field_test}};
+use crate::fields::{
+    ed25519::{fq::Fq, fr::Fr},
+    tests::{field_test, primefield_test, sqrt_field_test},
+};
 
 #[test]
 fn test_ed25519_fr() {

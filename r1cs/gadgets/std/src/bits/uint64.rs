@@ -422,17 +422,17 @@ impl<ConstraintF: Field> CondSelectGadget<ConstraintF> for UInt64 {
 mod test {
     use super::UInt64;
     use crate::{
-        alloc::AllocGadget, bits::boolean::Boolean, boolean::AllocatedBit, select::CondSelectGadget,
+        bits::boolean::{AllocatedBit, Boolean},
+        alloc::AllocGadget,
+        select::CondSelectGadget
     };
-    use algebra::{
-        fields::{tweedle::Fr, Field},
-        Group,
-    };
+    use algebra::fields::tweedle::Fr;
     use r1cs_core::{
         ConstraintSystem, ConstraintSystemAbstract, ConstraintSystemDebugger, SynthesisMode,
     };
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
+    use num_traits::{Zero, One};
 
     #[test]
     fn test_uint64_from_bits() {

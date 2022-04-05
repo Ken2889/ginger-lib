@@ -10,6 +10,3 @@ pub mod macros;
 
 #[cfg(all(nightly, test))]
 mod curves;
-
-#[cfg(all(nightly, test, feature = "fft"))]
-mod fft;

@@ -1,19 +1,27 @@
 //! Unit tests for linear polynomial commitment schemes and their domain extension.
-use crate::fiat_shamir_rng::FiatShamirRngSeed;
 use crate::*;
 use algebra::{serialize::test_canonical_serialize_deserialize, SemanticallyValid, UniformRand};
+use fiat_shamir::FiatShamirRngSeed;
 use rand::{distributions::Distribution, thread_rng};
 
 fn setup_test_fs_rng<G, PC>() -> PC::RandomOracle
 where
-    G: Curve,
+    G: Group,
     PC: PolynomialCommitment<G>,
 {
-    let mut fs_rng_seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+    let mut fs_rng_seed_builder = FiatShamirRngSeed::new();
     fs_rng_seed_builder.add_bytes(b"TEST_SEED").unwrap();
-    let fs_rng_seed = fs_rng_seed_builder.finalize();
-    PC::RandomOracle::from_seed(fs_rng_seed)
+    let fs_rng_seed = fs_rng_seed_builder.finalize().unwrap();
+    PC::RandomOracle::from_seed(fs_rng_seed).unwrap()
 }
+
+// The vectorial variant of `fn commit()`. Outputs a vector of commitments
+// to a set of `polynomials`.
+// If `polynomials[i].is_hiding()`, then the `i`-th commitment is hiding.
+// Hence `rng` should not be `None` if `polynomials[i].is_hiding() == true`
+// for some of the `i`s.
+// If for some `i`, `polynomials[i].is_hiding() == false`, then the
+// corresponding randomness is `G::ScalarField::empty()`.
 
 #[derive(Copy, Clone, PartialEq)]
 pub(crate) enum NegativeType {
@@ -32,14 +40,18 @@ struct TestInfo {
     max_degree: Option<usize>,
     /// The optional maximum degree supported by the non-extended scheme
     /// (i.e. the "segment size")
-    supported_degree: Option<usize>,
+    segment_size: Option<usize>,
     /// The number of polynomials
     num_polynomials: usize,
     /// the number of query points
     max_num_queries: usize,
     /// set `true` for testing the domain-extension of a scheme
     segmented: bool,
+    /// select the particular negative test to perform
     negative_type: Option<NegativeType>,
+    /// for PC schemes, like DLOG, supporting proofs verification
+    /// with oversized keys
+    allow_oversized_keys: bool,
 }
 
 pub(crate) trait TestUtils {
@@ -56,24 +68,25 @@ impl<G: Group> TestUtils for LabeledCommitment<G> {
     }
 }
 
-/// A test function that  sets up `PC` for `supported_degree` (random, if not given)
-/// samples `num_polynomials` polynomials of random degree and a symmetric query set
+/// A test function that  sets up `PC` for `segment_size` (random, if not given)
+/// samples `num_polynomials` polynomials of random degree and a symmetric query map
 /// of size `max_num_queries`, and verifies MultiPointProofs for these.
-fn test_template<G, PC>(info: TestInfo) -> Result<(), PC::Error>
+fn test_template<G, PC: PolynomialCommitment<G>, D>(info: TestInfo) -> Result<(), PC::Error>
 where
-    G: Curve,
-    PC: PolynomialCommitment<G>,
+    G: Group,
+    D: Digest,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
 {
     for _ in 0..info.num_iters {
         let TestInfo {
             max_degree,
-            supported_degree,
+            segment_size,
             num_polynomials,
             max_num_queries,
             segmented,
             negative_type,
+            allow_oversized_keys,
             ..
         } = info;
 
@@ -82,21 +95,18 @@ where
         let max_degree =
             max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng));
         // setup the scheme for max_degree.
-        // Later it is trimmed down to `supported_degree`.
-        let pp = PC::setup(max_degree)?;
+        // Later it is trimmed down to `segment_size`.
+        let (max_ck, max_vk) = PC::setup::<D>(max_degree)?;
 
-        test_canonical_serialize_deserialize(true, &pp);
+        test_canonical_serialize_deserialize(true, &max_ck);
 
-        // sample supported_degree if not defined
-        let supported_degree = match supported_degree {
+        // sample segment_size if not defined
+        let segment_size = match segment_size {
             Some(0) => 0,
             Some(d) => d,
-            None => rand::distributions::Uniform::from(1..=max_degree).sample(rng),
+            None => rand::distributions::Uniform::from(1..max_degree).sample(rng),
         };
-        assert!(
-            max_degree >= supported_degree,
-            "max_degree < supported_degree"
-        );
+        assert!(max_degree >= segment_size, "max_degree < segment_size");
         let mut polynomials = Vec::new();
 
         // sample the maximum number of segments for domain extended commitments
@@ -106,25 +116,25 @@ where
         println!("Sampled supported degree");
 
         // sample `max_num_queries` query points
-        let num_points_in_query_set =
+        let num_points_in_query_map =
             rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
         for i in 0..num_polynomials {
-            let label = format!("Test{}", i);
-            labels.push(label.clone());
+            let poly_label = format!("Test{}", i);
+            labels.push(poly_label.clone());
 
             // sample polynomial of random degree
             let degree;
             if segmented {
-                // sample degree from 5*`supported_degree` up to `seg_mul`*`supported_degree`
-                degree = if supported_degree > 0 {
-                    rand::distributions::Uniform::from(1..=supported_degree).sample(rng)
+                // sample degree from 5*`segment_size` up to `seg_mul`*`segment_size`
+                degree = if segment_size > 0 {
+                    rand::distributions::Uniform::from(1..=segment_size).sample(rng)
                 } else {
                     0
                 } * seg_mul;
             } else {
-                // sample degree from 1 up to `supported_degree`
-                degree = if supported_degree > 0 {
-                    rand::distributions::Uniform::from(1..=supported_degree).sample(rng)
+                // sample degree from 1 up to `segment_size`
+                degree = if segment_size > 0 {
+                    rand::distributions::Uniform::from(1..=segment_size).sample(rng)
                 } else {
                     0
                 }
@@ -139,14 +149,17 @@ where
                 false
             };
 
-            polynomials.push(LabeledPolynomial::new(label, poly, is_hiding))
+            polynomials.push(LabeledPolynomial::new(poly_label, poly, is_hiding))
         }
         println!(
             "supported degree by the non-extended scheme: {:?}",
-            supported_degree
+            segment_size
         );
-        println!("num_points_in_query_set: {:?}", num_points_in_query_set);
-        let (mut ck, mut vk) = pp.trim(supported_degree)?;
+        println!("num_points_in_query_map: {:?}", num_points_in_query_map);
+
+        let supported_degree = if segment_size == 0 { 1 } else { segment_size };
+        let mut ck = max_ck.trim(supported_degree)?;
+        let mut vk = max_vk.trim(supported_degree)?;
 
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::CommitterKey {
             ck.randomize();
@@ -164,7 +177,27 @@ where
         test_canonical_serialize_deserialize(true, &ck);
         test_canonical_serialize_deserialize(true, &vk);
 
-        let (mut comms, rands) = PC::commit_vec(&ck, &polynomials, Some(rng))?;
+        let (mut comms, rands) = {
+            let mut labeled_commitments = Vec::new();
+            let mut labeled_randomnesses = Vec::new();
+
+            for labeled_polynomial in polynomials.iter() {
+                let polynomial = labeled_polynomial.polynomial();
+                let label = labeled_polynomial.label();
+                let is_hiding = labeled_polynomial.is_hiding();
+
+                let (commitment, randomness) = PC::commit(&ck, polynomial, is_hiding, Some(rng))?;
+
+                let labeled_commitment = LabeledCommitment::new(label.to_string(), commitment);
+                let labeled_randomness = LabeledRandomness::new(label.to_string(), randomness);
+
+                labeled_commitments.push(labeled_commitment);
+                labeled_randomnesses.push(labeled_randomness);
+            }
+
+            (labeled_commitments, labeled_randomnesses)
+        };
+
         if negative_type.is_some() && negative_type.unwrap() == NegativeType::Commitments {
             for comm in comms.iter_mut() {
                 comm.randomize();
@@ -173,31 +206,36 @@ where
 
         assert!(comms.is_valid());
 
-        // Construct "symmetric" query set from the query points, over which every polynomial
-        // is to be queried
-        let mut query_set = QuerySet::new();
+        // Evaluate all polynomials in all points
+        let mut query_map = QueryMap::new();
         let mut values = Evaluations::new();
         // let mut point = F::one();
-        for _ in 0..num_points_in_query_set {
+        for i in 0..num_points_in_query_map {
             let point = G::ScalarField::rand(rng);
-            for (i, label) in labels.iter().enumerate() {
-                query_set.insert((label.clone(), (format!("{}", i), point)));
-                let value = polynomials[i].evaluate(point);
+            let point_label = format!("{}", i);
+            query_map.insert(
+                point_label.clone(),
+                (point, labels.iter().cloned().collect()),
+            );
+            for poly in polynomials.iter() {
+                let value = poly.evaluate(point);
                 if negative_type.is_some() && negative_type.unwrap() == NegativeType::Values {
-                    values.insert((label.clone(), point), G::ScalarField::rand(rng));
+                    values.insert(
+                        (poly.label().clone(), point_label.clone()),
+                        G::ScalarField::rand(rng),
+                    );
                 } else {
-                    values.insert((label.clone(), point), value);
+                    values.insert((poly.label().clone(), point_label.clone()), value);
                 }
             }
         }
-        println!("Generated query set");
+        println!("Generated query map");
 
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
         let proof = PC::multi_point_multi_poly_open(
             &ck,
             &polynomials,
-            &comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &rands,
             Some(rng),
@@ -207,20 +245,20 @@ where
 
         test_canonical_serialize_deserialize(true, &proof);
 
-        // Assert success using the same key
         let mut fs_rng = setup_test_fs_rng::<G, PC>();
         let result = PC::multi_point_multi_poly_verify(
             &vk,
             &comms,
-            &query_set,
+            &query_map,
             &values,
             &proof,
             &mut fs_rng,
         )?;
-        if !result {
+
+        if !result.is_some() {
             println!(
-                "Failed with {} polynomials, num_points_in_query_set: {:?}",
-                num_polynomials, num_points_in_query_set
+                "Failed with {} polynomials, num_points_in_query_map: {:?}",
+                num_polynomials, num_points_in_query_map
             );
             println!("Degree of polynomials:",);
             for poly in polynomials {
@@ -230,29 +268,32 @@ where
         }
 
         // Assert success using a bigger key
-        let bigger_degree = max_degree * 2;
-        let pp = PC::setup(bigger_degree)?;
-        let (_, vk) = pp.trim(bigger_degree)?;
+        if allow_oversized_keys {
+            let bigger_degree = max_degree * 2;
+            let (_, vk) = PC::setup::<D>(bigger_degree)?;
 
-        let mut fs_rng = setup_test_fs_rng::<G, PC>();
-        assert!(PC::multi_point_multi_poly_verify(
-            &vk,
-            &comms,
-            &query_set,
-            &values,
-            &proof,
-            &mut fs_rng
-        )?);
+            let mut fs_rng = setup_test_fs_rng::<G, PC>();
+            assert!(PC::multi_point_multi_poly_verify(
+                &vk,
+                &comms,
+                &query_map,
+                &values,
+                &proof,
+                &mut fs_rng
+            )?
+            .is_some());
+        }
     }
     Ok(())
 }
 
-// TODO: what is the difference to `single_poly_test()`?
-pub(crate) fn constant_poly_test<G, PC>(
+pub(crate) fn constant_poly_test<G, PC, D>(
     negative_type: Option<NegativeType>,
+    allow_oversized_keys: bool,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: Group,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -260,18 +301,23 @@ where
     let info = TestInfo {
         num_iters: 100,
         max_degree: None,
-        supported_degree: None,
+        segment_size: Some(0),
         num_polynomials: 1,
         max_num_queries: 1,
         negative_type,
+        allow_oversized_keys,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn single_poly_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
+pub(crate) fn single_poly_test<G, PC, D>(
+    negative_type: Option<NegativeType>,
+    allow_oversized_keys: bool,
+) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: Group,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -279,20 +325,23 @@ where
     let info = TestInfo {
         num_iters: 100,
         max_degree: None,
-        supported_degree: None,
+        segment_size: None,
         num_polynomials: 1,
         max_num_queries: 1,
         negative_type,
+        allow_oversized_keys,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn two_poly_four_points_test<G, PC>(
+pub(crate) fn two_poly_four_points_test<G, PC, D>(
     negative_type: Option<NegativeType>,
+    allow_oversized_keys: bool,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: Group,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -300,20 +349,23 @@ where
     let info = TestInfo {
         num_iters: 1,
         max_degree: Some(1024),
-        supported_degree: Some(1024),
+        segment_size: Some(1024),
         num_polynomials: 2,
         max_num_queries: 4,
         negative_type,
+        allow_oversized_keys,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn full_end_to_end_test<G, PC>(
+pub(crate) fn full_end_to_end_test<G, PC, D>(
     negative_type: Option<NegativeType>,
+    allow_oversized_keys: bool,
 ) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: Group,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -321,18 +373,23 @@ where
     let info = TestInfo {
         num_iters: 100,
         max_degree: None,
-        supported_degree: None,
+        segment_size: None,
         num_polynomials: 10,
         max_num_queries: 5,
         negative_type,
+        allow_oversized_keys,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }
 
-pub(crate) fn segmented_test<G, PC>(negative_type: Option<NegativeType>) -> Result<(), PC::Error>
+pub(crate) fn segmented_test<G, PC, D>(
+    negative_type: Option<NegativeType>,
+    allow_oversized_keys: bool,
+) -> Result<(), PC::Error>
 where
-    G: Curve,
+    G: Group,
+    D: Digest,
     PC: PolynomialCommitment<G>,
     PC::CommitterKey: TestUtils,
     PC::VerifierKey: TestUtils,
@@ -340,12 +397,13 @@ where
     let info = TestInfo {
         num_iters: 100,
         max_degree: None,
-        supported_degree: None,
+        segment_size: None,
         num_polynomials: 10,
         max_num_queries: 5,
         segmented: true,
         negative_type,
+        allow_oversized_keys,
         ..Default::default()
     };
-    test_template::<G, PC>(info)
+    test_template::<G, PC, D>(info)
 }

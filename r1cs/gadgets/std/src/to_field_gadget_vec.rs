@@ -1,9 +1,6 @@
-use algebra::{
-    curves::models::{SWModelParameters, TEModelParameters},
-    PrimeField,
-};
+use algebra::{curves::models::{SWModelParameters, TEModelParameters}, PrimeField, FpParameters, Group};
 
-use crate::fields::fp::FpGadget;
+use crate::{fields::fp::FpGadget, uint8::UInt8, boolean::Boolean, FromBitsGadget};
 use crate::{
     fields::FieldGadget,
     groups::curves::short_weierstrass::{
@@ -13,6 +10,8 @@ use crate::{
     groups::curves::twisted_edwards::AffineGadget as TEAffineGadget,
 };
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError as Error};
+use crate::groups::group_vec::GroupGadgetVec;
+use crate::groups::GroupGadget;
 
 /// Types that can be converted to a vector of elements that implement the `Field Gadget` trait.
 pub trait ToConstraintFieldGadget<ConstraintF: PrimeField> {
@@ -35,18 +34,6 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for FpGadget<
     }
 }
 
-impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [FpGadget<ConstraintF>] {
-    type FieldGadget = FpGadget<ConstraintF>;
-
-    #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &self,
-        _cs: CS,
-    ) -> Result<Vec<Self::FieldGadget>, Error> {
-        Ok(self.to_vec())
-    }
-}
-
 impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
     type FieldGadget = FpGadget<ConstraintF>;
 
@@ -56,6 +43,34 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
         Ok(Vec::new())
+    }
+}
+
+impl<ConstraintF: PrimeField, T: ToConstraintFieldGadget<ConstraintF> + Clone, const N: usize> ToConstraintFieldGadget<ConstraintF> for [T; N] {
+    type FieldGadget = T::FieldGadget;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error> {
+        self.to_vec().to_field_gadget_elements(cs)
+    }
+}
+
+impl<ConstraintF: PrimeField, T: ToConstraintFieldGadget<ConstraintF>> ToConstraintFieldGadget<ConstraintF> for Vec<T> {
+    type FieldGadget = T::FieldGadget;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error> {
+        let mut fes = Vec::with_capacity(self.len());
+        for (i, elem) in self.iter().enumerate() {
+            fes.append(&mut elem.to_field_gadget_elements(cs.ns(|| format!("elem {} to field gadget elements", i)))?);
+        }
+        Ok(fes)
     }
 }
 
@@ -121,5 +136,107 @@ where
         let y_fe = self.y.to_field_gadget_elements(cs.ns(|| "y"))?;
         x_fe.extend_from_slice(&y_fe);
         Ok(x_fe)
+    }
+}
+
+impl<ConstraintF, G, GG> ToConstraintFieldGadget<ConstraintF> for GroupGadgetVec<ConstraintF, G, GG>
+where
+    ConstraintF: PrimeField,
+    G: Group,
+    GG: GroupGadget<G, ConstraintF> + ToConstraintFieldGadget<ConstraintF, FieldGadget=FpGadget<ConstraintF>>
+{
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(&self, mut cs: CS) -> Result<Vec<Self::FieldGadget>, Error> {
+        let mut res = Vec::new();
+        for (i, el) in self.iter().enumerate() {
+            let el_to_fe = el.to_field_gadget_elements(cs.ns(|| format!("convert element {} to field elements", i)))?;
+            res.extend_from_slice(el_to_fe.as_slice());
+        }
+        Ok(res)
+    }
+}
+
+impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for [UInt8] {
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        mut cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error>
+    {
+        // Convert [UInt8] to the underlying [Boolean] in big-endian form
+        let bytes_to_bool_gs = self.iter().flat_map(|byte| {
+            byte.into_bits_le().iter().rev().cloned().collect::<Vec<Boolean>>()
+        }).collect::<Vec<Boolean>>();
+
+        // Enforce packing (safely) bits into native field element gadgets
+        let mut native_fe_gadgets = Vec::new();
+        for (i, bits) in bytes_to_bool_gs.chunks(ConstraintF::Params::CAPACITY as usize).enumerate() {
+            let fe_g = FpGadget::<ConstraintF>::from_bits(
+                cs.ns(|| format!("pack into native fe {}", i)),
+                bits
+            )?;
+            native_fe_gadgets.push(fe_g);
+        }
+
+        Ok(native_fe_gadgets)
+    }
+}
+
+impl<'a, ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for &'a [UInt8] {
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    #[inline]
+    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
+        &self,
+        cs: CS,
+    ) -> Result<Vec<Self::FieldGadget>, Error>
+    {
+        (*self).to_field_gadget_elements(cs)
+    }
+}
+
+#[cfg(all(test, feature = "tweedle"))]
+mod test {
+    use algebra::{fields::tweedle::Fr, ToConstraintField};
+    use r1cs_core::{ConstraintSystem, SynthesisMode, ConstraintSystemDebugger};
+    use rand::{Rng, thread_rng};
+    use crate::alloc::AllocGadget;
+    use super::*;
+    
+    #[test]
+    fn uint8_native_test() {
+        let rng = &mut thread_rng();
+
+        let mut cs = ConstraintSystem::<Fr>::new(SynthesisMode::Debug);
+
+        // Generate random bytes and allocate them on circuit
+        let random_bytes = (0..100).map(|_| rng.gen()).collect::<Vec<u8>>();
+        let random_bytes_g = random_bytes
+            .iter()
+            .enumerate()
+            .map(|(i, byte)| 
+                UInt8::alloc(
+                    cs.ns(|| format!("Alloc byte {}", i)),
+                    || Ok(byte)
+                ).unwrap()
+            ).collect::<Vec<_>>();
+
+
+        // Convert to field elements and assert equality
+        let fes: Vec<Fr> = random_bytes.to_field_elements().unwrap();
+        random_bytes_g
+            .to_field_gadget_elements(cs.ns(|| "bytes to fe gadgets"))
+            .unwrap()
+            .into_iter()
+            .zip(fes.into_iter())
+            .for_each(|(fe_g, fe)| assert_eq!(fe, fe_g.get_value().unwrap()));
+
+        if let Some(unsatisfied_constraint) = cs.which_is_unsatisfied() {
+            println!("{:?}", unsatisfied_constraint);
+            panic!("Constraints expected to be satisfied");
+        }
     }
 }

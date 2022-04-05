@@ -13,7 +13,7 @@
 #![deny(unused_import_braces, unused_qualifications, trivial_casts)]
 #![deny(trivial_numeric_casts, private_in_public)]
 #![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
-#![deny(unused_attributes, unused_imports, unused_mut, missing_docs)]
+#![deny(unused_attributes, unused_imports, unused_mut)]
 #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
 #![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
 #![forbid(unsafe_code)]
@@ -31,24 +31,22 @@
 #[macro_use]
 extern crate bench_utils;
 
-use algebra::ToBytes;
-use algebra::{to_bytes, Curve};
+use algebra::{get_best_evaluation_domain, serialize_no_metadata, CanonicalSerialize, Group};
 use digest::Digest;
-use poly_commit::{evaluate_query_set_to_vec, Evaluations, LabeledRandomness, QuerySet};
-use poly_commit::{
-    optional_rng::OptionalRng, LabeledCommitment, PCCommitterKey, PCVerifierKey,
-    PolynomialCommitment,
-};
+use poly_commit::{evaluate_query_map_to_vec, Evaluations, LabeledRandomness, PCKey, QueryMap};
+use poly_commit::{optional_rng::OptionalRng, LabeledCommitment, PolynomialCommitment};
 use r1cs_core::ConstraintSynthesizer;
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
+use num_traits::Zero;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
     string::{String, ToString},
     vec::Vec,
 };
 
-use poly_commit::fiat_shamir_rng::{FiatShamirRng, FiatShamirRngSeed};
+use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 
 mod error;
 pub use error::*;
@@ -57,7 +55,11 @@ mod data_structures;
 pub use data_structures::*;
 
 pub mod iop;
+use iop::LagrangeKernel;
 pub use iop::IOP;
+
+#[cfg(feature = "circuit-friendly")]
+pub mod constraints;
 
 #[cfg(test)]
 mod test;
@@ -68,25 +70,24 @@ mod test;
 /// Coboundary Marlin is an argument for satifiability of an R1CS over a prime
 /// field `F` and uses a polynomial commitment scheme `PC` for
 /// polynomials over that field and a digest `D` for the Fiat-Shamir transform.
-pub struct Marlin<G: Curve, PC: PolynomialCommitment<G>, D: Digest>(
+pub struct Marlin<G: Group, PC: PolynomialCommitment<G>>(
     #[doc(hidden)] PhantomData<G>,
     #[doc(hidden)] PhantomData<PC>,
-    #[doc(hidden)] PhantomData<D>,
 );
 
-impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
+impl<'a, G: Group, PC: PolynomialCommitment<G>> Marlin<G, PC> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"COBOUNDARY-MARLIN-2021";
 
     /// Generate the universal prover and verifier keys for the
     /// argument system.
-    pub fn universal_setup(
+    pub fn universal_setup<D: Digest>(
         num_constraints: usize,
         num_variables: usize,
         num_non_zero: usize,
         zk: bool,
-    ) -> Result<UniversalSRS<G, PC>, Error<PC::Error>> {
+    ) -> Result<(PC::CommitterKey, PC::VerifierKey), Error<PC::Error>> {
         let max_degree =
             IOP::<G::ScalarField>::max_degree(num_constraints, num_variables, num_non_zero, zk)?;
         let setup_time = start_timer!(|| {
@@ -96,7 +97,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         )
         });
 
-        let srs = PC::setup(max_degree).map_err(Error::from_pc_err);
+        let srs = PC::setup::<D>(max_degree).map_err(Error::from_pc_err);
         end_timer!(setup_time);
         srs
     }
@@ -104,7 +105,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
     /// The circuit-specific setup. Given a circuit `c` and a committer_key of the polynomial
     /// commitment scheme, generate the key material for the circuit. The latter is split into
     /// a prover key and a verifier key.
-    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G::ScalarField>>(
+    pub fn circuit_specific_setup<C: ConstraintSynthesizer<G::ScalarField>, D: Digest>(
         committer_key: &PC::CommitterKey,
         c: C,
     ) -> Result<(ProverKey<G, PC>, VerifierKey<G, PC>), Error<PC::Error>> {
@@ -117,7 +118,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let commit_time = start_timer!(|| "Commit to index polynomials");
 
         let (index_comms, index_comm_rands): (_, _) =
-            PC::commit_vec(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
+            PC::commit_many(committer_key, index.iter(), None).map_err(Error::from_pc_err)?;
         end_timer!(commit_time);
 
         let index_comms = index_comms
@@ -125,9 +126,32 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             .map(|c| c.commitment().clone())
             .collect();
 
+        let vk_hash = D::digest(
+            &serialize_no_metadata![index.index_info, index_comms]
+                .map_err(|e| Error::Other(format!("Unable to serialize vk elements: {:?}", e)))?,
+        )
+        .as_ref()
+        .to_vec();
+
+        // Compute the commitments of the Lagrange polynomials over the input domain.
+        // They are included into the verifier key in order to help the verifier check that the
+        // polynomial behind the commitment of the input poly provided by the prover is indeed the
+        // input poly.
+        let domain_x = get_best_evaluation_domain(index.index_info.num_inputs).unwrap();
+        let lagrange_comms: Vec<_> = domain_x
+            .elements()
+            .into_iter()
+            .map(|y| {
+                let poly = domain_x.slice_lagrange_kernel(y);
+                PC::commit(committer_key, &poly, false, None).unwrap().0
+            })
+            .collect();
+
         let index_vk = VerifierKey {
             index_info: index.index_info,
             index_comms,
+            lagrange_comms,
+            vk_hash,
         };
 
         let index_pk = ProverKey {
@@ -155,31 +179,30 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let prover_time = start_timer!(|| "Marlin::Prover");
 
         // prover precomputations
-        let prover_init_state = IOP::prover_init(&index_pk.index, c)?;
-        let public_input = prover_init_state.public_input();
+        let (prover_init_oracle, prover_init_state) = IOP::prover_init(&index_pk.index, c)?;
 
-        // initialise the Fiat-Shamir rng.
+        // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
-            let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&pc_pk.get_hash())
-                .map_err(Error::from_pc_err)?;
-
-            // NOTE: As both vk and public input use constant length encoding of field elements,
-            // we can simply apply add_bytes to achieve a one-to-one serialization.
-            seed_builder
-                .add_bytes(&index_pk.index_vk)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-
-            seed_builder.finalize()
+                .add_bytes(&Self::PROTOCOL_NAME)?
+                .add_bytes(&pc_pk.get_hash())?;
+            seed_builder.finalize()?
         };
-        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+
+        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
+        fs_rng.record::<G::BaseField, _>(index_pk.index_vk.get_hash())?;
+
+        let x_poly_comm_time = start_timer!(|| "Committing to input poly");
+        let (init_comm, init_comm_rand) =
+            PC::commit(pc_pk, prover_init_oracle.x.polynomial(), false, None)
+                .map_err(Error::from_pc_err)?;
+
+        let init_comm_label = prover_init_oracle.x.label();
+        let init_comm_rand = LabeledRandomness::new(init_comm_label.clone(), init_comm_rand);
+        end_timer!(x_poly_comm_time);
+
+        fs_rng.record(init_comm)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -192,12 +215,17 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_comms, first_comm_rands) =
-            PC::commit_vec(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_first_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(first_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record::<G::BaseField, _>(
+            first_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let (verifier_first_msg, verifier_state) =
             IOP::verifier_first_round(index_pk.index_vk.index_info, &mut fs_rng)?;
@@ -215,12 +243,17 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_comms, second_comm_rands) =
-            PC::commit_vec(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_second_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(second_round_comm_time);
 
-        // absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        // record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            second_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         let (verifier_second_msg, verifier_state) =
             IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
@@ -236,22 +269,28 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_comms, third_comm_rands) =
-            PC::commit_vec(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
+            PC::commit_many(pc_pk, prover_third_oracles.iter(), Some(zk_rng))
                 .map_err(Error::from_pc_err)?;
         end_timer!(third_round_comm_time);
 
-        // again, absorb the prove oracles by the Fiat-Shamir rng
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        // again, record the prove oracles by the Fiat-Shamir rng
+        fs_rng.record(
+            third_comms
+                .iter()
+                .map(|labeled_comm| labeled_comm.commitment().clone())
+                .collect::<Vec<_>>(),
+        )?;
 
         /* Preparations before entering the batch evaluation proof
          */
 
-        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_pk
             .index
             .iter()
+            .chain(prover_init_oracle.iter())
             .chain(prover_first_oracles.iter())
             .chain(prover_second_oracles.iter())
             .chain(prover_third_oracles.iter())
@@ -264,34 +303,25 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             second_comms.iter().map(|p| p.commitment().clone()).collect(),
             third_comms.iter().map(|p| p.commitment().clone()).collect(),
         ];
-        let labeled_comms: Vec<_> = index_pk
-            .index_vk
-            .iter()
-            .cloned()
-            .zip(&IOP::<G::ScalarField>::INDEXER_POLYNOMIALS)
-            .map(|(c, l)| LabeledCommitment::new(l.to_string(), c))
-            .chain(first_comms.iter().cloned())
-            .chain(second_comms.iter().cloned())
-            .chain(third_comms.iter().cloned())
-            .collect();
 
         // Gather commitment randomness together.
         let comm_rands: Vec<LabeledRandomness<PC::Randomness>> = index_pk
             .index_comm_rands
             .clone()
             .into_iter()
+            .chain(std::iter::once(init_comm_rand))
             .chain(first_comm_rands)
             .chain(second_comm_rands)
             .chain(third_comm_rands)
             .collect();
 
         // Set up the IOP verifier's query set.
-        let (query_set, _) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, _) = IOP::verifier_query_map(verifier_state)?;
 
         // Compute the queried values
-        let eval_time = start_timer!(|| "Evaluating polynomials over query set");
+        let eval_time = start_timer!(|| "Evaluating polynomials over query map");
 
-        let mut evaluations = evaluate_query_set_to_vec(polynomials.clone(), &query_set);
+        let mut evaluations = evaluate_query_map_to_vec(polynomials.clone(), &query_map);
 
         evaluations.sort_by(|a, b| a.0.cmp(&b.0));
         let evaluations = evaluations
@@ -300,8 +330,8 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             .collect::<Vec<G::ScalarField>>();
         end_timer!(eval_time);
 
-        // absorb the evalution claims.
-        fs_rng.absorb(&evaluations);
+        // record the evaluation claims.
+        fs_rng.record(evaluations.clone())?;
 
         /* The non-interactive batch evaluation proof for the polynomial commitment scheme,
         We pass the Fiat-Shamir rng.
@@ -311,8 +341,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         let pc_proof = PC::multi_point_multi_poly_open(
             pc_pk,
             polynomials.clone(),
-            &labeled_comms,
-            &query_set,
+            &query_map,
             &mut fs_rng,
             &comm_rands,
             Some(zk_rng),
@@ -347,14 +376,14 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             return Ok(false);
         }
 
-        let (query_set, evaluations, commitments, mut fs_rng) = iop_result.unwrap();
+        let (query_map, evaluations, commitments, mut fs_rng) = iop_result.unwrap();
 
         // Check opening proof
         let opening_result = Self::verify_opening(
             pc_vk,
             proof,
             commitments,
-            query_set,
+            query_map,
             evaluations,
             &mut fs_rng,
         );
@@ -381,14 +410,14 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
     // TODO: By now, the only external call is from the batch verifier for FinalDarlin /
     // SimpleMarlin proofs. Let us think whether serving this functionality as public is a good
     // decision.
-    pub fn verify_iop<'a>(
+    pub fn verify_iop(
         pc_vk: &PC::VerifierKey,
         index_vk: &VerifierKey<G, PC>,
         public_input: &[G::ScalarField],
         proof: &Proof<G, PC>,
     ) -> Result<
         (
-            QuerySet<'a, G::ScalarField>,
+            QueryMap<'a, G::ScalarField>,
             Evaluations<'a, G::ScalarField>,
             Vec<LabeledCommitment<PC::Commitment>>,
             PC::RandomOracle,
@@ -397,32 +426,35 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
     > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
-        let public_input = public_input.to_vec();
+        let x_poly_comm = index_vk
+            .lagrange_comms
+            .par_iter()
+            .zip(IOP::format_public_input(&public_input).par_iter())
+            .map(|(g, x)| g.clone() * x)
+            .reduce(|| PC::Commitment::zero(), |a, b| a + b);
 
+        // initialize the Fiat-Shamir rng.
         let fs_rng_init_seed = {
-            let mut seed_builder = <PC::RandomOracle as FiatShamirRng>::Seed::new();
+            let mut seed_builder = FiatShamirRngSeed::new();
             seed_builder
-                .add_bytes(&Self::PROTOCOL_NAME)
-                .map_err(Error::from_pc_err)?;
-            seed_builder
-                .add_bytes(&pc_vk.get_hash())
-                .map_err(Error::from_pc_err)?;
-            // TODO: Shall we decompose this further when passing it to the seed builder ?
-            seed_builder
-                .add_bytes(&index_vk)
-                .map_err(Error::from_pc_err)?;
-            // TODO: Shall we decompose this further when passing it to the seed builder ?
-            seed_builder
-                .add_bytes(&public_input)
-                .map_err(Error::from_pc_err)?;
-            seed_builder.finalize()
+                .add_bytes(&Self::PROTOCOL_NAME)?
+                .add_bytes(&pc_vk.get_hash())?;
+            seed_builder.finalize()?
         };
-        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed);
+
+        let mut fs_rng = PC::RandomOracle::from_seed(fs_rng_init_seed)?;
+        fs_rng.record::<G::BaseField, _>(index_vk.get_hash())?;
+        fs_rng.record(x_poly_comm.clone())?;
+
+        /*  The commitment of the input poly is not included in the proof, because it needs to be
+           recomputed by the verifier anyways
+        */
+        let init_comms = vec![x_poly_comm];
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
         let first_comms = &proof.commitments[0];
-        fs_rng.absorb(&to_bytes![first_comms].unwrap());
+        fs_rng.record(first_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_first_round(index_vk.index_info, &mut fs_rng)?;
 
@@ -430,7 +462,7 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         The verification of the outer sumcheck equation is postponed to below
         */
         let second_comms = &proof.commitments[1];
-        fs_rng.absorb(&to_bytes![second_comms].unwrap());
+        fs_rng.record(second_comms.clone())?;
 
         let (_, verifier_state) = IOP::verifier_second_round(verifier_state, &mut fs_rng)?;
 
@@ -439,13 +471,14 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
         */
 
         let third_comms = &proof.commitments[2];
-        fs_rng.absorb(&to_bytes![third_comms].unwrap());
+        fs_rng.record(third_comms.clone())?;
 
-        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng);
+        let verifier_state = IOP::verifier_third_round(verifier_state, &mut fs_rng)?;
 
         // Gather commitments in one vector.
         let commitments: Vec<_> = index_vk
             .iter()
+            .chain(&init_comms)
             .chain(first_comms)
             .chain(second_comms)
             .chain(third_comms)
@@ -455,17 +488,19 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
             .collect();
 
         // Check sumchecks equations
-        let (query_set, verifier_state) = IOP::verifier_query_set(verifier_state)?;
+        let (query_map, verifier_state) = IOP::verifier_query_map(verifier_state)?;
+
+        let mut evaluation_keys = Vec::new();
+        for (point_label, (_, poly_set)) in query_map.iter() {
+            for poly_label in poly_set {
+                evaluation_keys.push((poly_label.clone(), point_label.clone()));
+            }
+        }
+        evaluation_keys.sort();
 
         let mut evaluations = Evaluations::new();
-        let mut evaluation_labels = Vec::new();
-        for (poly_label, (point_label, point)) in query_set.iter().cloned() {
-            evaluation_labels.push(((poly_label, point_label), point));
-        }
-
-        evaluation_labels.sort_by(|a, b| a.0.cmp(&b.0));
-        for (q, eval) in evaluation_labels.into_iter().zip(&proof.evaluations) {
-            evaluations.insert(((q.0).0, q.1), *eval);
+        for (key, &eval) in evaluation_keys.into_iter().zip(proof.evaluations.iter()) {
+            evaluations.insert(key, eval);
         }
 
         let result = IOP::verify_sumchecks(&public_input, &evaluations, &verifier_state);
@@ -477,26 +512,26 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         end_timer!(iop_verification_time);
 
-        Ok((query_set, evaluations, commitments, fs_rng))
+        Ok((query_map, evaluations, commitments, fs_rng))
     }
 
     /// The remaining check of verifying the batch evaluation proof.
-    pub fn verify_opening<'a>(
+    pub fn verify_opening(
         pc_vk: &PC::VerifierKey,
         proof: &Proof<G, PC>,
         labeled_comms: Vec<LabeledCommitment<PC::Commitment>>,
-        query_set: QuerySet<'a, G::ScalarField>,
+        query_map: QueryMap<'a, G::ScalarField>,
         evaluations: Evaluations<'a, G::ScalarField>,
         fs_rng: &mut PC::RandomOracle,
     ) -> Result<bool, Error<PC::Error>> {
         let check_time = start_timer!(|| "Check opening proof");
 
-        fs_rng.absorb(&proof.evaluations);
+        fs_rng.record(proof.evaluations.clone())?;
 
         let result = PC::multi_point_multi_poly_verify(
             pc_vk,
             &labeled_comms,
-            &query_set,
+            &query_map,
             &evaluations,
             &proof.pc_proof,
             fs_rng,
@@ -505,6 +540,6 @@ impl<G: Curve, PC: PolynomialCommitment<G>, D: Digest> Marlin<G, PC, D> {
 
         end_timer!(check_time);
 
-        result
+        Ok(result.is_ok())
     }
 }

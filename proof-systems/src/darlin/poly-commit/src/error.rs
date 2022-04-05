@@ -1,23 +1,24 @@
 use crate::String;
+use fiat_shamir::error::Error as FSError;
 
 /// The error type for `PolynomialCommitment`.
 #[derive(Debug)]
 pub enum Error {
-    /// The query set contains a label for a polynomial that was not provided as
+    /// The query map contains a label for a polynomial that was not provided as
     /// input to the `PC::open`.
     MissingPolynomial {
         /// The label of the missing polynomial.
         label: String,
     },
 
-    /// The query set contains a label for a commitment that was not provided as
+    /// The query map contains a label for a commitment that was not provided as
     /// input to the `PC::open`.
     MissingCommitment {
         /// The label of the missing commitment.
         label: String,
     },
 
-    /// The query set contains a label for a randomness that was not provided as
+    /// The query map contains a label for a randomness that was not provided as
     /// input to the `PC::open`.
     MissingRandomness {
         /// The label of the missing randomness.
@@ -122,6 +123,9 @@ pub enum Error {
     /// Incorrect proof
     IncorrectProof,
 
+    /// FiatShamir transform error
+    FiatShamirTransformError(FSError),
+
     /// FiatShamirRNG was initialized passing uncorrect data
     BadFiatShamirInitialization(String),
 
@@ -134,27 +138,27 @@ impl std::fmt::Display for Error {
         match self {
             Error::MissingPolynomial { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but it was not provided.",
+                "`QueryMap` refers to polynomial \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingCommitment { label } => write!(
                 f,
-                "`QuerySet` refers to commitment \"{}\", but it was not provided.",
+                "`QueryMap` refers to commitment \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingRandomness { label } => write!(
                 f,
-                "`QuerySet` refers to randomness \"{}\", but it was not provided.",
+                "`QueryMap` refers to randomness \"{}\", but it was not provided.",
                 label
             ),
             Error::MissingEvaluation { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but `Evaluations` does not contain an evaluation for it.",
+                "`QueryMap` refers to polynomial \"{}\", but `Evaluations` does not contain an evaluation for it.",
                 label
             ),
             Error::MissingBatchEvaluation { label } => write!(
                 f,
-                "`QuerySet` refers to polynomial \"{}\", but `BatchEvaluations` does not contain an evaluation for it.",
+                "`QueryMap` refers to polynomial \"{}\", but `BatchEvaluations` does not contain an evaluation for it.",
                 label
             ),
             Error::MissingLHS { label } => {
@@ -230,9 +234,16 @@ impl std::fmt::Display for Error {
             Error::MalformedCommitment(err) => write!(f, "{}", err),
             Error::FailedSuccinctCheck => write!(f, "Failed succinct check"),
             Error::IncorrectProof => write!(f, "Incorrect proof"),
+            Error::FiatShamirTransformError(e) => write!(f, "{}", e),
             Error::BadFiatShamirInitialization(e) => write!(f, "{}", e),
             Error::Other(message) => write!(f, "{}", message),
         }
+    }
+}
+
+impl From<fiat_shamir::error::Error> for Error {
+    fn from(e: FSError) -> Self {
+        Self::FiatShamirTransformError(e)
     }
 }
 

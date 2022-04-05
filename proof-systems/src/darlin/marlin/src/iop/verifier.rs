@@ -3,10 +3,11 @@
 use crate::iop::indexer::IndexInfo;
 use crate::iop::*;
 
-use algebra::PrimeField;
-use algebra::{get_best_evaluation_domain, EvaluationDomain};
-use poly_commit::fiat_shamir_rng::FiatShamirRng;
-use poly_commit::QuerySet;
+use algebra::{get_best_evaluation_domain, EvaluationDomain, PrimeField};
+use fiat_shamir::FiatShamirRng;
+use poly_commit::QueryMap;
+use std::collections::BTreeSet;
+use std::iter::FromIterator;
 
 /// State of the IOP verifier
 pub struct VerifierState<F: PrimeField> {
@@ -63,14 +64,17 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        let alpha: F = fs_rng.squeeze_128_bits_challenge();
+        let chals = fs_rng.get_many_challenges::<128>(2)?;
+
+        let alpha = F::read_bits(chals[0].to_vec()).map_err(|e| Error::Other(e.to_string()))?;
+
         if domain_h.evaluate_vanishing_polynomial(alpha).is_zero() {
             Err(Error::Other(
                 "Sampled an alpha challenge belonging to H domain".to_owned(),
             ))?
         }
 
-        let eta: F = fs_rng.squeeze_128_bits_challenge();
+        let eta = F::read_bits(chals[1].to_vec()).map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierFirstMsg { alpha, eta };
 
@@ -91,7 +95,9 @@ impl<F: PrimeField> IOP<F> {
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
-        let beta: F = fs_rng.squeeze_128_bits_challenge();
+        let beta = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
                 "Sampled a beta challenge belonging to H domain".to_owned(),
@@ -109,16 +115,18 @@ impl<F: PrimeField> IOP<F> {
     pub fn verifier_third_round<R: FiatShamirRng>(
         mut state: VerifierState<F>,
         fs_rng: &mut R,
-    ) -> VerifierState<F> {
-        let gamma: F = fs_rng.squeeze_128_bits_challenge();
+    ) -> Result<VerifierState<F>, Error> {
+        let gamma = F::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
         state.gamma = Some(gamma);
-        state
+        Ok(state)
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_set<'a, 'b>(
+    pub fn verifier_query_map<'a, 'b>(
         state: VerifierState<F>,
-    ) -> Result<(QuerySet<'b, F>, VerifierState<F>), Error> {
+    ) -> Result<(QueryMap<'b, F>, VerifierState<F>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
@@ -132,39 +140,61 @@ impl<F: PrimeField> IOP<F> {
         let g_h = state.domain_h.group_gen();
         let g_k = state.domain_k.group_gen();
 
-        let mut query_set = QuerySet::new();
+        let queries_at_beta = BTreeSet::from_iter(vec![
+            "x".to_string(),
+            "w".to_string(),
+            "y_a".to_string(),
+            "y_b".to_string(),
+            "u_1".to_string(),
+            "h_1".to_string(),
+        ]);
+        let queries_at_gamma = BTreeSet::from_iter(vec![
+            "u_2".to_string(),
+            "h_2".to_string(),
+            "a_row".to_string(),
+            "a_col".to_string(),
+            "a_row_col".to_string(),
+            "a_val_row_col".to_string(),
+            "b_row".to_string(),
+            "b_col".to_string(),
+            "b_row_col".to_string(),
+            "b_val_row_col".to_string(),
+            "c_row".to_string(),
+            "c_col".to_string(),
+            "c_row_col".to_string(),
+            "c_val_row_col".to_string(),
+        ]);
+        let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
+        let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
-        // Outer sumcheck
+        #[cfg(feature = "circuit-friendly")]
+        let (queries_at_alpha, queries_at_beta, queries_at_gamma) = {
+            let queries_at_alpha = BTreeSet::from_iter(vec!["v_h".to_string()]);
 
-        // First round polys
-        query_set.insert(("w".into(), ("beta".into(), beta)));
-        query_set.insert(("y_a".into(), ("beta".into(), beta)));
-        query_set.insert(("y_b".into(), ("beta".into(), beta)));
+            let mut queries_at_beta = queries_at_beta;
+            queries_at_beta.insert("v_h".to_string());
+            queries_at_beta.insert("v_x".to_string());
 
-        // Second round polys
-        query_set.insert(("u_1".into(), ("beta".into(), beta)));
-        query_set.insert(("u_1".into(), ("g * beta".into(), g_h * beta)));
-        query_set.insert(("h_1".into(), ("beta".into(), beta)));
+            let mut queries_at_gamma = queries_at_gamma;
+            queries_at_gamma.insert("v_k".to_string());
 
-        // Inner sumcheck
+            (queries_at_alpha, queries_at_beta, queries_at_gamma)
+        };
 
-        // Third round polys
-        query_set.insert(("u_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("u_2".into(), ("g * gamma".into(), g_k * gamma)));
-        query_set.insert(("h_2".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("a_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("b_val_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_row_col".into(), ("gamma".into(), gamma)));
-        query_set.insert(("c_val_row_col".into(), ("gamma".into(), gamma)));
+        let query_map = {
+            let mut map = QueryMap::new();
+            map.insert("beta".to_string(), (beta, queries_at_beta));
+            map.insert("gamma".to_string(), (gamma, queries_at_gamma));
+            map.insert("g * beta".to_string(), (g_h * beta, queries_at_g_beta));
+            map.insert("g * gamma".to_string(), (g_k * gamma, queries_at_g_gamma));
+            #[cfg(feature = "circuit-friendly")]
+            {
+                let alpha = state.first_round_msg.as_ref().unwrap().clone().alpha;
+                map.insert("alpha".to_string(), (alpha, queries_at_alpha));
+            }
+            map
+        };
 
-        Ok((query_set, state))
+        Ok((query_map, state))
     }
 }

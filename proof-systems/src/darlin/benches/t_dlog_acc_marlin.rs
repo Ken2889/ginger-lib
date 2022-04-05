@@ -1,9 +1,8 @@
 use algebra::{
     curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
-    Curve, DensePolynomial, Group,
+    DensePolynomial, Group, ToConstraintField,
 };
 use blake2::Blake2s;
-use poly_commit::PCParameters;
 
 use algebra::PrimeField;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
@@ -19,7 +18,11 @@ use r1cs_std::Assignment;
 use rand::{rngs::OsRng, thread_rng};
 
 use criterion::measurement::WallTime;
-use poly_commit::ipa_pc::{CommitterKey, VerifierKey};
+use digest::Digest;
+use fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
+use fiat_shamir::FiatShamirRng;
+use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
+use poly_commit::PCKey;
 use proof_systems::darlin::accumulators::dlog::DualDLogItem;
 use proof_systems::darlin::t_dlog_acc_marlin::data_structures::{
     DualSumcheckItem, ProverKey, VerifierKey as MarlinVerifierKey,
@@ -36,6 +39,7 @@ extern crate bench_utils;
 
 type G1 = DeeJacobian;
 type G2 = DumJacobian;
+type FS = TweedleFqPoseidonFSRng;
 type D = Blake2s;
 
 pub trait RandomCircuit {
@@ -258,44 +262,53 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit2c<F> {
     }
 }
 
-fn generate_keys<G1: Curve, G2: Curve, CS: ConstraintSynthesizer<G1::ScalarField>>(
+fn generate_keys<
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>,
+    FS: FiatShamirRng,
+    D: Digest,
+    CS: ConstraintSynthesizer<G1::ScalarField>,
+>(
     num_constraints: usize,
     segment_size: usize,
     circuit: CS,
 ) -> (
     CommitterKey<G1>,
     VerifierKey<G1>,
-    ProverKey<G1, G2, D>,
-    MarlinVerifierKey<G1, G2, D>,
+    ProverKey<G1, G2, FS>,
+    MarlinVerifierKey<G1, G2, FS>,
 ) {
-    let universal_srs =
-        TDLogAccMarlin::<G1, G2, D>::universal_setup(num_constraints, num_constraints, false)
+    let (pc_pk, pc_vk) =
+        TDLogAccMarlin::<G1, G2, FS, D>::universal_setup(num_constraints, num_constraints, false)
             .unwrap();
-    let (pc_pk, pc_vk) = universal_srs.trim(segment_size).unwrap();
+    let pc_pk = pc_pk.trim(segment_size).unwrap();
+    let pc_vk = pc_vk.trim(segment_size).unwrap();
     let (index_pk, index_vk) =
-        TDLogAccMarlin::<G1, G2, D>::circuit_specific_setup(&pc_pk, circuit).unwrap();
+        TDLogAccMarlin::<G1, G2, FS, D>::circuit_specific_setup(&pc_pk, circuit).unwrap();
     (pc_pk, pc_vk, index_pk, index_vk)
 }
 
 fn generate_trivial_accumulators(
     pc_pk_g1: &CommitterKey<G1>,
     pc_vk_g1: &VerifierKey<G1>,
-    index_vk_g1: &MarlinVerifierKey<G1, G2, D>,
+    index_vk_g1: &MarlinVerifierKey<G1, G2, FS>,
     pc_pk_g2: &CommitterKey<G2>,
     pc_vk_g2: &VerifierKey<G2>,
-    index_vk_g2: &MarlinVerifierKey<G2, G1, D>,
+    index_vk_g2: &MarlinVerifierKey<G2, G1, FS>,
 ) -> (
     DualDLogItem<G2, G1>,
     DualSumcheckItem<G2, G1>,
     DensePolynomial<<G1 as Group>::ScalarField>,
     DensePolynomial<<G1 as Group>::ScalarField>,
 ) {
-    let dlog_acc = DualDLogItem::generate_trivial::<D>(&pc_pk_g2, &pc_pk_g1);
+    let dlog_acc = DualDLogItem::generate_trivial::<FS>(&pc_pk_g2, &pc_pk_g1);
     let t_acc = DualSumcheckItem::<G2, G1>::generate_trivial();
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
+    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, FS, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -311,12 +324,12 @@ fn generate_trivial_accumulators(
 fn generate_random_accumulators<R: RngCore>(
     pc_pk_g1: &CommitterKey<G1>,
     pc_vk_g1: &VerifierKey<G1>,
-    index_pk_g1: &ProverKey<G1, G2, D>,
-    index_vk_g1: &MarlinVerifierKey<G1, G2, D>,
+    index_pk_g1: &ProverKey<G1, G2, FS>,
+    index_vk_g1: &MarlinVerifierKey<G1, G2, FS>,
     pc_pk_g2: &CommitterKey<G2>,
     pc_vk_g2: &VerifierKey<G2>,
-    index_pk_g2: &ProverKey<G2, G1, D>,
-    index_vk_g2: &MarlinVerifierKey<G2, G1, D>,
+    index_pk_g2: &ProverKey<G2, G1, FS>,
+    index_vk_g2: &MarlinVerifierKey<G2, G1, FS>,
     rng: &mut R,
 ) -> (
     DualDLogItem<G2, G1>,
@@ -324,9 +337,9 @@ fn generate_random_accumulators<R: RngCore>(
     DensePolynomial<<G1 as Group>::ScalarField>,
     DensePolynomial<<G1 as Group>::ScalarField>,
 ) {
-    let dlog_acc = DualDLogItem::generate_random::<_, D>(rng, &pc_pk_g2, &pc_pk_g1);
+    let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
 
-    let t_acc = DualSumcheckItem::<G2, G1>::generate_random::<D>(
+    let t_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
         rng,
         &index_pk_g2.index_vk.index,
         &index_pk_g1.index_vk.index,
@@ -336,7 +349,7 @@ fn generate_random_accumulators<R: RngCore>(
 
     // Perform hard verification of the two accumulators in order to compute the
     // respective polynomials.
-    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, D>::hard_verify(
+    let ((_, t_poly), (_, dlog_poly)) = TDLogAccMarlin::<G2, G1, FS, D>::hard_verify(
         &pc_vk_g2,
         &pc_vk_g1,
         &index_vk_g2,
@@ -361,11 +374,11 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
 
     let c_g1 = C1::generate_random(num_constraints, &mut rng);
     let (pc_pk_g1, pc_vk_g1, index_pk_g1, index_vk_g1) =
-        generate_keys::<G1, G2, _>(num_constraints, segment_size, c_g1);
+        generate_keys::<G1, G2, FS, D, _>(num_constraints, segment_size, c_g1);
 
     let c_g2 = C2::generate_random(num_constraints, &mut rng);
     let (pc_pk_g2, pc_vk_g2, index_pk_g2, index_vk_g2) =
-        generate_keys::<G2, G1, _>(num_constraints, segment_size, c_g2);
+        generate_keys::<G2, G1, FS, D, _>(num_constraints, segment_size, c_g2);
 
     add_to_trace!(
         || format!("****************{}*******************", num_constraints),
@@ -401,7 +414,7 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
                     (circ, dlog_acc, t_acc, bullet_poly, t_poly)
                 },
                 |(c, dlog_acc, t_acc, bullet_poly, t_poly)| {
-                    TDLogAccMarlin::<G1, G2, D>::prove(
+                    TDLogAccMarlin::<G1, G2, FS, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,
@@ -442,11 +455,11 @@ fn bench_prover_trivial_prev_acc_helper<C1, C2>(
 
     let c_g1 = C1::generate_random(num_constraints, &mut rng);
     let (pc_pk_g1, pc_vk_g1, index_pk_g1, index_vk_g1) =
-        generate_keys::<G1, G2, _>(num_constraints, segment_size, c_g1);
+        generate_keys::<G1, G2, FS, D, _>(num_constraints, segment_size, c_g1);
 
     let c_g2 = C2::generate_random(num_constraints, &mut rng);
     let (pc_pk_g2, pc_vk_g2, _, index_vk_g2) =
-        generate_keys::<G2, G1, _>(num_constraints, segment_size, c_g2);
+        generate_keys::<G2, G1, FS, D, _>(num_constraints, segment_size, c_g2);
 
     add_to_trace!(
         || format!("****************{}*******************", num_constraints),
@@ -479,7 +492,7 @@ fn bench_prover_trivial_prev_acc_helper<C1, C2>(
                     (circ, dlog_acc, t_acc, bullet_poly, t_poly)
                 },
                 |(c, dlog_acc, t_acc, bullet_poly, t_poly)| {
-                    TDLogAccMarlin::<G1, G2, D>::prove(
+                    TDLogAccMarlin::<G1, G2, FS, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,

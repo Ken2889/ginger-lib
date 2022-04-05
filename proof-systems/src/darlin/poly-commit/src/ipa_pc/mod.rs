@@ -5,25 +5,46 @@
 //! * a seperate aggregation prover for the verifier "hard" parts.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
+use crate::read_fe_from_challenge;
 use crate::Error;
-use crate::{Polynomial, PolynomialCommitment};
+use crate::{PCKey, PCProof, Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    to_bytes, BitIterator, Curve, DensePolynomial, Field, Group, PrimeField, SemanticallyValid,
-    ToBytes, UniformRand,
+    serialize_no_metadata, CanonicalSerialize, DensePolynomial, Field, PrimeField,
+    SemanticallyValid, UniformRand,
 };
 use rand_core::RngCore;
 use std::marker::PhantomData;
-use std::{format, vec};
 
+#[cfg(feature = "circuit-friendly")]
+mod constraints;
 mod data_structures;
+#[cfg(feature = "circuit-friendly")]
+pub use constraints::InnerProductArgGadget;
 pub use data_structures::*;
 
 use rayon::prelude::*;
 
-use crate::fiat_shamir_rng::{FiatShamirChaChaRng, FiatShamirRng};
 use digest::Digest;
+
+use num_traits::{One, Zero};
+use trait_set::trait_set;
+
+#[cfg(feature = "circuit-friendly")]
+use algebra::EndoMulCurve;
+#[cfg(feature = "circuit-friendly")]
+trait_set! {
+    pub trait IPACurve = EndoMulCurve;
+}
+
+#[cfg(not(feature = "circuit-friendly"))]
+use algebra::Curve;
+use fiat_shamir::FiatShamirRng;
+#[cfg(not(feature = "circuit-friendly"))]
+trait_set! {
+    pub trait IPACurve = Curve;
+}
 
 #[cfg(test)]
 mod tests;
@@ -31,12 +52,12 @@ mod tests;
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: Curve, D: Digest> {
+pub struct InnerProductArgPC<G: IPACurve, FS: FiatShamirRng> {
     _projective: PhantomData<G>,
-    _digest: PhantomData<D>,
+    _fs: PhantomData<FS>,
 }
 
-impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
+impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -71,9 +92,9 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
 
     /// Complete semantic checks on `ck`.
     #[inline]
-    pub fn check_key(ck: &CommitterKey<G>, max_degree: usize) -> bool {
-        let pp = <Self as PolynomialCommitment<G>>::setup(max_degree).unwrap();
-        ck.is_valid() && &pp.hash == &ck.hash
+    pub fn check_key<D: Digest>(ck: &CommitterKey<G>, max_degree: usize) -> bool {
+        let (original_ck, _) = <Self as PolynomialCommitment<G>>::setup::<D>(max_degree).unwrap();
+        ck.is_valid() && original_ck.get_hash() == ck.get_hash()
     }
 
     /// Perform a dlog reduction step as described in BCMS20
@@ -96,7 +117,7 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
             .for_each(|(z_l, z_r)| *z_l += &(round_challenge * z_r));
 
         k_l.par_iter_mut().zip(k_r).for_each(|(k_l, k_r)| {
-            *k_l += G::mul_bits_affine(&k_r, BitIterator::new(round_challenge.into_repr()))
+            *k_l += G::mul_bits_affine(&k_r, algebra::BitIterator::new(round_challenge.into_repr()))
         });
     }
 
@@ -107,13 +128,14 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
     /// Note: The entire opening assertions, i.e. the xi's and their G_fin's, are
     /// already bound the inner state of the Fiat-Shamir rng.
     // No segmentation here: Reduction polys are at most as big as the committer key.
+    #[cfg(not(feature = "circuit-friendly"))]
     pub fn open_reduction_polynomials<'a>(
         ck: &CommitterKey<G>,
-        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G::ScalarField>>,
+        xi_s: impl IntoIterator<Item = &'a LabeledSuccinctCheckPolynomial<'a, G>>,
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
-        fs_rng: &mut FiatShamirChaChaRng<D>,
+        fs_rng: &mut FS,
     ) -> Result<Proof<G>, Error> {
         let mut key_len = ck.comm_key.len();
         if ck.comm_key.len().next_power_of_two() != key_len {
@@ -121,26 +143,24 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
                 "Commiter key length is not power of 2".to_owned(),
             ));
         }
-
         let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
-        let xi_s_vec = xi_s.into_iter().collect::<Vec<_>>();
+
+        let xi_s_vec = xi_s
+            .into_iter()
+            .map(|labeled_xi| labeled_xi.get_poly())
+            .collect::<Vec<_>>();
 
         // Compute the evaluations of the Bullet polynomials at point starting from the xi_s
         let values = xi_s_vec
             .par_iter()
             .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
-
-        // Absorb evaluations
-        fs_rng.absorb(
-            &values
-                .iter()
-                .flat_map(|val| to_bytes!(val).unwrap())
-                .collect::<Vec<_>>(),
-        );
+        // record evaluations
+        fs_rng.record(values)?;
 
         // Sample new batching challenge
-        let random_scalar: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         // Collect the powers of the batching challenge in a vector
         let mut batching_chal = G::ScalarField::one();
@@ -179,18 +199,91 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
         )
     }
 
+    #[cfg(feature = "circuit-friendly")]
+    pub fn open_reduction_polynomials<'a>(
+        ck: &CommitterKey<G>,
+        xi_s: impl IntoIterator<Item = &'a LabeledSuccinctCheckPolynomial<'a, G>>,
+        point: G::ScalarField,
+        // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
+        // fs_rng state.
+        fs_rng: &mut FS,
+    ) -> Result<Proof<G>, Error> {
+        let mut key_len = ck.comm_key.len();
+        if ck.comm_key.len().next_power_of_two() != key_len {
+            return Err(Error::Other(
+                "Commiter key length is not power of 2".to_owned(),
+            ));
+        }
+        let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
+
+        let mut xi_s_vec = xi_s.into_iter().collect::<Vec<_>>();
+
+        // Compute the evaluations of the Bullet polynomials at point starting from the xi_s
+        let values = xi_s_vec
+            .par_iter()
+            .map(|xi_s| xi_s.get_poly().evaluate(point))
+            .collect::<Vec<_>>();
+        // record evaluations
+        fs_rng.record(values)?;
+
+        // sort in reverse lexicographical order according to labels
+        xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));
+
+        // Sample new batching challenge
+        let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
+        // Collect the powers of the batching challenge in a vector
+        let mut batching_chal = G::ScalarField::one();
+        let mut batching_chals = vec![G::ScalarField::zero(); xi_s_vec.len()];
+        for i in 0..batching_chals.len() {
+            batching_chals[i] = batching_chal;
+            batching_chal *= &random_scalar;
+        }
+
+        // Compute combined check_poly
+        let combined_check_poly = batching_chals
+            .into_par_iter()
+            .zip(xi_s_vec)
+            .map(|(chal, xi_s)| {
+                Polynomial::from_coefficients_vec(xi_s.get_poly().compute_scaled_coeffs(chal))
+            })
+            .reduce(Polynomial::zero, |acc, poly| &acc + &poly);
+
+        // It's not necessary to use the full length of the ck if all the Bullet Polys are smaller:
+        // trim the ck if that's the case
+        key_len = combined_check_poly.coeffs.len();
+        if key_len.next_power_of_two() != key_len {
+            return Err(Error::Other(
+                "Combined check poly length is not a power of 2".to_owned(),
+            ));
+        }
+
+        end_timer!(batch_time);
+
+        Self::open(
+            ck,
+            combined_check_poly,
+            point,
+            false,
+            G::ScalarField::zero(),
+            fs_rng,
+            None,
+        )
+    }
+
     /// Computing the base point vector of the commmitment scheme in a
     /// deterministic manner, given the PROTOCOL_NAME.
-    fn sample_generators(num_generators: usize, seed: &[u8]) -> Vec<G> {
+    fn sample_generators<D: Digest>(num_generators: usize, seed: &[u8]) -> Vec<G> {
         let generators: Vec<_> = (0..num_generators)
             .into_par_iter()
             .map(|i| {
                 let i = i as u64;
-                let mut hash = D::digest(&to_bytes![seed, i].unwrap());
+                let mut hash = D::digest(&serialize_no_metadata![seed, i].unwrap());
                 let mut g = G::from_random_bytes(&hash);
                 let mut j = 0u64;
                 while g.is_none() {
-                    hash = D::digest(&to_bytes![seed, i, j].unwrap());
+                    hash = D::digest(&serialize_no_metadata![seed, i, j].unwrap());
                     g = G::from_random_bytes(&hash);
                     j += 1;
                 }
@@ -204,51 +297,62 @@ impl<G: Curve, D: Digest> InnerProductArgPC<G, D> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
-    type Parameters = Parameters<G>;
+impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
     // The succinct part of the verifier returns the dlog reduction challenges that
     // define the succinct check polynomial.
-    type VerifierState = VerifierState<G>;
+    type VerifierState = DLogItem<G>;
     type VerifierOutput = VerifierOutput<G>;
     type Commitment = G;
     type Randomness = G::ScalarField;
     type Proof = Proof<G>;
     type MultiPointProof = MultiPointProof<G>;
     type Error = Error;
-    type RandomOracle = FiatShamirChaChaRng<D>;
+    type RandomOracle = FS;
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
-        Self::setup_from_seed(max_degree, &Self::PROTOCOL_NAME)
+    fn setup<D: Digest>(
+        max_degree: usize,
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
+        Self::setup_from_seed::<D>(max_degree, &Self::PROTOCOL_NAME)
     }
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
+    fn setup_from_seed<D: Digest>(
+        max_degree: usize,
+        seed: &[u8],
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
         // Ensure that max_degree + 1 is a power of 2
         let max_degree = (max_degree + 1).next_power_of_two() - 1;
 
         let setup_time = start_timer!(|| format!("Sampling {} generators", max_degree + 3));
-        let generators = Self::sample_generators(max_degree + 3, seed);
+        let generators = Self::sample_generators::<D>(max_degree + 3, seed);
         end_timer!(setup_time);
 
-        let hash = D::digest(&to_bytes![&generators, max_degree as u32].unwrap()).to_vec();
+        let hash =
+            D::digest(&serialize_no_metadata![&generators, max_degree as u32].unwrap()).to_vec();
 
         let h = generators[0].clone();
         let s = generators[1].clone();
         let comm_key = G::batch_normalization_into_affine(generators[2..].to_vec()).unwrap();
 
-        let pp = Parameters {
+        let ck = CommitterKey {
             comm_key,
             h,
             s,
             hash,
         };
 
-        Ok(pp)
+        Ok((ck.clone(), ck))
+    }
+
+    #[cfg(feature = "circuit-friendly")]
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        let scalar = G::endo_rep_to_scalar(chal).map_err(|e| Error::Other(e.to_string()))?;
+        Ok(scalar)
     }
 
     fn commit(
@@ -321,15 +425,16 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             // We assume that the commitments, the query point, and the evaluations are already
             // bound to the internal state of the Fiat-Shamir rng. Hence the same is true for
             // the deterministically derived combined_commitment and its combined_v.
-            fs_rng.absorb(&to_bytes![hiding_commitment].unwrap());
+            fs_rng.record(hiding_commitment)?;
             // the random coefficient `rho`
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
-
+            let hiding_challenge =
+                Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+                    .map_err(|e| Error::Other(e.to_string()))?;
             // compute random linear combination using the hiding_challenge,
             // both for witnesses and commitments (and it's randomness)
             polynomial += (hiding_challenge, &hiding_polynomial);
             rand += &(hiding_challenge * &hiding_randomness);
-            fs_rng.absorb(&to_bytes![rand].unwrap());
+            fs_rng.record(rand)?;
 
             end_timer!(hiding_time);
 
@@ -341,7 +446,9 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let mut round_challenge =
+            Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+                .map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -394,12 +501,20 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             r_vec.push(lr[1]);
 
             // the previous challenge is bound to the internal state, hence
-            // no need to absorb it
-            fs_rng.absorb(&to_bytes![lr[0], lr[1]].unwrap());
+            // no need to record it
+            fs_rng.record([lr[0], lr[1]])?;
 
-            round_challenge = fs_rng.squeeze_128_bits_challenge();
-            // round_challenge is guaranteed to be non-zero by squeeze function
-            let round_challenge_inv = round_challenge.inverse().unwrap();
+            round_challenge = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+                .map_err(|e| Error::Other(e.to_string()))?;
+
+            let round_challenge_inv =
+                round_challenge
+                    .inverse()
+                    .ok_or(Error::FiatShamirTransformError(
+                        fiat_shamir::error::Error::GetChallengeError(
+                            "sampled a 0 challenge !".to_string(),
+                        ),
+                    ))?;
 
             Self::round_reduce(
                 round_challenge,
@@ -436,28 +551,20 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
 
     /// The "succinct" verifier of a proof produced by `fn open()`.
     /// Does all a full verifier does, except the correctness check of G_fin.
+    /// This implementation allows passing an oversized verification key to verify the proof.
     fn succinct_verify(
         vk: &VerifierKey<G>,
         commitment: &Self::Commitment,
         point: G::ScalarField,
         value: G::ScalarField,
         proof: &Proof<G>,
-        fs_rng: &mut FiatShamirChaChaRng<D>,
+        fs_rng: &mut FS,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
+        // Pre checks. The key length is read from the proof rather than from the vk.
+        // This allows to have oversized keys.
+        let log_key_len = proof.degree()? + 1;
+
         let succinct_verify_time = start_timer!(|| "Succinct verify");
-
-        let log_key_len = proof.l_vec.len();
-
-        if proof.l_vec.len() != proof.r_vec.len() {
-            end_timer!(succinct_verify_time);
-            Err(Error::IncorrectInputLength(
-                format!(
-                    "expected l_vec size and r_vec size to be equal; instead l_vec size is {:} and r_vec size is {:}",
-                    proof.l_vec.len(),
-                    proof.r_vec.len()
-                )
-            ))?
-        }
 
         // At the end combined_commitment_proj = C
         let mut combined_commitment_proj = commitment.clone();
@@ -474,9 +581,11 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             let hiding_comm = proof.hiding_comm.unwrap();
             let rand = proof.rand.unwrap();
 
-            fs_rng.absorb(&to_bytes![hiding_comm].unwrap());
-            let hiding_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
-            fs_rng.absorb(&(to_bytes![rand].unwrap()));
+            fs_rng.record(hiding_comm)?;
+            let hiding_challenge =
+                Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+                    .map_err(|e| Error::Other(e.to_string()))?;
+            fs_rng.record(rand)?;
 
             combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
         }
@@ -484,7 +593,12 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         // Challenge for each round
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge: G::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        #[cfg(feature = "circuit-friendly")]
+        let mut endo_round_challenges = Vec::with_capacity(log_key_len);
+
+        let mut round_challenge =
+            Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+                .map_err(|e| Error::Other(e.to_string()))?;
 
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -494,20 +608,47 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
         let r_iter = proof.r_vec.iter();
 
         for (l, r) in l_iter.zip(r_iter) {
-            fs_rng.absorb(&to_bytes![l, r].unwrap());
-            round_challenge = fs_rng.squeeze_128_bits_challenge();
+            fs_rng.record([*l, *r])?;
 
-            round_challenges.push(round_challenge);
+            // Save always round challenge as a normal 128 bits G::ScalarField element
+            let chal = fs_rng.get_challenge::<128>()?;
+            let raw_round_chal = read_fe_from_challenge::<G::ScalarField>(chal.to_vec())?;
+            round_challenges.push(raw_round_chal);
+            round_challenge = raw_round_chal;
 
-            // round_challenge is guaranteed to be non-zero by squeeze function
-            round_commitment_proj +=
-                &(l.mul(&round_challenge.inverse().unwrap()) + &r.mul(&round_challenge));
+            // If in circuit-friendly mode, let's transform it to an endo scalar and save it
+            #[cfg(feature = "circuit-friendly")]
+            {
+                let endo_chal = Self::challenge_to_scalar(chal.to_vec())
+                    .map_err(|e| Error::Other(e.to_string()))?;
+                endo_round_challenges.push(endo_chal);
+                round_challenge = endo_chal;
+            }
+
+            let round_challenge_inv =
+                round_challenge
+                    .inverse()
+                    .ok_or(Error::FiatShamirTransformError(
+                        fiat_shamir::error::Error::GetChallengeError(
+                            "sampled a 0 challenge !".to_string(),
+                        ),
+                    ))?;
+
+            round_commitment_proj += &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
         }
-
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-        let check_poly = SuccinctCheckPolynomial::<G::ScalarField>(round_challenges);
-        let v_prime = check_poly.evaluate(point) * &proof.c;
+        #[cfg(feature = "circuit-friendly")]
+        let check_poly = SuccinctCheckPolynomial::<G> {
+            chals: round_challenges,
+            endo_chals: endo_round_challenges,
+        };
 
+        #[cfg(not(feature = "circuit-friendly"))]
+        let check_poly = SuccinctCheckPolynomial::<G> {
+            chals: round_challenges,
+        };
+
+        let v_prime = check_poly.evaluate(point) * &proof.c;
         let check_commitment_elem: G = Self::inner_commit(
             &[
                 proof.final_comm_key.into_affine().unwrap(),
@@ -517,7 +658,6 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
             None,
             None,
         )?;
-
         if !G::is_zero(&(round_commitment_proj - &check_commitment_elem)) {
             end_timer!(succinct_verify_time);
             return Ok(None);
@@ -525,7 +665,7 @@ impl<G: Curve, D: Digest> PolynomialCommitment<G> for InnerProductArgPC<G, D> {
 
         end_timer!(succinct_verify_time);
 
-        Ok(Some(VerifierState {
+        Ok(Some(DLogItem {
             check_poly,
             final_comm_key: proof.final_comm_key,
         }))

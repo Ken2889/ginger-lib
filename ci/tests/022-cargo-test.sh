@@ -3,4 +3,17 @@
 
 set -xeo pipefail
 
-cargo $CARGOARGS test --workspace --all-features --exclude "r1cs-std"
+cd algebra
+cargo $CARGOARGS test --all-features
+
+cd ../primitives
+cargo $CARGOARGS test --all-features
+
+cd ../r1cs/core
+cargo $CARGOARGS test --all-features
+
+cd ../gadgets/crypto
+cargo $CARGOARGS test --all-features
+
+cd ../std
+cargo $CARGOARGS test --features="full"

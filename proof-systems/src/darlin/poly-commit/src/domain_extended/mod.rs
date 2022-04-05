@@ -1,26 +1,83 @@
 //!
 //! A module for extending the domain of an arbitrary homomorphic commitment scheme beyond the
 //! maximum degree supported by it.
-
+#[cfg(feature = "circuit-friendly")]
+mod constraints;
+#[cfg(feature = "circuit-friendly")]
+pub use constraints::*;
 mod data_structures;
 pub use data_structures::*;
 
-use crate::{Error, LinearCombination, Polynomial, PolynomialCommitment};
-use crate::{PCCommitterKey, PCProof};
+use crate::{LinearCombination, PCKey, PCProof, Polynomial, PolynomialCommitment};
 use algebra::{
-    curves::Curve,
     fields::Field,
     groups::{Group, GroupVec},
 };
+
+use digest::Digest;
+use num_traits::Zero;
 use rand_core::RngCore;
 use std::marker::PhantomData;
+
+#[cfg(feature = "circuit-friendly")]
+use crate::{
+    single_point_multi_poly_open, single_point_multi_poly_succinct_verify, LabeledCommitment,
+    LabeledPolynomial, LabeledRandomness,
+};
+#[cfg(feature = "circuit-friendly")]
+use std::collections::BTreeMap;
+
+/*
+        Iterate over labeled commitment and values, sorting them in ascending order
+        on the number of segments. The label of the commitment is employed as a sorting criteria
+        for the polynomials with the same number of segments
+*/
+#[macro_export]
+macro_rules! sort_commitments_and_values {
+    ($commitments: ident, $values: ident) => {{
+        // employ a counter to check that all commitments/values are placed in `sorted_collections`,
+        // as in case there are duplicates the `collect` on `BTreeMap`
+        // just stops processing elements of the iterator rather than returning an error
+        let mut counter = 0;
+        let sorted_collections = $commitments
+            .into_iter()
+            .zip($values.into_iter())
+            .map(|(comm, val)| {
+                counter += 1;
+                ((comm.commitment().len(), comm.label()), (comm, val))
+            })
+            .collect::<BTreeMap<(_, _), (_, _)>>();
+
+        assert_eq!(counter, sorted_collections.len());
+
+        let (sorted_commitments, sorted_values): (Vec<_>, Vec<_>) = sorted_collections
+            .iter()
+            .rev()
+            .map(|(_, (comm, val))| (comm, val))
+            .unzip();
+        (sorted_commitments, sorted_values)
+    }};
+}
+
+fn compute_num_of_segments<G: Group, PC: PolynomialCommitment<G>>(
+    ck: &PC::CommitterKey,
+    polynomial: &Polynomial<G::ScalarField>,
+) -> usize {
+    let key_len = ck.degree() + 1;
+
+    let p_len = polynomial.coeffs.len();
+    std::cmp::max(
+        1,
+        p_len / key_len + if p_len % key_len != 0 { 1 } else { 0 },
+    )
+}
 
 /// The domain extension of a given homomorphic commitment scheme `PC`.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct DomainExtendedPolynomialCommitment<G: Curve, PC: PolynomialCommitment<G, Commitment = G>>
+pub struct DomainExtendedPolynomialCommitment<G: Group, PC: PolynomialCommitment<G, Commitment = G>>
 {
-    _projective: PhantomData<G>,
+    _group: PhantomData<G>,
     _pc: PhantomData<PC>,
 }
 
@@ -31,10 +88,9 @@ pub struct DomainExtendedPolynomialCommitment<G: Curve, PC: PolynomialCommitment
 // degree of the scheme. The commitment of p(X) is the vector of the commitments of its
 // segment polynomials, and evaluation claims on p(X) are reduced to that of a query-point
 // dependent linear combination of the p_i(X).
-impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G>
+impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment<G>
     for DomainExtendedPolynomialCommitment<G, PC>
 {
-    type Parameters = PC::Parameters;
     type CommitterKey = PC::CommitterKey;
     type VerifierKey = PC::VerifierKey;
     type VerifierState = PC::VerifierState;
@@ -48,14 +104,20 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
 
     /// Setup of the base point vector (deterministically derived from the
     /// PROTOCOL_NAME as seed).
-    fn setup(max_degree: usize) -> Result<Self::Parameters, Self::Error> {
-        PC::setup(max_degree)
+
+    fn setup<D: Digest>(
+        max_degree: usize,
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
+        PC::setup::<D>(max_degree)
     }
 
     /// Setup of the base point vector (deterministically derived from the
     /// given byte array as seed).
-    fn setup_from_seed(max_degree: usize, seed: &[u8]) -> Result<Self::Parameters, Self::Error> {
-        PC::setup_from_seed(max_degree, seed)
+    fn setup_from_seed<D: Digest>(
+        max_degree: usize,
+        seed: &[u8],
+    ) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
+        PC::setup_from_seed::<D>(max_degree, seed)
     }
 
     fn commit(
@@ -64,14 +126,11 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
         is_hiding: bool,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(Self::Commitment, Self::Randomness), Self::Error> {
-        let rng = &mut crate::optional_rng::OptionalRng(rng);
+        let key_len = ck.degree() + 1;
 
-        let key_len = ck.get_key_len();
+        let rng = &mut crate::optional_rng::OptionalRng(rng);
         let p_len = polynomial.coeffs.len();
-        let segments_count = std::cmp::max(
-            1,
-            p_len / key_len + if p_len % key_len != 0 { 1 } else { 0 },
-        );
+        let segments_count = compute_num_of_segments::<G, PC>(ck, polynomial);
 
         let mut commitment = Self::Commitment::zero();
         let mut randomness = Self::Randomness::zero();
@@ -108,52 +167,33 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
         fs_rng: &mut Self::RandomOracle,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<Self::Proof, Self::Error> {
-        let key_len = ck.get_key_len();
-
-        if key_len.next_power_of_two() != key_len {
-            Err(Error::Other(
-                "Commiter key length is not power of 2".to_owned(),
-            ))?
-        }
+        let key_len = ck.degree() + 1;
 
         let lc_time = start_timer!(|| "LC of polynomial and randomness");
 
         let p_len = polynomial.coeffs.len();
-        let segments_count = std::cmp::max(
-            1,
-            p_len / key_len + if p_len % key_len != 0 { 1 } else { 0 },
-        );
+        let segments_count = compute_num_of_segments::<G, PC>(ck, &polynomial);
 
         // Compute the query-point dependent linear combination of the segments,
         // both for witnesses, commitments (and their randomnesses, if hiding)
 
-        let mut polynomials_lc = LinearCombination::<Polynomial<G::ScalarField>>::new(vec![]);
-        let mut randomnesses_lc = LinearCombination::<PC::Randomness>::new(vec![]);
-
         let point_pow = point.pow(&[key_len as u64]);
-        let mut coeff = G::ScalarField::one();
 
+        let mut raw_polys = Vec::new();
+        let mut raw_rand_lc = Vec::new();
         for i in (0..segments_count).into_iter() {
-            if i > 0 {
-                coeff = coeff * &point_pow;
-            }
-            polynomials_lc.push(
-                coeff.clone(),
-                Polynomial::from_coefficients_slice(
-                    &polynomial.coeffs[i * key_len..core::cmp::min((i + 1) * key_len, p_len)],
-                ),
-            );
+            raw_polys.push(Polynomial::from_coefficients_slice(
+                &polynomial.coeffs[i * key_len..core::cmp::min((i + 1) * key_len, p_len)],
+            ));
+
             if is_hiding {
                 // TODO: check the situation when poly has one segment more comparing to
                 //  randomness segments
-                randomnesses_lc.push(
-                    coeff.clone(),
-                    if randomness.len() <= i {
-                        PC::Randomness::zero()
-                    } else {
-                        randomness[i].clone()
-                    },
-                );
+                raw_rand_lc.push(if randomness.len() <= i {
+                    PC::Randomness::zero()
+                } else {
+                    randomness[i].clone()
+                });
             }
         }
 
@@ -161,46 +201,35 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
 
         PC::open_lc(
             ck,
-            &polynomials_lc,
+            LinearCombination::new_from_val(&point_pow, raw_polys.iter().collect()),
             point,
             is_hiding,
-            &randomnesses_lc,
+            LinearCombination::new_from_val(&point_pow, raw_rand_lc.iter().collect()),
             fs_rng,
             rng,
         )
     }
 
-    fn succinct_verify<'a>(
+    fn succinct_verify(
         vk: &Self::VerifierKey,
-        combined_commitment: &'a Self::Commitment,
+        combined_commitment: &Self::Commitment,
         point: G::ScalarField,
         value: G::ScalarField,
         proof: &Self::Proof,
         fs_rng: &mut Self::RandomOracle,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
-        let key_len = proof.get_key_len();
+        let log_key_len = proof.degree()? + 1;
 
         let lc_time = start_timer!(|| "LC of segmented commitment");
 
-        let point_pow = point.pow(&[key_len as u64]);
-        let mut coeff = G::ScalarField::one();
+        let point_pow = point.pow(&[1 << log_key_len as u64]);
 
-        let commitments_lc = LinearCombination::<PC::Commitment>::new(
-            combined_commitment
-                .iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    if i > 0 {
-                        coeff = coeff * &point_pow;
-                    }
-                    (coeff.clone(), item.clone())
-                })
-                .collect(),
-        );
+        let commitments_lc =
+            LinearCombination::new_from_val(&point_pow, combined_commitment.iter().collect());
 
         end_timer!(lc_time);
 
-        PC::succinct_verify_lc(vk, &commitments_lc, point, value, proof, fs_rng)
+        PC::succinct_verify_lc(vk, commitments_lc, point, value, proof, fs_rng)
     }
 
     fn hard_verify(
@@ -208,5 +237,80 @@ impl<G: Curve, PC: 'static + PolynomialCommitment<G, Commitment = G>> Polynomial
         vs: &Self::VerifierState,
     ) -> Result<Option<Self::VerifierOutput>, Self::Error> {
         PC::hard_verify(vk, vs)
+    }
+
+    fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
+        PC::challenge_to_scalar(chal)
+    }
+
+    #[cfg(feature = "circuit-friendly")]
+    fn single_point_multi_poly_open<'a>(
+        ck: &Self::CommitterKey,
+        labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+        point: G::ScalarField,
+        fs_rng: &mut Self::RandomOracle,
+        labeled_randomnesses: impl IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
+        rng: Option<&mut dyn RngCore>,
+    ) -> Result<Self::Proof, Self::Error> {
+        /*
+        Iterate over labeled polynomials and values, sorting them in ascending order
+        on the number of segments. The label of the polynomial is employed as a sorting criteria
+        for the polynomials with the same number of segments
+        */
+
+        // employ a counter to check that all polynomials/values are placed in `sorted_collections`,
+        // as in case there are duplicates the `collect` on `BTreeMap`
+        // just stops processing elements of the iterator rather than returning an error
+        let mut counter = 0;
+        let sorted_collections = labeled_polynomials
+            .into_iter()
+            .zip(labeled_randomnesses.into_iter())
+            .map(|(poly, rand)| {
+                counter += 1;
+                (
+                    (compute_num_of_segments::<G, PC>(ck, poly), poly.label()),
+                    (poly, rand),
+                )
+            })
+            .collect::<BTreeMap<(_, _), (_, _)>>();
+
+        assert_eq!(counter, sorted_collections.len());
+
+        let (sorted_polys, sorted_rands): (Vec<_>, Vec<_>) = sorted_collections
+            .iter()
+            .rev()
+            .map(|(_, (poly, rand))| (poly, rand))
+            .unzip();
+
+        single_point_multi_poly_open::<G, Self, _, _>(
+            ck,
+            sorted_polys,
+            point,
+            fs_rng,
+            sorted_rands,
+            rng,
+        )
+    }
+
+    #[cfg(feature = "circuit-friendly")]
+    fn succinct_single_point_multi_poly_verify<'a>(
+        vk: &Self::VerifierKey,
+        labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
+        point: G::ScalarField,
+        values: impl IntoIterator<Item = &'a G::ScalarField>,
+        proof: &Self::Proof,
+        fs_rng: &mut Self::RandomOracle,
+    ) -> Result<Option<Self::VerifierState>, Self::Error> {
+        let (sorted_commitments, sorted_values) =
+            sort_commitments_and_values!(labeled_commitments, values);
+
+        single_point_multi_poly_succinct_verify::<G, Self, _, _>(
+            vk,
+            sorted_commitments,
+            point,
+            sorted_values,
+            proof,
+            fs_rng,
+        )
     }
 }

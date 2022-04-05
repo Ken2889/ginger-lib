@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 pub mod bowe_hopwood;
-pub mod injective_map;
-pub mod pedersen;
 
 pub mod sbox;
 pub use self::sbox::*;
@@ -158,14 +156,14 @@ pub trait BatchFieldBasedHash {
 #[cfg(test)]
 mod test {
 
-    use algebra::{Group, fields::tweedle::Fr as Fr, Field, UniformRand};
+    use algebra::{fields::tweedle::Fr, UniformRand};
 
-    use super::BatchFieldBasedHash;
+    use super::*;
     use crate::crh::poseidon::{TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash};
 
-    use crate::{FieldBasedHash, FieldBasedHashParameters};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use num_traits::{Zero, One};
 
     struct DummyTweedleFrBatchPoseidonHash;
 

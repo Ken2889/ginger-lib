@@ -3,15 +3,19 @@
 use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use algebra::{get_best_evaluation_domain, Curve, EvaluationDomain, Field, Group};
+use crate::darlin::IPACurve;
+use algebra::{get_best_evaluation_domain, EvaluationDomain, Field, FromBits, Group};
+use fiat_shamir::FiatShamirRng;
 use marlin::iop::Error;
-use poly_commit::fiat_shamir_rng::FiatShamirRng;
-use poly_commit::QuerySet;
+use num_traits::{One, Zero};
+use poly_commit::QueryMap;
 use r1cs_core::SynthesisError;
+use std::collections::BTreeSet;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 /// State of the IOP verifier
-pub struct VerifierState<'a, G1: Curve, G2: Curve> {
+pub struct VerifierState<'a, G1: IPACurve, G2: IPACurve> {
     /// Domain H.
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
     /// the previous inner-sumcheck accumulator
@@ -59,7 +63,7 @@ pub struct VerifierThirdMsg<G: Group> {
     pub lambda: G::ScalarField,
 }
 
-impl<G1: Curve, G2: Curve> IOP<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// Preparation of the verifier.
     pub fn verifier_init<'a>(
         index_info: &IndexInfo<G1, G2>,
@@ -83,11 +87,15 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     }
     /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
     /// to a sumcheck.
-    pub fn verifier_first_round<'a, R: FiatShamirRng>(
+    pub fn verifier_first_round<'a, FS: FiatShamirRng>(
         mut state: VerifierState<'a, G1, G2>,
-        fs_rng: &mut R,
+        fs_rng: &mut FS,
     ) -> Result<(VerifierFirstMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
-        let alpha: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let chals = fs_rng.get_many_challenges::<128>(2)?;
+
+        let alpha = G1::ScalarField::read_bits(chals[0].to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
         if state
             .domain_h
             .evaluate_vanishing_polynomial(alpha)
@@ -98,7 +106,8 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             ))?
         }
 
-        let eta = fs_rng.squeeze_128_bits_challenge();
+        let eta = G1::ScalarField::read_bits(chals[1].to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierFirstMsg { alpha, eta };
         state.first_round_msg = Some(msg.clone());
@@ -118,7 +127,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         ),
         Error,
     > {
-        let beta: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let beta = G1::ScalarField::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
         if state.domain_h.evaluate_vanishing_polynomial(beta).is_zero() {
             Err(Error::Other(
                 "Sampled a beta challenge belonging to H domain".to_owned(),
@@ -137,7 +148,11 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
         mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
     ) -> Result<(VerifierThirdMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
-        let gamma: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let chals = fs_rng.get_many_challenges::<128>(2)?;
+
+        let gamma = G1::ScalarField::read_bits(chals[0].to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
+
         if state
             .domain_h
             .evaluate_vanishing_polynomial(gamma)
@@ -148,7 +163,8 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             ))?
         }
 
-        let lambda: G1::ScalarField = fs_rng.squeeze_128_bits_challenge();
+        let lambda = G1::ScalarField::read_bits(chals[0].to_vec())
+            .map_err(|e| Error::Other(e.to_string()))?;
 
         let msg = VerifierThirdMsg { gamma, lambda };
         state.third_round_msg = Some(msg);
@@ -157,9 +173,9 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
     }
 
     /// Output the query state and next round state.
-    pub fn verifier_query_set<'a, 'b>(
+    pub fn verifier_query_map<'a, 'b>(
         state: VerifierState<G1, G2>,
-    ) -> Result<(QuerySet<'b, G1::ScalarField>, VerifierState<G1, G2>), Error> {
+    ) -> Result<(QueryMap<'b, G1::ScalarField>, VerifierState<G1, G2>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
@@ -170,34 +186,40 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         let g_h = state.domain_h.group_gen();
 
-        let mut query_set = QuerySet::new();
+        let queries_at_alpha = BTreeSet::from_iter(vec!["curr_bridging_poly".to_string()]);
 
-        // First round polys
-        query_set.insert(("x".into(), ("beta".into(), beta)));
-        query_set.insert(("w".into(), ("beta".into(), beta)));
-        query_set.insert(("y_a".into(), ("beta".into(), beta)));
-        query_set.insert(("y_b".into(), ("beta".into(), beta)));
+        let queries_at_beta = BTreeSet::from_iter(vec![
+            "x".to_string(),
+            "w".to_string(),
+            "y_a".to_string(),
+            "y_b".to_string(),
+            "u_1".to_string(),
+            "h_1".to_string(),
+            "t".to_string(),
+            "curr_t_acc_poly".to_string(),
+            "prev_t_acc_poly".to_string(),
+        ]);
+        let queries_at_gamma = BTreeSet::from_iter(vec![
+            "curr_bridging_poly".to_string(),
+            "prev_bridging_poly".to_string(),
+            "prev_bullet_poly".to_string(),
+        ]);
+        let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
+        let queries_at_prev_alpha = BTreeSet::from_iter(vec!["prev_bridging_poly".to_string()]);
 
-        // Second round polys
-        query_set.insert(("u_1".into(), ("beta".into(), beta)));
-        query_set.insert(("u_1".into(), ("g * beta".into(), g_h * beta)));
-        query_set.insert(("h_1".into(), ("beta".into(), beta)));
-        query_set.insert(("t".into(), ("beta".into(), beta)));
+        let query_map = {
+            let mut map = QueryMap::new();
+            map.insert("alpha".to_string(), (alpha, queries_at_alpha));
+            map.insert("beta".to_string(), (beta, queries_at_beta));
+            map.insert("gamma".to_string(), (gamma, queries_at_gamma));
+            map.insert("g * beta".to_string(), (g_h * beta, queries_at_g_beta));
+            map.insert(
+                "prev_alpha".to_string(),
+                (prev_alpha, queries_at_prev_alpha),
+            );
+            map
+        };
 
-        // Inner sumcheck aggregation polys
-        query_set.insert(("curr_bridging_poly".into(), ("alpha".into(), alpha)));
-        query_set.insert((
-            "prev_bridging_poly".into(),
-            ("prev_alpha".into(), prev_alpha),
-        ));
-        query_set.insert(("curr_bridging_poly".into(), ("gamma".into(), gamma)));
-        query_set.insert(("prev_bridging_poly".into(), ("gamma".into(), gamma)));
-        query_set.insert(("curr_t_acc_poly".into(), ("beta".into(), beta)));
-        query_set.insert(("prev_t_acc_poly".into(), ("beta".into(), beta)));
-
-        // Dlog accumulation poly
-        query_set.insert(("prev_bullet_poly".into(), ("gamma".into(), gamma)));
-
-        Ok((query_set, state))
+        Ok((query_map, state))
     }
 }

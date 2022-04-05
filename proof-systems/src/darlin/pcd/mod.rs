@@ -15,15 +15,16 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{Group, Curve, ToConstraintField, UniformRand};
-use digest::Digest;
+use algebra::{Group, ToConstraintField, UniformRand};
+use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, Parameters, VerifierKey as DLogVerifierKey},
-    Error as PCError, PCParameters,
+    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey, IPACurve},
+    Error as PCError, PCKey,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
+use derivative::Derivative;
 
 pub mod error;
 pub mod final_darlin;
@@ -39,11 +40,11 @@ impl PCDParameters {
     /// We assume the DLOG keys to be generated outside the PCD scheme,
     /// so this function actually just trim them to the segment size
     /// specified in the config.
-    pub fn universal_setup<G: Curve, D: Digest>(
+    pub fn universal_setup<G: IPACurve>(
         &self,
-        params: &Parameters<G>,
+        params: (&DLogCommitterKey<G>, &DLogVerifierKey<G>),
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
-        params.trim(self.segment_size - 1)
+        Ok((params.0.trim(self.segment_size - 1)?, params.1.trim(self.segment_size - 1)?))
     }
 }
 
@@ -55,7 +56,7 @@ impl PCDParameters {
 ///     aka deferred checks.
 /// The additional data is used only by dedicated circuits such as a base proofs or
 /// a finalizing block proofs. For the ordinary merger nodes, it is simply `None`.
-pub trait PCDCircuit<G: Curve>: ConstraintSynthesizer<G::ScalarField> {
+pub trait PCDCircuit<G: IPACurve>: ConstraintSynthesizer<G::ScalarField> {
     /// Any data that may be needed to bootstrap the circuit that is not covered by the other
     /// fields.
     type SetupData: Clone;
@@ -139,19 +140,19 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: Curve, G2: Curve, D: Digest + 'static> {
-    SimpleMarlin(SimpleMarlinPCD<'a, G1, D>),
-    FinalDarlin(FinalDarlinPCD<'a, G1, G2, D>),
+pub enum GeneralPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+    SimpleMarlin(SimpleMarlinPCD<'a, G1, FS>),
+    FinalDarlin(FinalDarlinPCD<'a, G1, G2, FS>),
 }
 
 // Testing functions
-impl<'a, G1, G2, D> GeneralPCD<'a, G1, G2, D>
+impl<'a, G1, G2, FS> GeneralPCD<'a, G1, G2, FS>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest,
+    FS: FiatShamirRng,
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
         match self {
@@ -181,7 +182,7 @@ where
             }
             Self::FinalDarlin(final_darlin) => {
                 final_darlin.final_darlin_proof.deferred =
-                    FinalDarlinDeferredData::<G1, G2>::generate_random::<R, D>(rng, ck_g1, ck_g2);
+                    FinalDarlinDeferredData::<G1, G2>::generate_random::<R, FS>(rng, ck_g1, ck_g2);
             }
         }
     }
@@ -190,18 +191,18 @@ where
 /// We can re-use the FinalDarlinPCDVerifierKey for GeneralPCD as it contains both
 /// committer keys, and a CoboundaryMarlin and FinalDarlinProof are both verifiable
 /// with a standard Marlin Verifier key. Let's introduce a new type just to be clean.
-pub type DualPCDVerifierKey<'a, G1, G2, D> = FinalDarlinPCDVerifierKey<'a, G1, G2, D>;
+pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;
 
-impl<'a, G1, G2, D> PCD for GeneralPCD<'a, G1, G2, D>
+impl<'a, G1, G2, FS> PCD for GeneralPCD<'a, G1, G2, FS>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
-    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, D>;
-    type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, D>;
+    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
+    type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, FS>;
 
     fn succinct_verify(
         &self,

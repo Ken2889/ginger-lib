@@ -101,4 +101,6 @@ impl FpParameters for FqParameters {
         0xffffffffffffffff,
         0x0,
     ]);
+
+    const DIFFERENCE_WITH_HIGHER_POWER_OF_TWO: Option<u64> = Some(4294968273);
 }

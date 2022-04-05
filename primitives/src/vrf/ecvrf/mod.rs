@@ -6,7 +6,7 @@ use crate::{
 };
 use algebra::{
     convert, leading_zeros, serialize::*, to_bytes, Curve, FromBytes,
-    FromBytesChecked, Group, PrimeField, SemanticallyValid, ToBits, ToBytes,
+    FromBytesChecked, PrimeField, SemanticallyValid, ToBits, ToBytes,
     ToConstraintField, UniformRand,
 };
 use rand::distributions::{Distribution, Standard};
@@ -14,6 +14,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Error as IoError, ErrorKind, Read, Result as IoResult, Write};
 use std::marker::PhantomData;
+use num_traits::Zero;
 
 pub struct FieldBasedEcVrf<F: PrimeField, G: Curve, FH: FieldBasedHash, GH: FixedLengthCRH> {
     _field: PhantomData<F>,
@@ -384,7 +385,7 @@ where
 mod test {
     use crate::{
         crh::{
-            bowe_hopwood::BoweHopwoodPedersenCRH, pedersen::PedersenWindow, TweedleFrPoseidonHash,
+            bowe_hopwood::*, TweedleFrPoseidonHash,
             TweedleFqPoseidonHash,
         },
         vrf::{ecvrf::FieldBasedEcVrf, FieldBasedVrf},
@@ -400,7 +401,7 @@ mod test {
     #[derive(Clone)]
     struct TestWindow {}
     impl PedersenWindow for TestWindow {
-        const WINDOW_SIZE: usize = 64;
+        const WINDOW_SIZE: usize = 43;
         const NUM_WINDOWS: usize = 2;
     }
 

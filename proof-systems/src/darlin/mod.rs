@@ -30,19 +30,22 @@ use crate::darlin::{
         PCDCircuit, PCD,
     },
 };
-use algebra::{Curve, Group, GroupVec, ToConstraintField};
+use algebra::{Group, GroupVec, ToConstraintField};
 use digest::Digest;
+use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
-        CommitterKey as DLogProverKey, InnerProductArgPC, Parameters,
-        VerifierKey as DLogVerifierKey,
+        CommitterKey as DLogProverKey, InnerProductArgPC,
+        VerifierKey as DLogVerifierKey, IPACurve,
     },
     DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, PolynomialCommitment,
-    QuerySet,
+    QueryMap,
 };
 use rand::RngCore;
 use std::marker::PhantomData;
+
+pub(crate) type DomainExtendedIpaPc<G, FS> = DomainExtendedPolynomialCommitment<G, InnerProductArgPC<G, FS>>;
 
 /// FinalDarlin proof system. It is simply a (coboundary) Marlin SNARK of a dedicated
 /// recursive `PCDCircuit`.
@@ -50,39 +53,37 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: Curve, G2: Curve, D: Digest + 'static>(
+pub struct FinalDarlin<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
-    #[doc(hidden)] PhantomData<D>,
+    #[doc(hidden)] PhantomData<FS>,
     #[doc(hidden)] PhantomData<&'a ()>,
 );
 
-impl<'a, G1, G2, D> FinalDarlin<'a, G1, G2, D>
+impl<'a, G1, G2, FS> FinalDarlin<'a, G1, G2, FS>
 where
-    G1: Curve<BaseField = <G2 as Group>::ScalarField>
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: Curve<BaseField = <G1 as Group>::ScalarField>
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
-    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     /// Generate the universal prover and verifier keys for Marlin.
-    pub fn universal_setup(
+    pub fn universal_setup<D: Digest>(
         num_constraints: usize,
         num_variables: usize,
         num_non_zero: usize,
         zk: bool,
-    ) -> Result<(Parameters<G1>, Parameters<G2>), FinalDarlinError> {
+    ) -> Result<((DLogProverKey<G1>, DLogVerifierKey<G1>), (DLogProverKey<G2>, DLogVerifierKey<G2>)), FinalDarlinError> {
         let srs_g1 = Marlin::<
             G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
-            D,
-        >::universal_setup(num_constraints, num_variables, num_non_zero, zk)?;
+            DomainExtendedIpaPc<G1, FS>,
+        >::universal_setup::<D>(num_constraints, num_variables, num_non_zero, zk)?;
 
         let srs_g2 = Marlin::<
             G2,
-            DomainExtendedPolynomialCommitment<G2, InnerProductArgPC<G2, D>>,
-            D,
-        >::universal_setup(num_constraints, num_variables, num_non_zero, zk)?;
+            DomainExtendedIpaPc<G2, FS>,
+        >::universal_setup::<D>(num_constraints, num_variables, num_non_zero, zk)?;
 
         Ok((srs_g1, srs_g2))
     }
@@ -90,24 +91,24 @@ where
     /// Generate the index-specific (i.e., circuit-specific) prover and verifier
     /// keys from the dedicated PCDCircuit.
     /// This is a deterministic algorithm that anyone can rerun.
-    pub fn index<C: PCDCircuit<G1>>(
+    pub fn index<C: PCDCircuit<G1>, D: Digest>(
         committer_key: &DLogProverKey<G1>,
         config: C::SetupData,
     ) -> Result<
         (
             FinalDarlinProverKey<
                 G1,
-                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+                DomainExtendedIpaPc<G1, FS>,
             >,
             FinalDarlinVerifierKey<
                 G1,
-                DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+                DomainExtendedIpaPc<G1, FS>,
             >,
         ),
         FinalDarlinError,
     > {
         let c = C::init(config);
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::circuit_specific_setup(committer_key, c)?;
+        let res = Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::circuit_specific_setup::<_, D>(committer_key, c)?;
 
         Ok(res)
     }
@@ -117,7 +118,7 @@ where
     pub fn prove<C>(
         index_pk: &FinalDarlinProverKey<
             G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            DomainExtendedIpaPc<G1, FS>,
         >,
         pc_pk: &DLogProverKey<G1>,
         config: C::SetupData,
@@ -127,7 +128,7 @@ where
         additional_data: C::AdditionalData,
         zk: bool,
         zk_rng: Option<&mut dyn RngCore>,
-    ) -> Result<FinalDarlinPCD<'a, G1, G2, D>, FinalDarlinError>
+    ) -> Result<FinalDarlinPCD<'a, G1, G2, FS>, FinalDarlinError>
     where
         C: PCDCircuit<G1, SystemInputs = FinalDarlinDeferredData<G1, G2>>,
     {
@@ -140,21 +141,17 @@ where
         let usr_ins = c.get_usr_ins()?;
 
         // run the Marlin prover on the initialized recursive circuit
-        let proof = Marlin::<
-            G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
-            D,
-        >::prove(index_pk, pc_pk, c, zk, zk_rng)?;
+        let proof =
+            Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::prove(
+                index_pk, pc_pk, c, zk, zk_rng,
+            )?;
 
-        let proof = FinalDarlinProof::<G1, G2, D> {
+        let proof = FinalDarlinProof::<G1, G2, FS> {
             proof: MarlinProof(proof),
             deferred: sys_ins,
         };
-        let usr_ins = usr_ins.to_field_elements().map_err(|_| {
-            FinalDarlinError::Other("Failed to convert usr ins to field elements".to_owned())
-        })?;
 
-        Ok(FinalDarlinPCD::<G1, G2, D>::new(proof, usr_ins))
+        Ok(FinalDarlinPCD::<G1, G2, FS>::new(proof, usr_ins))
     }
 
     /// Fully verify a `FinalDarlinProof` from the PCDCircuit `C`, using the PCD implementation for
@@ -162,17 +159,17 @@ where
     pub fn verify<R: RngCore>(
         index_vk: &FinalDarlinVerifierKey<
             G1,
-            DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>,
+            DomainExtendedIpaPc<G1, FS>,
         >,
         pc_vk_g1: &DLogVerifierKey<G1>,
         pc_vk_g2: &DLogVerifierKey<G2>,
         usr_ins: &[G1::ScalarField],
-        proof: &FinalDarlinProof<G1, G2, D>,
+        proof: &FinalDarlinProof<G1, G2, FS>,
         rng: &mut R,
     ) -> Result<bool, FinalDarlinError> {
-        let final_darlin_pcd = FinalDarlinPCD::<G1, G2, D>::new(proof.clone(), usr_ins.to_vec());
+        let final_darlin_pcd = FinalDarlinPCD::<G1, G2, FS>::new(proof.clone(), usr_ins.to_vec());
 
-        let final_darlin_pcd_vk = FinalDarlinPCDVerifierKey::<G1, G2, D> {
+        let final_darlin_pcd_vk = FinalDarlinPCDVerifierKey::<G1, G2, FS> {
             final_darlin_vk: index_vk,
             dlog_vks: (pc_vk_g1, pc_vk_g2),
         };
@@ -186,14 +183,14 @@ where
     /// for the PCDCircuit with correctly combined system and user inputs.
     pub fn verify_ahp(
         pc_vk:          &DLogVerifierKey<G1>,
-        index_vk:       &FinalDarlinVerifierKey<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>>,
+        index_vk:       &FinalDarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>,
         usr_ins:        &[G1::ScalarField],
-        proof:          &FinalDarlinProof<G1, G2, D>,
+        proof:          &FinalDarlinProof<G1, G2, FS>,
     )  -> Result<(
-        QuerySet<'a, G1::ScalarField>,
+        QueryMap<'a, G1::ScalarField>,
         Evaluations<'a, G1::ScalarField>,
         Vec<LabeledCommitment<GroupVec<G1>>>,
-        <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
+        <DomainExtendedIpaPc<G1, FS> as PolynomialCommitment<G1>>::RandomOracle,
     ), FinalDarlinError>
     {
         // Get "system inputs"
@@ -207,7 +204,7 @@ where
         public_inputs.extend_from_slice(usr_ins);
 
         // Verify AHP
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::verify_iop(
+        let res = Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::verify_iop(
             pc_vk, index_vk, public_inputs.as_slice(), &proof.proof
         )?;
 
@@ -218,14 +215,14 @@ where
     /// "hard part" of the opening proof.
     pub fn verify_opening(
         pc_vk: &DLogVerifierKey<G1>,
-        proof: &FinalDarlinProof<G1, G2, D>,
+        proof: &FinalDarlinProof<G1, G2, FS>,
         labeled_comms: Vec<LabeledCommitment<GroupVec<G1>>>,
-        query_set: QuerySet<'a, G1::ScalarField>,
+        query_map: QueryMap<'a, G1::ScalarField>,
         evaluations: Evaluations<'a, G1::ScalarField>,
-        fs_rng:         &mut <DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>> as PolynomialCommitment<G1>>::RandomOracle,
+        fs_rng: &mut FS,
     ) -> Result<bool, FinalDarlinError> {
-        let res = Marlin::<G1, DomainExtendedPolynomialCommitment<G1, InnerProductArgPC<G1, D>>, D>::verify_opening(
-            pc_vk, &proof.proof, labeled_comms, query_set, evaluations, fs_rng
+        let res = Marlin::<G1, DomainExtendedIpaPc<G1, FS>>::verify_opening(
+            pc_vk, &proof.proof, labeled_comms, query_map, evaluations, fs_rng
         )?;
 
         Ok(res)

@@ -10,7 +10,7 @@ use std::{
     convert::TryFrom,
     rc::Rc,
     string::String,
-    vec::Vec
+    vec::Vec,
 };
 
 #[cfg(feature = "derive")]
@@ -111,6 +111,54 @@ pub trait CanonicalDeserialize: Sized {
     }
 }
 
+/// Serialize the input argument and return its bytes in a Vec.
+#[macro_export]
+macro_rules! serialize {
+    ($($x:expr),*) => ({
+        use std::io::Cursor;
+        let mut buf = Cursor::new(vec![]);
+        {$crate::serialize_to_vec!(buf, $($x),*)}.map(|_| buf.into_inner())
+    });
+}
+
+/// Serialize the input argument in a Vec (passed as argument too).
+#[macro_export]
+macro_rules! serialize_to_vec {
+    ($buf:expr, $y:expr, $($x:expr),*) => ({
+        {
+            CanonicalSerialize::serialize(&$y, &mut $buf)
+        }.and({$crate::serialize_to_vec!($buf, $($x),*)})
+    });
+
+    ($buf:expr, $x:expr) => ({
+        CanonicalSerialize::serialize(&$x, &mut $buf)
+    })
+}
+
+/// Serialize without metadata the input argument and return its bytes in a Vec.
+#[macro_export]
+macro_rules! serialize_no_metadata {
+    ($($x:expr),*) => ({
+        use std::io::Cursor;
+        let mut buf = Cursor::new(vec![]);
+        {$crate::serialize_to_vec_no_metadata!(buf, $($x),*)}.map(|_| buf.into_inner())
+    });
+}
+
+/// Serialize without metadata the input argument in a Vec (passed as argument too).
+#[macro_export]
+macro_rules! serialize_to_vec_no_metadata {
+    ($buf:expr, $y:expr, $($x:expr),*) => ({
+        {
+            CanonicalSerialize::serialize_without_metadata(&$y, &mut $buf)
+        }.and({$crate::serialize_to_vec_no_metadata!($buf, $($x),*)})
+    });
+
+    ($buf:expr, $x:expr) => ({
+        CanonicalSerialize::serialize_without_metadata(&$x, &mut $buf)
+    })
+}
+
 // Macro for implementing serialize for u8, u16, u32, u64
 macro_rules! impl_uint {
     ($ty: ident) => {
@@ -208,6 +256,18 @@ impl CanonicalSerialize for String {
     }
 }
 
+impl<'a> CanonicalSerialize for &'a str {
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.to_string().serialize(writer)
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.to_string().serialized_size()
+    }
+}
+
 impl CanonicalDeserialize for String {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
@@ -262,6 +322,36 @@ impl<T: CanonicalSerialize> CanonicalSerialize for [T] {
             .iter()
             .map(|item| item.uncompressed_size())
             .sum::<usize>()
+    }
+}
+
+impl<T: CanonicalSerialize, const N: usize> CanonicalSerialize for [T; N] {
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.as_ref().serialize(writer)
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.as_ref().serialized_size()
+    }
+
+    #[inline]
+    fn serialize_without_metadata<W: Write>(
+        &self,
+        writer: W,
+    ) -> Result<(), SerializationError> {
+        self.as_ref().serialize_without_metadata(writer)
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.as_ref().serialize_uncompressed(writer)
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.as_ref().uncompressed_size()
     }
 }
 

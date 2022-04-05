@@ -143,16 +143,6 @@ macro_rules! impl_Fp {
             type BasePrimeField = Self;
 
             #[inline]
-            fn one() -> Self {
-                $Fp::<P>(P::R, PhantomData)
-            }
-
-            #[inline]
-            fn is_one(&self) -> bool {
-                self.0 == P::R
-            }
-
-            #[inline]
             fn is_odd(&self) -> bool {
                 self.into_repr().is_odd()
             }
@@ -353,6 +343,30 @@ macro_rules! impl_Fp {
                     Some(v) => Some($Fp::<P>(v, PhantomData)),
                     None => None
                 }
+            }
+        }
+
+        impl<P: $FpParameters> Zero for $Fp<P> {
+            #[inline]
+            fn zero() -> Self {
+                $Fp::<P>($BigInteger::from(0), PhantomData)
+            }
+
+            #[inline]
+            fn is_zero(&self) -> bool {
+                self.0.is_zero()
+            }
+        }
+
+        impl<P: $FpParameters> One for $Fp<P> {
+            #[inline]
+            fn one() -> Self {
+                $Fp::<P>(P::R, PhantomData)
+            }
+
+            #[inline]
+            fn is_one(&self) -> bool {
+                self.0 == P::R
             }
         }
 
@@ -613,17 +627,8 @@ macro_rules! impl_Fp {
         }
 
         impl<P: $FpParameters> Group for $Fp<P> {
+            type BaseField = $Fp<P>;
             type ScalarField = $Fp<P>;
-
-            #[inline]
-            fn zero() -> Self {
-                $Fp::<P>($BigInteger::from(0), PhantomData)
-            }
-
-            #[inline]
-            fn is_zero(&self) -> bool {
-                self.0.is_zero()
-            }
 
             #[inline]
             fn double(&self) -> Self {
@@ -641,7 +646,7 @@ macro_rules! impl_Fp {
                 self
             }
         }
-
+        
         impl<P: $FpParameters> From<num_bigint::BigUint> for $Fp<P> {
             #[inline]
             fn from(val: num_bigint::BigUint) -> $Fp<P> {

@@ -1,11 +1,13 @@
 #![allow(non_snake_case)]
 
-use algebra::{serialize::*, Curve, ToBytes};
+use algebra::{serialize::*, ToBytes};
 use derivative::Derivative;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use marlin::iop::indexer::{num_non_zero, post_process_matrices};
+use crate::darlin::IPACurve;
+use bench_utils::{add_to_trace, end_timer, start_timer};
+use marlin::iop::indexer::{balance_matrices, num_non_zero, post_process_matrices};
 use marlin::iop::sparse_linear_algebra::SparseMatrix;
 use marlin::iop::Error;
 use std::marker::PhantomData;
@@ -23,7 +25,7 @@ use std::marker::PhantomData;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IndexInfo<G1: Curve, G2: Curve> {
+pub struct IndexInfo<G1: IPACurve, G2: IPACurve> {
     /// The total number of witnesses in the constraint system.
     pub num_witness: usize,
     /// The total number of public inputs in the constraint system.
@@ -39,7 +41,7 @@ pub struct IndexInfo<G1: Curve, G2: Curve> {
     pub g2: PhantomData<G2>,
 }
 
-impl<G1: Curve, G2: Curve> ToBytes for IndexInfo<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> ToBytes for IndexInfo<G1, G2> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         self.num_witness
@@ -68,7 +70,7 @@ impl<G1: Curve, G2: Curve> ToBytes for IndexInfo<G1, G2> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// The "indexed" version of the constraint system.
 /// Besides auxiliary information on the index, contains the R1CS matrices `M=A,B,C`.
-pub struct Index<G1: Curve, G2: Curve> {
+pub struct Index<G1: IPACurve, G2: IPACurve> {
     /// Information about the index.
     pub index_info: IndexInfo<G1, G2>,
 
@@ -80,7 +82,7 @@ pub struct Index<G1: Curve, G2: Curve> {
     pub c: SparseMatrix<G1::ScalarField>,
 }
 
-impl<G1: Curve, G2: Curve> IOP<G1, G2> {
+impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.
     pub fn index<C: ConstraintSynthesizer<G1::ScalarField>>(c: C) -> Result<Index<G1, G2>, Error> {
@@ -93,7 +95,7 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
 
         // matrix post-processing: balance matrices
         let matrix_processing_time = start_timer!(|| "Processing matrices");
-        let (a, b, c) = post_process_matrices(&mut ics).expect("should not be `None`");
+        balance_matrices(&mut ics.at, &mut ics.bt);
         add_to_trace!(|| "number of (formatted) input_variables", || format!(
             "{}",
             ics.num_inputs
@@ -120,6 +122,16 @@ impl<G1: Curve, G2: Curve> IOP<G1, G2> {
             g1: PhantomData,
             g2: PhantomData,
         };
+
+        let (domain_h, _, domain_x, _) = marlin::IOP::build_domains(
+            index_info.num_witness,
+            index_info.num_inputs,
+            index_info.num_constraints,
+            index_info.num_non_zero,
+        )?;
+
+        let (a, b, c) =
+            post_process_matrices(&mut ics, &domain_h, &domain_x).expect("should not be `None`");
 
         end_timer!(index_time);
         Ok(Index {
