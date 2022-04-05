@@ -1079,6 +1079,20 @@ impl<P: Parameters> Curve for Jacobian<P> {
             Self::new(x, y, P::BaseField::one())
         })
     }
+
+    fn force_deserialize(bytes: &[u8]) -> Option<Self> {
+        P::BaseField::force_deserialize_with_flags::<SWFlags>(bytes).and_then(|(x, flags)| {
+            // if x is valid and is zero and only the infinity flag is set, then parse this
+            // point as infinity. For all other choices, get the original point.
+            if x.is_zero() && flags.is_infinity() {
+                Some(Self::zero())
+            } else if let Some(y_is_odd) = flags.is_odd() {
+                Self::get_point_from_x_and_parity(x, y_is_odd) // Unwrap is safe because it's not zero.
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl<P: EndoParameters> EndoMulCurve for Jacobian<P> {

@@ -199,7 +199,7 @@ impl<G: Curve, D: Digest + 'static> ItemAccumulator for DLogItemAccumulator<G, D
             // the bases in order to be as big as the scalars vector, so no need to explicitly
             // trim the vk here.
             &[
-                G::batch_normalization_into_affine(final_comm_keys)
+                G::batch_into_affine(final_comm_keys)
                     .unwrap()
                     .as_slice(),
                 vk.comm_key.as_slice(),

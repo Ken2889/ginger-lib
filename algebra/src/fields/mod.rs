@@ -127,18 +127,25 @@ pub trait Field:
     // Sets `self` to `self`'s inverse if it exists. Otherwise it is a no-op.
     fn inverse_in_place(&mut self) -> Option<&mut Self>;
 
-    /// Returns a field element if the set of bytes forms a valid field element,
-    /// otherwise returns None. This function is primarily intended for sampling
-    /// random field elements from a hash-function or RNG output.
-    fn from_random_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::from_random_bytes_with_flags::<EmptyFlags>(bytes).map(|f| f.0)
+    /// Attempts to construct a valid field element given a set of bytes.
+    /// It should differ from a classic deserialization function in that it will
+    /// try to "force" the deserialization of a valid field element by manipulating
+    /// the input bytes accordingly (e.g. by muting the bits above the modulus
+    /// so that is possible for sure to read a valid field element).
+    /// This function is primarily intended for sampling random field elements from
+    /// a hash-function or RNG output.
+    fn force_deserialize(bytes: &[u8]) -> Option<Self> {
+        Self::force_deserialize_with_flags::<EmptyFlags>(bytes).map(|f| f.0)
     }
 
-    /// Returns a field element with an extra sign bit used for group parsing if
-    /// the set of bytes forms a valid field element, otherwise returns
-    /// None. This function is primarily intended for sampling
-    /// random field elements from a hash-function or RNG output.
-    fn from_random_bytes_with_flags<F: Flags>(bytes: &[u8]) -> Option<(Self, F)>;
+    /// Attempts to construct a valid field element and a sign bit given a set of bytes.
+    /// It should differ from a classic deserialization function in that it will
+    /// try to "force" the deserialization of a valid field element by manipulating
+    /// the input bytes accordingly (e.g. by muting the bits above the modulus
+    /// so that is possible for sure to read a valid field element).
+    /// This function is primarily intended for sampling random field elements from
+    /// a hash-function or RNG output.
+    fn force_deserialize_with_flags<F: Flags>(bytes: &[u8]) -> Option<(Self, F)>;
 
     /// Exponentiates this element by a power of the base prime modulus via
     /// the Frobenius automorphism.
@@ -277,7 +284,7 @@ pub trait PrimeField:
         let mut bytes_to_directly_convert = Vec::new();
         bytes_to_directly_convert.extend(bytes[..num_bytes_to_directly_convert].iter().rev());
         // Guaranteed to not be None, as the input is less than the modulus size.
-        let mut res = Self::from_random_bytes(&bytes_to_directly_convert).unwrap();
+        let mut res = Self::force_deserialize(&bytes_to_directly_convert).unwrap();
 
         // Update the result, byte by byte.
         // We go through existing field arithmetic, which handles the reduction.

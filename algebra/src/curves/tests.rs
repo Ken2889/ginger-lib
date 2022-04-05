@@ -334,6 +334,19 @@ pub fn sw_jacobian_curve_serialization_test<P: SWModelParameters>() {
             let b = Jacobian::<P>::deserialize_uncompressed(&mut cursor).unwrap();
             assert_eq!(a, b);
         }
+
+        // Force deserialize test
+        {
+            let a = Jacobian::<P>::rand(rng);
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let p1 = <Jacobian<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            let p2 = Jacobian::<P>::force_deserialize(&serialized).unwrap();
+            assert_eq!(p1, p2);
+        }
     }
 }
 
@@ -499,6 +512,19 @@ fn sw_projective_curve_serialization_test<P: SWModelParameters>() {
             let b = Projective::<P>::deserialize_uncompressed(&mut cursor).unwrap();
             assert_eq!(a, b);
         }
+
+        // Force deserialize test
+        {
+            let a = Projective::<P>::rand(rng);
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let p1 = <Projective<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            let p2 = Projective::<P>::force_deserialize(&serialized).unwrap();
+            assert_eq!(p1, p2);
+        }
     }
 }
 
@@ -633,6 +659,20 @@ fn edwards_curve_serialization_test<P: crate::curves::models::TEModelParameters>
             let b = TEExtended::<P>::deserialize_uncompressed(&mut cursor).unwrap();
             assert_eq!(a, b);
         }
+
+        // Force deserialize test
+        {
+            let a = TEExtended::<P>::rand(rng);
+            let mut serialized = vec![0; buf_size];
+            let mut cursor = Cursor::new(&mut serialized[..]);
+            CanonicalSerialize::serialize(&a, &mut cursor).unwrap();
+
+            let mut cursor = Cursor::new(&serialized[..]);
+            let p1 = <TEExtended<P> as CanonicalDeserialize>::deserialize(&mut cursor).unwrap();
+            let p2 = TEExtended::<P>::force_deserialize(&serialized).unwrap();
+            assert_eq!(p1, p2);
+        }
+        
     }
 }
 

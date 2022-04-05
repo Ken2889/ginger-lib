@@ -242,7 +242,7 @@ macro_rules! impl_Fp {
             #[inline]
             // TODO: Let byte_size = $limbs * 8. Generalize this function to the case in which
             //       byte_size + 1 > output_byte_size
-            fn from_random_bytes_with_flags<F: Flags>(bytes: &[u8]) -> Option<(Self, F)> {
+            fn force_deserialize_with_flags<F: Flags>(bytes: &[u8]) -> Option<(Self, F)> {
                 if F::BIT_SIZE > 8 {
                     return None
                 } else {

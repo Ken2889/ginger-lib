@@ -9,7 +9,7 @@ fn test_secp256k1_fr() {
     field_test(a, b);
     sqrt_field_test(a);
     // Fails on the deserialize_mod_order_test but it's expected until we
-    // generalize the from_random_bytes() function (if needed) to support
+    // generalize the force_deserialize() function (if needed) to support
     // this particular use case in which a secp256k1 element is represented
     // using one additional limbs.
     //primefield_test::<Fr>();
@@ -24,7 +24,7 @@ fn test_secp256k1_fq() {
     field_test(a, b);
     sqrt_field_test(a);
     // Fails on the deserialize_mod_order_test but it's expected until we
-    // generalize the from_random_bytes() function (if needed) to support
+    // generalize the force_deserialize() function (if needed) to support
     // this particular use case in which a secp256k1 element is represented
     // using one additional limbs.
     //primefield_test::<Fq>();

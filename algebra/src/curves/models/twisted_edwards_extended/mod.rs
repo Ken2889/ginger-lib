@@ -788,6 +788,18 @@ impl<P: Parameters> Curve for TEExtended<P> {
             Self::new(x, y, x * &y, P::BaseField::one())
         })
     }
+
+    fn force_deserialize(bytes: &[u8]) -> Option<Self> {
+        P::BaseField::force_deserialize_with_flags::<EdwardsFlags>(bytes).and_then(|(x, flags)| {
+            // if x is valid and is zero, then parse this
+            // point as infinity.
+            if x.is_zero() {
+                Some(Self::zero())
+            } else {
+                Self::get_point_from_x_and_parity(x, flags.is_odd())
+            }
+        })
+    }
 }
 
 #[derive(Derivative)]

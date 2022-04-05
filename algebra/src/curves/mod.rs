@@ -75,7 +75,7 @@ pub trait Curve:
 
     /// Convert, if possible, a batch of `self` points to their affine equivalent.
     #[inline]
-    fn batch_into_affine<'a>(vec_self: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
+    fn batch_into_affine(vec_self: Vec<Self>) -> Result<Vec<Self::AffineRep>, Error> {
         vec_self
             .into_iter()
             .map(|projective| projective.into_affine())
@@ -84,7 +84,7 @@ pub trait Curve:
 
     /// Construct `self` points from a batch of their affine representation.
     #[inline]
-    fn batch_from_affine<'a>(vec_affine:Vec<Self::AffineRep>) -> Vec<Self> {
+    fn batch_from_affine<'a>(vec_affine: &'a [Self::AffineRep]) -> Vec<Self> {
         vec_affine
             .iter()
             .map(|&affine| affine.into())
@@ -150,6 +150,15 @@ pub trait Curve:
     ///
     /// If and only if `parity` is set will the odd y-coordinate be selected.
     fn get_point_from_x_and_parity(x: Self::BaseField, parity: bool) -> Option<Self>;
+
+    /// Attempts to construct a valid curve point given a set of bytes.
+    /// It should differ from a classic deserialization function in that it will
+    /// try to "force" the deserialization of a valid curve point by manipulating
+    /// the input bytes accordingly (e.g. read a coordinate and sign flag from the
+    /// bytes muting the bits above the modulus).
+    /// This function is primarily intended for sampling random curve points from
+    /// a hash-function or RNG output.
+    fn force_deserialize(bytes: &[u8]) -> Option<Self>;
 }
 
 /// The `EndoMulCurve` trait for curves that have a non-trivial endomorphism

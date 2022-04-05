@@ -887,7 +887,7 @@ where
                 if bits.len() != CHUNK_SIZE {
                     return Err(SynthesisError::Unsatisfiable);
                 }
-                let coords = Projective::<P>::batch_into_affine(coords.as_slice())?;
+                let coords = Projective::<P>::batch_into_affine(coords)?;
                 let x_coeffs = coords.iter().map(|p| p.x).collect::<Vec<_>>();
                 let y_coeffs = coords.iter().map(|p| p.y).collect::<Vec<_>>();
                 let precomp = Boolean::and(
