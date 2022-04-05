@@ -429,7 +429,7 @@ pub trait PolynomialCommitmentVerifierGadget<
             I: IntoIterator<
                 Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
             >,
-            <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+            <I as IntoIterator>::IntoIter: DoubleEndedIterator + Clone,
     {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),

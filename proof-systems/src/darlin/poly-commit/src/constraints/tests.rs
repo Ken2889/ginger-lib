@@ -141,6 +141,9 @@ fn generate_data_for_multi_point_verify_with_marlin_params<'a, G: Group, PC: Pol
         //(1usize << test_conf.log_h_domain) - 1, // t
         ("u_1".to_string(), (1usize << test_conf.log_h_domain) - 1),
         ("u_2".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("v_h".to_string(), (1usize << test_conf.log_h_domain) - 1), // vanishing poly over H
+        ("v_k".to_string(), (1usize << test_conf.log_k_domain) - 1), // vanishing poly over K
+        ("v_x".to_string(), 63), // vanishing poly over input domain
         ("w".to_string(), (1usize << test_conf.log_h_domain) - 1),
         ("x".to_string(), 63), //in
         ("y_a".to_string(), (1usize << test_conf.log_h_domain) - 1),
@@ -164,6 +167,8 @@ fn generate_data_for_multi_point_verify_with_marlin_params<'a, G: Group, PC: Pol
         "y_b".to_string(),
         "u_1".to_string(),
         "h_1".to_string(),
+        "v_h".to_string(),
+        "v_x".to_string(),
         "x".to_string(),
     ]);
     let queries_at_gamma = BTreeSet::from_iter(vec![
@@ -182,12 +187,16 @@ fn generate_data_for_multi_point_verify_with_marlin_params<'a, G: Group, PC: Pol
         "c_row_col".to_string(),
         "c_val_row_col".to_string(),
         "prev".to_string(),
+        "v_k".to_string(),
     ]);
+
+    let queries_at_alpha = BTreeSet::from_iter(vec!["v_h".to_string()]);
+
     let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
     let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
-    let point_labels = vec!["beta", "gamma", "g_beta", "g_gamma"];
-    let queried_polys = vec![queries_at_beta, queries_at_gamma, queries_at_g_beta, queries_at_g_gamma];
+    let point_labels = vec!["beta", "gamma", "g_beta", "g_gamma", "alpha"];
+    let queried_polys = vec![queries_at_beta, queries_at_gamma, queries_at_g_beta, queries_at_g_gamma, queries_at_alpha];
     let mut points = QueryMap::new();
     let mut values = Evaluations::new();
     for (point_label, poly_set) in point_labels.into_iter().zip(queried_polys.into_iter()) {

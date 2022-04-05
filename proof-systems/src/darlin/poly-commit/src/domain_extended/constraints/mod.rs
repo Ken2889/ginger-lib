@@ -238,6 +238,7 @@ impl<
                 Self::CommitmentGadget,
             >,
         >,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator + Clone,
     {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
@@ -261,6 +262,17 @@ impl<
                 .as_slice(),
         )?;
 
+        let commitments_iter = labeled_commitments.into_iter();
+        let commitments_iter_copy = commitments_iter.clone();
+
+        let commitment_map: BTreeMap<_, _> = commitments_iter
+            .map(|commitment| (commitment.label(), commitment.commitment()))
+            .collect();
+
+        let (sorted_query_map, values_for_sorted_map) = crate::sort_query_map!(points, commitment_map, (|comm: &Self::CommitmentGadget| comm.len()));
+
+        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
+
         // merge h-commitment to labeled_commitments to combine segments for all of them simultaneously
         let labeled_h_commitment = LabeledCommitmentGadget::<
             ConstraintF,
@@ -271,7 +283,7 @@ impl<
             proof.get_h_commitment().clone(),
         );
         let mut labeled_commitments_to_be_combined =
-            labeled_commitments.into_iter().collect::<Vec<_>>();
+            commitments_iter_copy.collect::<Vec<_>>();
         labeled_commitments_to_be_combined.push(&labeled_h_commitment);
         let combined_commitments = Self::combine_commitments(
             cs.ns(|| "combine segmented commitments"),
@@ -283,11 +295,16 @@ impl<
             .get(combined_commitments.len() - 1)
             .unwrap();
 
+        let commitment_map: BTreeMap<_, _> = combined_commitments[..combined_commitments.len() - 1]
+            .into_iter()
+            .map(|commitment| (commitment.label(), commitment.commitment()))
+            .collect();
+
         let (mut batched_commitment, batched_value) =
-            multi_poly_multi_point_batching::<ConstraintF, G, PC, PCG, _, _, _, _>(
+            multi_poly_multi_point_batching::<ConstraintF, G, PC, PCG, _, _, _>(
                 cs.ns(|| "multi point batching"),
-                &combined_commitments[..combined_commitments.len() - 1],
-                points,
+                commitment_map,
+                sorted_query_map_vec,
                 values,
                 &evaluation_point,
                 &lambda_bits,
