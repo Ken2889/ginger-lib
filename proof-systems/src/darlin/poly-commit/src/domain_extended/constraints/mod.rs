@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
-use crate::{multi_poly_multi_point_batching, safe_mul_bits, DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitmentGadget, MultiPointProofGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, QueryMap, VerifierKeyGadget, sort_commitments_and_values};
+use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, sort_commitments_and_values, multi_poly_multi_point_batching, QueryMap, Evaluations, MultiPointProofGadget, Error};
 use algebra::{Group, PrimeField};
-use fiat_shamir::constraints::FiatShamirRngGadget;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
@@ -10,8 +9,9 @@ use r1cs_std::fields::FieldGadget;
 use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
 use std::marker::PhantomData;
-use r1cs_std::FromBitsGadget;
 use crate::constraints::single_point_multi_poly_succinct_verify;
+use fiat_shamir::constraints::FiatShamirRngGadget;
+use r1cs_std::FromBitsGadget;
 
 mod data_structures;
 
@@ -83,9 +83,8 @@ impl<
                 )))?
                 .clone();
             for (j, comm) in it.enumerate() {
-                combined_commitment = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
+                combined_commitment = combined_commitment.mul_bits(
                     cs.ns(|| format!("point^s*commitment_{} for segmented commitment {}", j, i)),
-                    &combined_commitment,
                     point_to_s_bits.iter().rev(),
                 )?;
                 combined_commitment = combined_commitment.add(
@@ -208,29 +207,24 @@ impl<
         single_point_multi_poly_succinct_verify::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, Self, _, _ ,_>
             (cs, vk, sorted_commitments, point, sorted_values, proof, random_oracle)
     }
-
-
-    // Override default implementation of PolynomialCommitmentVerifierGadget to combine the
-    // commitments of the segments of each polynomial before batching the polynomials.
+    
+    // Override default implementation to process commitments with the optimal order depending on
+    // the number of segments
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
-        mut cs: CS,
-        vk: &Self::VerifierKeyGadget,
-        labeled_commitments: I,
-        points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-        values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-        proof: &Self::MultiPointProofGadget,
-        random_oracle: &mut Self::RandomOracleGadget,
-    ) -> Result<Self::VerifierStateGadget, Self::Error>
-    where
-        CS: ConstraintSystemAbstract<ConstraintF>,
-        I: IntoIterator<
-            Item = &'a LabeledCommitmentGadget<
-                ConstraintF,
-                <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
-                Self::CommitmentGadget,
-            >,
-        >,
-    {
+     mut cs: CS,
+     vk: &Self::VerifierKeyGadget,
+     labeled_commitments: I,
+     points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+     values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+     proof: &Self::MultiPointProofGadget,
+     random_oracle: &mut Self::RandomOracleGadget)
+        -> Result<Self::VerifierStateGadget, Self::Error>
+        where CS: ConstraintSystemAbstract<ConstraintF>,
+              I: IntoIterator<Item=&'a LabeledCommitmentGadget<
+                  ConstraintF,
+                  <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
+                  Self::CommitmentGadget>>,
+              <I as IntoIterator>::IntoIter: DoubleEndedIterator {
         let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
         )?;
@@ -253,46 +247,33 @@ impl<
                 .as_slice(),
         )?;
 
-        // merge h-commitment to labeled_commitments to combine segments for all of them simultaneously
-        let labeled_h_commitment = LabeledCommitmentGadget::<
-            ConstraintF,
-            <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
-            Self::CommitmentGadget,
-        >::new(
-            String::from("labeled commitment"),
-            proof.get_h_commitment().clone(),
-        );
-        let mut labeled_commitments_to_be_combined =
-            labeled_commitments.into_iter().collect::<Vec<_>>();
-        labeled_commitments_to_be_combined.push(&labeled_h_commitment);
-        let combined_commitments = Self::combine_commitments(
-            cs.ns(|| "combine segmented commitments"),
-            vk,
-            labeled_commitments_to_be_combined,
-            &evaluation_point,
-        )?;
-        let labeled_combined_h_commitment = combined_commitments
-            .get(combined_commitments.len() - 1)
-            .unwrap();
+        let commitment_map: BTreeMap<_, _> = labeled_commitments
+            .into_iter()
+            .map(|commitment| (commitment.label(), commitment.commitment()))
+            .collect();
+
+        let (sorted_query_map, values_for_sorted_map) = crate::sort_query_map!(points, commitment_map, (|comm: &Self::CommitmentGadget| comm.len()));
+
+        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
 
         let (mut batched_commitment, batched_value) =
-            multi_poly_multi_point_batching::<ConstraintF, G, PC, PCG, _, _>(
+            multi_poly_multi_point_batching::<ConstraintF, G,
+                DomainExtendedPolynomialCommitment<G, PC>,
+                Self, _, _, _>(
                 cs.ns(|| "multi point batching"),
-                &combined_commitments[..combined_commitments.len() - 1],
-                points,
+                commitment_map,
+                sorted_query_map_vec,
                 values,
                 &evaluation_point,
                 &lambda_bits,
             )?;
 
-        // subtract h-commitment
-        batched_commitment = batched_commitment.sub(
-            cs.ns(|| "sub h commitment"),
-            labeled_combined_h_commitment.commitment(),
-        )?;
+        batched_commitment =
+            batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;
         let batched_value_bits =
             batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
-        PCG::succinct_verify(
+
+        Self::succinct_verify(
             cs.ns(|| "succinct verify on batched"),
             &vk,
             &batched_commitment,
@@ -301,5 +282,6 @@ impl<
             &proof.get_proof(),
             random_oracle,
         )
+
     }
 }

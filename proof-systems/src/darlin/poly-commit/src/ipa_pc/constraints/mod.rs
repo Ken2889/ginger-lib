@@ -3,7 +3,7 @@ use crate::ipa_pc::constraints::data_structures::{
     SuccinctCheckPolynomialGadget,
 };
 use crate::ipa_pc::InnerProductArgPC;
-use crate::{safe_mul_bits, Error, PolynomialCommitmentVerifierGadget};
+use crate::{Error, PolynomialCommitmentVerifierGadget};
 use algebra::{EndoMulCurve, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
@@ -213,9 +213,8 @@ impl<
             )?;
             // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
             let challenge_inv_times_l =
-                safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
+                el_vec_l.mul_bits(
                     cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
-                    el_vec_l,
                     round_challenge_inverse_bits.iter().rev(),
                 )?;
             non_hiding_commitment = non_hiding_commitment.add(
@@ -241,9 +240,8 @@ impl<
         )?;
         let v_prime = c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
         let c_times_final_comm_key =
-            safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
+            proof.final_comm_key.mul_bits(
                 cs.ns(|| "c*g_final"),
-                &proof.final_comm_key,
                 proof.c.iter().rev(),
             )?;
         let v_prime_bits = v_prime.to_bits_for_normal_form(cs.ns(|| "v' to bits"))?;

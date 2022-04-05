@@ -98,9 +98,9 @@ where
     }
 
     fn serialized_size(&self) -> usize {
-        self.proof.serialized_size()
+         return self.proof.serialized_size()
             + 1
-            + (self.h_commitment.len() * self.h_commitment[0].serialized_size())
+            + (self.h_commitment.len() * self.h_commitment[0].serialized_size());
     }
 
     fn serialize_without_metadata<W: Write>(
@@ -140,9 +140,9 @@ where
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
-        self.proof.uncompressed_size()
+            return self.proof.uncompressed_size()
             + 1
-            + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size())
+            + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size());
     }
 }
 
@@ -185,6 +185,7 @@ where
             proof,
             h_commitment,
         })
+
     }
 
     #[inline]

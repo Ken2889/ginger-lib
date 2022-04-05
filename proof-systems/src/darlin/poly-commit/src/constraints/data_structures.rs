@@ -63,6 +63,7 @@ pub trait MultiPointProofGadget<
 
     /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
     fn get_h_commitment(&self) -> &Self::CommitmentGadget;
+
 }
 
 /// Gadget for the state returned by verifier in case of successful verification

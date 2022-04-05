@@ -19,11 +19,19 @@ use rand::{thread_rng, Rng};
 use rand_core::RngCore;
 use std::cmp;
 use std::collections::BTreeSet;
+use std::iter::FromIterator;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum NegativeTestType {
     Values,
     Commitments,
+}
+
+#[derive(Copy, Clone, Default)]
+struct MarlinParams {
+    log_segment_size: usize,
+    log_h_domain: usize,
+    log_k_domain: usize,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -44,6 +52,8 @@ struct TestInfo {
     segmented: bool,
     /// negative type for the test
     negative_type: Option<NegativeTestType>,
+    /// test with marlin parameters specified in this field, if not None
+    marlin_params: Option<MarlinParams>,
 }
 
 fn value_for_alloc<F: Field, R: RngCore>(
@@ -106,6 +116,142 @@ fn generate_labeled_polynomial<R: RngCore, F: Field>(
     let is_hiding: bool = rng.gen();
 
     LabeledPolynomial::new(label, polynomial, is_hiding)
+}
+
+fn generate_data_for_multi_point_verify_with_marlin_params<'a, G: Group, PC: PolynomialCommitment<G>, R: RngCore>(
+    test_conf: &MarlinParams,
+    rng: &mut R,
+) -> (Vec<LabeledPolynomial<G::ScalarField>>, QueryMap<'a, G::ScalarField>, Evaluations<'a, G::ScalarField>) {
+    let poly_labels_and_degrees: Vec<(PolynomialLabel, usize)> = vec![
+        ("a_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // col_A
+        ("a_row".to_string(), (1usize << test_conf.log_k_domain) - 1), // row_A
+        ("a_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // rowcol_A
+        ("a_val_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // val_A
+        ("b_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // col_B
+        ("b_row".to_string(), (1usize << test_conf.log_k_domain) - 1), // row_B
+        ("b_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // rowcol_A
+        ("b_val_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1), // val_A
+        ("c_col".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("c_row".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("c_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("c_val_row_col".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("h_1".to_string(), (1usize << test_conf.log_h_domain) - 1),
+        ("h_2".to_string(), 3 * (1usize << test_conf.log_k_domain) - 1),
+        ("prev".to_string(), (1usize << test_conf.log_segment_size) - 1), // previous bullet polys
+        //(1usize << test_conf.log_h_domain) - 1, // t
+        ("u_1".to_string(), (1usize << test_conf.log_h_domain) - 1),
+        ("u_2".to_string(), (1usize << test_conf.log_k_domain) - 1),
+        ("v_h".to_string(), (1usize << test_conf.log_h_domain) - 1), // vanishing poly over H
+        ("v_k".to_string(), (1usize << test_conf.log_k_domain) - 1), // vanishing poly over K
+        ("v_x".to_string(), 63), // vanishing poly over input domain
+        ("w".to_string(), (1usize << test_conf.log_h_domain) - 1),
+        ("x".to_string(), 63), //in
+        ("y_a".to_string(), (1usize << test_conf.log_h_domain) - 1),
+        ("y_b".to_string(), (1usize << test_conf.log_h_domain) - 1),
+    ];
+
+    let num_polynomials = poly_labels_and_degrees.len();
+
+    let mut polynomials = Vec::with_capacity(num_polynomials);
+    for (label, degree) in poly_labels_and_degrees.iter() {
+        let polynomial = Polynomial::<G::ScalarField>::rand(*degree, rng);
+
+        let is_hiding: bool = rng.gen();
+
+        polynomials.push(LabeledPolynomial::new(label.clone(), polynomial, is_hiding));
+    }
+
+    let queries_at_beta = BTreeSet::from_iter(vec![
+        "w".to_string(),
+        "y_a".to_string(),
+        "y_b".to_string(),
+        "u_1".to_string(),
+        "h_1".to_string(),
+        "v_h".to_string(),
+        "v_x".to_string(),
+        "x".to_string(),
+    ]);
+    let queries_at_gamma = BTreeSet::from_iter(vec![
+        "u_2".to_string(),
+        "h_2".to_string(),
+        "a_row".to_string(),
+        "a_col".to_string(),
+        "a_row_col".to_string(),
+        "a_val_row_col".to_string(),
+        "b_row".to_string(),
+        "b_col".to_string(),
+        "b_row_col".to_string(),
+        "b_val_row_col".to_string(),
+        "c_row".to_string(),
+        "c_col".to_string(),
+        "c_row_col".to_string(),
+        "c_val_row_col".to_string(),
+        "prev".to_string(),
+        "v_k".to_string(),
+    ]);
+
+    let queries_at_alpha = BTreeSet::from_iter(vec!["v_h".to_string()]);
+
+    let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
+    let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
+
+    let point_labels = vec!["beta", "gamma", "g_beta", "g_gamma", "alpha"];
+    let queried_polys = vec![queries_at_beta, queries_at_gamma, queries_at_g_beta, queries_at_g_gamma, queries_at_alpha];
+    let mut points = QueryMap::new();
+    let mut values = Evaluations::new();
+    for (point_label, poly_set) in point_labels.into_iter().zip(queried_polys.into_iter()) {
+        let point = G::ScalarField::rand(rng);
+        for poly in polynomials.iter() {
+            match poly_set.get(poly.label()) {
+                None => continue,
+                Some(label) => {
+                    values.insert((label.clone(), point_label.to_string()), poly.evaluate(point));
+                },
+            }
+        }
+        points.insert(point_label.to_string(), (point,  poly_set));
+    }
+
+    (polynomials, points, values)
+
+}
+
+fn generate_data_for_multi_point_verify<'a, G: Group, PC: PolynomialCommitment<G>, R: RngCore>(
+    test_conf: &TestInfo,
+    supported_degree: usize,
+    rng: &mut R,
+) -> (Vec<LabeledPolynomial<G::ScalarField>>, QueryMap<'a, G::ScalarField>, Evaluations<'a, G::ScalarField>) {
+    let max_num_polynomials = test_conf.num_polynomials;
+    let num_polynomials = rng.gen_range(1..=max_num_polynomials);
+    let max_num_points = test_conf.max_num_queries;
+    let num_points = rng.gen_range(1..=max_num_points);
+
+    let mut polynomials = Vec::with_capacity(num_polynomials);
+    for i in 0..num_polynomials {
+        let label = format!("Test polynomial {}", i);
+        let labeled_polynomial =
+            generate_labeled_polynomial(test_conf.segmented, label, supported_degree, rng);
+
+        polynomials.push(labeled_polynomial);
+    }
+
+    let mut points = QueryMap::new();
+    let mut values = Evaluations::new();
+    for i in 0..num_points {
+        let point_label = format!("point label {}", i);
+        let point = G::ScalarField::rand(rng);
+        let mut poly_labels_set = BTreeSet::new();
+        for labeled_poly in polynomials.iter() {
+            let label = labeled_poly.label();
+            let poly = labeled_poly.polynomial();
+            let value = poly.evaluate(point);
+            poly_labels_set.insert(label.clone());
+            values.insert((label.clone(), point_label.clone()), value);
+        }
+        points.insert(point_label.clone(), (point, poly_labels_set.clone()));
+    }
+
+    (polynomials, points, values)
 }
 
 fn alloc_gadgets_for_succinct_verify<
@@ -245,60 +391,44 @@ fn test_multi_point_multi_poly_verify<
 ) -> Result<(), PCG::Error> {
     let rng = &mut thread_rng();
     for _ in 0..test_conf.num_iters {
-        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
-
         let (supported_degree, ck, vk) = setup_pc_parameters::<G, PC, _>(&test_conf, rng)?;
 
-        let max_num_polynomials = test_conf.num_polynomials;
-        let num_polynomials = rng.gen_range(1..=max_num_polynomials);
-        let max_num_points = test_conf.max_num_queries;
-        let num_points = rng.gen_range(1..=max_num_points);
+        let (polynomials, points, values) = match test_conf.marlin_params {
+            None => generate_data_for_multi_point_verify::<G, PC, _>(&test_conf, supported_degree, rng),
+            Some(params) => generate_data_for_multi_point_verify_with_marlin_params::<G, PC, _>(&params, rng),
+        };
 
-        let mut polynomials = Vec::with_capacity(num_polynomials);
-        let mut labels = Vec::with_capacity(num_polynomials);
-        for i in 0..num_polynomials {
-            let label = format!("Test polynomial {}", i);
-            labels.push(label.clone());
-            let labeled_polynomial =
-                generate_labeled_polynomial(test_conf.segmented, label, supported_degree, rng);
-
-            polynomials.push(labeled_polynomial);
-        }
+        let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
 
         assert!(comms.is_valid());
-        let mut points = QueryMap::new();
         let mut point_gadgets = QueryMap::new();
-        let mut values = Evaluations::new();
         let mut value_gadgets = Evaluations::new();
-        for i in 0..num_points {
-            let point_label = format!("point label {}", i);
-            let point = G::ScalarField::rand(rng);
+        for (point_label, (point, poly_labels)) in points.iter() {
             let point_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
-                cs.ns(|| format!("alloc gadget for point {}", i)),
+                cs.ns(|| format!("alloc gadget for point {}", point_label)),
                 || Ok(point),
             )?;
-            let mut poly_labels_set = BTreeSet::new();
-            for (j, labeled_poly) in polynomials.iter().enumerate() {
-                let label = labeled_poly.label();
-                let poly = labeled_poly.polynomial();
-                let value = poly.evaluate(point);
-                let value_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
-                    cs.ns(|| {
-                        format!(
-                            "alloc gadget for evaluation of point  {} over poly {}",
-                            i, j
-                        )
-                    }),
-                    || Ok(value_for_alloc(&value, &test_conf.negative_type, rng)),
-                )?;
-                poly_labels_set.insert(label.clone());
-                values.insert((label.clone(), point_label.clone()), value);
-                value_gadgets.insert((label.clone(), point_label.clone()), value_gadget);
+            point_gadgets.insert(point_label.clone(), (point_gadget, poly_labels.clone()));
+            for labeled_poly in polynomials.iter() {
+                match poly_labels.get(labeled_poly.label()) {
+                    None => continue,
+                    Some(label) => {
+                        let value = values.get(&(label.clone(), point_label.clone())).unwrap();
+                        let value_gadget = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::alloc(
+                            cs.ns(|| {
+                                format!(
+                                    "alloc gadget for evaluation of point {} over poly {}",
+                                    point_label, label
+                                )
+                            }),
+                            || Ok(value_for_alloc(value, &test_conf.negative_type, rng)),
+                        )?;
+                        value_gadgets.insert((label.clone(), point_label.clone()), value_gadget);
+                    },
+                }
             }
-            points.insert(point_label.clone(), (point, poly_labels_set.clone()));
-            point_gadgets.insert(point_label.clone(), (point_gadget.clone(), poly_labels_set));
         }
 
         let fs_seed = String::from("TEST_SEED").into_bytes();
@@ -369,19 +499,18 @@ fn test_single_point_multi_poly_verify<
         let num_polynomials = rng.gen_range(1..=test_conf.num_polynomials);
 
         let mut polynomials = Vec::with_capacity(num_polynomials);
-        let mut labels = Vec::with_capacity(num_polynomials);
-        let mut values = Vec::with_capacity(num_polynomials);
+        let mut values = Vec::with_capacity(polynomials.len());
         let point = G::ScalarField::rand(rng);
         for i in 0..num_polynomials {
             let label = format!("Test polynomial {}", i);
-            labels.push(label.clone());
             let labeled_polynomial =
-                generate_labeled_polynomial(test_conf.segmented, label, supported_degree, rng);
-            values.push(labeled_polynomial.polynomial().evaluate(point));
+                generate_labeled_polynomial::<_, G::ScalarField>(test_conf.segmented, label, supported_degree, rng);
+            values.push(labeled_polynomial.evaluate(point));
             polynomials.push(labeled_polynomial);
         }
 
         let (comms, rands) = PC::commit_many(&ck, &polynomials, Some(rng))?;
+
 
         // alloc gadgets for polynomial evaluations over the point here as later on they will be moved in succinct verify function
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
@@ -446,7 +575,6 @@ fn test_single_point_multi_poly_verify<
         }
         assert!(successful_test, "failed for {:?}", test_conf.negative_type);
     }
-
     Ok(())
 }
 
@@ -471,6 +599,7 @@ pub(crate) fn succinct_verify_single_point_single_poly_test<
             max_num_queries: 1,
             segmented: false,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })
@@ -496,6 +625,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<
             max_num_queries: 1,
             segmented: true,
             negative_type,
+            marlin_params: None,
         })
         .unwrap();
         test_single_point_multi_poly_verify::<
@@ -511,6 +641,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<
             max_num_queries: 1,
             segmented: true,
             negative_type,
+            marlin_params: None,
         })
         .unwrap();
         test_multi_point_multi_poly_verify::<
@@ -526,6 +657,7 @@ pub(crate) fn succinct_verify_with_segmentation_test<
             max_num_queries: 5,
             segmented: true,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })
@@ -546,9 +678,41 @@ pub(crate) fn single_point_multi_poly_test<
             max_num_queries: 1,
             segmented: false,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })
+}
+
+pub(crate) fn succinct_verify_with_marlin_params_test<
+    ConstraintF: PrimeField,
+    G: Group<BaseField = ConstraintF>,
+    PC: 'static + PolynomialCommitment<G, Commitment = G>,
+    PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
+>() {
+    test_multi_point_multi_poly_verify::<
+        ConstraintF,
+        G,
+        DomainExtendedPolynomialCommitment<G, PC>,
+        DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>,
+    >(
+        TestInfo{
+            num_iters: 1,
+            max_degree: Some(1usize << 19),
+            supported_degree: Some(1usize << 17),
+            num_polynomials: 0,
+            max_num_queries: 0,
+            segmented: false,
+            negative_type: None,
+            marlin_params: Some(
+                MarlinParams {
+                    log_segment_size: 17,
+                    log_h_domain: 18,
+                    log_k_domain: 19,
+                }
+            ),
+        }
+    ).unwrap()
 }
 
 pub(crate) fn constant_polynomial_succinct_verify_test<
@@ -566,6 +730,7 @@ pub(crate) fn constant_polynomial_succinct_verify_test<
             max_num_queries: 1,
             segmented: false,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })
@@ -586,6 +751,7 @@ pub(crate) fn multi_poly_multi_point_test<
             max_num_queries: 5,
             segmented: false,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })
@@ -606,6 +772,7 @@ pub(crate) fn single_poly_multi_point_test<
             max_num_queries: 5,
             segmented: false,
             negative_type,
+            marlin_params: None,
         })
         .unwrap()
     })

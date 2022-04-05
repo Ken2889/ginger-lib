@@ -50,10 +50,13 @@ where
                 cs.ns(|| "alloc h-commitment for multi-point proof"),
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+
+        Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        )
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -77,10 +80,13 @@ where
                 cs.ns(|| "alloc h-commitment for multi-point proof"),
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+
+        Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        )
     }
 }
 

@@ -479,10 +479,12 @@ impl<
             Ok(mp_proof.h_commitment)
         })?;
 
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+        Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        )
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -505,10 +507,12 @@ impl<
                 Ok(mp_proof.h_commitment)
             })?;
 
-        Ok(Self {
-            proof,
-            h_commitment,
-        })
+        Ok(
+            Self{
+                proof,
+                h_commitment,
+            }
+        )
     }
 }
 

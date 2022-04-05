@@ -454,6 +454,8 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
         }
     }
 
+
+
     #[inline]
     fn get_proof(&self) -> &Self::Proof {
         &self.proof
@@ -471,6 +473,7 @@ impl<G: IPACurve> SemanticallyValid for MultiPointProof<G> {
     }
 }
 
+//ToDo: optimize serialization of evaluations
 impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
@@ -484,7 +487,7 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
     }
 
     fn serialized_size(&self) -> usize {
-        self.proof.serialized_size() + self.h_commitment.serialized_size()
+        return self.proof.serialized_size() + self.h_commitment.serialized_size();
     }
 
     fn serialize_without_metadata<W: Write>(
@@ -514,7 +517,7 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
-        self.proof.uncompressed_size() + self.h_commitment.uncompressed_size()
+        return self.proof.uncompressed_size() + self.h_commitment.uncompressed_size();
     }
 }
 
@@ -598,7 +601,7 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
     /// Will automatically calculate also the endo versions of them
     #[cfg(feature = "circuit-friendly")]
     pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
-        use algebra::ToBits;
+        //use algebra::ToBits;
 
         let endo_chals = chals
             .iter()
