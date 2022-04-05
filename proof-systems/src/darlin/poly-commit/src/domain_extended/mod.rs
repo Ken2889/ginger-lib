@@ -22,13 +22,9 @@ use std::marker::PhantomData;
 #[cfg(feature = "circuit-friendly")]
 use crate::{LabeledCommitment, single_point_multi_poly_succinct_verify, LabeledPolynomial, LabeledRandomness, single_point_multi_poly_open};
 #[cfg(feature = "circuit-friendly")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
-use std::collections::BTreeSet;
-#[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
-use crate::{Error, Evaluations, multi_point_multi_poly_open, PolyMap, QueryMap, succinct_multi_point_multi_poly_verify};
+use crate::{Error, Evaluations, multi_point_multi_poly_open, QueryMap, succinct_multi_point_multi_poly_verify};
 
 
 /*
@@ -76,7 +72,6 @@ polynomials/commitments evaluated in each point
 
 #[macro_export]
 #[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
 macro_rules! sort_query_map {
     ($query_map: ident, $poly_map: ident, $get_num_segments: tt) => {
         {
@@ -335,7 +330,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
     }
 
     #[cfg(feature = "circuit-friendly")]
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn multi_point_multi_poly_open<'b>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item=&'b LabeledPolynomial<G::ScalarField>>,
@@ -343,7 +337,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item=&'b LabeledRandomness<Self::Randomness>>,
         rng: Option<&mut dyn RngCore>) -> Result<Self::MultiPointProof, Self::Error> {
-        let poly_map: PolyMap<_, _> = labeled_polynomials
+        let poly_map: HashMap<_, _> = labeled_polynomials
             .into_iter()
             .map(|poly| (poly.label(), poly))
             .collect();
@@ -363,7 +357,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
     }
 
     #[cfg(feature = "circuit-friendly")]
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>,
@@ -372,7 +365,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle)
         -> Result<Option<Self::VerifierState>, Self::Error> {
-        let commitment_map: PolyMap<_, _> = labeled_commitments
+        let commitment_map: HashMap<_, _> = labeled_commitments
             .into_iter()
             .map(|commitment| (commitment.label(), commitment))
             .collect();

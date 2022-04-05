@@ -4,8 +4,6 @@ use r1cs_std::groups::GroupGadget;
 use r1cs_std::prelude::AllocGadget;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-#[cfg(feature = "boneh-with-single-point-batch")]
-use r1cs_std::boolean::Boolean;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Derivative)]
@@ -66,9 +64,6 @@ pub trait MultiPointProofGadget<
     /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
     fn get_h_commitment(&self) -> &Self::CommitmentGadget;
 
-    /// get the evaluations of the polynomials over the batching point
-    #[cfg(feature = "boneh-with-single-point-batch")]
-    fn get_evaluations(&self) -> &Vec<Vec<Boolean>>;
 }
 
 /// Gadget for the state returned by verifier in case of successful verification

@@ -77,19 +77,13 @@ pub trait BDFGMultiPointProof<G: Group>:
     type Proof: PCProof;
 
     /// Build new multi point proof from simple proof and commitment to h(X) polynomial
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self;
-    #[cfg(feature = "boneh-with-single-point-batch")]
-    fn new(proof: Self::Proof, h_commitment: Self::Commitment, evaluations: Vec<G::ScalarField>) -> Self;
 
     /// Outputs underlying simple proof
     fn get_proof(&self) -> &Self::Proof;
 
     /// Outputs the commitment to the multi-point multi-poly combination `h(X)`
     fn get_h_commitment(&self) -> &Self::Commitment;
-
-    #[cfg(feature="boneh-with-single-point-batch")]
-    fn get_evaluations(&self) -> &Vec<G::ScalarField>;
 }
 
 /// A polynomial plus its `label` for reference.
