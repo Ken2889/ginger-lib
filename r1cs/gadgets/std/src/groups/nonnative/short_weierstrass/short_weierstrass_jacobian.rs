@@ -233,7 +233,9 @@ where
 
     /// [Hopwood]'s optimized scalar multiplication, adapted to the general case of no
     /// leading-one assumption.
-    /// For a detailed explanation, see the native implementation.
+    /// For a detailed explanation, see the native implementation. Note that, differently from
+    /// the native implementations of `mul_bits`, for efficiency reasons this function does not
+    /// deal with the case of `self` being the point at infinity.
     ///
     /// [Hopwood] https://github.com/zcash/zcash/issues/3924
     fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(

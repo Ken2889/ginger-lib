@@ -1,11 +1,7 @@
-use algebra::{
-    curves::{
-        short_weierstrass_jacobian::{AffineRep, Jacobian},
-        Curve, EndoMulParameters, SWModelParameters,
-    },
-    fields::{BitIterator, Field, PrimeField},
-    groups::Group,
-};
+use algebra::{curves::{
+    short_weierstrass_jacobian::{AffineRep, Jacobian},
+    Curve, EndoMulParameters, SWModelParameters,
+}, fields::{BitIterator, Field, PrimeField}, groups::Group, SemanticallyValid};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};
@@ -279,6 +275,198 @@ where
         other: &Self,
     ) -> Result<Self, SynthesisError> {
         self.double_and_add_internal(cs, other, false)
+    }
+
+    /// [Hopwood]'s optimized scalar multiplication, adapted to the general case of no
+    /// leading-one assumption. This is achieved by transforming the scalar to (almost)
+    /// constant length by adding the scalar field modulus, and applying the Hopwood algorithm
+    /// to a bit sequence of length `n+1`, where `n` is the length of the scalar field modulus.
+    /// Takes `7*n + O(1)` number of constraints instead of `6*n+O(1)`.
+    ///
+    /// Given a little-endian sequence `bits` of at most `n` Boolean gadgets, computes
+    /// the scalar multiple of `&self`, assuming the latter is assured to be in the prime order
+    /// subgroup. Due to incomplete arithmetics, is not satifiable for the scalars from the set
+    /// {0, p-2, p-1, p, p+1}.
+    ///
+    /// [Hopwood] https://github.com/zcash/zcash/issues/3924
+    /// Implementation adapted from https://github.com/ebfull/halo/blob/master/src/gadgets/ecc.rs#L1762.
+    pub fn mul_bits_internal<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
+        // variable base point, must be non-trivial and in the prime order subgroup
+        &self,
+        mut cs: CS,
+        // little endian, of length <= than the scalar field modulus.
+        // Should not be equal to {0, p-2, p-1, p, p+1}.
+        bits: impl Iterator<Item = &'a Boolean>,
+    ) -> Result<Self, SynthesisError> {
+        assert!(P::ScalarField::size_in_bits() >= 3);
+
+        let double_and_add_step = |mut cs: r1cs_core::Namespace<_, _>,
+                                   bit: &Boolean,
+                                   acc: &mut Self,
+                                   t: &Self,
+                                   safe_arithmetics: bool|
+                                   -> Result<(), SynthesisError> {
+            // Q := k[i+1] ? T : −T
+            let neg_y = t.y.negate(cs.ns(|| "neg y"))?;
+            let selected_y =
+                F::conditionally_select(cs.ns(|| "select y or -y"), bit, &t.y, &neg_y)?;
+            let q = Self::new(t.x.clone(), selected_y, t.infinity);
+
+            // Acc := (Acc + Q) + Acc using double_and_add_internal
+            *acc = acc.double_and_add_internal(cs.ns(|| "double and add"), &q, safe_arithmetics)?;
+
+            Ok(())
+        };
+
+        let mut bits = bits.cloned().collect::<Vec<Boolean>>();
+        if self.get_value().is_some() && bits.iter().all(|b| b.get_value().is_some()) {
+            check_mul_bits_inputs(
+                &self.get_value().unwrap(),
+                bits.iter().map(|b| b.get_value().unwrap()).collect(),
+            )?;
+        }
+
+        // Length normalization by adding the scalar field modulus.
+        // The result is alway n + 1 bits long, although the leading bit might be zero.
+        // Costs ~ 1*n + O(1) many constraints.
+        bits = crate::groups::scalar_bits_to_constant_length::<_, P::ScalarField, _>(
+            cs.ns(|| "scalar bits to constant length"),
+            bits,
+        )?;
+
+        let t = self.clone();
+
+        // Acc := [3] T = [2]*T + T
+        let init = {
+            let mut t_copy = t.clone();
+            t_copy.double_in_place(cs.ns(|| "[2] * T"))?;
+            t_copy.add_unsafe(cs.ns(|| "[3] * T"), &t)
+        }?;
+
+        /* Separate treatment of the two leading bits.
+        Assuming that T is in the correct subgroup, no exceptions for affine arithmetic
+        are met.
+        */
+
+        // This processes the most significant bit for the case
+        // bits[n]=1.
+        let mut acc = init.clone();
+        let leading_bit = bits.pop().unwrap();
+
+        // Processing bits[n-1] for the case bits[n] = 1
+        double_and_add_step(
+            cs.ns(|| "Processing bits[n-1] for the case bits[n] == 1"),
+            &bits.pop().unwrap(),
+            &mut acc,
+            &t,
+            false,
+        )?;
+
+        // If leading_bit is one we reset acc to the case bits[n-1]==1
+        acc = Self::conditionally_select(
+            cs.ns(|| "reset acc if leading_bit == 1"),
+            &leading_bit,
+            &acc,
+            &init,
+        )?;
+
+        /* The next bits bits[n-2],...,bits[3] (i.e. except the three least significant)
+        are treated as in Hopwoods' algorithm.
+        */
+
+        // No exceptions can be hit here either, so we are allowed to use unsafe add.
+        // (For T = 0 we don't care.)
+        for (i, bit) in bits
+            .iter()
+            .enumerate()
+            // Skip the two least significant bits (we handle them after the loop)
+            .skip(3)
+            // Scan over the scalar bits in big-endian order
+            .rev()
+        {
+            double_and_add_step(cs.ns(|| format!("bit {}", i + 2)), bit, &mut acc, &t, false)?;
+        }
+
+        /* The last three bits are treated by a careful decision between add()
+        and add_unsafe().
+        */
+
+        // Why the step processing bit[2] needs to be treated with a
+        // secure add: The scalar after adding p consists of n+1 bits
+        //             n-1 bits
+        //     /-----------------------------\
+        //     (bits[n], ... ,bits[3], bits[2], bits[1], bits[0])
+        //
+        // and the result of `acc` after processing bit[2] is
+        //
+        //                 n bits
+        //     /---------------------------------\
+        //     [bits[n], bits[n-1],..., bits[2], 1] * T.
+        //
+        // This output is equal to 0 (and hence causes an exception in the
+        // last add when processing bits[2]) iff
+        //
+        //     [bits[n], bits[n-1],....,bits[2], 1] = p,
+        //
+        // or equivalently [bit[n],...,bits[2],bits[1]] = {p or p-1}.
+        // This corresponds to
+        //     scalar + p  = 2 * {p or p-1} + bits[0]
+        // or  scalar being from {p-2, p-1, p, p + 1}.
+        // A more detailed exploration shows that this set is the complete set
+        // of exceptions.
+        double_and_add_step(cs.ns(|| "bit 2"), &bits[2], &mut acc, &t, true)?;
+
+        // Why the step processing bit[1] needs to be treated with a
+        // secure add:
+        // After processing bit[1] `acc` is equal to
+        //
+        //                 n+1 bits
+        //     /---------------------------------------\
+        //     [bits[n], bits[n-1],..., bits[2], bits[1], 1] * T
+        //
+        // which is 0 iff
+        //
+        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] = p,
+        //
+        // or equivalently [bit[n],...,bits[2],bits[1],bits[0]] = {p or p-1}.
+        // These cases corresponds to
+        //     scalar + p  = {p or p-1}
+        // or a scalar from  {0 , -1}. The latter cannot be achieved by an
+        // unsigned integer representation. The case scalar = 0 is not
+        // covered by the secure add from the step of bits[2].
+        double_and_add_step(cs.ns(|| "bit 1"), &bits[1], &mut acc, &t, true)?;
+
+        // The final bit is taken into account by correcting the `1` in
+        //
+        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] * T,
+        //
+        // via substracting T and a subsequent conditional choice
+        //
+        //      return (k[0] = 0) ? (Acc - T) : Acc.
+        //
+        // We hit exceptions in this sub if and only if
+        //
+        //   [bits[n], bits[n-1],....,bits[2],bits[1], 1]*T = +/- T,
+        // or
+        //  [bits[n], bits[n-1],....,bits[2],bits[1], 1] = +/- 1  mod p.
+        // Hence
+        //
+        //  [bits[n], bits[n-1],....,bits[2],bits[1], 0] = {-2,0} mod p,
+        //
+        // and [bits[n],...,bits[1],bits[0]] is contained in {-2,-1,0,1} mod p.
+        // As this case is already covered by the secure add of step bit[2],
+        // we may use add_unsafe() here.
+        let neg_t = t.negate(cs.ns(|| "neg T"))?;
+        let acc_minus_t = acc.add_unsafe(cs.ns(|| "Acc - T"), &neg_t)?;
+
+        let result = Self::conditionally_select(
+            cs.ns(|| "select acc or acc - T"),
+            &bits[0],
+            &acc,
+            &acc_minus_t,
+        )?;
+
+        Ok(result)
     }
 }
 
@@ -610,196 +798,52 @@ where
         ))
     }
 
-    /// [Hopwood]'s optimized scalar multiplication, adapted to the general case of no
-    /// leading-one assumption. This is achieved by transforming the scalar to (almost)
-    /// constant length by adding the scalar field modulus, and applying the Hopwood algorithm
-    /// to a bit sequence of length `n+1`, where `n` is the length of the scalar field modulus.
-    /// Takes `7*n + O(1)` number of constraints instead of `6*n+O(1)`.
-    ///
+    /// Variable base scalar multiplication based on the [Hopwood] algorithm.
     /// Given a little-endian sequence `bits` of at most `n` Boolean gadgets, computes
-    /// the scalar multiple of `&self`, assuming the latter is assured to be in the prime order
-    /// subgroup. Due to incomplete arithmetics, is not satifiable for the scalars from the set
-    /// {0, p-2, p-1, p, p+1}.
+    /// the scalar multiple of `&self`. Due to incomplete arithmetics, is not satisfiable
+    /// for the scalars from the set {0, p-2, p-1, p, p+1}.
     ///
-    /// [Hopwood] https://github.com/zcash/zcash/issues/3924
-    /// Implementation adapted from https://github.com/ebfull/halo/blob/master/src/gadgets/ecc.rs#L1762.
-    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(
-        // variable base point, must be non-trivial and in the prime order subgroup
-        &self,
-        mut cs: CS,
-        // little endian, of length <= than the scalar field modulus.
-        // Should not be equal to {0, p-2, p-1, p, p+1}.
-        bits: impl Iterator<Item = &'a Boolean>,
+    /// [Hopwood]: https://github.com/zcash/zcash/issues/3924
+    fn mul_bits<'a, CS: ConstraintSystemAbstract<ConstraintF>>(&self,
+       mut cs: CS,
+       bits: impl Iterator<Item=&'a Boolean>,
     ) -> Result<Self, SynthesisError> {
-        assert!(P::ScalarField::size_in_bits() >= 3);
-
-        let double_and_add_step = |mut cs: r1cs_core::Namespace<_, _>,
-                                   bit: &Boolean,
-                                   acc: &mut Self,
-                                   t: &Self,
-                                   safe_arithmetics: bool|
-         -> Result<(), SynthesisError> {
-            // Q := k[i+1] ? T : −T
-            let neg_y = t.y.negate(cs.ns(|| "neg y"))?;
-            let selected_y =
-                F::conditionally_select(cs.ns(|| "select y or -y"), bit, &t.y, &neg_y)?;
-            let q = Self::new(t.x.clone(), selected_y, t.infinity);
-
-            // Acc := (Acc + Q) + Acc using double_and_add_internal
-            *acc = acc.double_and_add_internal(cs.ns(|| "double and add"), &q, safe_arithmetics)?;
-
-            Ok(())
-        };
-
-        let mut bits = bits.cloned().collect::<Vec<Boolean>>();
-        if self.get_value().is_some() && bits.iter().all(|b| b.get_value().is_some()) {
-            check_mul_bits_inputs(
-                &self.get_value().unwrap(),
-                bits.iter().map(|b| b.get_value().unwrap()).collect(),
-            )?;
-        }
-
-        // Length normalization by adding the scalar field modulus.
-        // The result is alway n + 1 bits long, although the leading bit might be zero.
-        // Costs ~ 1*n + O(1) many constraints.
-        bits = crate::groups::scalar_bits_to_constant_length::<_, P::ScalarField, _>(
-            cs.ns(|| "scalar bits to constant length"),
-            bits,
-        )?;
-
-        let t = self.clone();
-
-        // Acc := [3] T = [2]*T + T
-        let init = {
-            let mut t_copy = t.clone();
-            t_copy.double_in_place(cs.ns(|| "[2] * T"))?;
-            t_copy.add_unsafe(cs.ns(|| "[3] * T"), &t)
-        }?;
-
-        /* Separate treatment of the two leading bits.
-        Assuming that T is in the correct subgroup, no exceptions for affine arithmetic
-        are met.
+        /*
+        This function relies on the variant of Hopwood algorithm which is implemented in
+        `mul_bits_internal` function. For efficiency, this variant requires that `self` is not
+        the point at infinity of the curve.
+        To deal with the case of `self` being the point at infinity, in this function
+        we proceed as follows.
+        - We choose a non zero curve point C'
+        - Let `non_trivial_curve_point` = cond_select(is_zero, C', self), where `is_zero` is true
+        iff `self` is the point at infinity. This ensures that `non_trivial_curve_point` will always be a non-zero
+        point, which can then be safely multiplied by `scalar` with `mul_bits_internal`
+        - The result is then computed as cond_select(is_zero, self, non_trivial_curve_point*scalar);
+        thus, if `self` is zero, then the result is 0 and the product `non_trivial_base_point`*`scalar`
+        is discarded, otherwise the result will just be `self`*`scalar`
         */
+        let non_zero_curve_point = <Jacobian<P> as Curve>::prime_subgroup_generator();
+        // check that the generated point can be employed in `mul_bits_internal`
+        assert!(!non_zero_curve_point.is_zero() && non_zero_curve_point.is_valid());
+        let non_trivial_base_gadget = Self::from_value(
+            cs.ns(|| "alloc non trivial base constant"),
+            &non_zero_curve_point,
+        );
 
-        // This processes the most significant bit for the case
-        // bits[n]=1.
-        let mut acc = init.clone();
-        let leading_bit = bits.pop().unwrap();
-
-        // Processing bits[n-1] for the case bits[n] = 1
-        double_and_add_step(
-            cs.ns(|| "Processing bits[n-1] for the case bits[n] == 1"),
-            &bits.pop().unwrap(),
-            &mut acc,
-            &t,
-            false,
+        let is_zero = self.is_zero(cs.ns(|| "check if base point is zero"))?;
+        let non_trivial_curve_point = Self::conditionally_select(
+            cs.ns(|| "select non trivial curve point for mul"),
+            &is_zero,
+            &non_trivial_base_gadget,
+            self,
         )?;
-
-        // If leading_bit is one we reset acc to the case bits[n-1]==1
-        acc = Self::conditionally_select(
-            cs.ns(|| "reset acc if leading_bit == 1"),
-            &leading_bit,
-            &acc,
-            &init,
-        )?;
-
-        /* The next bits bits[n-2],...,bits[3] (i.e. except the three least significant)
-        are treated as in Hopwoods' algorithm.
-        */
-
-        // No exceptions can be hit here either, so we are allowed to use unsafe add.
-        // (For T = 0 we don't care.)
-        for (i, bit) in bits
-            .iter()
-            .enumerate()
-            // Skip the two least significant bits (we handle them after the loop)
-            .skip(3)
-            // Scan over the scalar bits in big-endian order
-            .rev()
-        {
-            double_and_add_step(cs.ns(|| format!("bit {}", i + 2)), bit, &mut acc, &t, false)?;
-        }
-
-        /* The last three bits are treated by a careful decision between add()
-        and add_unsafe().
-        */
-
-        // Why the step processing bit[2] needs to be treated with a
-        // secure add: The scalar after adding p consists of n+1 bits
-        //             n-1 bits
-        //     /-----------------------------\
-        //     (bits[n], ... ,bits[3], bits[2], bits[1], bits[0])
-        //
-        // and the result of `acc` after processing bit[2] is
-        //
-        //                 n bits
-        //     /---------------------------------\
-        //     [bits[n], bits[n-1],..., bits[2], 1] * T.
-        //
-        // This output is equal to 0 (and hence causes an exception in the
-        // last add when processing bits[2]) iff
-        //
-        //     [bits[n], bits[n-1],....,bits[2], 1] = p,
-        //
-        // or equivalently [bit[n],...,bits[2],bits[1]] = {p or p-1}.
-        // This corresponds to
-        //     scalar + p  = 2 * {p or p-1} + bits[0]
-        // or  scalar being from {p-2, p-1, p, p + 1}.
-        // A more detailed exploration shows that this set is the complete set
-        // of exceptions.
-        double_and_add_step(cs.ns(|| "bit 2"), &bits[2], &mut acc, &t, true)?;
-
-        // Why the step processing bit[1] needs to be treated with a
-        // secure add:
-        // After processing bit[1] `acc` is equal to
-        //
-        //                 n+1 bits
-        //     /---------------------------------------\
-        //     [bits[n], bits[n-1],..., bits[2], bits[1], 1] * T
-        //
-        // which is 0 iff
-        //
-        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] = p,
-        //
-        // or equivalently [bit[n],...,bits[2],bits[1],bits[0]] = {p or p-1}.
-        // These cases corresponds to
-        //     scalar + p  = {p or p-1}
-        // or a scalar from  {0 , -1}. The latter cannot be achieved by an
-        // unsigned integer representation. The case scalar = 0 is not
-        // covered by the secure add from the step of bits[2].
-        double_and_add_step(cs.ns(|| "bit 1"), &bits[1], &mut acc, &t, true)?;
-
-        // The final bit is taken into account by correcting the `1` in
-        //
-        //     [bits[n], bits[n-1],....,bits[2],bits[1], 1] * T,
-        //
-        // via substracting T and a subsequent conditional choice
-        //
-        //      return (k[0] = 0) ? (Acc - T) : Acc.
-        //
-        // We hit exceptions in this sub if and only if
-        //
-        //   [bits[n], bits[n-1],....,bits[2],bits[1], 1]*T = +/- T,
-        // or
-        //  [bits[n], bits[n-1],....,bits[2],bits[1], 1] = +/- 1  mod p.
-        // Hence
-        //
-        //  [bits[n], bits[n-1],....,bits[2],bits[1], 0] = {-2,0} mod p,
-        //
-        // and [bits[n],...,bits[1],bits[0]] is contained in {-2,-1,0,1} mod p.
-        // As this case is already covered by the secure add of step bit[2],
-        // we may use add_unsafe() here.
-        let neg_t = t.negate(cs.ns(|| "neg T"))?;
-        let acc_minus_t = acc.add_unsafe(cs.ns(|| "Acc - T"), &neg_t)?;
-
-        let result = Self::conditionally_select(
-            cs.ns(|| "select acc or acc - T"),
-            &bits[0],
-            &acc,
-            &acc_minus_t,
-        )?;
-
-        Ok(result)
+        let safe_mul_res = non_trivial_curve_point.mul_bits_internal(cs.ns(|| "base_point*scalar"), bits)?;
+        Self::conditionally_select(
+            cs.ns(|| "select correct result for safe mul"),
+            &is_zero,
+            self,
+            &safe_mul_res,
+        )
     }
 
     /// Fixed base scalar multiplication as mentioned by [Hopwood] using a signed

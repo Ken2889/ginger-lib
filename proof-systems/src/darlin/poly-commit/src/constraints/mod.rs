@@ -1,20 +1,19 @@
 use crate::{Error as PolyError, Evaluations, PolynomialCommitment, QueryMap};
-use algebra::{Group, PrimeField, UniformRand};
+use algebra::{Group, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
-use num_traits::Zero;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::{nonnative::nonnative_field_gadget::NonNativeFieldGadget, FieldGadget};
 use r1cs_std::groups::GroupGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
-use rand_core::SeedableRng;
-use rand_xorshift::XorShiftRng;
 use std::collections::BTreeMap;
 
 #[cfg(feature = "boneh-with-single-point-batch")]
 use crate::H_POLY_LABEL;
 #[cfg(feature = "boneh-with-single-point-batch")]
 use std::collections::HashMap;
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use crate::PolynomialLabel;
 
 
 pub mod data_structures;
@@ -25,61 +24,7 @@ pub mod tests;
 use r1cs_std::boolean::Boolean;
 use r1cs_std::eq::EqGadget;
 use r1cs_std::fields::fp::FpGadget;
-use r1cs_std::prelude::{CondSelectGadget, ConstantGadget};
 use r1cs_std::FromGadget;
-
-/// multiply `base_point` to `scalar` dealing with the corner case that `base_point` may be zero
-/// `scalar` must be an iterator over the bits of the scalar in *little-endian* order
-pub(crate) fn safe_mul_bits<'a, ConstraintF, G, PC, PCG, CS, IT>(
-    mut cs: CS,
-    base_point: &PCG::CommitmentGadget,
-    scalar: IT,
-) -> Result<PCG::CommitmentGadget, SynthesisError>
-where
-    ConstraintF: PrimeField,
-    G: Group<BaseField = ConstraintF>,
-    PC: PolynomialCommitment<G>,
-    PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
-    CS: ConstraintSystemAbstract<ConstraintF>,
-    IT: Iterator<Item = &'a Boolean>,
-{
-    /*
-    We deterministically sample a non zero commitment C' and then we perform the following steps:
-    - let `non_trivial_base_point` = cond_select(is_zero, C', base_point), where `is_zero` is true
-    iff `base_point` is zero. This ensures that `non_trivial_base_point` will always be a non-zero
-    commitment, which can then be safely multiplied by `scalar`
-    - the result is then computed as cond_select(is_zero, 0, non_trivial_base_point*scalar); thus,
-    if `base_point` is zero, then the result is 0 and the product `non_trivial_base_point`*`scalar`
-    is discarded, otherwise the result will just be `base_point`*`scalar`
-    */
-    // we need to employ a rng with fixed seed in order to deterministically generated a
-    // non zero base element in PC::Commitment
-    let rng = &mut XorShiftRng::seed_from_u64(42);
-    let mut non_trivial_base_constant = PC::Commitment::rand(rng);
-    while non_trivial_base_constant.is_zero() {
-        non_trivial_base_constant = PC::Commitment::rand(rng);
-    }
-    let non_trivial_base_gadget = PCG::CommitmentGadget::from_value(
-        cs.ns(|| "alloc non trivial base constant"),
-        &non_trivial_base_constant,
-    );
-    let zero = PCG::CommitmentGadget::zero(cs.ns(|| "alloc constant 0"))?;
-
-    let is_zero = base_point.is_zero(cs.ns(|| "check if base point is zero"))?;
-    let non_trivial_base_point = PCG::CommitmentGadget::conditionally_select(
-        cs.ns(|| "select non trivial base point for mul"),
-        &is_zero,
-        &non_trivial_base_gadget,
-        &base_point,
-    )?;
-    let safe_mul_res = non_trivial_base_point.mul_bits(cs.ns(|| "base_point*scalar"), scalar)?;
-    PCG::CommitmentGadget::conditionally_select(
-        cs.ns(|| "select correct result for safe mul"),
-        &is_zero,
-        &zero,
-        &safe_mul_res,
-    )
-}
 
 /// Default implementation of `succinct_verify_single_point_multi_poly` for `PolynomialCommitmentVerifierGadget`,
 /// employed as a building block also by domain extended polynomial commitment gadget
@@ -177,21 +122,23 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
 /// given as inputs the commitments and the evaluations of the polynomials for
 /// a `multi_point` succinct verification, batches the commitments and the evaluation in a single
 /// commitment and in a single value, respectively.
+///ToDo: put more code in this function to remove code duplication if benchmarks show that we no
+/// longer need the implementation of domain extended which combines commitments before calling this
+/// function.
 #[cfg(not(feature = "boneh-with-single-point-batch"))]
 pub(crate) fn multi_poly_multi_point_batching<
-    'a,
+    'a, 'b,
     ConstraintF: PrimeField,
     G: Group<BaseField = ConstraintF>,
     PC: PolynomialCommitment<G>,
     PCG: PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
     CS: ConstraintSystemAbstract<ConstraintF>,
-    I: IntoIterator<
-        Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
-    >,
+    QueryIT: IntoIterator<Item = (&'b super::PointLabel, &'b (NonNativeFieldGadget<G::ScalarField, ConstraintF>, LabelIT))>,
+    LabelIT: 'b + IntoIterator<Item=PolynomialLabel> + Clone
 >(
     mut cs: CS,
-    labeled_commitments: I,
-    points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
+    commitment_map: BTreeMap<&'a PolynomialLabel, &'a PCG::CommitmentGadget>,
+    points: QueryIT, //&QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
     values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
     evaluation_point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     lambda_bits: &[Boolean],
@@ -203,12 +150,9 @@ pub(crate) fn multi_poly_multi_point_batching<
     PCG::Error,
 >
 where
-    <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    <QueryIT as IntoIterator>::IntoIter: DoubleEndedIterator,
+    <LabelIT as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
-    let commitment_map: BTreeMap<_, _> = labeled_commitments
-        .into_iter()
-        .map(|commitment| (commitment.label(), commitment.commitment()))
-        .collect();
 
     let lambda = PCG::challenge_to_non_native_field_element(
         cs.ns(|| "convert lambda to non native field gadget"),
@@ -236,7 +180,7 @@ where
     let mut batched_commitment = None;
     let mut batched_value = None;
 
-    for (point_label, (point, poly_labels)) in points.iter().rev() {
+    for (point_label, (point, poly_labels)) in points.into_iter().rev() {
         // check that evaluation point is different than the current point, as we later need
         // to compute the inverse of `evaluation_point - point`
         //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
@@ -263,12 +207,12 @@ where
         )?;
         // initialize batched_commitment and batched_value for the current point to properly
         // bootstrap the Horner scheme
-        let mut labels_iter = poly_labels.iter().rev();
+        let mut labels_iter = poly_labels.clone().into_iter().rev();
 
         let label = labels_iter.next().ok_or(SynthesisError::Other(format!("no polynomial found for point with label {}", point_label)))?;
         let mut batched_commitment_for_point =
             (*commitment_map
-                .get(label)
+                .get(&label)
                 .ok_or(SynthesisError::Other(String::from(format!(
                     "commitment with label {} not found",
                     label
@@ -285,7 +229,7 @@ where
             let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
             let commitment =
                 *commitment_map
-                    .get(label)
+                    .get(&label)
                     .ok_or(SynthesisError::Other(String::from(format!(
                         "commitment with label {} not found",
                         label
@@ -325,9 +269,8 @@ where
                         format!("reduce batched value for label {}", combined_label)
                     }))?;
         }
-        batched_commitment_for_point = safe_mul_bits::<ConstraintF, G, PC, PCG, _, _>(
+        batched_commitment_for_point = batched_commitment_for_point.mul_bits(
             cs.ns(|| format!("batched_commitment*z_i_over_z for point {}", point_label)),
-            &batched_commitment_for_point,
             z_i_over_z_bits.iter().rev(), // must be reversed as mul_bits wants bits in little-endian
         )?;
         let batched_value_for_point = batched_value_for_point.mul_without_prereduce(
@@ -416,7 +359,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         base: &Self::CommitmentGadget,
         challenge: IT,
     ) -> Result<Self::CommitmentGadget, SynthesisError> {
-        safe_mul_bits::<ConstraintF, G, PC, Self, _, _>(cs, base, challenge)
+        base.mul_bits(cs, challenge)
     }
     /// This function specifies how to convert a challenge squeezed from the random oracle to a
     /// gadget for `G::ScalarField` with `challenge` as a *little-endian* representation
@@ -510,10 +453,15 @@ pub trait PolynomialCommitmentVerifierGadget<
                 .as_slice(),
         )?;
 
+        let commitment_map: BTreeMap<_, _> = labeled_commitments
+            .into_iter()
+            .map(|commitment| (commitment.label(), commitment.commitment()))
+            .collect();
+
         let (mut batched_commitment, batched_value) =
-            multi_poly_multi_point_batching::<ConstraintF, G, PC, Self, _, _>(
+            multi_poly_multi_point_batching::<ConstraintF, G, PC, Self, _, _, _>(
                 cs.ns(|| "multi point batching"),
-                labeled_commitments,
+                commitment_map,
                 points,
                 values,
                 &evaluation_point,

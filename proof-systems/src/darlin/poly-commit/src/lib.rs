@@ -196,6 +196,340 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a,
     PC::succinct_verify_lc(vk, commitments_lc, point, combined_value, proof, fs_rng)
 }
 
+/// Default implementation of `multi_point_multi_poly_open` for `PolynomialCommitment`,
+/// employed as a building block also by domain extended polynomials commitments
+fn multi_point_multi_poly_open<'a, 'b,
+    G: Group,
+    PC: PolynomialCommitment<G>,
+    LabelIT: 'b + IntoIterator<Item=PolynomialLabel> + Clone,
+    //PolyIT: IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+    QueryIT: IntoIterator<Item = (&'b PointLabel, &'b (G::ScalarField, LabelIT))>,
+    RandIT: IntoIterator<Item = &'a LabeledRandomness<PC::Randomness>>,
+>(
+    ck: &PC::CommitterKey,
+    poly_map: PolyMap<&'a PolynomialLabel, &'a LabeledPolynomial<G::ScalarField>>,
+    query_map: QueryIT, //&QueryMap<G::ScalarField>,
+    fs_rng: &mut PC::RandomOracle,
+    labeled_randomnesses: RandIT,
+    // The optional rng for additional internal randomness of open()
+    mut rng: Option<&mut dyn RngCore>,
+) -> Result<PC::MultiPointProof, PC::Error>
+where
+    <QueryIT as IntoIterator>::IntoIter: Clone
+{
+    // The multi-point multi-poly assertion is rephrased as polynomial identity over the query map
+    // Q = {x_1,...,x_m},
+    //
+    //      Sum_i  lambda^i z_i(X) * (p_i(X) - y_i)  = h(X) * z(X),
+    //
+    // where `z_i(X) = Prod_{x_j!=x_i} (x - x_j)` and `z(X)` is the vanishing polynomial of the
+    // query map. The identity is proven by providing h(X) and showing that for a random x outside
+    // the query map, the "mult-point multi-poly opening combination"
+    //
+    //       LC_x(p_i(X),h(X)) = Sum_i  lambda^i z_i(x)/z(x) * p_i(X)  - h(X)
+    //
+    // opens to the expected value `v = Sum_i lambda^i z_i(x)/z(x)* y_i`.
+    let batch_time = start_timer!(|| "Multi poly multi point batching.");
+
+    let combine_time = start_timer!(|| "Combining polynomials, randomness, and commitments.");
+
+
+    let rands_map: PolyMap<_, _> = labeled_randomnesses
+        .into_iter()
+        .map(|rand| (rand.label(), rand))
+        .collect();
+
+    // as the statement of the opening proof is already bound to the interal state of the fs_rng,
+    // we simply sample the challenge scalar for the random linear combination
+    let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    let mut has_hiding = false;
+
+    let h_poly_time = start_timer!(|| "Compute h(X) polynomial");
+
+    // h(X)
+    let mut h_polynomial = Polynomial::zero();
+
+    // Save evaluation points for later
+    let mut eval_points = std::collections::HashSet::new();
+
+    let query_map_iter = query_map.into_iter();
+
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        let query_map_iter_cloned = query_map_iter.clone();
+
+    for (_point_label, (point, poly_labels)) in query_map_iter {
+        eval_points.insert(*point);
+
+        let mut cur_challenge = G::ScalarField::one();
+
+        // (X - x_i)
+        let x_polynomial =
+            Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
+        let mut cur_h_polynomial = Polynomial::zero();
+
+        for label in poly_labels.clone() {
+            let labeled_polynomial = *poly_map.get(&label).ok_or(Error::MissingPolynomial {
+                label: label.to_string(),
+            })?;
+
+            if labeled_polynomial.is_hiding() {
+                has_hiding = true;
+            }
+
+            // y_i
+            let y_i = labeled_polynomial.polynomial().evaluate(*point);
+
+            // (p_i(X) - y_i) / (X - x_i)
+            let polynomial = labeled_polynomial.polynomial()
+                - &Polynomial::from_coefficients_slice(&[y_i]);
+
+            // h(X) = SUM( lambda^i * ((p_i(X) - y_i) / (X - x_i)) )
+            cur_h_polynomial += (cur_challenge, &polynomial);
+
+            // lambda^i
+            cur_challenge = cur_challenge * &lambda;
+        }
+
+        h_polynomial += &cur_h_polynomial/&x_polynomial;
+    }
+
+    end_timer!(h_poly_time);
+
+    let commit_time = start_timer!(|| format!(
+            "Commit to h(X) polynomial of degree {}",
+            h_polynomial.degree()
+        ));
+
+    let (h_commitment, h_randomness) = PC::commit(
+        ck,
+        &h_polynomial,
+        has_hiding,
+        if has_hiding {
+            if rng.is_none() {
+                end_timer!(commit_time);
+                Err(Error::Other("Rng not set".to_owned()))?
+            }
+            Some(rng.as_mut().unwrap())
+        } else {
+            None
+        },
+    )?;
+
+    end_timer!(commit_time);
+
+    let open_time = start_timer!(|| "Open LC(p_1(X),p_2(X),...,p_m(X),h(X)) polynomial");
+
+    // Fresh random challenge x for multi-point to single-point reduction.
+    // Except the `batch_commitment`, all other commitments are already bound
+    // to the internal state of the Fiat-Shamir
+    fs_rng
+        .record(h_commitment.clone())
+        .map_err(Error::FiatShamirTransformError)?;
+
+    // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
+    // is not implementation specific
+    let x_point = read_fe_from_challenge::<G::ScalarField>(
+        fs_rng.get_challenge::<128>()?.to_vec())
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    // Assert x_point != x_1, ..., x_m
+    // This is needed as we use a slightly optimized LC, which costs one
+    // scalar multiplication.
+    if eval_points.iter().any(|eval_point| eval_point == &x_point) {
+        end_timer!(open_time);
+        Err(Error::Other(
+            "sampled a challenge equal to one of the evaluation points".to_owned(),
+        ))?
+    }
+
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        return {
+        // LC(p_1(X),p_2(X),...,p_m(X),h(X))
+        // NOTE: We can use LC here and call open_lc but it's not really worth it
+        //       either in terms of efficiency and code complexity
+        let mut lc_polynomial = Polynomial::zero();
+        let mut lc_randomness = PC::Randomness::zero();
+
+
+        for (_point_label, (point, poly_labels)) in query_map_iter_cloned {
+            let mut cur_challenge = G::ScalarField::one();
+            let z_i_over_z_value = (x_point - point).inverse().unwrap();
+            for label in poly_labels.clone() {
+                let labeled_polynomial = *poly_map.get(&label).ok_or(Error::MissingPolynomial {
+                    label: label.to_string(),
+                })?;
+
+                let labeled_randomness = *rands_map.get(&label).ok_or(Error::MissingRandomness {
+                    label: label.to_string(),
+                })?;
+
+                lc_polynomial += (cur_challenge * z_i_over_z_value, labeled_polynomial.polynomial());
+
+                if has_hiding {
+                    lc_randomness += &(labeled_randomness.randomness().clone() * &(cur_challenge * z_i_over_z_value));
+                }
+
+                // lambda^i
+                cur_challenge = cur_challenge * &lambda;
+            }
+        }
+
+        // LC(p_1(X),p_2(X),...,p_m(X),h(X)) = SUM ( lamda^i * z_i(x)/z(x) * p_i(X) ) -  h(X)
+        lc_polynomial -= &h_polynomial;
+
+        if has_hiding {
+            lc_randomness -= &h_randomness;
+        }
+
+        end_timer!(open_time);
+        end_timer!(combine_time);
+
+        let proof = PC::open(
+            ck,
+            lc_polynomial,
+            x_point,
+            has_hiding,
+            lc_randomness,
+            fs_rng,
+            rng,
+        )?;
+
+        end_timer!(batch_time);
+
+        Ok(PC::MultiPointProof::new(proof, h_commitment.clone()))
+    };
+
+    #[cfg(feature="boneh-with-single-point-batch")]
+        return {
+        let labeled_h_polynomial = LabeledPolynomial::new(H_POLY_LABEL.to_string(), h_polynomial, has_hiding);
+        let labeled_h_randomness = LabeledRandomness::new(H_POLY_LABEL.to_string(), h_randomness);
+
+        // evaluate each polynomial in `labeled_polynomials` and the h-polynomial over the batch evaluation point
+        let (mut polynomials, evaluations): (Vec<_>, Vec<_>) = poly_map.into_iter()
+            .map(|(_, poly)| {
+                (poly, poly.evaluate(x_point))
+            }).unzip();
+
+        let randomnesses = rands_map.into_iter().map(|(_, rand)| rand).chain(vec![&labeled_h_randomness]);
+
+        polynomials.push(&labeled_h_polynomial);
+
+
+        // absorb evaluations of polynomials over x_point
+        fs_rng.record::<G::BaseField, _>(field_elements_to_bits(evaluations.iter()).as_slice())?;
+
+        end_timer!(open_time);
+        end_timer!(combine_time);
+
+        let proof = PC::single_point_multi_poly_open(ck, polynomials, x_point, fs_rng, randomnesses, rng)?;
+
+
+        end_timer!(batch_time);
+
+        // note that evaluations are put in the proof according to the lexicographical order
+        // of the labels of the polynomials they refer to
+        Ok(PC::MultiPointProof::new(proof, h_commitment, evaluations))
+
+    };
+}
+
+/// Default implementation of `succinct_multi_point_multi_poly_verify` for `PolynomialCommitment`,
+/// which is employed as a building block also by domain extended commitments
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+fn succinct_multi_point_multi_poly_verify<'a,'b,
+    G: Group,
+    PC: PolynomialCommitment<G>,
+    LabelIT: 'b + IntoIterator<Item=PolynomialLabel> + Clone,
+    QueryIT: IntoIterator<Item = (&'b PointLabel, &'b (G::ScalarField, LabelIT))>,
+>(
+    vk: &PC::VerifierKey,
+    commitment_map: PolyMap<&'a PolynomialLabel, &'a LabeledCommitment<PC::Commitment>>,
+    query_map: QueryIT,
+    evaluations: &Evaluations<G::ScalarField>,
+    multi_point_proof: &PC::MultiPointProof,
+    // This implementation assumes that the commitments, query map and evaluations are already recorded by the Fiat Shamir rng
+    fs_rng: &mut PC::RandomOracle,
+) -> Result<Option<PC::VerifierState>, PC::Error> {
+    let combine_time = start_timer!(|| "Multi point multi poly verify combine time");
+
+
+    // lambda
+    let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+        .map_err(|e| Error::Other(e.to_string()))?;
+
+    // Fresh random challenge x
+    fs_rng
+        .record(multi_point_proof.get_h_commitment().clone())
+        .map_err(Error::FiatShamirTransformError)?;
+
+    // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
+    // is not implementation specific
+    let x_point = read_fe_from_challenge::<G::ScalarField>(
+        fs_rng.get_challenge::<128>()?.to_vec())
+        .map_err(|e| Error::Other(e.to_string()))?;
+    // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
+    let mut lc_commitment = PC::Commitment::zero();
+
+    // Expected value wich LC(p_1(X),p_2(X),...,p_m(X),h(X)) opens to
+    let mut lc_value = G::ScalarField::zero();
+
+    for (point_label, (point, poly_labels)) in query_map {
+        // Assert x_point != x_1, ..., x_m
+        if point == &x_point {
+            Err(Error::Other(
+                "sampled a challenge equal to one of the evaluation points".to_owned(),
+            ))?
+        }
+
+        // (X - x_i)
+        let x_polynomial =
+            Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
+
+        // z_i(x)/z(x) = 1 / (x - x_i).
+        // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
+        let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
+
+        let mut cur_challenge = G::ScalarField::one();
+
+        for label in poly_labels.clone() {
+            let labeled_commitment =
+                *commitment_map.get(&label).ok_or(Error::MissingCommitment {
+                    label: label.to_string(),
+                })?;
+
+            // y_i
+            let y_i = *evaluations
+                .get(&(label.clone(), point_label.clone()))
+                .ok_or(Error::MissingEvaluation {
+                    label: label.to_string(),
+                })?;
+
+            lc_commitment += &(labeled_commitment.commitment().clone()
+                * &(z_i_over_z_value * cur_challenge));
+
+            lc_value += y_i * cur_challenge * z_i_over_z_value;
+
+            // lambda^i
+            cur_challenge = cur_challenge * &lambda;
+        }
+    }
+
+    lc_commitment += &(-multi_point_proof.get_h_commitment().clone());
+
+    end_timer!(combine_time);
+
+    PC::succinct_verify(
+        vk,
+        &lc_commitment,
+        x_point,
+        lc_value,
+        multi_point_proof.get_proof(),
+        fs_rng,
+    )
+}
+
 // this type alias defined the data structure employed to map a label to a polynomial/randomness.
 // In the boneh-with-single-point-batch version, we employ a BTreeMap as we need to iterate with a deterministic
 // order over this map; conversely, in the non boneh-with-single-point-batch version we just need to get elements
@@ -486,228 +820,18 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     fn multi_point_multi_poly_open<'a>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
-        query_map: &QueryMap<G::ScalarField>,
+        query_map: &'a QueryMap<G::ScalarField>,
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
         // The optional rng for additional internal randomness of open()
-        mut rng: Option<&mut dyn RngCore>,
+        rng: Option<&mut dyn RngCore>,
     ) -> Result<Self::MultiPointProof, Self::Error> {
-        // The multi-point multi-poly assertion is rephrased as polynomial identity over the query map
-        // Q = {x_1,...,x_m},
-        //
-        //      Sum_i  lambda^i z_i(X) * (p_i(X) - y_i)  = h(X) * z(X),
-        //
-        // where `z_i(X) = Prod_{x_j!=x_i} (x - x_j)` and `z(X)` is the vanishing polynomial of the
-        // query map. The identity is proven by providing h(X) and showing that for a random x outside
-        // the query map, the "mult-point multi-poly opening combination"
-        //
-        //       LC_x(p_i(X),h(X)) = Sum_i  lambda^i z_i(x)/z(x) * p_i(X)  - h(X)
-        //
-        // opens to the expected value `v = Sum_i lambda^i z_i(x)/z(x)* y_i`.
-        let batch_time = start_timer!(|| "Multi poly multi point batching.");
-
-        let combine_time = start_timer!(|| "Combining polynomials, randomness, and commitments.");
-
-
         let poly_map: PolyMap<_, _> = labeled_polynomials
             .into_iter()
             .map(|poly| (poly.label(), poly))
             .collect();
 
-        let rands_map: PolyMap<_, _> = labeled_randomnesses
-            .into_iter()
-            .map(|rand| (rand.label(), rand))
-            .collect();
-
-        // as the statement of the opening proof is already bound to the interal state of the fs_rng,
-        // we simply sample the challenge scalar for the random linear combination
-        let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-
-        let mut has_hiding = false;
-
-        let h_poly_time = start_timer!(|| "Compute h(X) polynomial");
-
-        // h(X)
-        let mut h_polynomial = Polynomial::zero();
-
-        // Save evaluation points for later
-        let mut eval_points = std::collections::HashSet::new();
-
-        for (_point_label, (point, poly_labels)) in query_map.iter() {
-            eval_points.insert(*point);
-
-            let mut cur_challenge = G::ScalarField::one();
-
-            // (X - x_i)
-            let x_polynomial =
-                Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
-            let mut cur_h_polynomial = Polynomial::zero();
-
-            for label in poly_labels {
-                let labeled_polynomial = *poly_map.get(label).ok_or(Error::MissingPolynomial {
-                    label: label.to_string(),
-                })?;
-
-                if labeled_polynomial.is_hiding() {
-                    has_hiding = true;
-                }
-
-                // y_i
-                let y_i = labeled_polynomial.polynomial().evaluate(*point);
-
-                // (p_i(X) - y_i) / (X - x_i)
-                let polynomial = labeled_polynomial.polynomial()
-                    - &Polynomial::from_coefficients_slice(&[y_i]);
-
-                // h(X) = SUM( lambda^i * ((p_i(X) - y_i) / (X - x_i)) )
-                cur_h_polynomial += (cur_challenge, &polynomial);
-
-                // lambda^i
-                cur_challenge = cur_challenge * &lambda;
-            }
-
-            h_polynomial += &cur_h_polynomial/&x_polynomial;
-        }
-
-        end_timer!(h_poly_time);
-
-        let commit_time = start_timer!(|| format!(
-            "Commit to h(X) polynomial of degree {}",
-            h_polynomial.degree()
-        ));
-
-        let (h_commitment, h_randomness) = Self::commit(
-            ck,
-            &h_polynomial,
-            has_hiding,
-            if has_hiding {
-                if rng.is_none() {
-                    end_timer!(commit_time);
-                    Err(Error::Other("Rng not set".to_owned()))?
-                }
-                Some(rng.as_mut().unwrap())
-            } else {
-                None
-            },
-        )?;
-
-        end_timer!(commit_time);
-
-        let open_time = start_timer!(|| "Open LC(p_1(X),p_2(X),...,p_m(X),h(X)) polynomial");
-
-        // Fresh random challenge x for multi-point to single-point reduction.
-        // Except the `batch_commitment`, all other commitments are already bound
-        // to the internal state of the Fiat-Shamir
-        fs_rng
-            .record(h_commitment.clone())
-            .map_err(Error::FiatShamirTransformError)?;
-
-        // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
-        // is not implementation specific
-        let x_point = read_fe_from_challenge::<G::ScalarField>(
-            fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-
-        // Assert x_point != x_1, ..., x_m
-        // This is needed as we use a slightly optimized LC, which costs one
-        // scalar multiplication.
-        if eval_points.iter().any(|eval_point| eval_point == &x_point) {
-            end_timer!(open_time);
-            Err(Error::Other(
-                "sampled a challenge equal to one of the evaluation points".to_owned(),
-            ))?
-        }
-
-        #[cfg(not(feature = "boneh-with-single-point-batch"))]
-        return {
-            // LC(p_1(X),p_2(X),...,p_m(X),h(X))
-            // NOTE: We can use LC here and call open_lc but it's not really worth it
-            //       either in terms of efficiency and code complexity
-            let mut lc_polynomial = Polynomial::zero();
-            let mut lc_randomness = Self::Randomness::zero();
-
-
-            for (_point_label, (point, poly_labels)) in query_map {
-                let mut cur_challenge = G::ScalarField::one();
-                let z_i_over_z_value = (x_point - point).inverse().unwrap();
-                for label in poly_labels {
-                    let labeled_polynomial = *poly_map.get(label).ok_or(Error::MissingPolynomial {
-                        label: label.to_string(),
-                    })?;
-
-                    let labeled_randomness = *rands_map.get(label).ok_or(Error::MissingRandomness {
-                        label: label.to_string(),
-                    })?;
-
-                    lc_polynomial += (cur_challenge * z_i_over_z_value, labeled_polynomial.polynomial());
-
-                    if has_hiding {
-                        lc_randomness += &(labeled_randomness.randomness().clone() * &(cur_challenge * z_i_over_z_value));
-                    }
-
-                    // lambda^i
-                    cur_challenge = cur_challenge * &lambda;
-                }
-            }
-
-            // LC(p_1(X),p_2(X),...,p_m(X),h(X)) = SUM ( lamda^i * z_i(x)/z(x) * p_i(X) ) -  h(X)
-            lc_polynomial -= &h_polynomial;
-
-            if has_hiding {
-                lc_randomness -= &h_randomness;
-            }
-
-            end_timer!(open_time);
-            end_timer!(combine_time);
-
-            let proof = Self::open(
-                ck,
-                lc_polynomial,
-                x_point,
-                has_hiding,
-                lc_randomness,
-                fs_rng,
-                rng,
-            )?;
-
-            end_timer!(batch_time);
-
-            Ok(Self::MultiPointProof::new(proof, h_commitment.clone()))
-        };
-
-        #[cfg(feature="boneh-with-single-point-batch")]
-        return {
-            let labeled_h_polynomial = LabeledPolynomial::new(H_POLY_LABEL.to_string(), h_polynomial, has_hiding);
-            let labeled_h_randomness = LabeledRandomness::new(H_POLY_LABEL.to_string(), h_randomness);
-
-            // evaluate each polynomial in `labeled_polynomials` and the h-polynomial over the batch evaluation point
-            let (mut polynomials, evaluations): (Vec<_>, Vec<_>) = poly_map.into_iter()
-                .map(|(_, poly)| {
-                    (poly, poly.evaluate(x_point))
-                }).unzip();
-
-            let randomnesses = rands_map.into_iter().map(|(_, rand)| rand).chain(vec![&labeled_h_randomness]);
-
-            polynomials.push(&labeled_h_polynomial);
-
-
-            // absorb evaluations of polynomials over x_point
-            fs_rng.record::<G::BaseField, _>(field_elements_to_bits(evaluations.iter()).as_slice())?;
-
-            end_timer!(open_time);
-            end_timer!(combine_time);
-
-            let proof = Self::single_point_multi_poly_open(ck, polynomials, x_point, fs_rng, randomnesses, rng)?;
-
-
-            end_timer!(batch_time);
-
-            // note that evaluations are put in the proof according to the lexicographical order
-            // of the labels of the polynomials they refer to
-            Ok(Self::MultiPointProof::new(proof, h_commitment, evaluations))
-
-        };
+        multi_point_multi_poly_open::<G, Self, _, _, _>(ck, poly_map, query_map, fs_rng, labeled_randomnesses, rng)
     }
 
     /// The succinct part of `single_point_multi_poly_verify()`.
@@ -761,92 +885,18 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_map: &QueryMap<G::ScalarField>,
+        query_map: &'a QueryMap<G::ScalarField>,
         evaluations: &Evaluations<G::ScalarField>,
         multi_point_proof: &Self::MultiPointProof,
         // This implementation assumes that the commitments, query map and evaluations are already recorded by the Fiat Shamir rng
         fs_rng: &mut Self::RandomOracle,
     ) -> Result<Option<Self::VerifierState>, Self::Error> {
-        let combine_time = start_timer!(|| "Multi point multi poly verify combine time");
-
         let commitment_map: PolyMap<_, _> = labeled_commitments
             .into_iter()
             .map(|commitment| (commitment.label(), commitment))
             .collect();
 
-        // lambda
-        let lambda = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-
-        // Fresh random challenge x
-        fs_rng
-            .record(multi_point_proof.get_h_commitment().clone())
-            .map_err(Error::FiatShamirTransformError)?;
-
-        // in this case there is no need to rely on Self::challenge_to_scalar, as the conversion
-        // is not implementation specific
-        let x_point = read_fe_from_challenge::<G::ScalarField>(
-            fs_rng.get_challenge::<128>()?.to_vec())
-            .map_err(|e| Error::Other(e.to_string()))?;
-        // LC(C): reconstructed commitment to LC(p_1(X),p_2(X),...,p_m(X),h(X))
-        let mut lc_commitment = Self::Commitment::zero();
-
-        // Expected value wich LC(p_1(X),p_2(X),...,p_m(X),h(X)) opens to
-        let mut lc_value = G::ScalarField::zero();
-
-        for (point_label, (point, poly_labels)) in query_map.iter() {
-            // Assert x_point != x_1, ..., x_m
-            if point == &x_point {
-                Err(Error::Other(
-                    "sampled a challenge equal to one of the evaluation points".to_owned(),
-                ))?
-            }
-
-            // (X - x_i)
-            let x_polynomial =
-                Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
-
-            // z_i(x)/z(x) = 1 / (x - x_i).
-            // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
-            let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
-
-            let mut cur_challenge = G::ScalarField::one();
-
-            for label in poly_labels {
-                let labeled_commitment =
-                    *commitment_map.get(label).ok_or(Error::MissingCommitment {
-                        label: label.to_string(),
-                    })?;
-
-                // y_i
-                let y_i = *evaluations
-                    .get(&(label.clone(), point_label.clone()))
-                    .ok_or(Error::MissingEvaluation {
-                        label: label.to_string(),
-                    })?;
-
-                lc_commitment += &(labeled_commitment.commitment().clone()
-                    * &(z_i_over_z_value * cur_challenge));
-
-                lc_value += y_i * cur_challenge * z_i_over_z_value;
-
-                // lambda^i
-                cur_challenge = cur_challenge * &lambda;
-            }
-        }
-
-        lc_commitment += &(-multi_point_proof.get_h_commitment().clone());
-
-        end_timer!(combine_time);
-
-        Self::succinct_verify(
-            vk,
-            &lc_commitment,
-            x_point,
-            lc_value,
-            multi_point_proof.get_proof(),
-            fs_rng,
-        )
+        succinct_multi_point_multi_poly_verify::<G, Self, _, _>(vk, commitment_map, query_map, evaluations, multi_point_proof, fs_rng)
     }
 
     #[cfg(feature = "boneh-with-single-point-batch")]
@@ -933,7 +983,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     fn multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
-        query_map: &QueryMap<G::ScalarField>,
+        query_map: &'a QueryMap<G::ScalarField>,
         evaluations: &Evaluations<G::ScalarField>,
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle,
