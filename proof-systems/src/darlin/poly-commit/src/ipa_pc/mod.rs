@@ -143,9 +143,6 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         }
         let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
 
-        #[cfg(not(feature = "circuit-friendly"))]
-        let xi_s_vec;
-        #[cfg(feature = "circuit-friendly")]
         let mut xi_s_vec;
 
         xi_s_vec = xi_s.into_iter().map(|labeled_xi| labeled_xi).collect::<Vec<_>>();
@@ -157,9 +154,8 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
             .collect::<Vec<_>>();
         // record evaluations
         fs_rng.record(values)?;
-
-        // sort in reverse lexicographical order according to labels
-        #[cfg(feature = "circuit-friendly")]
+        
+        // sort in lexicographic reverse order according to labels
         xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));
 
         // Sample new batching challenge

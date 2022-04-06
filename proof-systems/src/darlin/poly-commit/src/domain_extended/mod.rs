@@ -19,11 +19,8 @@ use num_traits::Zero;
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
-#[cfg(feature = "circuit-friendly")]
 use crate::{LabeledCommitment, single_point_multi_poly_succinct_verify, LabeledPolynomial, LabeledRandomness, single_point_multi_poly_open};
-#[cfg(feature = "circuit-friendly")]
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-#[cfg(feature = "circuit-friendly")]
 use crate::{Error, Evaluations, multi_point_multi_poly_open, QueryMap, succinct_multi_point_multi_poly_verify};
 
 
@@ -40,8 +37,8 @@ open or verify functions, respectively
 - A closure $get_num_segments which, given an element of $segmentized_item, returns the number of
 segments of the item
 The macro iterates over $segmentized_items and their associated $data, sorting both collections in
-ascending order on the number of segments. The label of the commitment is employed as a sorting
-criteria for the polynomials with the same number of segments
+descending order on the number of segments. The label of the commitment is employed as a sorting
+criteria for the polynomials with the same number of segments.
 */
 #[macro_export]
 macro_rules! sort_according_to_segments {
@@ -61,6 +58,9 @@ macro_rules! sort_according_to_segments {
 
             assert_eq!(num_items, sorted_collections.len());
 
+            // As in  the gadget we use Horner scheme to batch commitments,
+            // we sort in descending order according to their number of segments for
+            // efficiency.
             let (sorted_items, sorted_data): (Vec<_>, Vec<_>) = sorted_collections.into_iter().rev().map(|(_, (item, data))| (item, data)).unzip();
             (sorted_items, sorted_data)
         }
@@ -93,10 +93,8 @@ Then, the macro invokes $multi_point_func providing a polynomial/commitment map,
 function being called, and the sorted query map.
 */
 #[macro_export]
-#[cfg(feature = "circuit-friendly")]
 macro_rules! multi_point_with_sorted_query_map {
     ($query_map: ident, $polynomials: ident, $get_num_segments: tt, $multi_point_func: tt) => {
-
         {
             let poly_map: HashMap<_, _> = $polynomials
                 .into_iter()
@@ -118,11 +116,17 @@ macro_rules! multi_point_with_sorted_query_map {
                         max_segments = num_segments;
                     }
                 }
-                let sorted_labels_vec = sorted_labels.iter().rev().map(|(_, label)| label.clone() ).collect::<Vec<_>>();
+                // As in the gadget we use Horner scheme to batch commitments,
+                // we sort in descending order according to their number of segments for
+                // efficiency.
+                let sorted_labels_vec = sorted_labels.into_iter().rev().map(|(_, label)| label.clone() ).collect::<Vec<_>>();
                 values_for_sorted_map.push((point.clone(), sorted_labels_vec));
                 sorted_query_map.insert((max_segments, point_label), values_for_sorted_map.len()-1);
             }
 
+            // As in the gadget we use Horner scheme to batch commitments,
+            // we sort in descending order according to their number of segments for
+            // efficiency.
             let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
 
             $multi_point_func(poly_map, sorted_query_map_vec)
@@ -313,7 +317,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         PC::challenge_to_scalar(chal)
     }
 
-    #[cfg(feature = "circuit-friendly")]
     fn single_point_multi_poly_open<'a>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<G::ScalarField>>,
@@ -322,26 +325,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         labeled_randomnesses: impl IntoIterator<Item=&'a LabeledRandomness<Self::Randomness>>,
         rng: Option<&mut dyn RngCore>
     ) -> Result<Self::Proof, Self::Error> {
-        /*
-        Iterate over labeled polynomials and values, sorting them in ascending order
-        on the number of segments. The label of the polynomial is employed as a sorting criteria
-        for the polynomials with the same number of segments
-        */
-
-        // employ a counter to check that all polynomials/values are placed in `sorted_collections`,
-        // as in case there are duplicates the `collect` on `BTreeMap`
-        // just stops processing elements of the iterator rather than returning an error
-        /*let mut counter = 0;
-        let sorted_collections = labeled_polynomials.into_iter().zip(labeled_randomnesses.into_iter()).map(|(poly, rand)| {
-            counter += 1;
-            ((compute_num_of_segments::<G, PC>(ck, poly), poly.label()) , (poly, rand))
-        }
-        ).collect::<BTreeMap<(_, _), (_,_)>>();
-
-        assert_eq!(counter, sorted_collections.len());
-
-        let (sorted_polys, sorted_rands): (Vec<_>, Vec<_>) = sorted_collections.iter().rev().map(|(_, (poly, rand))| (poly, rand)).unzip();*/
-
         let (sorted_polys, sorted_rands) = sort_according_to_segments!(labeled_polynomials, labeled_randomnesses, (
             |poly| compute_num_of_segments::<G, PC>(ck, poly)
         ));
@@ -349,7 +332,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         single_point_multi_poly_open::<G, Self, _, _>(ck, sorted_polys, point, fs_rng, sorted_rands, rng)
     }
 
-    #[cfg(feature = "circuit-friendly")]
     fn succinct_single_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>,
@@ -364,7 +346,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         single_point_multi_poly_succinct_verify::<G, Self, _, _>(vk, sorted_commitments, point, sorted_values, proof, fs_rng)
     }
 
-    #[cfg(feature = "circuit-friendly")]
     fn multi_point_multi_poly_open<'b>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item=&'b LabeledPolynomial<G::ScalarField>>,
@@ -372,23 +353,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item=&'b LabeledRandomness<Self::Randomness>>,
         rng: Option<&mut dyn RngCore>) -> Result<Self::MultiPointProof, Self::Error> {
-        /*let poly_map: HashMap<_, _> = labeled_polynomials
-            .into_iter()
-            .map(|poly| (poly.label(), poly))
-            .collect();
-
-        let (sorted_query_map, values_for_sorted_map) = sort_query_map!(query_map, poly_map, (|poly| compute_num_of_segments::<G, PC>(ck, poly)));
-
-        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
-
-        multi_point_multi_poly_open::<G, Self, _, _, _>(
-            ck,
-            poly_map,
-            sorted_query_map_vec,
-            fs_rng,
-            labeled_randomnesses,
-            rng,
-        )*/
 
         multi_point_with_sorted_query_map!(query_map, labeled_polynomials, (|poly| compute_num_of_segments::<G, PC>(ck, poly)),
             (|poly_map, sorted_query_map|
@@ -404,7 +368,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         )
     }
 
-    #[cfg(feature = "circuit-friendly")]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>,
@@ -413,14 +376,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle)
         -> Result<Option<Self::VerifierState>, Self::Error> {
-        /*let commitment_map: HashMap<_, _> = labeled_commitments
-            .into_iter()
-            .map(|commitment| (commitment.label(), commitment))
-            .collect();
-
-        let (sorted_query_map, values_for_sorted_map) = sort_query_map!(query_map, commitment_map, (|comm: &LabeledCommitment<Self::Commitment>| comm.commitment().len()));
-
-        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();*/
 
         multi_point_with_sorted_query_map!(query_map, labeled_commitments,
             (|comm: &LabeledCommitment<Self::Commitment>| comm.commitment().len()),
@@ -429,8 +384,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
                 succinct_multi_point_multi_poly_verify::<G, Self, _, _ >(vk, comm_map, sorted_query_map, evaluations, multi_point_proof, fs_rng)
             )
         )
-
-        //succinct_multi_point_multi_poly_verify::<G, Self, _, _ >(vk, commitment_map, sorted_query_map_vec, evaluations, multi_point_proof, fs_rng)
     }
 
 
