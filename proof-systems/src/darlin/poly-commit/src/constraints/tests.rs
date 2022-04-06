@@ -262,19 +262,16 @@ fn alloc_gadgets_for_succinct_verify<
     CS: ConstraintSystemAbstract<ConstraintF>,
 >(
     mut cs: CS,
-    vk: &PC::VerifierKey,
     commitments: &[LabeledCommitment<PC::Commitment>],
     fs_seed: Vec<u8>,
     test_type: &Option<NegativeTestType>,
 ) -> Result<
     (
-        PCG::VerifierKeyGadget,
         Vec<LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>>,
         PCG::RandomOracleGadget,
     ),
     SynthesisError,
 > {
-    let vk_gadget = PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc verifier key"), || Ok(vk))?;
     let mut labeled_comms = Vec::with_capacity(commitments.len());
     for comm in commitments {
         let label = comm.label();
@@ -286,7 +283,7 @@ fn alloc_gadgets_for_succinct_verify<
     }
     let fs_gadget = PCG::RandomOracleGadget::init_from_seed(cs.ns(|| "init fs oracle"), fs_seed)?;
 
-    Ok((vk_gadget, labeled_comms, fs_gadget))
+    Ok((labeled_comms, fs_gadget))
 }
 
 fn test_succinct_verify_template<
@@ -333,10 +330,9 @@ fn test_succinct_verify_template<
 
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
-        let (vk_gadget, labeled_commitments, mut fs_gadget) =
+        let (labeled_commitments, mut fs_gadget) =
             alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
                 cs.ns(|| "alloc gadgets for verify"),
-                &vk,
                 &vec![LabeledCommitment::<PC::Commitment>::new(
                     "".to_string(),
                     commitment.clone(),
@@ -360,7 +356,7 @@ fn test_succinct_verify_template<
         let proof_gadget = PCG::ProofGadget::alloc(cs.ns(|| "alloc opening proof"), || Ok(proof))?;
         let _v_state_gadget = PCG::succinct_verify(
             cs.ns(|| "succinct-verify"),
-            &vk_gadget,
+            &vk,
             commitment_gadget,
             &point_gadget,
             &value_gadget,
@@ -455,10 +451,9 @@ fn test_multi_point_multi_poly_verify<
         )?;
         assert!(v_state.is_some());
 
-        let (vk_gadget, labeled_comms, mut fs_gadget) =
+        let (labeled_comms, mut fs_gadget) =
             alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
                 cs.ns(|| "alloc gadgets for verify"),
-                &vk,
                 &comms,
                 fs_seed,
                 &test_conf.negative_type,
@@ -467,7 +462,7 @@ fn test_multi_point_multi_poly_verify<
             PCG::MultiPointProofGadget::alloc(cs.ns(|| "alloc proof gadget"), || Ok(proof))?;
         let _v_state = PCG::succinct_verify_multi_poly_multi_point(
             cs.ns(|| "verify proof"),
-            &vk_gadget,
+            &vk,
             labeled_comms.as_slice(),
             &point_gadgets,
             &value_gadgets,
@@ -547,10 +542,9 @@ fn test_single_point_multi_poly_verify<
         if v_state.is_none() {
             Err(PolyError::FailedSuccinctCheck)?
         }
-        let (vk_gadget, labeled_comms, mut fs_gadget) =
+        let (labeled_comms, mut fs_gadget) =
             alloc_gadgets_for_succinct_verify::<ConstraintF, G, PC, PCG, _>(
                 cs.ns(|| "alloc gadgets for verify"),
-                &vk,
                 &comms,
                 fs_seed,
                 &test_conf.negative_type,
@@ -562,7 +556,7 @@ fn test_single_point_multi_poly_verify<
         )?;
         let _v_state_gadget = PCG::succinct_verify_single_point_multi_poly(
             cs.ns(|| "verify proof"),
-            &vk_gadget,
+            &vk,
             &labeled_comms,
             &point_gadget,
             &value_gadgets,

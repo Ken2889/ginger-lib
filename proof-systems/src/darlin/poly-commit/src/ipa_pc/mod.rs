@@ -378,9 +378,7 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         let rand = if is_hiding { Some(rand) } else { None };
 
         // 0-th challenge
-        let mut round_challenge =
-            Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-                .map_err(|e| Error::Other(e.to_string()))?;
+        let mut round_challenge = read_fe_from_challenge(fs_rng.get_challenge::<128>()?.to_vec())?;
 
         let h_prime = ck.h.mul(&round_challenge);
 
@@ -528,10 +526,7 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         #[cfg(feature = "circuit-friendly")]
         let mut endo_round_challenges = Vec::with_capacity(log_key_len);
 
-        let mut round_challenge =
-            Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-                .map_err(|e| Error::Other(e.to_string()))?;
-
+        let mut round_challenge = read_fe_from_challenge(fs_rng.get_challenge::<128>()?.to_vec())?;
         let h_prime = vk.h.mul(&round_challenge);
 
         let mut round_commitment_proj = combined_commitment_proj + &h_prime.mul(&value);

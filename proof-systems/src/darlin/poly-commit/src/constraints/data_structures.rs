@@ -1,4 +1,4 @@
-use crate::{BDFGMultiPointProof, PCKey, PCVerifierState, PolynomialLabel};
+use crate::{BDFGMultiPointProof, PCVerifierState, PolynomialLabel};
 use algebra::{Group, PrimeField};
 use r1cs_std::groups::GroupGadget;
 use r1cs_std::prelude::AllocGadget;
@@ -70,15 +70,4 @@ pub trait MultiPointProofGadget<
 pub trait VerifierStateGadget<VS: PCVerifierState, ConstraintF: PrimeField>:
     Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
 {
-}
-/// Interface for the gadget representing the verifier key
-pub trait VerifierKeyGadget<VK: PCKey, ConstraintF: PrimeField>:
-    Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
-{
-    /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
-    /// with `self`
-    fn degree(&self) -> usize;
-
-    /// Get the gadget for the hash of the verifier key `VK` represented by `self`
-    fn get_hash(&self) -> &[u8];
 }

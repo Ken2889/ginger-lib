@@ -24,7 +24,7 @@ use r1cs_std::FromGadget;
 /// employed as a building block also by domain extended polynomial commitment gadget
 pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PCG, CS, IC, IV>(
     mut cs: CS,
-    vk: &PCG::VerifierKeyGadget,
+    vk: &PC::VerifierKey,
     labeled_commitments: IC,
     point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     values: IV, //&[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
@@ -103,7 +103,7 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
 
     PCG::succinct_verify(
         &mut cs,
-        &vk,
+        vk,
         &batched_commitment,
         point,
         &batched_value_bits,
@@ -125,7 +125,7 @@ pub(crate) fn multi_poly_multi_point_succinct_verify<
     LabelIT: 'b + IntoIterator<Item=PolynomialLabel> + Clone
 >(
     mut cs: CS,
-    vk: &PCG::VerifierKeyGadget,
+    vk: &PC::VerifierKey,
     commitment_map: HashMap<&'a PolynomialLabel, &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>>,
     points: QueryIT,
     values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
@@ -339,8 +339,6 @@ pub trait PolynomialCommitmentVerifierGadget<
     PC: PolynomialCommitment<G>,
 >: Sized
 {
-    /// Gadget for the verifier key
-    type VerifierKeyGadget: VerifierKeyGadget<PC::VerifierKey, ConstraintF>;
     /// Gadget for the state returned by verify functions
     type VerifierStateGadget: VerifierStateGadget<PC::VerifierState, ConstraintF>;
     /// Gadget for the commitment
@@ -400,7 +398,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// Succinct check of the verify
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         commitment: &Self::CommitmentGadget,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         value: &Vec<Boolean>, // bits of evaluation point in big-endian order
@@ -412,7 +410,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// same point
     fn succinct_verify_single_point_multi_poly<'a, CS, IC, IV>(
         cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         labeled_commitments: IC,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         values: IV, //&[NonNativeFieldGadget<G::ScalarField, ConstraintF>],
@@ -435,7 +433,7 @@ pub trait PolynomialCommitmentVerifierGadget<
     /// multiple points
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         labeled_commitments: I,
         points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
         values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
@@ -449,27 +447,6 @@ pub trait PolynomialCommitmentVerifierGadget<
             >,
             <I as IntoIterator>::IntoIter: DoubleEndedIterator + Clone,
     {
-        /*let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
-            cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
-        )?;
-
-        random_oracle.enforce_record(
-            cs.ns(|| "absorb commitment to polynomial h"),
-            proof.get_h_commitment().clone(),
-        )?;
-        let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
-            cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
-        )?;
-
-        let evaluation_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
-            cs.ns(|| "evaluation point to field gadget"),
-            evaluation_point_bits
-                .iter()
-                .rev()
-                .cloned()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;*/
 
         let commitment_map: HashMap<_, _> = labeled_commitments
             .into_iter()
@@ -485,29 +462,5 @@ pub trait PolynomialCommitmentVerifierGadget<
             proof,
             random_oracle
         )
-
-        /*let (mut batched_commitment, batched_value) =
-            multi_poly_multi_point_succinct_verify::<ConstraintF, G, PC, Self, _, _, _>(
-                cs.ns(|| "multi point batching"),
-                commitment_map,
-                points,
-                values,
-                &evaluation_point,
-                &lambda_bits,
-            )?;
-
-        batched_commitment =
-            batched_commitment.sub(cs.ns(|| "sub h commitment"), &proof.get_h_commitment())?;
-        let batched_value_bits =
-            batched_value.to_bits_for_normal_form(cs.ns(|| "batched value to bits"))?;
-        Self::succinct_verify(
-            cs.ns(|| "succinct verify on batched"),
-            &vk,
-            &batched_commitment,
-            &evaluation_point,
-            &batched_value_bits,
-            &proof.get_proof(),
-            random_oracle,
-        )*/
     }
 }

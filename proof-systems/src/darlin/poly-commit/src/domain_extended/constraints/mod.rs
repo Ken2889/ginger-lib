@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
-use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, VerifierKeyGadget, sort_according_to_segments, multi_poly_multi_point_succinct_verify, QueryMap, Evaluations, Error, multi_point_with_sorted_query_map};
+use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, sort_according_to_segments, multi_poly_multi_point_succinct_verify, QueryMap, Evaluations, Error, multi_point_with_sorted_query_map, PCKey};
 use algebra::{Group, PrimeField};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
@@ -39,7 +39,7 @@ impl<
     // for multiple segmented polynomials with an opening proof for the same point `point`.
     fn combine_commitments<'a, CS, I>(
         mut cs: CS,
-        vk: &PCG::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         commitments: I,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
     ) -> Result<Vec<LabeledCommitmentGadget<ConstraintF, G, PCG::CommitmentGadget>>, SynthesisError>
@@ -110,7 +110,6 @@ impl<
     > PolynomialCommitmentVerifierGadget<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>>
     for DomainExtendedPolyCommitVerifierGadget<ConstraintF, G, PC, PCG>
 {
-    type VerifierKeyGadget = PCG::VerifierKeyGadget;
     type VerifierStateGadget = PCG::VerifierStateGadget;
     type CommitmentGadget = GroupGadgetVec<ConstraintF, PC::Commitment, PCG::CommitmentGadget>;
     type ProofGadget = PCG::ProofGadget;
@@ -148,7 +147,7 @@ impl<
 
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         commitment: &Self::CommitmentGadget,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         value: &Vec<Boolean>,
@@ -184,7 +183,7 @@ impl<
 
     fn succinct_verify_single_point_multi_poly<'a, CS, IC, IV>(
         cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &PC::VerifierKey,
         labeled_commitments: IC,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         values: IV,
@@ -213,7 +212,7 @@ impl<
     // the number of segments
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
      mut cs: CS,
-     vk: &Self::VerifierKeyGadget,
+     vk: &PC::VerifierKey,
      labeled_commitments: I,
      points: &QueryMap<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
      values: &Evaluations<NonNativeFieldGadget<G::ScalarField, ConstraintF>>,

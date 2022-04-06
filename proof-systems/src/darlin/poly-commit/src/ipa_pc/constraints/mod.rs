@@ -1,8 +1,8 @@
 use crate::ipa_pc::constraints::data_structures::{
-    IPAMultiPointProofGadget, IPAProofGadget, IPAVerifierKeyGadget, IPAVerifierStateGadget,
+    IPAMultiPointProofGadget, IPAProofGadget, IPAVerifierStateGadget,
     SuccinctCheckPolynomialGadget,
 };
-use crate::ipa_pc::InnerProductArgPC;
+use crate::ipa_pc::{InnerProductArgPC, VerifierKey};
 use crate::{Error, PolynomialCommitmentVerifierGadget};
 use algebra::{EndoMulCurve, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
@@ -50,7 +50,6 @@ impl<
     > PolynomialCommitmentVerifierGadget<ConstraintF, G, InnerProductArgPC<G, FS>>
     for InnerProductArgGadget<ConstraintF, FSG, G, GG>
 {
-    type VerifierKeyGadget = IPAVerifierKeyGadget<ConstraintF, G, GG>;
     type VerifierStateGadget = IPAVerifierStateGadget<ConstraintF, G, GG>;
     type CommitmentGadget = GG;
     type ProofGadget = IPAProofGadget<ConstraintF, G, GG, FS, FSG>;
@@ -116,7 +115,7 @@ impl<
 
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &VerifierKey<G>,
         commitment: &Self::CommitmentGadget,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         value: &Vec<Boolean>,
@@ -147,9 +146,9 @@ impl<
                 cs.ns(|| "hiding_commitment * hiding_challenge"),
                 &hiding_challenge,
             )?;
-            let rand_times_s = vk.s.mul_bits(
+            let rand_times_s = GG::mul_bits_fixed_base(&vk.s,
                 cs.ns(|| "vk.s * hiding_randomness"),
-                hiding_randomness_bits.iter().rev(),
+                hiding_randomness_bits.iter().rev().cloned().collect::<Vec<_>>().as_slice(),
             )?; // reverse order of bits since mul_bits requires little endian representation
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| "add hiding_commitment*hiding_challenge to original commitment"),
@@ -166,8 +165,9 @@ impl<
 
         let mut round_challenges = Vec::with_capacity(proof.vec_l.len());
 
-        let h_prime =
-            vk.h.endo_mul(cs.ns(|| "h' = vk.h*round_challenge"), &round_challenge)?;
+        let h_prime = GG::mul_bits_fixed_base(&vk.h,
+            cs.ns(|| "h' = vk.h*round_challenge"),
+          &round_challenge)?;
         let value_times_h_prime = h_prime.mul_bits(cs.ns(|| "value*h'"), value.iter().rev())?;
         non_hiding_commitment = non_hiding_commitment
             .add(cs.ns(|| "add value*h' to commitment"), &value_times_h_prime)?;

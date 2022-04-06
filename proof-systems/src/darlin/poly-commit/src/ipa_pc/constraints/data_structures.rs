@@ -1,7 +1,7 @@
 use crate::ipa_pc::constraints::InnerProductArgGadget;
-use crate::ipa_pc::{DLogItem, InnerProductArgPC, MultiPointProof, Proof, VerifierKey};
+use crate::ipa_pc::{DLogItem, InnerProductArgPC, MultiPointProof, Proof};
 use crate::{
-    MultiPointProofGadget, PCKey, PolynomialCommitmentVerifierGadget, VerifierKeyGadget,
+    MultiPointProofGadget, PolynomialCommitmentVerifierGadget,
     VerifierStateGadget,
 };
 use algebra::{EndoMulCurve, PrimeField, SemanticallyValid, ToBits};
@@ -14,91 +14,8 @@ use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
 use r1cs_std::prelude::{AllocGadget, EndoMulCurveGadget, FieldGadget};
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
-use std::{borrow::Borrow, marker::PhantomData};
+use std::borrow::Borrow;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IPAVerifierKeyGadget<
-    ConstraintF: PrimeField,
-    G: EndoMulCurve<BaseField = ConstraintF>,
-    GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
-> {
-    degree: usize,
-    pub(crate) h: GG,
-    pub(crate) s: GG,
-    hash: Vec<u8>,
-    _group_phantom: PhantomData<G>,
-    _constraint_field_phantom: PhantomData<ConstraintF>,
-}
-
-impl<
-        ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
-    > VerifierKeyGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
-{
-    fn degree(&self) -> usize {
-        self.degree
-    }
-
-    fn get_hash(&self) -> &[u8] {
-        self.hash.as_slice()
-    }
-}
-
-impl<
-        ConstraintF: PrimeField,
-        G: EndoMulCurve<BaseField = ConstraintF>,
-        GG: 'static + EndoMulCurveGadget<G, ConstraintF>,
-    > AllocGadget<VerifierKey<G>, ConstraintF> for IPAVerifierKeyGadget<ConstraintF, G, GG>
-{
-    fn alloc<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
-        mut cs: CS,
-        f: F,
-    ) -> Result<Self, SynthesisError>
-    where
-        F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<VerifierKey<G>>,
-    {
-        let t = f()?;
-        let vk = t.borrow();
-
-        let h = GG::alloc(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
-        let s = GG::alloc(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
-
-        Ok(Self {
-            degree: vk.degree(),
-            h,
-            s,
-            hash: vk.hash.clone(),
-            _group_phantom: PhantomData,
-            _constraint_field_phantom: PhantomData,
-        })
-    }
-
-    fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
-        mut cs: CS,
-        f: F,
-    ) -> Result<Self, SynthesisError>
-    where
-        F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<VerifierKey<G>>,
-    {
-        let t = f()?;
-        let vk = t.borrow();
-
-        let h = GG::alloc_input(cs.ns(|| "alloc base point h"), || Ok(vk.h))?;
-        let s = GG::alloc_input(cs.ns(|| "alloc base point s"), || Ok(vk.s))?;
-
-        Ok(Self {
-            degree: vk.degree(),
-            h,
-            s,
-            hash: vk.hash.clone(),
-            _group_phantom: PhantomData,
-            _constraint_field_phantom: PhantomData,
-        })
-    }
-}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuccinctCheckPolynomialGadget<
     ConstraintF: PrimeField,
