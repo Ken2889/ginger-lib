@@ -1,7 +1,7 @@
 use algebra::{curves::{
     short_weierstrass_projective::{AffineRep, Projective},
     Curve, EndoMulParameters, SWModelParameters,
-}, fields::{BitIterator, Field, PrimeField}, groups::Group, SemanticallyValid};
+}, fields::{BitIterator, Field, PrimeField}, groups::Group};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use std::ops::{Add, Mul};
 use std::{borrow::Borrow, marker::PhantomData, ops::Neg};
@@ -819,8 +819,6 @@ where
         is discarded, otherwise the result will just be `self`*`scalar`
         */
         let non_zero_curve_point = <Projective<P> as Curve>::prime_subgroup_generator();
-        // check that the generated point can be employed in `mul_bits_internal`
-        assert!(!non_zero_curve_point.is_zero() && non_zero_curve_point.is_valid());
         let non_trivial_base_gadget = Self::from_value(
             cs.ns(|| "alloc non trivial base constant"),
             &non_zero_curve_point,

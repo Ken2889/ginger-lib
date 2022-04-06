@@ -129,7 +129,7 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     // No segmentation here: Reduction polys are at most as big as the committer key.
     pub fn open_reduction_polynomials<'a>(
         ck: &CommitterKey<G>,
-        xi_s: impl IntoIterator<Item = &'a LabeledSuccinctCheckPolynomial<'a, G>>,
+        xi_s: impl IntoIterator<Item = &'a SuccinctCheckPolynomial<G>>,
         point: G::ScalarField,
         // Assumption: the evaluation point and the (xi_s, g_fins) are already bound to the
         // fs_rng state.
@@ -143,20 +143,20 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         }
         let batch_time = start_timer!(|| "Compute and batch Bullet Polys and GFin commitments");
 
-        let mut xi_s_vec;
+        let xi_s_vec;
 
         xi_s_vec = xi_s.into_iter().map(|labeled_xi| labeled_xi).collect::<Vec<_>>();
 
         // Compute the evaluations of the Bullet polynomials at point starting from the xi_s
         let values = xi_s_vec
             .par_iter()
-            .map(|xi_s| xi_s.get_poly().evaluate(point))
+            .map(|xi_s| xi_s.evaluate(point))
             .collect::<Vec<_>>();
         // record evaluations
         fs_rng.record(values)?;
-        
-        // sort in lexicographic reverse order according to labels
-        xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));
+
+        /*// sort in lexicographic reverse order according to labels
+        xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));*/
 
         // Sample new batching challenge
         let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
@@ -176,7 +176,7 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         let combined_check_poly = batching_chals
             .into_par_iter()
             .zip(xi_s_vec)
-            .map(|(chal, xi_s)| Polynomial::from_coefficients_vec(xi_s.get_poly().compute_scaled_coeffs(chal)))
+            .map(|(chal, xi_s)| Polynomial::from_coefficients_vec(xi_s.compute_scaled_coeffs(chal)))
             .reduce(Polynomial::zero, |acc, poly| &acc + &poly);
 
         // It's not necessary to use the full length of the ck if all the Bullet Polys are smaller:

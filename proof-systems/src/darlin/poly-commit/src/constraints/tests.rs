@@ -684,6 +684,8 @@ pub(crate) fn succinct_verify_with_marlin_params_test<
     PC: 'static + PolynomialCommitment<G, Commitment = G>,
     PCG: 'static + PolynomialCommitmentVerifierGadget<ConstraintF, G, PC>,
 >() {
+    let log_segment_size = 17;
+    let log_k_domain = 19;
     test_multi_point_multi_poly_verify::<
         ConstraintF,
         G,
@@ -692,19 +694,17 @@ pub(crate) fn succinct_verify_with_marlin_params_test<
     >(
         TestInfo{
             num_iters: 1,
-            max_degree: Some(1usize << 19),
-            supported_degree: Some(1usize << 17),
-            num_polynomials: 0,
-            max_num_queries: 0,
-            segmented: false,
+            max_degree: Some(1usize << log_k_domain),
+            supported_degree: Some(1usize << log_segment_size),
             negative_type: None,
             marlin_params: Some(
                 MarlinParams {
-                    log_segment_size: 17,
+                    log_segment_size,
                     log_h_domain: 18,
-                    log_k_domain: 19,
+                    log_k_domain,
                 }
             ),
+            ..Default::default()
         }
     ).unwrap()
 }

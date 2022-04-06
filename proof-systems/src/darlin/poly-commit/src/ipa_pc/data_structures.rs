@@ -473,7 +473,6 @@ impl<G: IPACurve> SemanticallyValid for MultiPointProof<G> {
     }
 }
 
-//ToDo: optimize serialization of evaluations
 impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
@@ -726,30 +725,6 @@ impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
     #[cfg(not(feature = "circuit-friendly"))]
     fn is_valid(&self) -> bool {
         self.chals.is_valid()
-    }
-}
-
-/// Succinct check polynomial tagged with a label
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LabeledSuccinctCheckPolynomial<'a, G: IPACurve> {
-    label: PolynomialLabel,
-    check_poly: &'a SuccinctCheckPolynomial<G>,
-}
-
-impl<'a, G: IPACurve> LabeledSuccinctCheckPolynomial<'a, G> {
-    pub fn new(label: PolynomialLabel, check_poly: &'a SuccinctCheckPolynomial<G>) -> Self {
-        Self {
-            label,
-            check_poly
-        }
-    }
-
-    pub fn get_label(&self) -> &PolynomialLabel {
-        &self.label
-    }
-
-    pub fn get_poly(&self) -> &SuccinctCheckPolynomial<G> {
-        self.check_poly
     }
 }
 

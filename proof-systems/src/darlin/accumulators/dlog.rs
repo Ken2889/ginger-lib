@@ -6,10 +6,9 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::{
     accumulators::{AccumulationProof, ItemAccumulator},
-    DomainExtendedIpaPc,
 };
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{serialize::*, Group, GroupVec, UniformRand};
+use algebra::{serialize::*, Group, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use poly_commit::{
@@ -21,7 +20,6 @@ use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use num_traits::{Zero, One};
-use poly_commit::ipa_pc::LabeledSuccinctCheckPolynomial;
 
 pub struct DLogItemAccumulator<G: IPACurve, FS: FiatShamirRng + 'static> {
     _group: PhantomData<G>,
@@ -90,7 +88,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
                 let labeled_comm = {
                     let comm = final_comm_key;
 
-                    LabeledCommitment::new(format!("check_poly_{}", i), GroupVec::new(vec![comm]))
+                    LabeledCommitment::new(format!("check_poly_{}", i), comm)
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
@@ -120,7 +118,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
-        let verifier_state = DomainExtendedIpaPc::<G, FS>::succinct_single_point_multi_poly_verify(
+        let verifier_state = InnerProductArgPC::<G, FS>::succinct_single_point_multi_poly_verify(
             vk, comms.iter(), z, values.iter(), &proof.pc_proof, &mut fs_rng
         ).map_err(|e| {
             end_timer!(check_time);
@@ -257,10 +255,9 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 
         // Collect check_poly from the accumulators
         let check_poly = accumulators
-            .iter()
-            .enumerate()
-            .map(|(i, acc)|
-            LabeledSuccinctCheckPolynomial::new(format!("check_poly_{}", i), &acc.check_poly))
+            .into_iter()
+            .map(|acc|
+            acc.check_poly)
             .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
@@ -457,12 +454,13 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::SemanticallyValid;
+    use algebra::{SemanticallyValid, GroupVec};
     use poly_commit::{
         ipa_pc::Proof,
         DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial,
         PolynomialCommitment, QueryMap, PCKey,
     };
+    use crate::darlin::DomainExtendedIpaPc;
     use blake2::Blake2s;
     use digest::Digest;
     use rand::{distributions::Distribution, thread_rng, Rng};
