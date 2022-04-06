@@ -28,60 +28,88 @@ use crate::{Error, Evaluations, multi_point_multi_poly_open, QueryMap, succinct_
 
 
 /*
-        Iterate over labeled commitment and values, sorting them in ascending order
-        on the number of segments. The label of the commitment is employed as a sorting criteria
-        for the polynomials with the same number of segments
+This macro is employed both in the primitive and in the gadget to sort the inputs to functions for
+single-point multi-poly proofs. The macro takes as input:
+- A set $segmentized_items, which contains items each with possibly more than one segments; such
+items are either segmentized polynomials or segmentized commitments,
+depending on the macro being employed for single-point multi-poly open or verify functions, respectively
+- A set $associated_data, which are in one-to-one correspondence with $segmentized_items;
+such data are either the labeled randomnesses of the segmentized commitments or the evaluations
+of the segmentized polynomials, depending on the macro being employed for single-point multi-poly
+open or verify functions, respectively
+- A closure $get_num_segments which, given an element of $segmentized_item, returns the number of
+segments of the item
+The macro iterates over $segmentized_items and their associated $data, sorting both collections in
+ascending order on the number of segments. The label of the commitment is employed as a sorting
+criteria for the polynomials with the same number of segments
 */
 #[macro_export]
-macro_rules! sort_commitments_and_values {
-    ($commitments: ident, $values: ident) => {
+macro_rules! sort_according_to_segments {
+    ($segmentized_items: ident, $associated_data: ident, $get_num_segments: tt) => {
         {
-            // employ a counter to check that all commitments/values are placed in `sorted_collections`,
-            // as in case there are duplicates the `collect` on `BTreeMap`
+            // compute the number of items to check that all commitments/values are placed
+            // in `sorted_collections`, as in case there are duplicates the `collect` on `BTreeMap`
             // just stops processing elements of the iterator rather than returning an error
-            let mut counter = 0;
-            let sorted_collections = $commitments.into_iter().zip($values.into_iter()).map(|(comm, val)| {
-                counter += 1;
-                ((comm.commitment().len(), comm.label()), (comm, val))
+            let segmentized_items_iter = $segmentized_items.into_iter();
+            // check that the lower bound and upper bound on the iterator are the same and save its
+            // value in `num_items` variable
+            assert_eq!(segmentized_items_iter.size_hint().0, segmentized_items_iter.size_hint().1.unwrap());
+            let num_items = segmentized_items_iter.size_hint().0;
+            let sorted_collections = segmentized_items_iter.into_iter().zip($associated_data.into_iter()).map(|(item, data)| {
+                (($get_num_segments(item), item.label()), (item, data))
             }).collect::<BTreeMap<(_, _), (_,_)>>();
 
-            assert_eq!(counter, sorted_collections.len());
+            assert_eq!(num_items, sorted_collections.len());
 
-            let (sorted_commitments, sorted_values): (Vec<_>, Vec<_>) = sorted_collections.iter().rev().map(|(_, (comm, val))| (comm, val)).unzip();
-            (sorted_commitments, sorted_values)
+            let (sorted_items, sorted_data): (Vec<_>, Vec<_>) = sorted_collections.into_iter().rev().map(|(_, (item, data))| (item, data)).unzip();
+            (sorted_items, sorted_data)
         }
     }
 }
 
 /*
-Given the following input parameters:
+This macro is employed both in the primitive and in the gadget to implement functions for
+multi-point multi-poly proofs which are optimized to process the commitments with an optimal order
+according to their number of segments.
+This macro takes the following input parameters:
+- $multi_point_func is a closure which wraps the main function for multi-point multi-poly proof
+ which is implemented by this macro (e.g., multi_point_multi_poly_open). The closure
+ expects 2 input parameters
 - $query_map is a QueryMap data structure, which maps a point (identified by its label) to the
 set of polynomials (identified by their labels) which are evaluated over such points
-- $poly_map maps a polynomial label to either a LabeledPolynomial or a LabeledCommitment, depending
-on how the macro is called
-- $get_num_segments is a closure that, given as input the value mapped to a label in $poly_map
+- $polynomials is either a set of LabeledPolynomial or a set of LabeledCommitment, depending
+on the multi_point_multi_poly function being implemented with the macro (i.e., if $multi_point_func
+is an open (resp. verify) function, then polynomials is a set of LabeledPolynomial (resp. LabeledCommitment)
+- $get_num_segments is a closure that, given as input an element of $polynomials
 (i.e., either a LabeledPolynomial or a LabeledCommitment), compute the number of segments for such
 polynomial/commitment
-The macro sorts $query_map as follows.
+The macro first sorts $query_map as follows.
 Each set of polynomials labels is sorted according to the number of segments of the polynomial/commitment;
 the set of points is sorted according to the number of segments of the batch polynomial/commitment
 of all the polynomials/commitments evaluated at the point at hand, which corresponds to the number
 of segments of the polynomial/commitment with the largest number of segments in the set of
-polynomials/commitments evaluated in each point
+polynomials/commitments evaluated in each point.
+Then, the macro invokes $multi_point_func providing a polynomial/commitment map, depending on the
+function being called, and the sorted query map.
 */
-
 #[macro_export]
 #[cfg(feature = "circuit-friendly")]
-macro_rules! sort_query_map {
-    ($query_map: ident, $poly_map: ident, $get_num_segments: tt) => {
+macro_rules! multi_point_with_sorted_query_map {
+    ($query_map: ident, $polynomials: ident, $get_num_segments: tt, $multi_point_func: tt) => {
+
         {
+            let poly_map: HashMap<_, _> = $polynomials
+                .into_iter()
+                .map(|commitment| (commitment.label(), commitment))
+                .collect();
+
             let mut sorted_query_map = BTreeMap::new();
             let mut values_for_sorted_map = Vec::with_capacity($query_map.len());
             for (point_label, (point, poly_labels)) in $query_map {
                 let mut sorted_labels = BTreeSet::new();
                 let mut max_segments = 0;
                 for label in poly_labels {
-                    let poly = *$poly_map.get(label).ok_or(Error::MissingPolynomial {
+                    let poly = *poly_map.get(label).ok_or(Error::MissingPolynomial {
                         label: label.to_string(),
                     })?;
                     let num_segments = $get_num_segments(poly);
@@ -94,12 +122,14 @@ macro_rules! sort_query_map {
                 values_for_sorted_map.push((point.clone(), sorted_labels_vec));
                 sorted_query_map.insert((max_segments, point_label), values_for_sorted_map.len()-1);
             }
-            //ToDo: see if we can improve this macro by collecting in a vector the elements of the map,
-            // hence reducing code duplication
-            (sorted_query_map, values_for_sorted_map)
+
+            let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
+
+            $multi_point_func(poly_map, sorted_query_map_vec)
         }
     }
 }
+
 
 fn compute_num_of_segments<G: Group, PC: PolynomialCommitment<G>>(
     ck: &PC::CommitterKey,
@@ -301,7 +331,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         // employ a counter to check that all polynomials/values are placed in `sorted_collections`,
         // as in case there are duplicates the `collect` on `BTreeMap`
         // just stops processing elements of the iterator rather than returning an error
-        let mut counter = 0;
+        /*let mut counter = 0;
         let sorted_collections = labeled_polynomials.into_iter().zip(labeled_randomnesses.into_iter()).map(|(poly, rand)| {
             counter += 1;
             ((compute_num_of_segments::<G, PC>(ck, poly), poly.label()) , (poly, rand))
@@ -310,7 +340,11 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
 
         assert_eq!(counter, sorted_collections.len());
 
-        let (sorted_polys, sorted_rands): (Vec<_>, Vec<_>) = sorted_collections.iter().rev().map(|(_, (poly, rand))| (poly, rand)).unzip();
+        let (sorted_polys, sorted_rands): (Vec<_>, Vec<_>) = sorted_collections.iter().rev().map(|(_, (poly, rand))| (poly, rand)).unzip();*/
+
+        let (sorted_polys, sorted_rands) = sort_according_to_segments!(labeled_polynomials, labeled_randomnesses, (
+            |poly| compute_num_of_segments::<G, PC>(ck, poly)
+        ));
 
         single_point_multi_poly_open::<G, Self, _, _>(ck, sorted_polys, point, fs_rng, sorted_rands, rng)
     }
@@ -324,7 +358,8 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         proof: &Self::Proof,
         fs_rng: &mut Self::RandomOracle) -> Result<Option<Self::VerifierState>, Self::Error> {
 
-        let (sorted_commitments, sorted_values) = sort_commitments_and_values!(labeled_commitments, values);
+        let (sorted_commitments, sorted_values) = sort_according_to_segments!(labeled_commitments, values,
+            (|comm: &LabeledCommitment<Self::Commitment>| comm.commitment().len()));
 
         single_point_multi_poly_succinct_verify::<G, Self, _, _>(vk, sorted_commitments, point, sorted_values, proof, fs_rng)
     }
@@ -337,7 +372,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item=&'b LabeledRandomness<Self::Randomness>>,
         rng: Option<&mut dyn RngCore>) -> Result<Self::MultiPointProof, Self::Error> {
-        let poly_map: HashMap<_, _> = labeled_polynomials
+        /*let poly_map: HashMap<_, _> = labeled_polynomials
             .into_iter()
             .map(|poly| (poly.label(), poly))
             .collect();
@@ -353,6 +388,19 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
             fs_rng,
             labeled_randomnesses,
             rng,
+        )*/
+
+        multi_point_with_sorted_query_map!(query_map, labeled_polynomials, (|poly| compute_num_of_segments::<G, PC>(ck, poly)),
+            (|poly_map, sorted_query_map|
+                multi_point_multi_poly_open::<G, Self, _, _, _>(
+                ck,
+                poly_map,
+                sorted_query_map,
+                fs_rng,
+                labeled_randomnesses,
+                rng,
+                )
+            )
         )
     }
 
@@ -365,16 +413,24 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         multi_point_proof: &Self::MultiPointProof,
         fs_rng: &mut Self::RandomOracle)
         -> Result<Option<Self::VerifierState>, Self::Error> {
-        let commitment_map: HashMap<_, _> = labeled_commitments
+        /*let commitment_map: HashMap<_, _> = labeled_commitments
             .into_iter()
             .map(|commitment| (commitment.label(), commitment))
             .collect();
 
         let (sorted_query_map, values_for_sorted_map) = sort_query_map!(query_map, commitment_map, (|comm: &LabeledCommitment<Self::Commitment>| comm.commitment().len()));
 
-        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
+        let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();*/
 
-        succinct_multi_point_multi_poly_verify::<G, Self, _, _ >(vk, commitment_map, sorted_query_map_vec, evaluations, multi_point_proof, fs_rng)
+        multi_point_with_sorted_query_map!(query_map, labeled_commitments,
+            (|comm: &LabeledCommitment<Self::Commitment>| comm.commitment().len()),
+            (
+                |comm_map, sorted_query_map|
+                succinct_multi_point_multi_poly_verify::<G, Self, _, _ >(vk, comm_map, sorted_query_map, evaluations, multi_point_proof, fs_rng)
+            )
+        )
+
+        //succinct_multi_point_multi_poly_verify::<G, Self, _, _ >(vk, commitment_map, sorted_query_map_vec, evaluations, multi_point_proof, fs_rng)
     }
 
 
