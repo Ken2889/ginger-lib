@@ -81,6 +81,8 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
             // Otherwise, serialize the point as the affine point x=0, y=0,
             // which is for sure not on the curve unless b=0 (which should never happen in our case
             // as if b=0 then the curve has non-prime order).
+            //ToDo: in case in the future we may need to employ curves with b=0, we can employ (0,1)
+            // as the affine representation of the infinity point
             debug_assert!(!M::COEFF_B.is_zero());
             let mut x_fe = M::BaseField::zero().to_field_elements()?;
             let y_fe = M::BaseField::zero().to_field_elements()?;
@@ -106,6 +108,8 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
             // Otherwise, serialize the point as the affine point x=0, y=0,
             // which is for sure not on the curve unless b=0 (which should never happen in our case
             // as if b=0 then the curve has non-prime order).
+            //ToDo: in case in the future we may need to employ curves with b=0, we can employ (0,1)
+            // as the affine representation of the infinity point
             debug_assert!(!M::COEFF_B.is_zero());
             let mut x_fe = M::BaseField::zero().to_field_elements()?;
             let y_fe = M::BaseField::zero().to_field_elements()?;

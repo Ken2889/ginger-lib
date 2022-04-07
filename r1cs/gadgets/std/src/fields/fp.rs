@@ -129,6 +129,12 @@ impl<F: PrimeField> FpGadget<F> {
 impl<F: PrimeField> TryInto<Boolean> for FpGadget<F> {
     type Error = SynthesisError;
 
+    /// Convert an FpGadget `self` that is already constrained to be either 0 or 1 to a Boolean gadget.
+    /// Therefore, this function does not impose any additional constraint in the circuit to verify that
+    /// `self` is either 0 or 1, as calling this function with `self` not already being constrained
+    /// to be either 0 or 1 is considered a misuse of the function.
+    /// However, if `self.get_value() != None`, then the function will check that such value is
+    /// neither 0 nor 1, returning an error if this is not the case.
     fn try_into(self) -> Result<Boolean, Self::Error> {
 
         let variable = match self.get_variable() {

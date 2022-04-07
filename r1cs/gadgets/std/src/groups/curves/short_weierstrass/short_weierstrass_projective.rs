@@ -350,6 +350,11 @@ where
 
     #[inline]
     // Algorithm for complete addition ported in R1CS from zcash: https://github.com/ebfull/halo/blob/master/src/gadgets/ecc.rs#L357
+    // The algorithm from zcash works only with Weierstrass curves y^2 = x^3+b, the algorithm here
+    // is modified to work with generic curves y^2 = x^3 +ax + b, for b != 0 (as if b=0 then the point
+    // (0,0), which is currently used to represent the identity point, will belong to the curve)
+    //ToDo: in case in the future we may need to use curves with b=0, then it should be possible to
+    // modify the function to employ the point (0,1) as the representation for the identity point
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
         mut cs: CS,
@@ -380,19 +385,25 @@ where
 
         // compute lambda_diff = (y2-y1)/(x2-x1+is_same_x), the value for lambda to be used in case x1 != x2
         let y2_minus_y1 = other.y.sub(cs.ns(|| "y2 - y1"), &self.y)?;
-        let x2_minus_x1_plus_x_same = x2_minus_x1.add(cs.ns(|| "x2 - x1 + x_is_same"), &is_same_x)?;
+        let x2_minus_x1_plus_is_same_x = x2_minus_x1.add(cs.ns(|| "x2 - x1 + is_same_x"), &is_same_x)?;
         let lambda_diff = F::alloc(cs.ns(|| "alloc lambda_diff"), || Ok(
-            y2_minus_y1.get_value().get()?*x2_minus_x1_plus_x_same.get_value().get()?.inverse().unwrap()
+            y2_minus_y1.get_value().get()?* x2_minus_x1_plus_is_same_x.get_value().get()?.inverse().unwrap()
             // safe to unwrap inverse as x2_minus_x1_plus_x_same cannot be 0 by construction
         )
         )?;
-        lambda_diff.mul_equals(cs.ns(|| "enforce lambda_diff = (y2-y1) div (x2-x1+is_same_x"), &x2_minus_x1_plus_x_same, &y2_minus_y1)?;
+        lambda_diff.mul_equals(cs.ns(|| "enforce lambda_diff = (y2-y1) div (x2-x1+is_same_x"), &x2_minus_x1_plus_is_same_x, &y2_minus_y1)?;
 
         // compute lambda_same = (3x1^2+a)/(2y1), the value for lambda to be used in case x1 = x2.
-        // in case y1 = 0, which happens only when self is the identity, the constraint
-        // 2y1*lambda_same = 3x1^2+a cannot be satisfied, unless a == 0.
+        // The correct value of lambda_same can be enforced with the constraint
+        // 2y1*lambda_same = 3x1^2+a.
+        // Note that in case y1 = 0, then the value of lambda_same is unconstrained, as
+        // 2y1*lambda_same = 0 independently from the value of lambda_same;
+        // However, since we consider only curves with prime order, then there cannot be points with
+        // y1=0 besides the point at infinity, which is represented as x1=0, y1=0.
+        // Therefore, in case `self` is the identity (i.e., x1=,y1=0), then there are no values of
+        // lambda_same which would satisfy the constraint 2y1*lambda_same = 3x1^2+a, unless a == 0.
         // Therefore, we modify the constraint as (2y1+self.infinity)*lambda_same = 3x1^2+a, which
-        // allows to satisfy the constraint when y1=0 for an arbitrary value of a
+        // is satisfiable when y1=0 by simply choosing lambda_same=a
         let infinity_flag_to_field = F::from(self.infinity, cs.ns(|| "self infinity to field element"))?;
         let two_y1_plus_infinity_flag = self.y.double(cs.ns(|| "2y1"))?.add(cs.ns(|| "2y1+self.infinity"), &infinity_flag_to_field)?;
         let three_times_x1_square_plus_a = self.x.square(cs.ns(|| "x1^2"))?.mul_by_constant(cs.ns(|| "3x1^2"), &P::BaseField::from(3u128))?.add_constant(cs.ns(|| "3x1^2+a"), &P::COEFF_A)?;
