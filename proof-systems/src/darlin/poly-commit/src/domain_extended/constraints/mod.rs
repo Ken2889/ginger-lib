@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
 use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, sort_according_to_segments, multi_poly_multi_point_succinct_verify, QueryMap, Evaluations, Error, multi_point_with_sorted_query_map, PCKey};
 use algebra::{Group, PrimeField};
@@ -199,10 +198,11 @@ impl<
             IV: IntoIterator<Item=&'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
             <IV as IntoIterator>::IntoIter: DoubleEndedIterator {
 
-        let (sorted_commitments, sorted_values) = sort_according_to_segments!(labeled_commitments, values,
-            (|comm: &LabeledCommitmentGadget<ConstraintF,
+        let (sorted_commitments, sorted_values) = sort_according_to_segments(labeled_commitments, values,
+            |comm: &LabeledCommitmentGadget<ConstraintF,
                 <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
-                Self::CommitmentGadget>| comm.commitment().len()));
+                Self::CommitmentGadget>| comm.commitment().len(),
+        |comm| comm.label());
 
         single_point_multi_poly_succinct_verify::<ConstraintF, G, DomainExtendedPolynomialCommitment<G, PC>, Self, _, _ ,_>
             (cs, vk, sorted_commitments, point, sorted_values, proof, random_oracle)
@@ -226,10 +226,13 @@ impl<
                   Self::CommitmentGadget>>,
               <I as IntoIterator>::IntoIter: DoubleEndedIterator {
 
-        multi_point_with_sorted_query_map!(points, labeled_commitments, (|comm: &LabeledCommitmentGadget<
+        multi_point_with_sorted_query_map(points, labeled_commitments,
+  |comm: &LabeledCommitmentGadget<
                   ConstraintF,
                   <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
-                  Self::CommitmentGadget>| comm.commitment().len()), (
+                  Self::CommitmentGadget>| comm.commitment().len(),
+        |comm| comm.label(),
+
             |comm_map, sorted_query_map|
              multi_poly_multi_point_succinct_verify::<ConstraintF, G,
                 DomainExtendedPolynomialCommitment<G, PC>,
@@ -241,8 +244,8 @@ impl<
                 values,
                 proof,
                 random_oracle,
-            )
-        ))
+            ).map_err(|e | Error::Other(e.to_string()))
+        ).map_err(|e| Self::Error::from(e))
 
     }
 }

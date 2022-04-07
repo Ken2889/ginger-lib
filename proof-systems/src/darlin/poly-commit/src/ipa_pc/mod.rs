@@ -155,9 +155,6 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         // record evaluations
         fs_rng.record(values)?;
 
-        /*// sort in lexicographic reverse order according to labels
-        xi_s_vec.sort_by(|xi_1, xi_2| xi_2.get_label().cmp(xi_1.get_label()));*/
-
         // Sample new batching challenge
         let random_scalar = Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
