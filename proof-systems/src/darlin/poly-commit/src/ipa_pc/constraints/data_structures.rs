@@ -275,7 +275,7 @@ pub struct IPAProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: 'static
-        + EndoMulCurveGadget<G, ConstraintF>
+        + EndoMulCurveGadget<G, ConstraintF, Value=G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
@@ -292,7 +292,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: 'static
-            + EndoMulCurveGadget<G, ConstraintF>
+            + EndoMulCurveGadget<G, ConstraintF, Value=G>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
@@ -440,7 +440,7 @@ pub struct IPAMultiPointProofGadget<
     ConstraintF: PrimeField,
     G: EndoMulCurve<BaseField = ConstraintF>,
     GG: 'static
-        + EndoMulCurveGadget<G, ConstraintF>
+        + EndoMulCurveGadget<G, ConstraintF, Value=G>
         + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     FS: FiatShamirRng,
     FSG: FiatShamirRngGadget<ConstraintF>,
@@ -455,7 +455,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: 'static
-            + EndoMulCurveGadget<G, ConstraintF>
+            + EndoMulCurveGadget<G, ConstraintF, Value=G>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
@@ -556,7 +556,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: 'static
-            + EndoMulCurveGadget<G, ConstraintF>
+            + EndoMulCurveGadget<G, ConstraintF, Value=G>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
