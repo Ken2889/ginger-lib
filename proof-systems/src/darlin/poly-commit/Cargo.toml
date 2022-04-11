@@ -49,6 +49,7 @@ blake2 = { version = "=0.8.1", default-features = false }
 asm = [ "algebra/llvm_asm" ]
 print-trace = [ "bench-utils/print-trace" ]
 circuit-friendly = ["r1cs-std", "r1cs-core", "r1cs-crypto", "rand_xorshift"]
+boneh-with-single-point-batch = ["circuit-friendly"]
 
 [[bench]]
 name = "tweedle_open_proof"

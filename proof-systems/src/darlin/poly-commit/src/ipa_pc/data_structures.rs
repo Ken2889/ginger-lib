@@ -440,6 +440,10 @@ pub struct MultiPointProof<G: IPACurve> {
 
     /// Commitment to the h(X) polynomial
     pub h_commitment: G,
+
+    /// Evaluations of the polynomials on the batch evaluation point
+    #[cfg(feature="boneh-with-single-point-batch")]
+    pub(crate) evaluations: Vec<G::ScalarField>,
 }
 
 impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
@@ -447,6 +451,7 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
     type Proof = Proof<G>;
 
     #[inline]
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self {
         Self {
             proof,
@@ -454,6 +459,15 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
         }
     }
 
+    #[inline]
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    fn new(proof: Self::Proof, h_commitment: Self::Commitment, evaluations: Vec<G::ScalarField>) -> Self {
+        Self {
+            proof,
+            h_commitment,
+            evaluations,
+        }
+    }
 
 
     #[inline]
@@ -464,6 +478,11 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
     #[inline]
     fn get_h_commitment(&self) -> &Self::Commitment {
         &self.h_commitment
+    }
+
+    #[cfg(feature = "boneh-with-single-point-batch")]
+    fn get_evaluations(&self) -> &Vec<G::ScalarField> {
+        &self.evaluations
     }
 }
 
@@ -482,11 +501,20 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
         // to be able to reconstruct the other coordinate
         CanonicalSerialize::serialize(&self.h_commitment, &mut writer)?;
 
+        // serialize evaluations over batch point, if available
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        CanonicalSerialize::serialize(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     fn serialized_size(&self) -> usize {
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
         return self.proof.serialized_size() + self.h_commitment.serialized_size();
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return self.proof.serialized_size() + self.h_commitment.serialized_size() + self.evaluations.serialized_size();
+
     }
 
     fn serialize_without_metadata<W: Write>(
@@ -498,6 +526,10 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
 
         // Serialize h_comm
         CanonicalSerialize::serialize_without_metadata(&self.h_commitment, &mut writer)?;
+
+        // serialize evaluations over batch point, if available
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        CanonicalSerialize::serialize_without_metadata(&self.evaluations, &mut writer)?;
 
         Ok(())
     }
@@ -511,12 +543,20 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
         // to be able to reconstruct the other coordinate
         CanonicalSerialize::serialize_uncompressed(&self.h_commitment, &mut writer)?;
 
+        // serialize evaluations over batch point, if available
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        CanonicalSerialize::serialize_uncompressed(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
+        #[cfg(not(feature = "boneh-with-single-point-batch"))]
         return self.proof.uncompressed_size() + self.h_commitment.uncompressed_size();
+
+        #[cfg(feature = "boneh-with-single-point-batch")]
+        return self.proof.uncompressed_size() + self.h_commitment.uncompressed_size() + self.evaluations.uncompressed_size();
     }
 }
 
@@ -528,10 +568,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(feature="boneh-with-single-point-batch")]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
@@ -541,10 +593,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(feature="boneh-with-single-point-batch")]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -555,10 +619,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(feature="boneh-with-single-point-batch")]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -573,10 +649,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         let h_commitment: G =
             CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(feature="boneh-with-single-point-batch")]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }
 

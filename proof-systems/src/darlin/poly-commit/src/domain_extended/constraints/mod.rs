@@ -1,5 +1,5 @@
 use crate::domain_extended::constraints::data_structures::DomainExtendedMultiPointProofGadget;
-use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, sort_according_to_segments, multi_poly_multi_point_succinct_verify, QueryMap, Evaluations, Error, multi_point_with_sorted_query_map, PCKey};
+use crate::{DomainExtendedPolynomialCommitment, LabeledCommitmentGadget, PolynomialCommitment, PolynomialCommitmentVerifierGadget, sort_according_to_segments, PCKey};
 use algebra::{Group, PrimeField};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::boolean::Boolean;
@@ -9,6 +9,9 @@ use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::GroupGadget;
 use std::marker::PhantomData;
 use crate::constraints::single_point_multi_poly_succinct_verify;
+
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use crate::{multi_poly_multi_point_succinct_verify, multi_point_with_sorted_query_map, QueryMap, Evaluations, Error};
 
 mod data_structures;
 
@@ -210,6 +213,7 @@ impl<
 
     // Override default implementation to process commitments with the optimal order depending on
     // the number of segments
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
      mut cs: CS,
      vk: &PC::VerifierKey,

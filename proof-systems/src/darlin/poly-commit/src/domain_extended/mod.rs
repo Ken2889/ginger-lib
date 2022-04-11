@@ -8,7 +8,7 @@ pub use constraints::*;
 mod data_structures;
 pub use data_structures::*;
 
-use crate::{LinearCombination, PCKey, PCProof, PointLabel, Polynomial, PolynomialCommitment, PolynomialLabel};
+use crate::{LinearCombination, PCKey, PCProof, Polynomial, PolynomialCommitment, PolynomialLabel};
 use algebra::{
     fields::Field,
     groups::{Group, GroupVec},
@@ -20,9 +20,14 @@ use rand_core::RngCore;
 use std::marker::PhantomData;
 
 use crate::{LabeledCommitment, single_point_multi_poly_succinct_verify, LabeledPolynomial, LabeledRandomness, single_point_multi_poly_open};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use crate::{Error, Evaluations, multi_point_multi_poly_open, QueryMap, succinct_multi_point_multi_poly_verify};
+use std::collections::BTreeMap;
 
+#[cfg(feature = "circuit-friendly")]
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use std::collections::BTreeSet;
+#[cfg(feature = "circuit-friendly")]
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
+use crate::{Error, PolyMap, QueryMap, PointLabel, Evaluations, succinct_multi_point_multi_poly_verify, multi_point_multi_poly_open};
 
 /*
 This function is employed both in the primitive and in the gadget to sort the inputs to functions for
@@ -101,6 +106,8 @@ polynomials/commitments evaluated in each point.
 Then, the macro invokes `multi_point_func` providing a map between a label and the corresponding
 element in the set `labeled_item` and the sorted query map.
 */
+#[cfg(feature = "circuit-friendly")]
+#[cfg(not(feature = "boneh-with-single-point-batch"))]
 pub(crate) fn multi_point_with_sorted_query_map<'a,'b,
     PointType: Sized + Clone,
     Item: Sized + Copy,
@@ -108,7 +115,7 @@ pub(crate) fn multi_point_with_sorted_query_map<'a,'b,
     RetType: Sized,
     FN: Fn(Item) -> usize,
     LabelFn: Fn(Item) -> &'a PolynomialLabel,
-    MultiPointFn: FnOnce(HashMap<&'a PolynomialLabel, Item>,
+    MultiPointFn: FnOnce(PolyMap<&'a PolynomialLabel, Item>,
         Vec<(&PointLabel, &(PointType, Vec<String>))>,
     ) -> Result<RetType, Error>,
 >(
@@ -118,7 +125,7 @@ pub(crate) fn multi_point_with_sorted_query_map<'a,'b,
     get_label: LabelFn,
     multi_point_func: MultiPointFn,
 ) -> Result<RetType, Error> {
-    let items_map: HashMap<_, _> = labeled_items
+    let items_map: PolyMap<_, _> = labeled_items
         .into_iter()
         .map(|item| (get_label(item), item))
         .collect();
@@ -364,6 +371,8 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         single_point_multi_poly_succinct_verify::<G, Self, _, _>(vk, sorted_commitments, point, sorted_values, proof, fs_rng)
     }
 
+    #[cfg(feature = "circuit-friendly")]
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn multi_point_multi_poly_open<'b>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item=&'b LabeledPolynomial<G::ScalarField>>,
@@ -371,7 +380,6 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         fs_rng: &mut Self::RandomOracle,
         labeled_randomnesses: impl IntoIterator<Item=&'b LabeledRandomness<Self::Randomness>>,
         rng: Option<&mut dyn RngCore>) -> Result<Self::MultiPointProof, Self::Error> {
-
         multi_point_with_sorted_query_map(query_map, labeled_polynomials, |poly| compute_num_of_segments::<G, PC>(ck, poly),
             |poly| poly.label(),
             |poly_map, sorted_query_map|
@@ -386,6 +394,8 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         ).map_err(|e| Self::Error::from(e))
     }
 
+    #[cfg(feature = "circuit-friendly")]
+    #[cfg(not(feature = "boneh-with-single-point-batch"))]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>,
