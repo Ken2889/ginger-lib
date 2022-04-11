@@ -4,7 +4,7 @@ use crate::ipa_pc::constraints::data_structures::{
 };
 use crate::ipa_pc::{InnerProductArgPC, VerifierKey};
 use crate::{Error, PolynomialCommitmentVerifierGadget};
-use algebra::{EndoMulCurve, PrimeField};
+use algebra::{EndoMulCurve, Field, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -43,7 +43,7 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: 'static
-            + EndoMulCurveGadget<G, ConstraintF>
+            + EndoMulCurveGadget<G, ConstraintF, Value=G>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
@@ -206,17 +206,26 @@ impl<
                 }),
                 &round_challenge_bits,
             )?;
-            let round_challenge_inverse = round_challenge
-                .inverse(cs.ns(|| format!("invert round_challenge_{}", i + 1)))?;
-            let round_challenge_inverse_bits = round_challenge_inverse.to_bits_for_normal_form(
-                cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)),
+            // employ non determinism to compute round_challenge^{-1}*l: alloc a gadget
+            // `challenge_inv_times_l` which is expected to be equivalent to round_challenge^{-1}*l
+            // and then enforce `challenge_inv_times_l`*challenge == l
+            let challenge_inv_times_l = Self::CommitmentGadget::alloc(cs.ns(|| format! ("alloc challenge_inv_{}_*vec_l_{}", i+1, i)), || {
+                let challenge = round_challenge.get_value().ok_or(SynthesisError::AssignmentMissing)?;
+                let challenge_inverse = challenge.inverse().unwrap();
+                let l = el_vec_l.get_value().ok_or(SynthesisError::AssignmentMissing)?;
+                Ok(l * &challenge_inverse)
+            })?;
+            let l = <Self as PolynomialCommitmentVerifierGadget<
+                ConstraintF,
+                G,
+                InnerProductArgPC<G, FS>,
+            >>::mul_by_challenge(
+                cs.ns(|| format!("round_challenge_{}*challenge_inv*el_vec_l_{}", i + 1, i)),
+                &challenge_inv_times_l,
+                round_challenge_bits.iter(),
             )?;
-            // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
-            let challenge_inv_times_l =
-                el_vec_l.mul_bits(
-                    cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
-                    round_challenge_inverse_bits.iter().rev(),
-                )?;
+            l.enforce_equal(cs.ns(|| format!("check equality for el_vec_l_{}", i)), &el_vec_l)?;
+
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| {
                     format!(

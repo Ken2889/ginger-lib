@@ -156,7 +156,8 @@ fn generate_data_for_multi_point_verify_with_marlin_params<'a, G: Group, PC: Pol
     for (label, degree) in poly_labels_and_degrees.iter() {
         let polynomial = Polynomial::<G::ScalarField>::rand(*degree, rng);
 
-        let is_hiding: bool = rng.gen();
+        // for test with marlin params we always want non-ZK proofs
+        let is_hiding= false;
 
         polynomials.push(LabeledPolynomial::new(label.clone(), polynomial, is_hiding));
     }
@@ -694,8 +695,8 @@ pub(crate) fn succinct_verify_with_marlin_params_test<
     >(
         TestInfo{
             num_iters: 1,
-            max_degree: Some(1usize << log_k_domain),
-            supported_degree: Some(1usize << log_segment_size),
+            max_degree: Some(3*(1usize << log_k_domain) - 1),
+            supported_degree: Some((1usize << log_segment_size) - 1),
             negative_type: None,
             marlin_params: Some(
                 MarlinParams {
