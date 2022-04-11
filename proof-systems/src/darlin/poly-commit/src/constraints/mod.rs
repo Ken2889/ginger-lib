@@ -8,9 +8,9 @@ use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::{alloc::AllocGadget, FromBitsGadget};
 use std::collections:: HashMap;
 
-#[cfg(feature = "boneh-with-single-point-batch")]
+#[cfg(not(feature = "minimize-proof-size"))]
 use crate::{H_POLY_LABEL, PolyMap};
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 use crate::PolynomialLabel;
 
 pub mod data_structures;
@@ -117,7 +117,7 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
 
 /// Default implementation of `succinct_verify_multi_poly_multi_point` for `PolynomialCommitmentVerifierGadget`,
 /// employed as a building block also by domain extended polynomial commitment gadget
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 pub(crate) fn multi_poly_multi_point_succinct_verify<
     'a, 'b,
     ConstraintF: PrimeField,
@@ -435,7 +435,7 @@ pub trait PolynomialCommitmentVerifierGadget<
 
     /// succinct check of the verification of an opening proof for multiple polynomials in
     /// multiple points
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &PC::VerifierKey,
@@ -469,7 +469,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         )
     }
 
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
         mut cs: CS,
         vk: &PC::VerifierKey,

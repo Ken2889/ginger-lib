@@ -364,7 +364,7 @@ pub struct IPAMultiPointProofGadget<
 > {
     proof: IPAProofGadgetType<ConstraintF, G, GG, FS, FSG>,
     h_commitment: IPACommitmentGadgetType<ConstraintF, G, GG, FS, FSG>,
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     evaluations: Vec<Vec<Boolean>>
 }
 
@@ -398,7 +398,7 @@ impl<
             Ok(mp_proof.h_commitment)
         })?;
 
-        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(
             Self{
                 proof,
@@ -406,7 +406,7 @@ impl<
             }
         );
 
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
         return {
             let mut evaluations = Vec::with_capacity(mp_proof.evaluations.len());
             for (i, value) in mp_proof.evaluations.iter().enumerate() {
@@ -443,7 +443,7 @@ impl<
                 Ok(mp_proof.h_commitment)
             })?;
 
-        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(
             Self{
                 proof,
@@ -451,7 +451,7 @@ impl<
             }
         );
 
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
         return {
             let mut evaluations = Vec::with_capacity(mp_proof.evaluations.len());
             for (i, value) in mp_proof.evaluations.iter().enumerate() {
@@ -491,7 +491,7 @@ impl<
         &self.h_commitment
     }
 
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn get_evaluations(&self) -> &Vec<Vec<Boolean>> {
         &self.evaluations
     }

@@ -4,7 +4,7 @@ use r1cs_std::groups::GroupGadget;
 use r1cs_std::prelude::AllocGadget;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-#[cfg(feature = "boneh-with-single-point-batch")]
+#[cfg(not(feature = "minimize-proof-size"))]
 use r1cs_std::boolean::Boolean;
 
 /// A commitment gadget plus its label, needed for reference.
@@ -67,7 +67,7 @@ pub trait MultiPointProofGadget<
     fn get_h_commitment(&self) -> &Self::CommitmentGadget;
 
     /// get the evaluations of the polynomials over the batching point
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn get_evaluations(&self) -> &Vec<Vec<Boolean>>;
 }
 

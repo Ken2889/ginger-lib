@@ -22,11 +22,9 @@ use std::marker::PhantomData;
 use crate::{LabeledCommitment, single_point_multi_poly_succinct_verify, LabeledPolynomial, LabeledRandomness, single_point_multi_poly_open};
 use std::collections::BTreeMap;
 
-#[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 use std::collections::BTreeSet;
-#[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 use crate::{Error, PolyMap, QueryMap, PointLabel, Evaluations, succinct_multi_point_multi_poly_verify, multi_point_multi_poly_open};
 
 /*
@@ -106,8 +104,7 @@ polynomials/commitments evaluated in each point.
 Then, the macro invokes `multi_point_func` providing a map between a label and the corresponding
 element in the set `labeled_item` and the sorted query map.
 */
-#[cfg(feature = "circuit-friendly")]
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 pub(crate) fn multi_point_with_sorted_query_map<'a,'b,
     PointType: Sized + Clone,
     Item: Sized + Copy,
@@ -371,8 +368,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         single_point_multi_poly_succinct_verify::<G, Self, _, _>(vk, sorted_commitments, point, sorted_values, proof, fs_rng)
     }
 
-    #[cfg(feature = "circuit-friendly")]
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn multi_point_multi_poly_open<'b>(
         ck: &Self::CommitterKey,
         labeled_polynomials: impl IntoIterator<Item=&'b LabeledPolynomial<G::ScalarField>>,
@@ -394,8 +390,7 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         ).map_err(|e| Self::Error::from(e))
     }
 
-    #[cfg(feature = "circuit-friendly")]
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>,

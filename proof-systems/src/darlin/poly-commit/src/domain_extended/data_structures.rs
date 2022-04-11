@@ -36,7 +36,7 @@ where
     pub h_commitment: GroupVec<G>,
 
     /// Evaluations of the polynomials on the batch evaluation point
-    #[cfg(feature="boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     pub(crate) evaluations: Vec<G::ScalarField>,
 }
 
@@ -49,7 +49,7 @@ where
     type Proof = P;
 
     #[inline]
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self {
         Self {
             proof,
@@ -58,7 +58,7 @@ where
     }
 
     #[inline]
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment, evaluations: Vec<G::ScalarField>) -> Self {
         Self {
             proof,
@@ -77,7 +77,7 @@ where
         &self.h_commitment
     }
 
-    #[cfg(feature="boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn get_evaluations(&self) -> &Vec<G::ScalarField> {
         &self.evaluations
     }
@@ -115,19 +115,19 @@ where
         }
 
         // serialize evaluations over batch point, if available
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
         CanonicalSerialize::serialize(&self.evaluations, &mut writer)?;
 
         Ok(())
     }
 
     fn serialized_size(&self) -> usize {
-        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
          return self.proof.serialized_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].serialized_size());
 
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return self.proof.serialized_size() + self.evaluations.serialized_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].serialized_size());
@@ -146,7 +146,7 @@ where
         }
 
         // serialize evaluations over batch point, if available
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
         CanonicalSerialize::serialize_without_metadata(&self.evaluations, &mut writer)?;
 
         Ok(())
@@ -170,7 +170,7 @@ where
         }
 
         // serialize evaluations over batch point, if available
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
         CanonicalSerialize::serialize_uncompressed(&self.evaluations, &mut writer)?;
 
         Ok(())
@@ -178,12 +178,12 @@ where
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
-        #[cfg(not(feature = "boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return self.proof.uncompressed_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size());
 
-        #[cfg(feature = "boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return self.proof.uncompressed_size() + self.evaluations.uncompressed_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size());
@@ -207,13 +207,13 @@ where
             h_commitment.push(item);
         }
 
-        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(Self {
             proof,
             h_commitment,
         });
 
-        #[cfg(feature="boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return {
             let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize(&mut reader)?;
 
@@ -237,13 +237,13 @@ where
             h_commitment.push(item);
         }
 
-        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(Self {
             proof,
             h_commitment,
         });
 
-        #[cfg(feature="boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return {
             let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
@@ -268,13 +268,13 @@ where
             h_commitment.push(item);
         }
 
-        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(Self {
             proof,
             h_commitment,
         });
 
-        #[cfg(feature="boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return {
             let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
@@ -301,13 +301,13 @@ where
             h_commitment.push(item);
         }
 
-        #[cfg(not(feature="boneh-with-single-point-batch"))]
+        #[cfg(feature = "minimize-proof-size")]
             return Ok(Self {
             proof,
             h_commitment,
         });
 
-        #[cfg(feature="boneh-with-single-point-batch")]
+        #[cfg(not(feature = "minimize-proof-size"))]
             return {
             let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 

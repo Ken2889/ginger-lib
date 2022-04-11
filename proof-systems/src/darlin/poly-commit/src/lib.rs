@@ -81,7 +81,7 @@ pub mod constraints;
 #[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 
-#[cfg(feature = "boneh-with-single-point-batch")]
+#[cfg(not(feature = "minimize-proof-size"))]
 const H_POLY_LABEL: &str = "h-poly";
 
 /// `QueryMap` is the set of queries that are to be made to a set of labeled polynomials or linear combinations.
@@ -99,7 +99,7 @@ pub type QueryMap<'a, F> = BTreeMap<PointLabel, (F, BTreeSet<PolynomialLabel>)>;
 pub type Evaluations<'a, F> = BTreeMap<(PolynomialLabel, PointLabel), F>;
 
 // convert a sequence of field elements to a sequence of bits, concatenating their big-endian bit representations
-#[cfg(feature = "boneh-with-single-point-batch")]
+#[cfg(not(feature = "minimize-proof-size"))]
 fn field_elements_to_bits<'a, F: Field>(
     fes: impl Iterator<Item=&'a F>,
 ) -> Vec<bool> {
@@ -256,7 +256,7 @@ where
 
     let query_map_iter = query_map.into_iter();
 
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
         let query_map_iter_cloned = query_map_iter.clone();
 
     for (_point_label, (point, poly_labels)) in query_map_iter {
@@ -344,7 +344,7 @@ where
         ))?
     }
 
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
         return {
         // LC(p_1(X),p_2(X),...,p_m(X),h(X))
         // NOTE: We can use LC here and call open_lc but it's not really worth it
@@ -401,7 +401,7 @@ where
         Ok(PC::MultiPointProof::new(proof, h_commitment.clone()))
     };
 
-    #[cfg(feature="boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
         return {
         let labeled_h_polynomial = LabeledPolynomial::new(H_POLY_LABEL.to_string(), h_polynomial, has_hiding);
         let labeled_h_randomness = LabeledRandomness::new(H_POLY_LABEL.to_string(), h_randomness);
@@ -437,7 +437,7 @@ where
 
 /// Default implementation of `succinct_multi_point_multi_poly_verify` for `PolynomialCommitment`,
 /// which is employed as a building block also by domain extended commitments
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 fn succinct_multi_point_multi_poly_verify<'a,'b,
     G: Group,
     PC: PolynomialCommitment<G>,
@@ -534,9 +534,9 @@ fn succinct_multi_point_multi_poly_verify<'a,'b,
 // In the boneh-with-single-point-batch version, we employ a BTreeMap as we need to iterate with a deterministic
 // order over this map; conversely, in the non boneh-with-single-point-batch version we just need to get elements
 // from the map, thus we employ an HashMap for efficiency
-#[cfg(feature = "boneh-with-single-point-batch")]
+#[cfg(not(feature = "minimize-proof-size"))]
 type PolyMap<K, V> = BTreeMap<K, V>;
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 type PolyMap<K, V> = HashMap<K, V>;
 
 /// Describes the interface for a homomorphic polynomial commitment scheme with values
@@ -881,7 +881,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     }
 
     /// The succinct part of `multi_point_multi_poly_verify()`.
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,
@@ -899,7 +899,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
         succinct_multi_point_multi_poly_verify::<G, Self, _, _>(vk, commitment_map, query_map, evaluations, multi_point_proof, fs_rng)
     }
 
-    #[cfg(feature = "boneh-with-single-point-batch")]
+    #[cfg(not(feature = "minimize-proof-size"))]
     fn succinct_multi_point_multi_poly_verify<'a>(
         vk: &Self::VerifierKey,
         labeled_commitments: impl IntoIterator<Item = &'a LabeledCommitment<Self::Commitment>>,

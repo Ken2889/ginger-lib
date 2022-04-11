@@ -461,6 +461,7 @@ fn test_multi_point_multi_poly_verify<
             )?;
         let proof_gadget =
             PCG::MultiPointProofGadget::alloc(cs.ns(|| "alloc proof gadget"), || Ok(proof))?;
+        let num_constraints = cs.num_constraints();
         let _v_state = PCG::succinct_verify_multi_poly_multi_point(
             cs.ns(|| "verify proof"),
             &vk,
@@ -470,6 +471,7 @@ fn test_multi_point_multi_poly_verify<
             &proof_gadget,
             &mut fs_gadget,
         )?;
+        println!("{}", cs.num_constraints() - num_constraints);
         let successful_test = cs.is_satisfied() ^ test_conf.negative_type.is_some();
         if !successful_test {
             println!("{:?}", cs.which_is_unsatisfied());

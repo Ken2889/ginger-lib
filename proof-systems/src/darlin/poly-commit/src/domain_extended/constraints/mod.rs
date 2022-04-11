@@ -10,7 +10,7 @@ use r1cs_std::prelude::GroupGadget;
 use std::marker::PhantomData;
 use crate::constraints::single_point_multi_poly_succinct_verify;
 
-#[cfg(not(feature = "boneh-with-single-point-batch"))]
+#[cfg(feature = "minimize-proof-size")]
 use crate::{multi_poly_multi_point_succinct_verify, multi_point_with_sorted_query_map, QueryMap, Evaluations, Error};
 
 mod data_structures;
@@ -213,7 +213,7 @@ impl<
 
     // Override default implementation to process commitments with the optimal order depending on
     // the number of segments
-    #[cfg(not(feature = "boneh-with-single-point-batch"))]
+    #[cfg(feature = "minimize-proof-size")]
     fn succinct_verify_multi_poly_multi_point<'a, CS, I>(
      mut cs: CS,
      vk: &PC::VerifierKey,
