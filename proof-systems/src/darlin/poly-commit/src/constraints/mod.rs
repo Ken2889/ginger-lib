@@ -54,11 +54,10 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
     )?;
     /*
     Batching of commitments is performed with Horner scheme.
-    That is, to compute a batched commitment C=C_1+lambda*C_2+lambda2*C_3+..+lambda^(n-1)*C_n from a set of commitments
+    That is, to compute a batched commitment C=lambda^(n-1)*C_1+...+lambda*C_{n-1}+C_n from a set of commitments
     C_1,..,C_n we do as follows:
-    - initialize C to C_n
-    - for the commitment C_i,where i varies from n-1 to 1, we update C = C_i + lambda*C
-    Therefore, we need to iterate the set of labeled commitments in reverse order.
+    - initialize C to C_1
+    - for the commitment C_i,where i varies from 2 to n, we update C = C_i + lambda*C
     Same strategy is employed for values.
     */
     let mut commitments_iter = labeled_commitments.into_iter();
@@ -168,11 +167,11 @@ pub(crate) fn multi_poly_multi_point_succinct_verify<
     commitment as follows. For a point x_i, consider the set S_i as the set of commitments of
     polynomials whose evaluation in x_i must be proven in this assertion.
     For each set S_i, we need to compute a batched commitment C'_i out of the C_{i,1}, ..., C_{i,m_i}
-    commitments of S_i as C'_i = C_{i,1}+lambda*C_{i,2}+...+lambda^(m_i-1)*C_{i,m_i}. We do this with
+    commitments of S_i as C'_i = lambda^(m_i-1)*C_{i,1}+...+lambda*C_{i,m_i-1}+C_{i,m_i}. We do this with
     Horner scheme:
-    - Initialize C'_i = C_{i,m_i}
-    - For each commitment C_{i,j}, where j varies from m_i-1 to 1, we update C'_i = C_{i,j} + lambda*C'_i
-    Therefore, for each set S_i we iterate over the commitments in reverse order,
+    - Initialize C'_i = C_{i,1}
+    - For each commitment C_{i,j}, where j varies from 2 to m_i, we update C'_i = C_{i,j} + lambda*C'_i
+    Therefore, for each set S_i we iterate over the commitments,
     fetching the corresponding commitment from `commitment_map`.
     The same strategy is applied to batch values.
     Then, we combine commitments C'_i in a single commitment C by computing
@@ -536,12 +535,11 @@ pub trait PolynomialCommitmentVerifierGadget<
         in this multi-point assertion.
         For each set S_i, we need to compute a batched evaluation v'_i out of the
         (y_{i,1}, v_{i,1}), ..., (y_{i,m_i}, v_{i,m_i}) evaluations found in S_i
-        as v'_i = (v_{i,1}-y_{i,1})+lambda*(v_{i,2}-y_{i,2})+...+lambda^(m_i-1)*(v_{i,m_i}-y_{i,m_i}).
+        as v'_i = lambda^(m_i-1)*(v_{i,1}-y_{i,1})+..+lambda*(v_{i,m_i-1}-y_{i,m_i-1})+(v_{i,m_i}-y_{i,m_i}).
         We do this with Horner scheme:
-        - Initialize v'_i = v_{i,m_i} - y_{i, m_i}
-        - For each pair of evaluations in S_i (y_{i,j}, v_{i,j}), where j varies from m_i-1 to 1,
+        - Initialize v'_i = v_{i,1} - y_{i, 1}
+        - For each pair of evaluations in S_i (y_{i,j}, v_{i,j}), where j varies from 2 to m_i,
             we update v'_i = (v_{i,j}-y_{i,j}) + lambda*v'_i
-        Therefore, for each set S_i we iterate over the evaluations in reverse order.
         Then, we combine evaluations v'_i in a single evaluation v by computing
         v=(x-x_1)^-1*v'_1 + ... + (x-x_n)^-1*v'_n
         */

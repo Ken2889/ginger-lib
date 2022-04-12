@@ -107,6 +107,7 @@ pub type Evaluations<'a, F> = BTreeMap<(PolynomialLabel, PointLabel), F>;
 
 // convert a sequence of field elements to a sequence of bits, concatenating their big-endian bit representations
 #[cfg(not(feature = "minimize-proof-size"))]
+#[inline]
 fn field_elements_to_bits<'a, F: Field>(
     fes: impl Iterator<Item=&'a F>,
 ) -> Vec<bool> {
