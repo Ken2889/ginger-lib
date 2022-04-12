@@ -192,7 +192,6 @@ macro_rules! generate_pc_tests {
 
 type PC<G, FS> = InnerProductArgPC<G, FS>;
 
-#[cfg(not(feature = "circuit-friendly"))]
 mod chacha_fs {
     use super::*;
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
@@ -212,7 +211,6 @@ mod chacha_fs {
     );
 }
 
-#[cfg(feature = "circuit-friendly")]
 mod poseidon_fs {
     use super::*;
     use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};

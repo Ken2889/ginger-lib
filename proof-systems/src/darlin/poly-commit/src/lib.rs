@@ -53,8 +53,6 @@ use std::{
     string::{String, ToString},
     vec::Vec,
 };
-#[cfg(feature = "circuit-friendly")]
-use algebra::ToBits;
 
 /// Data structures for linear polynomial commitment schemes.
 pub mod data_structures;
@@ -76,9 +74,7 @@ pub use domain_extended::*;
 pub mod ipa_pc;
 
 /// Gadget to verify opening proofs of a linear polynomial commitment scheme
-#[cfg(feature = "circuit-friendly")]
 pub mod constraints;
-#[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 
 #[cfg(not(feature = "minimize-proof-size"))]
@@ -129,8 +125,20 @@ pub(crate) fn single_point_multi_poly_open<'a,
         let mut is_hiding = false;
 
         // compute the random linear combinations using the powers of lambda
+        let mut poly_lc = Polynomial::zero();
+        let mut rands_lc = PC::Randomness::zero();
 
-        let poly_lc = LinearCombination::new_from_val(
+        for (poly, rand) in labeled_polynomials.into_iter().zip(labeled_randomnesses.into_iter()) {
+            poly_lc *= &lambda;
+            poly_lc += poly.polynomial();
+            rands_lc *= &lambda;
+            if poly.is_hiding() {
+                is_hiding = true;
+                rands_lc += rand.randomness();
+            }
+        }
+
+        /*let poly_lc = LinearCombination::new_from_val(
             &lambda,
             labeled_polynomials
                 .into_iter()
@@ -153,9 +161,9 @@ pub(crate) fn single_point_multi_poly_open<'a,
             )
         } else {
             LinearCombination::empty()
-        };
+        };*/
 
-        PC::open_lc(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
+        PC::open(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
     }
 
 /// Default implementation of `succinct_verify_single_point_multi_poly` for `PolynomialCommitment`,
@@ -176,11 +184,22 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a,
     fs_rng: &mut PC::RandomOracle,
 ) -> Result<Option<PC::VerifierState>, PC::Error> {
     let combine_time = start_timer!(|| "Single point multi poly verify combine time");
-
-    let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+    let lambda_bits = fs_rng.get_challenge::<128>()?;
+    let lambda = PC::challenge_to_scalar(lambda_bits.to_vec())
         .map_err(|e| Error::Other(e.to_string()))?;
 
-    let commitments_lc = LinearCombination::new_from_val(
+    // compute the random linear combinations using the powers of lambda
+    let mut commitments_lc = PC::Commitment::zero();
+    let mut combined_value = G::ScalarField::zero();
+
+    for (comm, value) in labeled_commitments.into_iter().zip(values.into_iter()) {
+        commitments_lc = PC::mul_commitment_by_challenge(commitments_lc, lambda_bits.to_vec())?;
+        commitments_lc += comm.commitment();
+        combined_value *= &lambda;
+        combined_value += value;
+    }
+
+    /*let commitments_lc = LinearCombination::new_from_val(
         &lambda,
         labeled_commitments
             .into_iter()
@@ -190,10 +209,10 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a,
 
     let combined_value =
         LinearCombination::new_from_val(&lambda, values.into_iter().collect()).combine();
-
+    */
     end_timer!(combine_time);
 
-    PC::succinct_verify_lc(vk, commitments_lc, point, combined_value, proof, fs_rng)
+    PC::succinct_verify(vk, &commitments_lc, point, combined_value, proof, fs_rng)
 }
 
 /// Default implementation of `multi_point_multi_poly_open` for `PolynomialCommitment`,
@@ -286,7 +305,8 @@ where
                 - &Polynomial::from_coefficients_slice(&[y_i]);
 
             // h(X) = SUM( lambda^i * ((p_i(X) - y_i) / (X - x_i)) )
-            cur_h_polynomial += (cur_challenge, &polynomial);
+            cur_h_polynomial *= &lambda;
+            cur_h_polynomial += &polynomial;
 
             // lambda^i
             cur_challenge = cur_challenge * &lambda;
@@ -354,8 +374,9 @@ where
 
 
         for (_point_label, (point, poly_labels)) in query_map_iter_cloned {
-            let mut cur_challenge = G::ScalarField::one();
             let z_i_over_z_value = (x_point - point).inverse().unwrap();
+            let mut lc_polynomial_for_point = Polynomial::zero();
+            let mut lc_randomness_for_point = PC::Randomness::zero();
             for label in poly_labels.clone() {
                 let labeled_polynomial = *poly_map.get(&label).ok_or(Error::MissingPolynomial {
                     label: label.to_string(),
@@ -365,15 +386,18 @@ where
                     label: label.to_string(),
                 })?;
 
-                lc_polynomial += (cur_challenge * z_i_over_z_value, labeled_polynomial.polynomial());
+                lc_polynomial_for_point *= &lambda;
+                lc_polynomial_for_point += labeled_polynomial.polynomial();
+
+                lc_randomness_for_point *= &lambda;
 
                 if has_hiding {
-                    lc_randomness += &(labeled_randomness.randomness().clone() * &(cur_challenge * z_i_over_z_value));
+                    lc_randomness_for_point += labeled_randomness.randomness();
                 }
-
-                // lambda^i
-                cur_challenge = cur_challenge * &lambda;
             }
+
+            lc_polynomial += (z_i_over_z_value, &lc_polynomial_for_point);
+            lc_randomness += &(lc_randomness_for_point * &z_i_over_z_value);
         }
 
         // LC(p_1(X),p_2(X),...,p_m(X),h(X)) = SUM ( lamda^i * z_i(x)/z(x) * p_i(X) ) -  h(X)
@@ -455,8 +479,10 @@ fn succinct_multi_point_multi_poly_verify<'a,'b,
     let combine_time = start_timer!(|| "Multi point multi poly verify combine time");
 
 
+    let lambda_bits = fs_rng.get_challenge::<128>()?;
+
     // lambda
-    let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
+    let lambda = PC::challenge_to_scalar(lambda_bits.to_vec())
         .map_err(|e| Error::Other(e.to_string()))?;
 
     // Fresh random challenge x
@@ -491,7 +517,8 @@ fn succinct_multi_point_multi_poly_verify<'a,'b,
         // unwrap cannot fail as x-x_i is guaranteed to be non-zero.
         let z_i_over_z_value = x_polynomial.evaluate(x_point).inverse().unwrap();
 
-        let mut cur_challenge = G::ScalarField::one();
+        let mut lc_commitment_for_point = PC::Commitment::zero();
+        let mut lc_value_for_point = G::ScalarField::zero();
 
         for label in poly_labels.clone() {
             let labeled_commitment =
@@ -506,14 +533,15 @@ fn succinct_multi_point_multi_poly_verify<'a,'b,
                     label: label.to_string(),
                 })?;
 
-            lc_commitment += &(labeled_commitment.commitment().clone()
-                * &(z_i_over_z_value * cur_challenge));
+            lc_commitment_for_point = PC::mul_commitment_by_challenge(lc_commitment_for_point, lambda_bits.to_vec())?;
+            lc_commitment_for_point += labeled_commitment.commitment();
 
-            lc_value += y_i * cur_challenge * z_i_over_z_value;
-
-            // lambda^i
-            cur_challenge = cur_challenge * &lambda;
+            lc_value_for_point *= &lambda;
+            lc_value_for_point += y_i;
         }
+
+        lc_commitment += &(lc_commitment_for_point*&z_i_over_z_value);
+        lc_value += &(lc_value_for_point*&z_i_over_z_value);
     }
 
     lc_commitment += &(-multi_point_proof.get_h_commitment().clone());
@@ -780,9 +808,16 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
         res
     }
+    /// Multiply a `commitment` of `Self` to a challenge.
+    /// `chal` bits are supposed to be in LE bit order.
+    fn mul_commitment_by_challenge(commimtent: Self::Commitment, chal: Vec<bool>)
+        -> Result<Self::Commitment, Self::Error> {
+        let challenge = Self::challenge_to_scalar(chal)?;
+        Ok(commimtent*&challenge)
+    }
 
     /// Transform a challenge to its representation in the scalar field.
-    /// 'chal' bits are supposed to be in LE bit order.
+    /// `chal` bits are supposed to be in LE bit order.
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
         let chal = read_fe_from_challenge::<G::ScalarField>(chal)
             .map_err(|e| Error::Other(e.to_string()))?;
@@ -951,17 +986,17 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
         for (point_label, (point, poly_labels)) in query_map {
             let z_i_over_z_value = (x_point - point).inverse().ok_or(Error::Other(format!("batch evaluation point equal to point with label {}", point_label)))?;
-            let mut cur_challenge = G::ScalarField::one();
+            let mut lc_value_for_point = G::ScalarField::zero();
             for label in poly_labels {
                 let v_i = values[*labels_map.get(label).ok_or(Error::MissingEvaluation {label: label.clone()})?];
 
                 let y_i = *evaluations.get(&(label.clone(), point_label.clone())).ok_or(Error::Other(format!("evaluation of poly {} not found for point {}", label, point_label)))?;
 
-                lc_value += (v_i - y_i) * cur_challenge * z_i_over_z_value;
-
-                // lambda^i
-                cur_challenge = cur_challenge * &lambda;
+                lc_value_for_point *= &lambda;
+                lc_value_for_point += v_i - y_i;
             }
+
+            lc_value += lc_value_for_point * z_i_over_z_value;
         }
 
         // absorb evaluations of polynomials over x_point
@@ -1106,7 +1141,8 @@ pub fn evaluate_query_map_to_vec<'a, F: Field>(
 
 /// Transform a challenge to its representation in the field F.
 /// 'chal' bits are supposed to be in LE bit order.
-pub(crate) fn read_fe_from_challenge<F: PrimeField>(mut chal: Vec<bool>) -> Result<F, Error> {
+//ToDo: shall we move this function to fiat-shamir crate?
+pub fn read_fe_from_challenge<F: PrimeField>(mut chal: Vec<bool>) -> Result<F, Error> {
     // Pad before reversing if necessary
     if chal.len() < F::size_in_bits() {
         chal.append(&mut vec![false; F::size_in_bits() - chal.len()])

@@ -197,9 +197,8 @@ impl<
             IC: IntoIterator<Item=&'a LabeledCommitmentGadget<ConstraintF,
                 <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
                 Self::CommitmentGadget>>,
-            <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
             IV: IntoIterator<Item=&'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-            <IV as IntoIterator>::IntoIter: DoubleEndedIterator {
+    {
 
         let (sorted_commitments, sorted_values) = sort_according_to_segments(labeled_commitments, values,
             |comm: &LabeledCommitmentGadget<ConstraintF,
@@ -228,7 +227,7 @@ impl<
                   ConstraintF,
                   <DomainExtendedPolynomialCommitment<G, PC> as PolynomialCommitment<G>>::Commitment,
                   Self::CommitmentGadget>>,
-              <I as IntoIterator>::IntoIter: DoubleEndedIterator {
+        {
 
         multi_point_with_sorted_query_map(points, labeled_commitments,
   |comm: &LabeledCommitmentGadget<

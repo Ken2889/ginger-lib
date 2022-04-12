@@ -9,7 +9,7 @@
 use super::IPACurve;
 use crate::*;
 use crate::{PCKey, Vec};
-use algebra::PrimeField;
+use algebra::{PrimeField, ToBits};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -678,7 +678,6 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
 pub struct SuccinctCheckPolynomial<G: IPACurve> {
     #[doc(hidden)]
     pub chals: Vec<G::ScalarField>,
-    #[cfg(feature = "circuit-friendly")]
     #[doc(hidden)]
     pub endo_chals: Vec<G::ScalarField>,
 }
@@ -686,7 +685,6 @@ pub struct SuccinctCheckPolynomial<G: IPACurve> {
 impl<G: IPACurve> SuccinctCheckPolynomial<G> {
     /// Construct Self starting from the challenges.
     /// Will automatically calculate also the endo versions of them
-    #[cfg(feature = "circuit-friendly")]
     pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
         //use algebra::ToBits;
 
@@ -706,22 +704,9 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
         Self { chals, endo_chals }
     }
 
-    /// Construct Self starting from the challenges
-    #[cfg(not(feature = "circuit-friendly"))]
-    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
-        Self { chals }
-    }
-
     /// Get endo chals from this polynomial
-    #[cfg(feature = "circuit-friendly")]
     pub fn get_chals(&self) -> &[G::ScalarField] {
         self.endo_chals.as_slice()
-    }
-
-    /// Get chals from this polynomial
-    #[cfg(not(feature = "circuit-friendly"))]
-    pub fn get_chals(&self) -> &[G::ScalarField] {
-        self.chals.as_slice()
     }
 
     /// Slightly optimized way to compute it, taken from
@@ -805,14 +790,8 @@ impl<G: IPACurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
 }
 
 impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
-    #[cfg(feature = "circuit-friendly")]
     fn is_valid(&self) -> bool {
         self.chals.is_valid() && self.endo_chals.is_valid()
-    }
-
-    #[cfg(not(feature = "circuit-friendly"))]
-    fn is_valid(&self) -> bool {
-        self.chals.is_valid()
     }
 }
 

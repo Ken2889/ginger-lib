@@ -11,10 +11,7 @@ use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::{serialize::*, Group, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
-use poly_commit::{
-    ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey, IPACurve},
-    Error as PCError, LabeledCommitment, PolynomialCommitment,
-};
+use poly_commit::{ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey, IPACurve}, Error as PCError, LabeledCommitment, PolynomialCommitment, read_fe_from_challenge};
 pub use poly_commit::ipa_pc::DLogItem;
 use rand::RngCore;
 use rayon::prelude::*;
@@ -67,14 +64,13 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
+        let z = read_fe_from_challenge(fs_rng
+            .get_challenge::<128>()?
+            .to_vec()
         ).map_err(|e| {
-                end_timer!(poly_time);
-                end_timer!(succinct_time);
-                PCError::Other(e.to_string())
+            end_timer!(poly_time);
+            end_timer!(succinct_time);
+            PCError::Other(e.to_string())
         })?;
 
         let comms_values = previous_accumulators
@@ -244,10 +240,9 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
+        let z = read_fe_from_challenge(fs_rng
+            .get_challenge::<128>()?
+            .to_vec()
         ).map_err(|e| {
             end_timer!(accumulate_time);
             PCError::Other(e.to_string())

@@ -43,9 +43,7 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
         IC: IntoIterator<
             Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
         >,
-        <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
         IV: IntoIterator<Item = &'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-        <IV as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
     let lambda = random_oracle.enforce_get_challenge::<_, 128>(
         cs.ns(|| "squeeze lambda for single-point-multi-poly verify"),
@@ -63,14 +61,14 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a, ConstraintF, G, PC, PC
     Therefore, we need to iterate the set of labeled commitments in reverse order.
     Same strategy is employed for values.
     */
-    let mut commitments_iter = labeled_commitments.into_iter().rev();
+    let mut commitments_iter = labeled_commitments.into_iter();
     let mut batched_commitment = commitments_iter
         .next()
         .ok_or(SynthesisError::Other("no commitment provided".to_string()))?
         .commitment()
         .clone();
 
-    let mut values_iter = values.into_iter().rev();
+    let mut values_iter = values.into_iter();
     let mut batched_value = values_iter
         .next()
         .ok_or(SynthesisError::Other("no evaluation provided".to_string()))?
@@ -136,9 +134,6 @@ pub(crate) fn multi_poly_multi_point_succinct_verify<
     proof: &PCG::MultiPointProofGadget,
     random_oracle: &mut PCG::RandomOracleGadget,
 ) -> Result<PCG::VerifierStateGadget, PCG::Error>
-where
-    <QueryIT as IntoIterator>::IntoIter: DoubleEndedIterator,
-    <LabelIT as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
     let lambda_bits = random_oracle.enforce_get_challenge::<_, 128>(
         cs.ns(|| "squeezing random challenge for multi-point-multi-poly verify"),
@@ -189,7 +184,7 @@ where
     let mut batched_commitment = None;
     let mut batched_value = None;
 
-    for (point_label, (point, poly_labels)) in points.into_iter().rev() {
+    for (point_label, (point, poly_labels)) in points.into_iter() {
         // check that evaluation point is different than the current point, as we later need
         // to compute the inverse of `evaluation_point - point`
         //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
@@ -216,7 +211,7 @@ where
         )?;
         // initialize batched_commitment and batched_value for the current point to properly
         // bootstrap the Horner scheme
-        let mut labels_iter = poly_labels.clone().into_iter().rev();
+        let mut labels_iter = poly_labels.clone().into_iter();
 
         let label = labels_iter.next().ok_or(SynthesisError::Other(format!("no polynomial found for point with label {}", point_label)))?;
         let mut batched_commitment_for_point =
@@ -426,9 +421,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         IC: IntoIterator<
             Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
         >,
-        <IC as IntoIterator>::IntoIter: DoubleEndedIterator,
         IV: IntoIterator<Item = &'a NonNativeFieldGadget<G::ScalarField, ConstraintF>>,
-        <IV as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
         single_point_multi_poly_succinct_verify::<ConstraintF, G, PC, Self, _, _, _>(cs, vk, labeled_commitments, point, values, proof, random_oracle)
     }
@@ -450,9 +443,7 @@ pub trait PolynomialCommitmentVerifierGadget<
             I: IntoIterator<
                 Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
             >,
-            <I as IntoIterator>::IntoIter: DoubleEndedIterator + Clone,
     {
-
         let commitment_map: HashMap<_, _> = labeled_commitments
             .into_iter()
             .map(|commitment| (commitment.label(), commitment))
@@ -484,7 +475,6 @@ pub trait PolynomialCommitmentVerifierGadget<
         I: IntoIterator<
             Item = &'a LabeledCommitmentGadget<ConstraintF, PC::Commitment, Self::CommitmentGadget>,
         >,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
         // sort commitments according to their labels
         let commitment_map: PolyMap<_, _> = labeled_commitments
@@ -560,7 +550,7 @@ pub trait PolynomialCommitmentVerifierGadget<
         // we need to proper initialize them
         let mut batched_value = None;
 
-        for (point_label, (point, poly_labels)) in points.iter().rev() {
+        for (point_label, (point, poly_labels)) in points.iter() {
             // check that evaluation point is different than the current point, as we later need
             // to compute the inverse of `evaluation_point - point`
             //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
@@ -588,7 +578,7 @@ pub trait PolynomialCommitmentVerifierGadget<
             // we need to proper initialize them for the Horner scheme
             let mut batched_value_for_point= None;
 
-            for label in poly_labels.iter().rev() {
+            for label in poly_labels.iter() {
                 let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
                 let v_i = evaluations.get(
                     *label_map.get(label).ok_or(SynthesisError::Other(format!(

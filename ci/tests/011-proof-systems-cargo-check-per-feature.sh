@@ -10,7 +10,7 @@ cargo $CARGOARGS check || retval="$?"
 
 cd ../poly-commit
 cargo $CARGOARGS check || retval="$?"
-cargo $CARGOARGS check --features="circuit-friendly" || retval="$?"
+cargo $CARGOARGS check --features="minimize-proof-size" || retval="$?"
 
 cd ../marlin
 cargo $CARGOARGS check || retval="$?"

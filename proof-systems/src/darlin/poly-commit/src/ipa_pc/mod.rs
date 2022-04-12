@@ -10,16 +10,12 @@ use crate::Error;
 use crate::{PCKey, PCProof, Polynomial, PolynomialCommitment};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
-use algebra::{
-    serialize_no_metadata, CanonicalSerialize, Field, PrimeField, SemanticallyValid, UniformRand,
-};
+use algebra::{serialize_no_metadata, CanonicalSerialize, Field, PrimeField, SemanticallyValid, UniformRand};
 use rand_core::RngCore;
 use std::marker::PhantomData;
 
-#[cfg(feature = "circuit-friendly")]
 mod constraints;
 mod data_structures;
-#[cfg(feature = "circuit-friendly")]
 pub use constraints::InnerProductArgGadget;
 pub use data_structures::*;
 
@@ -30,20 +26,12 @@ use digest::Digest;
 use num_traits::{One, Zero};
 use trait_set::trait_set;
 
-#[cfg(feature = "circuit-friendly")]
 use algebra::EndoMulCurve;
-#[cfg(feature = "circuit-friendly")]
 trait_set! {
     pub trait IPACurve = EndoMulCurve;
 }
 
-#[cfg(not(feature = "circuit-friendly"))]
-use algebra::Curve;
 use fiat_shamir::FiatShamirRng;
-#[cfg(not(feature = "circuit-friendly"))]
-trait_set! {
-    pub trait IPACurve = Curve;
-}
 
 #[cfg(test)]
 mod tests;
@@ -172,6 +160,7 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
         // Compute combined check_poly
         let combined_check_poly = batching_chals
             .into_par_iter()
+            .rev()// we need to reverse batching_chals as in batching verify we employ Horner scheme to batch commitments
             .zip(xi_s_vec)
             .map(|(chal, xi_s)| Polynomial::from_coefficients_vec(xi_s.compute_scaled_coeffs(chal)))
             .reduce(Polynomial::zero, |acc, poly| &acc + &poly);
@@ -274,7 +263,11 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         Ok((ck.clone(), ck))
     }
 
-    #[cfg(feature = "circuit-friendly")]
+    fn mul_commitment_by_challenge(commitment: G, chal: Vec<bool>)
+        -> Result<G, Self::Error> {
+        commitment.endo_mul(chal).map_err(|e| Error::Other(e.to_string()))
+    }
+
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
         let scalar = G::endo_rep_to_scalar(chal).map_err(|e| Error::Other(e.to_string()))?;
         Ok(scalar)
@@ -505,20 +498,19 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
             let rand = proof.rand.unwrap();
 
             fs_rng.record(hiding_comm)?;
-            let hiding_challenge =
-                Self::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
-                    .map_err(|e| Error::Other(e.to_string()))?;
+            let hiding_challenge = fs_rng.get_challenge::<128>()?;
             fs_rng.record(rand)?;
 
-            combined_commitment_proj += &(hiding_comm.mul(&hiding_challenge) - &vk.s.mul(&rand));
+            combined_commitment_proj += &(Self::mul_commitment_by_challenge(hiding_comm, hiding_challenge.to_vec())? - &vk.s.mul(&rand));
         }
 
-        // Challenge for each round
+        // Challenges for each round in 128 bits form for serialization of bullet polynomial
         let mut round_challenges = Vec::with_capacity(log_key_len);
 
-        #[cfg(feature = "circuit-friendly")]
+        // Challenges for each round in 128 bits employed to build the actual bullet polynomial
         let mut endo_round_challenges = Vec::with_capacity(log_key_len);
 
+        //ToDo: evaluate if we should employ endo_mul
         let mut round_challenge = read_fe_from_challenge(fs_rng.get_challenge::<128>()?.to_vec())?;
         let h_prime = vk.h.mul(&round_challenge);
 
@@ -530,20 +522,17 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
         for (l, r) in l_iter.zip(r_iter) {
             fs_rng.record([*l, *r])?;
 
-            // Save always round challenge as a normal 128 bits G::ScalarField element
+            // Save always round challenge as a normal 128 bits G::ScalarField element for
+            // serialization
             let chal = fs_rng.get_challenge::<128>()?;
             let raw_round_chal = read_fe_from_challenge::<G::ScalarField>(chal.to_vec())?;
             round_challenges.push(raw_round_chal);
-            round_challenge = raw_round_chal;
-
-            // If in circuit-friendly mode, let's transform it to an endo scalar and save it
-            #[cfg(feature = "circuit-friendly")]
-            {
-                let endo_chal = Self::challenge_to_scalar(chal.to_vec())
-                    .map_err(|e| Error::Other(e.to_string()))?;
-                endo_round_challenges.push(endo_chal);
-                round_challenge = endo_chal;
-            }
+            // convert challenge to scalar field element to be employed to actually build the
+            // bullet polynomial
+            let endo_chal = Self::challenge_to_scalar(chal.to_vec())
+                .map_err(|e| Error::Other(e.to_string()))?;
+            endo_round_challenges.push(endo_chal);
+            round_challenge = endo_chal;
 
             let round_challenge_inv =
                 round_challenge
@@ -554,18 +543,12 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
                         ),
                     ))?;
 
-            round_commitment_proj += &(l.mul(&round_challenge_inv) + &r.mul(&round_challenge));
+            round_commitment_proj += &(l.mul(&round_challenge_inv) + &Self::mul_commitment_by_challenge(*r, chal.to_vec())?);
         }
         // check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
-        #[cfg(feature = "circuit-friendly")]
         let check_poly = SuccinctCheckPolynomial::<G> {
             chals: round_challenges,
             endo_chals: endo_round_challenges,
-        };
-
-        #[cfg(not(feature = "circuit-friendly"))]
-        let check_poly = SuccinctCheckPolynomial::<G> {
-            chals: round_challenges,
         };
 
         let v_prime = check_poly.evaluate(point) * &proof.c;

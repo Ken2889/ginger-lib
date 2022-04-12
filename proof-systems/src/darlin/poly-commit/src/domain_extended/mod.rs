@@ -1,9 +1,7 @@
 //!
 //! A module for extending the domain of an arbitrary homomorphic commitment scheme beyond the
 //! maximum degree supported by it.
-#[cfg(feature = "circuit-friendly")]
 mod constraints;
-#[cfg(feature = "circuit-friendly")]
 pub use constraints::*;
 mod data_structures;
 pub use data_structures::*;
@@ -69,10 +67,7 @@ pub(crate) fn sort_according_to_segments<'a,
 
     assert_eq!(num_items, sorted_collections.len());
 
-    // As in  the gadget we use Horner scheme to batch commitments,
-    // we sort in descending order according to their number of segments for
-    // efficiency.
-    let (sorted_items, sorted_data): (Vec<_>, Vec<_>) = sorted_collections.into_iter().rev().map(|(_, (item, data))| (item, data)).unzip();
+    let (sorted_items, sorted_data): (Vec<_>, Vec<_>) = sorted_collections.into_iter().map(|(_, (item, data))| (item, data)).unzip();
 
     (sorted_items, sorted_data)
 }
@@ -142,18 +137,12 @@ pub(crate) fn multi_point_with_sorted_query_map<'a,'b,
                 max_segments = num_segments;
             }
         }
-        // As in the gadget we use Horner scheme to batch commitments,
-        // we sort in descending order according to their number of segments for
-        // efficiency.
-        let sorted_labels_vec = sorted_labels.into_iter().rev().map(|(_, label)| label.clone() ).collect::<Vec<_>>();
+        let sorted_labels_vec = sorted_labels.into_iter().map(|(_, label)| label.clone() ).collect::<Vec<_>>();
         values_for_sorted_map.push((point.clone(), sorted_labels_vec));
         sorted_query_map.insert((max_segments, point_label), values_for_sorted_map.len()-1);
     }
 
-    // As in the gadget we use Horner scheme to batch commitments,
-    // we sort in descending order according to their number of segments for
-    // efficiency.
-    let sorted_query_map_vec = sorted_query_map.into_iter().rev().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
+    let sorted_query_map_vec = sorted_query_map.into_iter().map(|((_, point_label), value)| (point_label, &values_for_sorted_map[value])).collect::<Vec<_>>();
 
     multi_point_func(items_map, sorted_query_map_vec)
 }
@@ -334,6 +323,16 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
 
     fn hard_verify(vk: &Self::VerifierKey, vs: &Self::VerifierState) -> Result<bool, Self::Error> {
         PC::hard_verify(vk, vs)
+    }
+
+    fn mul_commitment_by_challenge(commitment: Self::Commitment, chal: Vec<bool>)
+        -> Result<Self::Commitment, Self::Error> {
+        let mut mul_result = Vec::with_capacity(commitment.len());
+        for comm in commitment.into_iter() {
+            mul_result.push(PC::mul_commitment_by_challenge(comm, chal.clone())?);
+        }
+
+        Ok(Self::Commitment::new(mul_result))
     }
 
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
