@@ -16,7 +16,7 @@ use serde::*;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, CanonicalSerialize, CanonicalDeserialize, Serialize, Deserialize)]
 #[serde(bound(deserialize = "G: Group"))]
-pub struct GroupVec<G: Group> (Vec<G>);
+pub struct GroupVec<G: Group> (pub Vec<G>);
 
 impl<G: Group> GroupVec<G> {
 

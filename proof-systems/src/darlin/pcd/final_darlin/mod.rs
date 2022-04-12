@@ -63,7 +63,7 @@ pub struct FinalDarlinPCDVerifierKey<
 > {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
         G1,
-        DomainExtendedIpaPc<G1, FS>,
+        FS,
     >,
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }

@@ -8,7 +8,7 @@ use crate::darlin::{
     accumulators::{AccumulationProof, ItemAccumulator},
     DomainExtendedIpaPc,
 };
-use algebra::polynomial::DensePolynomial as Polynomial;
+use algebra::{polynomial::DensePolynomial as Polynomial, ToConstraintField, PrimeField, ToBits};
 use algebra::{serialize::*, Group, GroupVec, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
@@ -332,11 +332,92 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 
 /// A composite dlog accumulator/item, comprised of several single dlog items
 /// from both groups of the EC cycle.
-#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualDLogItem<G1: IPACurve, G2: IPACurve>(
-    pub(crate) Vec<DLogItem<G1>>,
-    pub(crate) Vec<DLogItem<G2>>,
-);
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct DualDLogItem<G1, G2>
+(
+    pub Vec<DLogItem<G1>>,
+    pub Vec<DLogItem<G2>>,
+)
+where
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>
+;
+
+impl<G1, G2> ToConstraintField<G1::ScalarField> for DualDLogItem<G1, G2>
+where
+    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+        + ToConstraintField<<G2 as Group>::ScalarField>,
+    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+        + ToConstraintField<<G1 as Group>::ScalarField>
+{
+    fn to_field_elements(&self) -> Result<Vec<G1::ScalarField>, Box<dyn std::error::Error>> {
+        let to_skip = <G1::ScalarField as PrimeField>::size_in_bits() - 128;
+        let mut fes = Vec::new();
+
+        // Convert all DLogItem<G1> into native field elements.
+
+        for acc_g1 in self.0.iter() {
+            // The final_comm_key is in G1, hence over G2::ScalarField.
+            // We serialize them all to bits and pack them safely into native field elements
+            let final_comm_key_g1 = acc_g1.final_comm_key.clone();
+            let mut final_comm_key_g1_bits = Vec::new();
+            let c_fes = final_comm_key_g1.to_field_elements()?;
+            for fe in c_fes {
+                final_comm_key_g1_bits.append(&mut fe.write_bits());
+            }
+            fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
+
+            // Although the xi's are by default 128 bit elements from G1::ScalarField
+            // (we do field arithmetics with them lateron) we do not want waste space.
+            // As for the xi's of the previous node, we serialize them all to bits and pack them into native
+            // field elements as efficient as possible (yet secure).
+            let mut check_poly_bits = Vec::new();
+            for fe in acc_g1.check_poly.chals.iter() {
+                let bits = fe.write_bits();
+                // write_bits() outputs a Big Endian bit order representation of fe and the same
+                // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
+                // e.g. we need to skip the first MODULUS_BITS - 128 bits.
+                debug_assert!(
+                    <[bool] as ToConstraintField<G1::ScalarField>>::to_field_elements(&bits[to_skip..])
+                        .unwrap()[0]
+                        == *fe
+                );
+                check_poly_bits.extend_from_slice(&bits[to_skip..]);
+            }
+            fes.append(&mut check_poly_bits.to_field_elements()?);
+        }
+
+        // Convert all DLogItem<G2> into G1::ScalarField field elements (the circuit field,
+        // called native in the sequel)
+        for acc_g2 in self.1.iter() {
+            // The final_comm_key consists of native field elements only
+            let final_comm_key_g2 = acc_g2.final_comm_key.clone();
+            fes.append(&mut final_comm_key_g2.to_field_elements()?);
+
+            // Convert check_poly, which are 128 bit elements from G2::ScalarField, to the native field.
+            // We packing the full bit vector into native field elements as efficient as possible (yet
+            // still secure).
+            let mut check_poly_bits = Vec::new();
+            for fe in acc_g2.check_poly.chals.iter() {
+                let bits = fe.write_bits();
+                // write_bits() outputs a Big Endian bit order representation of fe and the same
+                // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
+                // e.g. we need to skip the first MODULUS_BITS - 128 bits.
+                debug_assert!(
+                    <[bool] as ToConstraintField<G2::ScalarField>>::to_field_elements(&bits[to_skip..])
+                        .unwrap()[0]
+                        == *fe
+                );
+                check_poly_bits.extend_from_slice(&bits[to_skip..]);
+            }
+            fes.append(&mut check_poly_bits.to_field_elements()?);
+        }
+
+        Ok(fes)
+    }
+}
 
 pub struct DualDLogItemAccumulator<
     'a,

@@ -7,6 +7,7 @@ pub enum PCDError {
     FailedHardVerification(String),
     MissingSystemInputs(String),
     MissingUserInputs(String),
+    Other(String),
 }
 
 impl std::fmt::Display for PCDError {
@@ -31,6 +32,7 @@ impl std::fmt::Display for PCDError {
             PCDError::MissingUserInputs(missing_field) => {
                 write!(f, "Unable to retrieve user input: {}", missing_field)
             }
+            PCDError::Other(err) => write!(f, "PCD Error: {}", err),
         }
     }
 }
