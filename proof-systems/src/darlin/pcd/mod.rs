@@ -5,8 +5,8 @@
 //!     for SimpleMarlin and FinalDarlin PCDs.
 use crate::darlin::{
     accumulators::{
-        dlog::{DualDLogItem, DualDLogItemAccumulator},
-        ItemAccumulator,
+        dlog::{DualDLogAccumulator, DualDLogItem},
+        Accumulator,
     },
     data_structures::FinalDarlinDeferredData,
     pcd::{
@@ -106,8 +106,8 @@ pub trait PCDCircuit<G: IPACurve>: ConstraintSynthesizer<G::ScalarField> {
 ///     - a statement,
 ///     - accumulator SNARK proof (i.e. a SNARK proof plus its accumulator)
 pub trait PCD: Sized + Send + Sync {
-    type PCDAccumulator: ItemAccumulator;
-    type PCDVerifierKey: AsRef<<Self::PCDAccumulator as ItemAccumulator>::AccumulatorVerifierKey>;
+    type PCDAccumulator: Accumulator;
+    type PCDVerifierKey: AsRef<<Self::PCDAccumulator as Accumulator>::VerifierKey>;
 
     /// Perform only the efficient part (i.e. sublinear w.r.t. the circuit size) of proof verification.
     /// Typically includes few algebraic operations, e.g. the verification of Marlin's sumcheck
@@ -117,18 +117,18 @@ pub trait PCD: Sized + Send + Sync {
     fn succinct_verify(
         &self,
         vk: &Self::PCDVerifierKey,
-    ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError>;
+    ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError>;
 
     /// Perform the non-efficient part of proof verification.
     /// Verify / decide the current accumulator, by checking the non-efficient predicate.
     /// Typically involves one or several MSMs.
     fn hard_verify<R: RngCore>(
         &self,
-        acc: <Self::PCDAccumulator as ItemAccumulator>::Item,
+        acc: <Self::PCDAccumulator as Accumulator>::Item,
         vk: &Self::PCDVerifierKey,
         rng: &mut R,
     ) -> Result<bool, PCDError> {
-        <Self::PCDAccumulator as ItemAccumulator>::check_items::<R>(vk.as_ref(), &[acc], rng)
+        <Self::PCDAccumulator as Accumulator>::check_items_optimized::<R>(vk.as_ref(), &[acc], rng)
             .map_err(|e| PCDError::FailedHardVerification(e.to_string()))
     }
 
@@ -202,20 +202,23 @@ where
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {
-    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
+    type PCDAccumulator = DualDLogAccumulator<'a, G1, G2, FS>;
     type PCDVerifierKey = DualPCDVerifierKey<'a, G1, G2, FS>;
 
     fn succinct_verify(
         &self,
         vk: &Self::PCDVerifierKey,
-    ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
+    ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError> {
         match self {
             Self::SimpleMarlin(simple_marlin) => {
                 // Works because a FinalDarlinVk is a MarlinVk
                 let simple_marlin_vk =
                     SimpleMarlinPCDVerifierKey(vk.final_darlin_vk, vk.dlog_vks.0);
                 let acc = simple_marlin.succinct_verify(&simple_marlin_vk)?;
-                Ok(DualDLogItem(vec![acc], vec![]))
+                Ok(DualDLogItem {
+                    native: vec![acc],
+                    non_native: vec![],
+                })
             }
             Self::FinalDarlin(final_darlin) => final_darlin.succinct_verify(vk),
         }

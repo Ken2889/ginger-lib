@@ -2,8 +2,8 @@
 //! FinalDarlin PCD, using batch verification and aggregation of their dlog hard parts.
 use crate::darlin::{
     accumulators::{
-        dlog::{DLogItem, DLogItemAccumulator},
-        AccumulationProof, ItemAccumulator,
+        dlog::{DLogAccumulator, DLogItem},
+        AccumulationProof, Accumulator,
     },
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
     DomainExtendedIpaPc,
@@ -12,8 +12,8 @@ use algebra::{DualCycle, Group, ToConstraintField};
 use bench_utils::*;
 use fiat_shamir::FiatShamirRng;
 use marlin::VerifierKey as MarlinVerifierKey;
-use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey, IPACurve},
+use poly_commit::ipa_pc::{
+    CommitterKey as DLogCommitterKey, IPACurve, VerifierKey as DLogVerifierKey,
 };
 use rand::RngCore;
 use rayon::prelude::*;
@@ -26,10 +26,7 @@ use rayon::prelude::*;
 /// The PCDs are allowed to use different size restrictions of the DLogCommitterKey `g1_ck` and `g2_ck`.
 pub fn get_accumulators<G1, G2, FS: FiatShamirRng>(
     pcds: &[GeneralPCD<G1, G2, FS>],
-    vks: &[MarlinVerifierKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >],
+    vks: &[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
     g1_ck: &DLogCommitterKey<G1>,
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Vec<DLogItem<G1>>, Vec<DLogItem<G2>>), Option<Vec<usize>>>
@@ -74,9 +71,12 @@ where
         // All succinct verifications passed: collect and return the accumulators
         let accs_g1 = accs
             .iter()
-            .flat_map(|acc| acc.0.clone())
+            .flat_map(|acc| acc.native.clone())
             .collect::<Vec<_>>();
-        let accs_g2 = accs.into_iter().flat_map(|acc| acc.1).collect::<Vec<_>>();
+        let accs_g2 = accs
+            .into_iter()
+            .flat_map(|acc| acc.non_native)
+            .collect::<Vec<_>>();
         Ok((accs_g1, accs_g2))
     } else {
         // Otherwise, collect and return as error the indices of all the failing proofs
@@ -94,10 +94,7 @@ where
 /// `g1_ck` and `g2_ck`.
 pub fn accumulate_proofs<G1, G2, FS: FiatShamirRng>(
     pcds: &[GeneralPCD<G1, G2, FS>],
-    vks: &[MarlinVerifierKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >],
+    vks: &[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
     g1_ck: &DLogCommitterKey<G1>,
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Option<AccumulationProof<G1>>, Option<AccumulationProof<G2>>), Option<Vec<usize>>>
@@ -120,7 +117,7 @@ where
         None
     } else {
         Some(
-            DLogItemAccumulator::<G1, FS>::accumulate_items(g1_ck, accs_g1)
+            DLogAccumulator::<G1, FS>::accumulate_items(g1_ck, accs_g1)
                 .map_err(|_| {
                     end_timer!(accumulation_time);
                     None
@@ -133,7 +130,7 @@ where
         None
     } else {
         Some(
-            DLogItemAccumulator::<G2, FS>::accumulate_items(g2_ck, accs_g2)
+            DLogAccumulator::<G2, FS>::accumulate_items(g2_ck, accs_g2)
                 .map_err(|_| {
                     end_timer!(accumulation_time);
                     None
@@ -155,10 +152,7 @@ where
 /// `g1_ck` and `g2_ck`.
 pub fn verify_aggregated_proofs<G1, G2, FS: FiatShamirRng, R: RngCore>(
     pcds: &[GeneralPCD<G1, G2, FS>],
-    vks: &[MarlinVerifierKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >],
+    vks: &[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
     accumulation_proof_g1: &Option<AccumulationProof<G1>>,
     accumulation_proof_g2: &Option<AccumulationProof<G2>>,
     g1_vk: &DLogVerifierKey<G1>,
@@ -182,7 +176,7 @@ where
     // fully verify the dlog aggregation proof in G1, if present.
     let result_accumulate_g1 = if accumulation_proof_g1.is_some() {
         let dummy_g1 = DLogItem::<G1>::default();
-        DLogItemAccumulator::<G1, FS>::verify_accumulated_items::<R>(
+        DLogAccumulator::<G1, FS>::verify_accumulated_items::<R>(
             &dummy_g1,
             g1_vk,
             accs_g1,
@@ -200,7 +194,7 @@ where
     // fully verify the dlog aggregation proof in G2, if present.
     let result_accumulate_g2 = if accumulation_proof_g2.is_some() {
         let dummy_g2 = DLogItem::<G2>::default();
-        DLogItemAccumulator::<G2, FS>::verify_accumulated_items::<R>(
+        DLogAccumulator::<G2, FS>::verify_accumulated_items::<R>(
             &dummy_g2,
             g2_vk,
             accs_g2,
@@ -228,10 +222,7 @@ where
 /// `g1_ck` and `g2_ck`.
 pub fn batch_verify_proofs<G1, G2, FS: FiatShamirRng + 'static, R: RngCore>(
     pcds: &[GeneralPCD<G1, G2, FS>],
-    vks: &[MarlinVerifierKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >],
+    vks: &[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
     g1_vk: &DLogVerifierKey<G1>,
     g2_vk: &DLogVerifierKey<G2>,
     rng: &mut R,
@@ -254,19 +245,23 @@ where
     let result_g1 = if accs_g1.is_empty() {
         true
     } else {
-        DLogItemAccumulator::<G1, FS>::check_items::<R>(g1_vk, &accs_g1, rng).map_err(|_| {
-            end_timer!(verification_time);
-            None
-        })?
+        DLogAccumulator::<G1, FS>::check_items_optimized::<R>(g1_vk, &accs_g1, rng).map_err(
+            |_| {
+                end_timer!(verification_time);
+                None
+            },
+        )?
     };
 
     let result_g2 = if accs_g2.is_empty() {
         true
     } else {
-        DLogItemAccumulator::<G2, FS>::check_items::<R>(g2_vk, &accs_g2, rng).map_err(|_| {
-            end_timer!(verification_time);
-            None
-        })?
+        DLogAccumulator::<G2, FS>::check_items_optimized::<R>(g2_vk, &accs_g2, rng).map_err(
+            |_| {
+                end_timer!(verification_time);
+                None
+            },
+        )?
     };
 
     end_timer!(verification_time);

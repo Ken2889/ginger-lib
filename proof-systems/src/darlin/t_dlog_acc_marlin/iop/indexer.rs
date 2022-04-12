@@ -10,6 +10,7 @@ use bench_utils::{add_to_trace, end_timer, start_timer};
 use marlin::iop::indexer::{balance_matrices, num_non_zero, post_process_matrices};
 use marlin::iop::sparse_linear_algebra::SparseMatrix;
 use marlin::iop::Error;
+use poly_commit::PolynomialCommitment;
 use std::marker::PhantomData;
 
 /// Information about the index, including the field of definition, the number of
@@ -82,7 +83,13 @@ pub struct Index<G1: IPACurve, G2: IPACurve> {
     pub c: SparseMatrix<G1::ScalarField>,
 }
 
-impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
+impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.
     pub fn index<C: ConstraintSynthesizer<G1::ScalarField>>(c: C) -> Result<Index<G1, G2>, Error> {

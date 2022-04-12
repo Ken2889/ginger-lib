@@ -1,20 +1,17 @@
 //! A test circuit which, besides processing additional data according to
 //! a simple quadratic relation, allocates a given instance of `FinalDarlinDeferredData`,
 //! and wires it to the outside via system inputs.
+use crate::darlin::accumulators::AccumulatorItem;
 use crate::darlin::{
-    accumulators::ItemAccumulator,
+    accumulators::{Accumulator, Error as AccError},
     data_structures::FinalDarlinDeferredData,
-    pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCD, PCDParameters},
-    FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
-    DomainExtendedIpaPc,
+    pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
+    DomainExtendedIpaPc, FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
 use algebra::{DualCycle, Group, ToConstraintField, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{
-    ipa_pc::{CommitterKey, VerifierKey, IPACurve},
-    Error as PCError,
-};
+use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::Rng;
@@ -23,35 +20,63 @@ use rand::RngCore;
 // Dummy Acc used for testing
 pub struct TestAcc {}
 
-impl ItemAccumulator for TestAcc {
-    type AccumulatorProverKey = ();
-    type AccumulatorVerifierKey = ();
-    type AccumulationProof = ();
-    type Item = ();
+impl AccumulatorItem for () {}
 
-    fn check_items<R: RngCore>(
-        _vk: &Self::AccumulatorVerifierKey,
-        _accumulators: &[Self::Item],
+impl Accumulator for TestAcc {
+    type ProverKey = ();
+    type VerifierKey = ();
+    type Proof = ();
+    type Item = ();
+    type ExpandedItem = ();
+
+    fn expand_item(
+        _vk: &Self::VerifierKey,
+        _accumulator: &Self::Item,
+    ) -> Result<Self::ExpandedItem, AccError> {
+        Ok(())
+    }
+
+    fn check_item<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        _accumulator: &Self::Item,
         _rng: &mut R,
-    ) -> Result<bool, PCError> {
-        Ok(true)
+    ) -> Result<Option<Self::ExpandedItem>, AccError> {
+        Ok(Some(()))
     }
 
     fn accumulate_items(
-        _ck: &Self::AccumulatorProverKey,
+        _ck: &Self::ProverKey,
         _accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::AccumulationProof), PCError> {
+    ) -> Result<(Self::Item, Self::Proof), AccError> {
         Ok(((), ()))
     }
 
     fn verify_accumulated_items<R: RngCore>(
         _current_accumulator: &Self::Item,
-        _vk: &Self::AccumulatorVerifierKey,
+        _vk: &Self::VerifierKey,
         _previous_accumulators: Vec<Self::Item>,
-        _proof: &Self::AccumulationProof,
+        _proof: &Self::Proof,
         _rng: &mut R,
-    ) -> Result<bool, PCError> {
+    ) -> Result<bool, AccError> {
         Ok(true)
+    }
+
+    fn trivial_item(_vk: &Self::VerifierKey) -> Result<Self::Item, AccError> {
+        Ok(())
+    }
+
+    fn random_item<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        _rng: &mut R,
+    ) -> Result<Self::Item, AccError> {
+        Ok(())
+    }
+
+    fn invalid_item<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        _rng: &mut R,
+    ) -> Result<Self::Item, AccError> {
+        Ok(())
     }
 }
 
@@ -84,7 +109,7 @@ where
     fn succinct_verify(
         &self,
         _vk: &Self::PCDVerifierKey,
-    ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
+    ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError> {
         Ok(())
     }
 }
@@ -296,18 +321,9 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<
-    'a,
-    G1: IPACurve,
-    G2: IPACurve,
-    FS: FiatShamirRng + 'a,
-    R: RngCore,
->(
+pub fn generate_test_pcd<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'a, R: RngCore>(
     pc_ck_g1: &CommitterKey<G1>,
-    final_darlin_pk: &FinalDarlinProverKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >,
+    final_darlin_pk: &FinalDarlinProverKey<G1, DomainExtendedIpaPc<G1, FS>>,
     info: CircuitInfo<G1, G2>,
     zk: bool,
     rng: &mut R,
@@ -360,12 +376,7 @@ pub fn generate_test_data<
     rng: &mut R,
 ) -> (
     Vec<FinalDarlinPCD<'a, G1, G2, FS>>,
-    Vec<
-        FinalDarlinVerifierKey<
-            G1,
-            DomainExtendedIpaPc<G1, FS>,
-        >,
-    >,
+    Vec<FinalDarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>>,
 )
 where
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,

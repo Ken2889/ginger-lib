@@ -53,8 +53,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for Circuit<F> {
 mod t_dlog_acc_marlin {
     use super::*;
 
-    use crate::darlin::accumulators::dlog::DualDLogItem;
-    use crate::darlin::t_dlog_acc_marlin::data_structures::{DualSumcheckItem, PC};
+    use crate::darlin::accumulators::dual::DualAccumulatorItem;
+    use crate::darlin::accumulators::Accumulator;
+    use crate::darlin::t_dlog_acc_marlin::data_structures::PC;
+    use crate::darlin::t_dlog_acc_marlin::iop::{DualTDLogAccumulator, TDLogAccumulator};
     use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
     use crate::darlin::IPACurve;
     use algebra::{
@@ -147,26 +149,34 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &index_pk_g2);
             test_canonical_serialize_deserialize(true, &index_vk_g2);
 
-            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
+            let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, _, _, FS>::random_item(
+                &(
+                    &(&(&index_vk_g2, &pc_vk_g2), &pc_vk_g2),
+                    &(&(&index_vk_g1, &pc_vk_g1), &pc_vk_g1),
+                ),
                 rng,
-                &index_pk_g2.index_vk.index,
-                &index_pk_g1.index_vk.index,
-                &pc_pk_g2,
-                &pc_pk_g1,
-            );
-            let (_, bullet_poly_g1) = dlog_acc.compute_poly();
-            let (_, t_poly_g1) = inner_sumcheck_acc
-                .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
+            )
+            .unwrap();
+
+            let t_dlog_polys = DualTDLogAccumulator::<_, _, _, _, FS>::expand_item(
+                &(
+                    &(&(&index_vk_g2, &pc_vk_g2), &pc_vk_g2),
+                    &(&(&index_vk_g1, &pc_vk_g1), &pc_vk_g1),
+                ),
+                &dual_t_dlog_acc,
+            )
+            .unwrap();
+
+            let t_poly_g1 = &t_dlog_polys[0].0;
+            let bullet_poly_g1 = &t_dlog_polys[0].1;
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
-                &inner_sumcheck_acc,
-                &dlog_acc,
-                &t_poly_g1,
-                &bullet_poly_g1[0],
+                &dual_t_dlog_acc,
+                t_poly_g1,
+                bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             );
@@ -188,8 +198,7 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &pc_vk_g2,
                 &[c, d],
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &proof
             )
             .is_ok());
@@ -201,36 +210,45 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &pc_vk_g2,
                 &[a, a],
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &proof
             )
             .is_ok());
 
             /*
-            Generate a dual dlog accumulator which is invalid in its native part and check that
+            Generate a dual dlog accumulator which is invalid in its G1 part and check that
             the succinct verification of the proof fails.
              */
-            let dlog_acc = DualDLogItem::generate_invalid_right::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
-                rng,
-                &index_pk_g2.index_vk.index,
-                &index_pk_g1.index_vk.index,
-                &pc_pk_g2,
-                &pc_pk_g1,
-            );
-            let (_, bullet_poly_g1) = dlog_acc.compute_poly();
-            let (_, t_poly_g1) = inner_sumcheck_acc
-                .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
+            let t_dlog_acc_g1_invalid =
+                TDLogAccumulator::invalid_item(&(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1), rng)
+                    .unwrap();
+            let t_dlog_acc_g2_valid =
+                TDLogAccumulator::random_item(&(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2), rng)
+                    .unwrap();
+            let dual_t_dlog_acc = DualAccumulatorItem {
+                native: vec![t_dlog_acc_g2_valid],
+                non_native: vec![t_dlog_acc_g1_invalid],
+            };
+
+            let t_dlog_polys = DualTDLogAccumulator::expand_item(
+                &(
+                    &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
+                    &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
+                ),
+                &dual_t_dlog_acc,
+            )
+            .unwrap();
+
+            let t_poly_g1 = &t_dlog_polys[0].0;
+            let bullet_poly_g1 = &t_dlog_polys[0].1;
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &t_poly_g1,
-                &bullet_poly_g1[0],
+                &bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             )
@@ -240,76 +258,46 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &proof
             )
             .is_err());
 
             /*
-            Generate a dual inner-sumcheck accumulator which is invalid in its native part and check
-            that the succinct verification of the proof fails.
-             */
-            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_right::<FS>(
-                rng,
-                &index_pk_g2.index_vk.index,
-                &index_pk_g1.index_vk.index,
-                &pc_pk_g2,
-                &pc_pk_g1,
-            );
-            let (_, bullet_poly_g1) = dlog_acc.compute_poly();
-            let (_, t_poly_g1) = inner_sumcheck_acc
-                .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
-
-            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                &index_pk_g1,
-                &pc_pk_g1,
-                circ_g1,
-                &inner_sumcheck_acc,
-                &dlog_acc,
-                &t_poly_g1,
-                &bullet_poly_g1[0],
-                zk,
-                if zk { Some(rng) } else { None },
-            )
-            .unwrap();
-
-            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
-                &pc_vk_g1,
-                &index_vk_g1,
-                &[c, d],
-                &inner_sumcheck_acc,
-                &dlog_acc,
-                &proof
-            )
-            .is_err());
-
-            /*
-            Generate a dual dlog accumulator which is invalid in its non-native part and check
-            that the succinct verification of the proof succeeds (the non-native part of the
+            Generate a dual inner-sumcheck accumulator which is invalid in its G2 part and
+            check that the succinct verification of the proof succeeds (the G2 part of the
             accumulator is merely forwarded).
              */
-            let dlog_acc = DualDLogItem::generate_invalid_left::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_random::<FS>(
-                rng,
-                &index_pk_g2.index_vk.index,
-                &index_pk_g1.index_vk.index,
-                &pc_pk_g2,
-                &pc_pk_g1,
-            );
-            let (_, bullet_poly_g1) = dlog_acc.compute_poly();
-            let (_, t_poly_g1) = inner_sumcheck_acc
-                .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
+            let t_dlog_acc_g1_valid =
+                TDLogAccumulator::random_item(&(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1), rng)
+                    .unwrap();
+            let t_dlog_acc_g2_invalid =
+                TDLogAccumulator::invalid_item(&(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2), rng)
+                    .unwrap();
+            let dual_t_dlog_acc = DualAccumulatorItem {
+                native: vec![t_dlog_acc_g2_invalid],
+                non_native: vec![t_dlog_acc_g1_valid],
+            };
+
+            let t_dlog_polys = DualTDLogAccumulator::expand_item(
+                &(
+                    &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
+                    &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
+                ),
+                &dual_t_dlog_acc,
+            )
+            .unwrap();
+
+            let t_poly_g1 = &t_dlog_polys[0].0;
+            let bullet_poly_g1 = &t_dlog_polys[0].1;
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &t_poly_g1,
-                &bullet_poly_g1[0],
+                &bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             )
@@ -319,48 +307,7 @@ mod t_dlog_acc_marlin {
                 &pc_vk_g1,
                 &index_vk_g1,
                 &[c, d],
-                &inner_sumcheck_acc,
-                &dlog_acc,
-                &proof
-            )
-            .is_ok());
-
-            /*
-            Generate a dual inner-sumcheck accumulator which is invalid in its non-native part and
-            check that the succinct verification of the proof succeeds (the non-native part of the
-            accumulator is merely forwarded).
-             */
-            let dlog_acc = DualDLogItem::generate_random::<_, FS>(rng, &pc_pk_g2, &pc_pk_g1);
-            let inner_sumcheck_acc = DualSumcheckItem::<G2, G1>::generate_invalid_left::<FS>(
-                rng,
-                &index_pk_g2.index_vk.index,
-                &index_pk_g1.index_vk.index,
-                &pc_pk_g2,
-                &pc_pk_g1,
-            );
-            let (_, bullet_poly_g1) = dlog_acc.compute_poly();
-            let (_, t_poly_g1) = inner_sumcheck_acc
-                .compute_poly(&index_pk_g2.index_vk.index, &index_pk_g1.index_vk.index);
-
-            let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                &index_pk_g1,
-                &pc_pk_g1,
-                circ_g1,
-                &inner_sumcheck_acc,
-                &dlog_acc,
-                &t_poly_g1,
-                &bullet_poly_g1[0],
-                zk,
-                if zk { Some(rng) } else { None },
-            )
-            .unwrap();
-
-            assert!(TDLogAccMarlin::<G1, G2, FS, D>::succinct_verify(
-                &pc_vk_g1,
-                &index_vk_g1,
-                &[c, d],
-                &inner_sumcheck_acc,
-                &dlog_acc,
+                &dual_t_dlog_acc,
                 &proof
             )
             .is_ok());

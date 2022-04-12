@@ -194,7 +194,7 @@ pub(crate) fn single_point_multi_poly_succinct_verify<
 /// properties.
 /// The interface comes with the additional feature of splitting the verifier into a
 /// `succinct` part and `non-succinct` part.
-pub trait PolynomialCommitment<G: Group>: Sized {
+pub trait PolynomialCommitment<G: Group>: Sized + Clone {
     /// The committer key for the scheme; used to commit to a polynomial and then
     /// open the commitment to produce an evaluation proof.
     type CommitterKey: PCKey;

@@ -6,7 +6,14 @@ use num_traits::{One, Zero};
 use r1cs_core::SynthesisError;
 use std::marker::PhantomData;
 
+use crate::darlin::accumulators::composite::{CompositeAccumulator, CompositeAccumulatorItem};
+use crate::darlin::accumulators::dlog::DLogAccumulator;
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
+use crate::darlin::accumulators::inner_sumcheck::{InnerSumcheckAccumulator, InnerSumcheckItem};
+use crate::darlin::t_dlog_acc_marlin::data_structures::PC;
 use marlin::iop::{get_poly_eval, Error, LagrangeKernel};
+use poly_commit::ipa_pc::DLogItem;
+use poly_commit::PolynomialCommitment;
 
 /// Describes data structures and the algorithms used by the indexer.
 pub mod indexer;
@@ -15,16 +22,39 @@ pub mod prover;
 /// Describes data structures and the algorithms used by the interactive verifier.
 pub mod verifier;
 
+pub type TDLogAccumulator<'a, G, FS, K> =
+    CompositeAccumulator<'a, InnerSumcheckAccumulator<'a, G, PC<G, FS>, K>, DLogAccumulator<G, FS>>;
+pub type DualTDLogAccumulator<'a, G1, K1, G2, K2, FS> =
+    DualAccumulator<'a, TDLogAccumulator<'a, G1, FS, K1>, TDLogAccumulator<'a, G2, FS, K2>>;
+
+pub type TDLogItem<G, PC> = CompositeAccumulatorItem<InnerSumcheckItem<G, PC>, DLogItem<G>>;
+pub type DualTDLogItem<G1, G2, PC1, PC2> =
+    DualAccumulatorItem<TDLogItem<G1, PC1>, TDLogItem<G2, PC2>>;
+
 /// A helper struct to bundle the setup, prover and verifier functions for the
 /// algebraic oracle proof from [HGB].
 ///
 /// [HGB]: https://eprint.iacr.org/2021/930
-pub struct IOP<G1: IPACurve, G2: IPACurve> {
+pub struct IOP<G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     g1: PhantomData<G1>,
     g2: PhantomData<G2>,
+    pc1: PhantomData<PC1>,
+    pc2: PhantomData<PC2>,
 }
 
-impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
+impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]
     pub const PROVER_POLYNOMIALS: [&'static str; 12] = [
@@ -84,7 +114,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     pub fn verify_outer_sumcheck(
         public_input: &[G1::ScalarField],
         evals: &poly_commit::Evaluations<G1::ScalarField>,
-        state: &verifier::VerifierState<G1, G2>,
+        state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
         let domain_h = &state.domain_h;
 
@@ -140,13 +170,16 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
 
     pub fn verify_dlog_aggregation(
         evals: &poly_commit::Evaluations<G1::ScalarField>,
-        state: &verifier::VerifierState<G1, G2>,
+        state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
         if state.third_round_msg.is_none() {
             return Err(Error::Other("Third round message is empty".to_owned()));
         }
         let gamma = state.third_round_msg.unwrap().gamma;
-        let prev_dlog_poly_at_gamma = state.previous_dlog_acc.1[0].check_poly.evaluate(gamma);
+        let prev_dlog_poly_at_gamma = state.previous_acc.non_native[0]
+            .1
+            .check_poly
+            .evaluate(gamma);
         let prev_dlog_poly_at_gamma_from_prover =
             get_poly_eval(evals, "prev_bullet_poly", "gamma")?;
 
@@ -161,7 +194,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// Auxiliary function to verify the inner sumcheck aggregation rounds.
     pub fn verify_inner_sumcheck_aggregation(
         evals: &poly_commit::Evaluations<G1::ScalarField>,
-        state: &verifier::VerifierState<G1, G2>,
+        state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
         if state.first_round_msg.is_none() {
             return Err(Error::Other("First round message is empty".to_owned()));

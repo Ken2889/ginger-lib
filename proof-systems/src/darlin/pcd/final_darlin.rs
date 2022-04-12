@@ -1,22 +1,22 @@
 //! Final Darlin proof carrying data. The final Darlin is the last node of the
 //! exiting/conversion chain of our Darlin PCD scheme, and provides a (coboundary)
 //! Marlin proof plus the dlog accumulators of the previous and pre-previous node.
+use crate::darlin::accumulators::dlog::DualDLogItem;
 use crate::darlin::{
-    accumulators::dlog::{DualDLogItem, DualDLogItemAccumulator},
-    accumulators::ItemAccumulator,
+    accumulators::dlog::DualDLogAccumulator,
+    accumulators::Accumulator,
     data_structures::*,
     pcd::{error::PCDError, PCD},
-    FinalDarlin, FinalDarlinVerifierKey,
-    DomainExtendedIpaPc,
+    DomainExtendedIpaPc, FinalDarlin, FinalDarlinVerifierKey,
 };
 use algebra::{DualCycle, Group, ToConstraintField};
 use bench_utils::*;
+use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
+    ipa_pc::{IPACurve, InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
-use derivative::Derivative;
 use std::marker::PhantomData;
 
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
@@ -51,16 +51,8 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<
-    'a,
-    G1: IPACurve,
-    G2: IPACurve,
-    FS: FiatShamirRng + 'static,
-> {
-    pub final_darlin_vk: &'a FinalDarlinVerifierKey<
-        G1,
-        DomainExtendedIpaPc<G1, FS>,
-    >,
+pub struct FinalDarlinPCDVerifierKey<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+    pub final_darlin_vk: &'a FinalDarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>,
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
@@ -80,13 +72,13 @@ where
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {
-    type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
+    type PCDAccumulator = DualDLogAccumulator<'a, G1, G2, FS>;
     type PCDVerifierKey = FinalDarlinPCDVerifierKey<'a, G1, G2, FS>;
 
     fn succinct_verify(
         &self,
         vk: &Self::PCDVerifierKey,
-    ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
+    ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError> {
         let succinct_time = start_timer!(|| "Finalized Darlin succinct verifier");
 
         let ahp_verify_time = start_timer!(|| "AHP verify");
@@ -144,12 +136,12 @@ where
         let acc = verifier_state.unwrap();
 
         end_timer!(succinct_time);
-        Ok(DualDLogItem::<G1, G2>(
-            vec![
+        Ok(DualDLogItem {
+            native: vec![
                 acc,
                 self.final_darlin_proof.deferred.pre_previous_acc.clone(),
             ],
-            vec![self.final_darlin_proof.deferred.previous_acc.clone()],
-        ))
+            non_native: vec![self.final_darlin_proof.deferred.previous_acc.clone()],
+        })
     }
 }

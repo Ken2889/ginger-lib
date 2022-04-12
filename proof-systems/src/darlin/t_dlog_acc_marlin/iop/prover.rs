@@ -1,11 +1,10 @@
 #![allow(non_snake_case)]
 
-use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
     VerifierFirstMsg, VerifierSecondMsg, VerifierThirdMsg,
 };
-use crate::darlin::t_dlog_acc_marlin::iop::IOP;
+use crate::darlin::t_dlog_acc_marlin::iop::{DualTDLogItem, IOP};
 use crate::darlin::IPACurve;
 use algebra::{
     get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
@@ -14,13 +13,19 @@ use bench_utils::{end_timer, start_timer};
 use marlin::iop::sparse_linear_algebra::mat_vec_mul;
 use marlin::iop::{BoundaryPolynomial, Error, LagrangeKernel};
 use num_traits::Zero;
-use poly_commit::{LabeledPolynomial, Polynomial};
+use poly_commit::{LabeledPolynomial, Polynomial, PolynomialCommitment};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand_core::RngCore;
 use rayon::prelude::*;
 
 /// State for the IOP prover.
-pub struct ProverState<'a, G1: IPACurve, G2: IPACurve> {
+pub struct ProverState<'a, G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     formatted_input_assignment: Vec<G1::ScalarField>,
     witness_assignment: Vec<G1::ScalarField>,
 
@@ -37,8 +42,8 @@ pub struct ProverState<'a, G1: IPACurve, G2: IPACurve> {
 
     index: &'a Index<G1, G2>,
 
-    /// the inner-sumcheck accumulator
-    inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
+    /// the previous accumulator
+    acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
 
     /// the random values sent by the verifier in the first round
     verifier_first_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
@@ -50,10 +55,16 @@ pub struct ProverState<'a, G1: IPACurve, G2: IPACurve> {
     domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
 }
 
-impl<'a, G1: IPACurve, G2: IPACurve> ProverState<'a, G1, G2> {
+impl<'a, G1, G2, PC1, PC2> ProverState<'a, G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     /// Get the public input.
     pub fn public_input(&self) -> Vec<G1::ScalarField> {
-        IOP::<G1, G2>::unformat_public_input(&self.formatted_input_assignment)
+        IOP::<G1, G2, PC1, PC2>::unformat_public_input(&self.formatted_input_assignment)
     }
     /// Return the variable vector, with input variables and witness variables already indexed
     /// according to the treatment of the input domain `domain_x` as a subdomain of the full
@@ -169,13 +180,25 @@ impl<F: Field> ProverAccumulatorOracles<F> {
 
 /* The prover rounds
 */
-impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
+impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    PC1: PolynomialCommitment<G1>,
+    PC2: PolynomialCommitment<G2>,
+{
     /// Preparation of the prover, computes the witness vector `y`.
     pub fn prover_init<'a, C: ConstraintSynthesizer<G1::ScalarField>>(
         index: &'a Index<G1, G2>,
         c: C,
-        inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
-    ) -> Result<(ProverInitOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+        acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
+    ) -> Result<
+        (
+            ProverInitOracles<G1::ScalarField>,
+            ProverState<'a, G1, G2, PC1, PC2>,
+        ),
+        Error,
+    > {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -228,7 +251,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
             my_polys: None,
             index,
             verifier_first_msg: None,
-            inner_sumcheck_acc,
+            acc,
             domain_h,
             domain_x,
         };
@@ -245,10 +268,16 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     ///   `w(X)`, `y_A(X)` and `y_B(X)`
     /// [HGB]: https://eprint.iacr.org/2021/930
     pub fn prover_first_round<'a, R: RngCore>(
-        mut state: ProverState<'a, G1, G2>,
+        mut state: ProverState<'a, G1, G2, PC1, PC2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<(ProverFirstOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+    ) -> Result<
+        (
+            ProverFirstOracles<G1::ScalarField>,
+            ProverState<'a, G1, G2, PC1, PC2>,
+        ),
+        Error,
+    > {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
         let domain_x = &state.domain_x;
@@ -403,13 +432,13 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
     pub fn prover_second_round<'a, R: RngCore>(
         ver_message: &VerifierFirstMsg<G1::ScalarField>,
-        mut state: ProverState<'a, G1, G2>,
+        mut state: ProverState<'a, G1, G2, PC1, PC2>,
         zk: bool,
         rng: &mut R,
     ) -> Result<
         (
             ProverSecondOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2>,
+            ProverState<'a, G1, G2, PC1, PC2>,
         ),
         Error,
     > {
@@ -643,8 +672,14 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// It is the first round of the inner-sumcheck aggregation.
     pub fn prover_third_round<'a>(
         ver_message: &VerifierSecondMsg<G1::ScalarField>,
-        state: ProverState<'a, G1, G2>,
-    ) -> Result<(ProverThirdOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+        state: ProverState<'a, G1, G2, PC1, PC2>,
+    ) -> Result<
+        (
+            ProverThirdOracles<G1::ScalarField>,
+            ProverState<'a, G1, G2, PC1, PC2>,
+        ),
+        Error,
+    > {
         let round_time = start_timer!(|| "IOP::Prover::ThirdRound");
 
         let ProverState { index, .. } = state;
@@ -680,7 +715,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
 
         let prev_bridging_poly_time = start_timer!(|| "Compute prev_bridging_poly");
 
-        let eta = &state.inner_sumcheck_acc.1.eta;
+        let eta = &state.acc.non_native[0].0.eta;
 
         let prev_bridging_poly_on_h: Vec<_> = m_a
             .iter()
@@ -717,11 +752,11 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     /// It is the second round of the inner-sumcheck aggregation.
     pub fn prover_fourth_round<'a>(
         ver_message: &VerifierThirdMsg<G1::ScalarField>,
-        state: ProverState<'a, G1, G2>,
+        state: ProverState<'a, G1, G2, PC1, PC2>,
     ) -> Result<
         (
             ProverFourthOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2>,
+            ProverState<'a, G1, G2, PC1, PC2>,
         ),
         Error,
     > {
@@ -730,7 +765,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
         let eta = &verifier_first_msg.get_etas();
-        let eta_prime = &state.inner_sumcheck_acc.1.eta;
+        let eta_prime = &state.acc.non_native[0].0.eta;
         let lambda = ver_message.lambda;
         let gamma = ver_message.gamma;
 

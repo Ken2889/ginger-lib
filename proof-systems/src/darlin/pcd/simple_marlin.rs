@@ -1,21 +1,18 @@
 //! Simple Marlin "proof carrying data". This corresponds to non-recursive applications.
 use crate::darlin::{
-    accumulators::{
-        dlog::DLogItemAccumulator,
-        ItemAccumulator,
-    },
+    accumulators::{dlog::DLogAccumulator, Accumulator},
     pcd::{error::PCDError, PCD},
     DomainExtendedIpaPc,
 };
 use algebra::{serialize::*, SemanticallyValid};
 use bench_utils::*;
+use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
+    ipa_pc::{IPACurve, InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
-use derivative::Derivative;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -126,29 +123,27 @@ where
     G: IPACurve,
     FS: FiatShamirRng + 'static,
 {
-    type PCDAccumulator = DLogItemAccumulator<G, FS>;
+    type PCDAccumulator = DLogAccumulator<G, FS>;
     type PCDVerifierKey = SimpleMarlinPCDVerifierKey<'a, G, FS>;
 
     fn succinct_verify(
         &self,
         vk: &Self::PCDVerifierKey,
-    ) -> Result<<Self::PCDAccumulator as ItemAccumulator>::Item, PCDError> {
+    ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError> {
         let succinct_time = start_timer!(|| "Marlin succinct verifier");
 
         // Verify the IOP/AHP
-        let (query_map, evaluations, labeled_comms, mut fs_rng) = Marlin::<
-            G,
-            DomainExtendedIpaPc<G, FS>,
-        >::verify_iop(
-            &vk.1,
-            &vk.0,
-            self.usr_ins.as_slice(),
-            &self.proof,
-        )
-        .map_err(|e| {
-            end_timer!(succinct_time);
-            PCDError::FailedSuccinctVerification(format!("{:?}", e))
-        })?;
+        let (query_map, evaluations, labeled_comms, mut fs_rng) =
+            Marlin::<G, DomainExtendedIpaPc<G, FS>>::verify_iop(
+                &vk.1,
+                &vk.0,
+                self.usr_ins.as_slice(),
+                &self.proof,
+            )
+            .map_err(|e| {
+                end_timer!(succinct_time);
+                PCDError::FailedSuccinctVerification(format!("{:?}", e))
+            })?;
 
         // record evaluations and sample new challenge
         fs_rng.record(self.proof.evaluations.clone()).map_err(|e| {

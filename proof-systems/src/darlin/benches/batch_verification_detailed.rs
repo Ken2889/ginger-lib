@@ -8,8 +8,8 @@ use poly_commit::{
     ipa_pc::{IPACurve, InnerProductArgPC},
     PolynomialCommitment,
 };
-use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
-use proof_systems::darlin::accumulators::ItemAccumulator;
+use proof_systems::darlin::accumulators::dlog::DLogAccumulator;
+use proof_systems::darlin::accumulators::Accumulator;
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::proof_aggregator::batch_verify_proofs;
 use proof_systems::darlin::proof_aggregator::get_accumulators;
@@ -141,9 +141,13 @@ fn bench_hard_part_batch_verification<
                 bn.iter(|| {
                     // Verify accumulators (hard part)
                     assert!(
-                        DLogItemAccumulator::<G1, FS>::check_items(&verifier_key_g1, &accs_g1, rng)
-                            .unwrap()
-                            && DLogItemAccumulator::<G2, FS>::check_items(
+                        DLogAccumulator::<G1, FS>::check_items_optimized(
+                            &verifier_key_g1,
+                            &accs_g1,
+                            rng
+                        )
+                        .unwrap()
+                            && DLogAccumulator::<G2, FS>::check_items_optimized(
                                 &verifier_key_g2,
                                 &accs_g2,
                                 rng

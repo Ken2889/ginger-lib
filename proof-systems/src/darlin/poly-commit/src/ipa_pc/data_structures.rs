@@ -10,7 +10,7 @@ use super::IPACurve;
 use crate::ipa_pc::InnerProductArgPC;
 use crate::*;
 use crate::{PCKey, Vec};
-use algebra::{DensePolynomial, PrimeField, UniformRand};
+use algebra::{DensePolynomial, PrimeField, ToBits, ToConstraintField, UniformRand};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -599,8 +599,6 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
     /// Will automatically calculate also the endo versions of them
     #[cfg(feature = "circuit-friendly")]
     pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
-        use algebra::ToBits;
-
         let endo_chals = chals
             .iter()
             .map(|chal| {
@@ -907,6 +905,44 @@ impl<G: IPACurve> SemanticallyValid for DLogItem<G> {
 }
 
 impl<G: IPACurve> PCVerifierState for DLogItem<G> {}
+
+impl<G: IPACurve> ToConstraintField<G::ScalarField> for DLogItem<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Box<(dyn std::error::Error)>> {
+        let mut fes = Vec::new();
+
+        // The final_comm_key belongs to G::BaseField, so we convert it into elements of
+        // G::ScalarField
+        let final_comm_key = self.final_comm_key.clone();
+        let mut final_comm_key_g1_bits = Vec::new();
+        let c_fes = final_comm_key.to_field_elements()?;
+        for fe in c_fes {
+            final_comm_key_g1_bits.append(&mut fe.write_bits());
+        }
+        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
+
+        // The challenges of check_poly are by default 128 bit elements from G1::ScalarField
+        // (we do field arithmetics with them lateron).
+        // Since we do not want to waste space, we serialize them all to bits and pack them into
+        // native field elements as efficient as possible (yet secure).
+        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
+        let mut check_poly_bits = Vec::new();
+        for fe in self.check_poly.chals.iter() {
+            let bits = fe.write_bits();
+            // write_bits() outputs a Big Endian bit order representation of fe and the same
+            // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
+            // e.g. we need to skip the first MODULUS_BITS - 128 bits.
+            debug_assert!(
+                <[bool] as ToConstraintField<G::ScalarField>>::to_field_elements(&bits[to_skip..])
+                    .unwrap()[0]
+                    == *fe
+            );
+            check_poly_bits.extend_from_slice(&bits[to_skip..]);
+        }
+        fes.append(&mut check_poly_bits.to_field_elements()?);
+
+        Ok(fes)
+    }
+}
 
 /// The hard part of the verifier returns the bullet polynomial.
 #[derive(Clone, Debug, Eq, PartialEq)]

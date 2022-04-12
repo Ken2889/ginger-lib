@@ -4,20 +4,20 @@
 //! reduction steps) is the polynomial commitment of the succinct 'reduction polynomial'
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
+use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
+use crate::darlin::accumulators::{AccumulatorItem, Error};
 use crate::darlin::{
-    accumulators::{AccumulationProof, ItemAccumulator},
+    accumulators::{AccumulationProof, Accumulator},
     DomainExtendedIpaPc,
 };
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{
-    serialize::*, DensePolynomial, Group, GroupVec, PrimeField, ToBits, ToConstraintField,
-    UniformRand,
-};
+use algebra::{DensePolynomial, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::{One, Zero};
 pub use poly_commit::ipa_pc::DLogItem;
-use poly_commit::ipa_pc::LabeledSuccinctCheckPolynomial;
+use poly_commit::ipa_pc::{LabeledSuccinctCheckPolynomial, SuccinctCheckPolynomial};
 use poly_commit::{
     ipa_pc::{CommitterKey, IPACurve, InnerProductArgPC, VerifierKey},
     Error as PCError, LabeledCommitment, PolynomialCommitment,
@@ -26,12 +26,16 @@ use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
-pub struct DLogItemAccumulator<G: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct DLogAccumulator<G, FS> {
     _group: PhantomData<G>,
     _fs_rng: PhantomData<FS>,
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
+impl<G, FS> DLogAccumulator<G, FS>
+where
+    G: IPACurve,
+    FS: FiatShamirRng + 'static,
+{
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
@@ -52,7 +56,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         vk: &VerifierKey<G>,
         previous_accumulators: Vec<DLogItem<G>>,
         proof: &AccumulationProof<G>,
-    ) -> Result<Option<DLogItem<G>>, PCError> {
+    ) -> Result<Option<DLogItem<G>>, Error> {
         let succinct_time = start_timer!(|| "Succinct verify accumulate");
 
         let poly_time = start_timer!(|| "Compute Bullet Polys evaluations");
@@ -143,19 +147,126 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
-    type AccumulatorProverKey = CommitterKey<G>;
-    type AccumulatorVerifierKey = VerifierKey<G>;
-    type AccumulationProof = AccumulationProof<G>;
+impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
+    type ProverKey = CommitterKey<G>;
+    type VerifierKey = VerifierKey<G>;
+    type Proof = AccumulationProof<G>;
     type Item = DLogItem<G>;
+    type ExpandedItem = DensePolynomial<G::ScalarField>;
+
+    fn expand_item(
+        _vk: &Self::VerifierKey,
+        accumulator: &Self::Item,
+    ) -> Result<Self::ExpandedItem, Error> {
+        Ok(Polynomial::from_coefficients_vec(
+            accumulator.check_poly.compute_coeffs(),
+        ))
+    }
+
+    fn check_item<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulator: &Self::Item,
+        _rng: &mut R,
+    ) -> Result<Option<Self::ExpandedItem>, Error> {
+        let check_poly = Self::expand_item(vk, accumulator)?;
+        let (check_poly_comm, _) =
+            InnerProductArgPC::<G, FS>::commit(vk, &check_poly, false, None)?;
+        if check_poly_comm == accumulator.final_comm_key {
+            Ok(Some(check_poly))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn check_items<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<Option<Vec<Self::ExpandedItem>>, Error> {
+        let check_time = start_timer!(|| "Check accumulators");
+
+        let final_comm_keys = accumulators
+            .iter()
+            .map(|acc| acc.final_comm_key)
+            .collect::<Vec<_>>();
+        let xi_s_vec = accumulators
+            .iter()
+            .map(|acc| acc.check_poly.clone())
+            .collect::<Vec<_>>();
+
+        let batching_time = start_timer!(|| "Combine check polynomials and final comm keys");
+
+        // Sample the batching challenge (using a cryptographically secure rng)
+        let random_scalar = G::ScalarField::rand(rng);
+        let mut batching_chal = G::ScalarField::one();
+
+        // Collect the powers of the batching challenge in a vector
+        let mut batching_chal_pows = vec![G::ScalarField::zero(); xi_s_vec.len()];
+        for i in 0..batching_chal_pows.len() {
+            batching_chal_pows[i] = batching_chal;
+            batching_chal *= &random_scalar;
+        }
+
+        let check_polys = xi_s_vec
+            .iter()
+            .map(|check_poly| Polynomial::from_coefficients_vec(check_poly.compute_coeffs()))
+            .collect::<Vec<_>>();
+
+        // Compute the linear combination of the reduction polys,
+        //  h_bar(X) = sum_k lambda^k * h(xi's[k],X).
+        let combined_check_poly = batching_chal_pows
+            .par_iter()
+            .zip(check_polys.clone())
+            .map(|(&chal, check_poly)| check_poly * chal)
+            .reduce(
+                || Polynomial::zero(),
+                |acc, scaled_poly| &acc - &scaled_poly,
+            );
+        end_timer!(batching_time);
+
+        // The dlog "hard part", checking that G_bar = sum_k lambda^k * G_f[k] == Comm(h_bar(X))
+        // The equation to check would be:
+        // lambda_1 * gfin_1 + ... + lambda_n * gfin_n - combined_h_1 * g_vk_1 - ... - combined_h_m * g_vk_m = 0
+        // Where combined_h_i = lambda_1 * h_1_i + ... + lambda_n * h_n_i
+        // We do final verification and the batching of the GFin in a single MSM
+        let hard_time = start_timer!(|| "Batch verify hard parts");
+        let final_val = InnerProductArgPC::<G, FS>::inner_commit(
+            // The vk might be oversized, but the VariableBaseMSM function, will "trim"
+            // the bases in order to be as big as the scalars vector, so no need to explicitly
+            // trim the vk here.
+            &[
+                G::batch_normalization_into_affine(final_comm_keys)
+                    .unwrap()
+                    .as_slice(),
+                vk.comm_key.as_slice(),
+            ]
+            .concat(),
+            &[
+                batching_chal_pows.as_slice(),
+                combined_check_poly.coeffs.as_slice(),
+            ]
+            .concat(),
+            None,
+            None,
+        )
+        .map_err(|e| PCError::IncorrectInputLength(e.to_string()))?;
+        end_timer!(hard_time);
+
+        if !final_val.is_zero() {
+            end_timer!(check_time);
+            return Ok(None);
+        }
+        end_timer!(check_time);
+        Ok(Some(check_polys))
+    }
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.
-    fn check_items<R: RngCore>(
-        vk: &Self::AccumulatorVerifierKey,
+    fn check_items_optimized<R: RngCore>(
+        vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<bool, PCError> {
+    ) -> Result<bool, Error> {
         let check_time = start_timer!(|| "Check accumulators");
 
         let final_comm_keys = accumulators
@@ -237,9 +348,9 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
     /// However, we do not explicitly provide the reduction challenges (the xi's) as they can
     /// be reconstructed from the proof.
     fn accumulate_items(
-        ck: &Self::AccumulatorProverKey,
+        ck: &Self::ProverKey,
         accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::AccumulationProof), PCError> {
+    ) -> Result<(Self::Item, Self::Proof), Error> {
         let accumulate_time = start_timer!(|| "Accumulate");
 
         // Initialize Fiat-Shamir rng
@@ -309,11 +420,11 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
     /// Calls the succinct verifier and then does the remaining check of the aggregated item.
     fn verify_accumulated_items<R: RngCore>(
         _current_acc: &Self::Item,
-        vk: &Self::AccumulatorVerifierKey,
+        vk: &Self::VerifierKey,
         previous_accumulators: Vec<Self::Item>,
-        proof: &Self::AccumulationProof,
+        proof: &Self::Proof,
         rng: &mut R,
-    ) -> Result<bool, PCError> {
+    ) -> Result<bool, Error> {
         let check_acc_time = start_timer!(|| "Verify Accumulation");
 
         // Succinct part: verify the "easy" part of the aggregation proof
@@ -329,173 +440,84 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 
         // Verify the aggregated accumulator
         let hard_time = start_timer!(|| "DLOG hard part");
-        let result = Self::check_items::<R>(vk, &vec![new_acc.unwrap()], rng).map_err(|e| {
-            end_timer!(hard_time);
-            end_timer!(check_acc_time);
-            e
-        })?;
+        let result =
+            Self::check_items_optimized::<R>(vk, &vec![new_acc.unwrap()], rng).map_err(|e| {
+                end_timer!(hard_time);
+                end_timer!(check_acc_time);
+                e
+            })?;
         end_timer!(hard_time);
 
         end_timer!(check_acc_time);
 
         Ok(result)
     }
-}
 
-/// A composite dlog accumulator/item, comprised of several single dlog items
-/// from both groups of the EC cycle.
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualDLogItem<G1: IPACurve, G2: IPACurve>(
-    pub(crate) Vec<DLogItem<G1>>,
-    pub(crate) Vec<DLogItem<G2>>,
-);
-
-impl<G1: IPACurve, G2: IPACurve> DualDLogItem<G1, G2> {
-    /// Generate a random (but valid)  instance of `DualDLogItem`, for test purposes only.
-    pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key_g1: &CommitterKey<G1>,
-        committer_key_g2: &CommitterKey<G2>,
-    ) -> Self {
-        Self(
-            vec![DLogItem::generate_random::<R, FS>(rng, committer_key_g1)],
-            vec![DLogItem::generate_random::<R, FS>(rng, committer_key_g2)],
-        )
+    fn trivial_item(vk: &Self::VerifierKey) -> Result<Self::Item, Error> {
+        // We define a trivial DLogAccumulator item as having all challenges equal to zero.
+        // This corresponds to `check_poly` having degree-0 and being identically equal to one,
+        // which in turn implies that the `final_comm_key` is equal to the first element of the
+        // committer key.
+        let check_poly = SuccinctCheckPolynomial::from_chals(vec![]);
+        let final_comm_key = G::from_affine(&vk.comm_key[0]);
+        Ok(Self::Item {
+            check_poly,
+            final_comm_key,
+        })
     }
 
-    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
-    /// The "left" accumulator (`self.0`) is invalid, while the "right" one (`self.1`) is valid.
-    pub fn generate_invalid_left<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key_g1: &CommitterKey<G1>,
-        committer_key_g2: &CommitterKey<G2>,
-    ) -> Self {
-        Self(
-            vec![DLogItem::generate_invalid::<R, FS>(rng, committer_key_g1)],
-            vec![DLogItem::generate_random::<R, FS>(rng, committer_key_g2)],
+    fn random_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
+        let log_key_len = algebra::log2(vk.comm_key.len());
+        let chals = (0..log_key_len as usize)
+            .map(|_| u128::rand(rng).into())
+            .collect();
+        let check_poly = SuccinctCheckPolynomial::from_chals(chals);
+        let final_comm_key = InnerProductArgPC::<G, FS>::inner_commit(
+            vk.comm_key.as_slice(),
+            check_poly.compute_coeffs().as_slice(),
+            None,
+            None,
         )
+        .unwrap();
+
+        Ok(Self::Item {
+            check_poly,
+            final_comm_key,
+        })
     }
 
-    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
-    /// The "left" accumulator (`self.0`) is valid, while the "right" one (`self.1`) is invalid.
-    pub fn generate_invalid_right<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key_g1: &CommitterKey<G1>,
-        committer_key_g2: &CommitterKey<G2>,
-    ) -> Self {
-        Self(
-            vec![DLogItem::generate_random::<R, FS>(rng, committer_key_g1)],
-            vec![DLogItem::generate_invalid::<R, FS>(rng, committer_key_g2)],
-        )
-    }
-
-    /// Generate a random invalid instance of `DualDLogItem`, for test purposes only.
-    /// Both accumulators are invalid.
-    pub fn generate_invalid<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key_g1: &CommitterKey<G1>,
-        committer_key_g2: &CommitterKey<G2>,
-    ) -> Self {
-        Self(
-            vec![DLogItem::generate_invalid::<R, FS>(rng, committer_key_g1)],
-            vec![DLogItem::generate_invalid::<R, FS>(rng, committer_key_g2)],
-        )
-    }
-
-    /// Generate the trivial `DualDLogItem`.
-    pub fn generate_trivial<FS: FiatShamirRng>(
-        committer_key_g1: &CommitterKey<G1>,
-        committer_key_g2: &CommitterKey<G2>,
-    ) -> Self {
-        Self(
-            vec![DLogItem::<G1>::generate_trivial(committer_key_g1)],
-            vec![DLogItem::<G2>::generate_trivial(committer_key_g2)],
-        )
-    }
-
-    /// Compute the polynomial associated to the accumulator.
-    pub fn compute_poly(
-        &self,
-    ) -> (
-        Vec<DensePolynomial<G1::ScalarField>>,
-        Vec<DensePolynomial<G2::ScalarField>>,
-    ) {
-        (
-            self.0
-                .iter()
-                .map(|el| DensePolynomial::from_coefficients_vec(el.check_poly.compute_coeffs()))
-                .collect(),
-            self.1
-                .iter()
-                .map(|el| DensePolynomial::from_coefficients_vec(el.check_poly.compute_coeffs()))
-                .collect(),
-        )
+    fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
+        let mut result = Self::random_item(vk, rng)?;
+        result.final_comm_key = G::rand(rng);
+        Ok(result)
     }
 }
 
-impl<G1, G2> ToConstraintField<G1::ScalarField> for DualDLogItem<G2, G1>
+impl<G> AccumulatorItem for DLogItem<G> where G: IPACurve {}
+
+impl<G> ToDualField<G::BaseField> for DLogItem<G>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G: IPACurve,
 {
-    /// Conversion of the MarlinDeferredData to circuit inputs, which are elements
-    /// over G1::ScalarField.
-    fn to_field_elements(&self) -> Result<Vec<G1::ScalarField>, Box<dyn std::error::Error>> {
-        assert!(self.0.len() == 1 && self.1.len() == 1);
-        let to_skip = <G1::ScalarField as PrimeField>::size_in_bits() - 128;
+    fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
-        // Convert previous_acc into G1::ScalarField field elements (the circuit field,
-        // called native in the sequel)
+        // The final_comm_key already consists of elements belonging to G::BaseField.
+        let final_comm_key = self.final_comm_key.clone();
+        fes.append(&mut final_comm_key.to_field_elements()?);
 
-        // The final_comm_key of the previous node consists of native field elements only
-        let final_comm_key_g2 = self.0[0].final_comm_key.clone();
-        fes.append(&mut final_comm_key_g2.to_field_elements()?);
-
-        // Convert check_poly, which are 128 bit elements from G2::ScalarField, to the native field.
-        // We packing the full bit vector into native field elements as efficient as possible (yet
-        // still secure).
+        // Convert the challenges of check_poly, which are 128 bit elements from G::ScalarField,
+        // into a bit vector, then pack the full bit vector into G::BaseField elements as efficient
+        // as possible (yet still secure).
+        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
         let mut check_poly_bits = Vec::new();
-        for fe in self.0[0].check_poly.chals.iter() {
+        for fe in self.check_poly.chals.iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
             // e.g. we need to skip the first MODULUS_BITS - 128 bits.
             debug_assert!(
-                <[bool] as ToConstraintField<G2::ScalarField>>::to_field_elements(&bits[to_skip..])
-                    .unwrap()[0]
-                    == *fe
-            );
-            check_poly_bits.extend_from_slice(&bits[to_skip..]);
-        }
-        fes.append(&mut check_poly_bits.to_field_elements()?);
-
-        // Convert the pre-previous acc into native field elements.
-
-        // The final_comm_key of the pre-previous node is in G1, hence over G2::ScalarField.
-        // We serialize them all to bits and pack them safely into native field elements
-        let final_comm_key_g1 = self.1[0].final_comm_key.clone();
-        let mut final_comm_key_g1_bits = Vec::new();
-        let c_fes = final_comm_key_g1.to_field_elements()?;
-        for fe in c_fes {
-            final_comm_key_g1_bits.append(&mut fe.write_bits());
-        }
-        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
-
-        // Although the xi's of the pre-previous node are by default 128 bit elements from G1::ScalarField
-        // (we do field arithmetics with them lateron) we do not want waste space.
-        // As for the xi's of the previous node, we serialize them all to bits and pack them into native
-        // field elements as efficient as possible (yet secure).
-        let mut check_poly_bits = Vec::new();
-        for fe in self.1[0].check_poly.chals.iter() {
-            let bits = fe.write_bits();
-            // write_bits() outputs a Big Endian bit order representation of fe and the same
-            // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
-            // e.g. we need to skip the first MODULUS_BITS - 128 bits.
-            debug_assert!(
-                <[bool] as ToConstraintField<G1::ScalarField>>::to_field_elements(&bits[to_skip..])
+                <[bool] as ToConstraintField<G::ScalarField>>::to_field_elements(&bits[to_skip..])
                     .unwrap()[0]
                     == *fe
             );
@@ -507,126 +529,19 @@ where
     }
 }
 
-pub struct DualDLogItemAccumulator<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
-    _lifetime: PhantomData<&'a ()>,
-    _group_1: PhantomData<G1>,
-    _group_2: PhantomData<G2>,
-    _fs_rng: PhantomData<FS>,
-}
-
-// Straight-forward generalization of the dlog item aggregation to DualDLogItem.
-impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
-where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>,
-    FS: FiatShamirRng + 'static,
-{
-    type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
-    type AccumulatorVerifierKey = (&'a VerifierKey<G1>, &'a VerifierKey<G2>);
-    type AccumulationProof = (AccumulationProof<G1>, AccumulationProof<G2>);
-    type Item = DualDLogItem<G1, G2>;
-
-    fn check_items<R: RngCore>(
-        vk: &Self::AccumulatorVerifierKey,
-        accumulators: &[Self::Item],
-        rng: &mut R,
-    ) -> Result<bool, PCError> {
-        let g1_accumulators = accumulators
-            .iter()
-            .flat_map(|acc| acc.0.clone())
-            .collect::<Vec<_>>();
-        if !DLogItemAccumulator::<G1, FS>::check_items::<R>(&vk.0, g1_accumulators.as_slice(), rng)?
-        {
-            return Ok(false);
-        }
-
-        let g2_accumulators = accumulators
-            .iter()
-            .flat_map(|acc| acc.1.clone())
-            .collect::<Vec<_>>();
-        if !DLogItemAccumulator::<G2, FS>::check_items::<R>(&vk.1, g2_accumulators.as_slice(), rng)?
-        {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    fn accumulate_items(
-        ck: &Self::AccumulatorProverKey,
-        accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::AccumulationProof), PCError> {
-        let g1_accumulators = accumulators
-            .iter()
-            .flat_map(|acc| acc.0.clone())
-            .collect::<Vec<_>>();
-        let (_, g1_acc_proof) =
-            DLogItemAccumulator::<G1, FS>::accumulate_items(&ck.0, g1_accumulators)?;
-
-        let g2_accumulators = accumulators
-            .into_iter()
-            .flat_map(|acc| acc.1)
-            .collect::<Vec<_>>();
-        let (_, g2_acc_proof) =
-            DLogItemAccumulator::<G2, FS>::accumulate_items(&ck.1, g2_accumulators)?;
-
-        let accumulator = DualDLogItem::<G1, G2>(
-            vec![DLogItem::<G1>::default()],
-            vec![DLogItem::<G2>::default()],
-        );
-        let accumulation_proof = (g1_acc_proof, g2_acc_proof);
-
-        Ok((accumulator, accumulation_proof))
-    }
-
-    fn verify_accumulated_items<R: RngCore>(
-        _current_acc: &Self::Item,
-        vk: &Self::AccumulatorVerifierKey,
-        previous_accumulators: Vec<Self::Item>,
-        proof: &Self::AccumulationProof,
-        rng: &mut R,
-    ) -> Result<bool, PCError> {
-        let g1_accumulators = previous_accumulators
-            .iter()
-            .flat_map(|acc| acc.0.clone())
-            .collect();
-        if !DLogItemAccumulator::<G1, FS>::verify_accumulated_items::<R>(
-            &DLogItem::<G1>::default(),
-            &vk.0,
-            g1_accumulators,
-            &proof.0,
-            rng,
-        )? {
-            return Ok(false);
-        }
-
-        let g2_accumulators = previous_accumulators
-            .into_iter()
-            .flat_map(|acc| acc.1)
-            .collect();
-        if !DLogItemAccumulator::<G2, FS>::verify_accumulated_items::<R>(
-            &DLogItem::<G2>::default(),
-            &vk.1,
-            g2_accumulators,
-            &proof.1,
-            rng,
-        )? {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-}
+pub type DualDLogAccumulator<'a, G1, G2, FS> =
+    DualAccumulator<'a, DLogAccumulator<G1, FS>, DLogAccumulator<G2, FS>>;
+pub type DualDLogItem<G1, G2> = DualAccumulatorItem<DLogItem<G1>, DLogItem<G2>>;
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::SemanticallyValid;
+    use algebra::{test_canonical_serialize_deserialize, SemanticallyValid};
     use blake2::Blake2s;
     use derivative::Derivative;
     use digest::Digest;
     use poly_commit::{
-        ipa_pc::Proof, DomainExtendedMultiPointProof, DomainExtendedPolynomialCommitment, Error,
+        ipa_pc::Proof, DomainExtendedMultiPointProof, DomainExtendedPolynomialCommitment,
         Evaluations, LabeledPolynomial, PCKey, PolynomialCommitment, QueryMap,
     };
     use rand::{distributions::Distribution, thread_rng, Rng};
@@ -668,7 +583,7 @@ mod test {
     fn get_data_for_verifier<'a, G, D, FS>(
         info: TestInfo,
         ck: Option<CommitterKey<G>>,
-    ) -> Result<VerifierData<'a, G>, PCError>
+    ) -> Result<VerifierData<'a, G>, Error>
     where
         G: IPACurve,
         D: Digest + 'static,
@@ -791,7 +706,7 @@ mod test {
 
     // We sample random instances of multi-point multi-poly dlog opening proofs,
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
-    fn accumulation_test<G, D, FS>() -> Result<(), PCError>
+    fn accumulation_test<G, D, FS>() -> Result<(), Error>
     where
         G: IPACurve,
         D: Digest + 'static,
@@ -860,14 +775,13 @@ mod test {
             assert!(accumulators.is_valid());
 
             // provide aggregation proof of the extracted dlog items
-            let (_, proof) =
-                DLogItemAccumulator::<G, FS>::accumulate_items(&vk, accumulators.clone())?;
+            let (_, proof) = DLogAccumulator::<G, FS>::accumulate_items(&vk, accumulators.clone())?;
 
             test_canonical_serialize_deserialize(true, &proof);
 
             // Verifier side
             let dummy = DLogItem::<G>::default();
-            assert!(DLogItemAccumulator::<G, FS>::verify_accumulated_items(
+            assert!(DLogAccumulator::<G, FS>::verify_accumulated_items(
                 &dummy,
                 &vk,
                 // Actually the verifier should recompute the accumulators with the succinct verification
@@ -881,7 +795,7 @@ mod test {
 
     // We sample random instances of multi-point multi-poly dlog opening proofs,
     // and batch verify their dlog items.
-    fn batch_verification_test<G, D, FS>() -> Result<(), PCError>
+    fn batch_verification_test<G, D, FS>() -> Result<(), Error>
     where
         G: IPACurve,
         D: Digest + 'static,
@@ -947,7 +861,7 @@ mod test {
             assert!(accumulators.is_valid());
 
             // batch verify the extracted dlog items
-            assert!(DLogItemAccumulator::<G, FS>::check_items(
+            assert!(DLogAccumulator::<G, FS>::check_items_optimized(
                 &vk,
                 &accumulators,
                 rng
@@ -974,7 +888,7 @@ mod test {
                     max_degree,
                 )?;
             let dlog_item = DLogItem::generate_random::<_, FS>(rng, &ck);
-            let res = DLogItemAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
+            let res = DLogAccumulator::<_, FS>::check_items_optimized(&vk, &[dlog_item], rng)?;
 
             assert!(res);
         }
@@ -1000,7 +914,7 @@ mod test {
                     max_degree,
                 )?;
             let dlog_item = DLogItem::generate_trivial(&ck);
-            let res = DLogItemAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
+            let res = DLogAccumulator::<_, FS>::check_items_optimized(&vk, &[dlog_item], rng)?;
 
             assert!(res);
         }
