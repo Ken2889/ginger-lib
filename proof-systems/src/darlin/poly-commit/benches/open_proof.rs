@@ -1,10 +1,10 @@
-use algebra::{fft::DensePolynomial as Polynomial, UniformRand};
+use algebra::{EndoMulCurve, fft::DensePolynomial as Polynomial, UniformRand};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::Zero;
-use poly_commit::ipa_pc::{CommitterKey, IPACurve, InnerProductArgPC};
+use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC};
 use poly_commit::{PCKey, PolynomialCommitment};
 use rand::thread_rng;
 
@@ -14,7 +14,7 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: IPACurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -34,7 +34,7 @@ fn generate_ck<G: IPACurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> C
     ck
 }
 
-fn bench_open_proof<G: IPACurve, FS: FiatShamirRng, D: Digest>(
+fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(
     c: &mut Criterion,
     bench_name: &str,
     coeffs: usize,

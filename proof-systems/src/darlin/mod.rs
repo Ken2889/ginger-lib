@@ -29,14 +29,14 @@ use crate::darlin::{
         PCDCircuit, PCD,
     },
 };
-use algebra::{Group, GroupVec, ToConstraintField};
+use algebra::{EndoMulCurve, Group, GroupVec, ToConstraintField};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, ProverKey as MarlinProverKey, VerifierKey as MarlinVerifierKey};
 use poly_commit::{
     ipa_pc::{
         CommitterKey as DLogProverKey, InnerProductArgPC,
-        VerifierKey as DLogVerifierKey, IPACurve,
+        VerifierKey as DLogVerifierKey,
     },
     DomainExtendedPolynomialCommitment, Evaluations, LabeledCommitment, PolynomialCommitment,
     QueryMap,
@@ -52,7 +52,7 @@ pub type FinalDarlinProverKey<G, PC> = MarlinProverKey<G, PC>;
 pub type FinalDarlinVerifierKey<G, PC> = MarlinVerifierKey<G, PC>;
 
 // A final Darlin in G1, and the previous node in G2.
-pub struct FinalDarlin<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>(
+pub struct FinalDarlin<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<FS>,
@@ -61,9 +61,9 @@ pub struct FinalDarlin<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'stat
 
 impl<'a, G1, G2, FS> FinalDarlin<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {

@@ -290,15 +290,15 @@ impl<ConstraintF: PrimeField, CS: ConstraintSystemAbstract<ConstraintF>>
         self.cs.num_constraints()
     }
 
-    fn restart_constraints_counter(&mut self, _counter_label: &str) {
-        self.cs.restart_constraints_counter(_counter_label)
+    fn restart_labeled_constraints_counter(&mut self, _counter_label: &str) {
+        self.cs.restart_labeled_constraints_counter(_counter_label)
     }
 
-    fn stop_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
-        self.cs.stop_constraints_counter(_counter_label)
+    fn stop_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
+        self.cs.stop_labeled_constraints_counter(_counter_label)
     }
 
-    fn get_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
-        self.cs.get_constraints_counter(_counter_label)
+    fn get_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
+        self.cs.get_labeled_constraints_counter(_counter_label)
     }
 }

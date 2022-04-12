@@ -3,18 +3,19 @@
 
 use algebra::{
     curves::tweedle::dee::DeeJacobian as TweedleDee, serialize_no_metadata, CanonicalSerialize,
+    EndoMulCurve,
 };
 use blake2::Blake2s;
 use digest::Digest;
 
-use super::{IPACurve, InnerProductArgPC};
+use super::{InnerProductArgPC};
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
 use crate::Error;
 use crate::{DomainExtendedPolynomialCommitment, PCKey, PolynomialCommitment};
 use rand::thread_rng;
 
-impl<G: IPACurve> TestUtils for CommitterKey<G> {
+impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
     fn randomize(&mut self) {
         let mut rng = thread_rng();
         self.comm_key = self

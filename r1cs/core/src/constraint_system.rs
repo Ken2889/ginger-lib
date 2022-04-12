@@ -8,17 +8,19 @@ use crate::{Index, LinearCombination, SynthesisError, Variable};
 /// Instrument a code block $body to count the constraints enforced inside the block in the
 /// counter of constraint system $cs identified by $label
 //ToDo: reasoning on improving this macro to avoid the need to enclose the whole code block inside
-// a closure, maybe relying on existing crates or by writing a procedural macro
+// a closure, maybe relying on existing crates or by writing a procedural macro.
+// In addition, it would be interesting to identify constraints employing existing namespaces,
+// rather than employing additional labels
 #[macro_export]
-macro_rules! count_constraints {
+macro_rules! count_constraints_for_label {
     ($label: expr, $cs: expr, $body: expr) => {
         {
-            $cs.restart_constraints_counter($label);
+            $cs.restart_labeled_constraints_counter($label);
             let mut func = || {
                 $body
             };
             let res = func();
-            $cs.stop_constraints_counter($label)?;
+            $cs.stop_labeled_constraints_counter($label)?;
             res
         }
     }
@@ -94,20 +96,23 @@ pub trait ConstraintSystemAbstract<F: Field>: Sized {
     /// Output the number of constraints in the system.
     fn num_constraints(&self) -> usize;
 
+    //ToDo: it would be better to move the following function to the `ConstraintSystemDebugger`
+    // trait, maybe making it an associated type for `ConstraintSystemAbstract` trait
+
     /// Start/restart counting the constraints associated to a given label. This function allows to
     /// specify that all the constraints enforced after calling this function should be counted in
     /// a specific counter identified by `counter_label`.
-    fn restart_constraints_counter(&mut self, counter_label: &str);
+    fn restart_labeled_constraints_counter(&mut self, counter_label: &str);
 
     /// Stop counting the constraints associated to a given label. This function undoes a previous
     /// call to `restart_constraints_counter`, specifying that all the constraints enforced after
     /// calling this function should no longer be counted in the specific counter identified by
     /// `counter_label`. The counting can be resumed by calling `restart_constraints_counter`
     /// passing the same label
-    fn stop_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError>;
+    fn stop_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError>;
 
     /// Get the current value of the counter for constraints associated to `counter_label`
-    fn get_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError>;
+    fn get_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError>;
 }
 
 /// Defines debugging functionalities for a constraint system, which allow to verify which
@@ -184,13 +189,18 @@ struct ConstraintCounter {
     // the number of constraints between a call to `restart_constraints_counter` and
     // `stop_constraints_counter`. Such number is added to `accumulator` when the counter is stopped.
     current: usize,
-    // integer to avoid that multiple calls to `restart/stop_constraints_counter`
-    // counts the same constraint more than once.
-    // A depth >= 0 specifies that the counter has already been restarted, so there is no need to
-    // restart it again. Depth is set to a negative value when the counter is stopped. We employ an
-    // integer rather than a simple flag to ensure that the counter is stopped at the proper time:
-    // in particular, when depth >= 0, it is equivalent to the current number of calls to
-    // `stop_constraints_counter` that should avoid stopping the counting
+    // this integer values avoid that calls to `restart_labeled_constraints_counter` with label L
+    // in a code block whose constraints are already taken into account in a counter with the same
+    // label L are counted more than once. This use case might happen if we want to count all the
+    // constraints enforced in a set of functions where some functions may call other functions
+    // in the set.
+    // In particular, the depth of a counter identified by label L keeps track of the difference
+    // between the number of calls to `restart_labeled_constraints_counter` and
+    // `stop_labeled_constraints_counter` for the same label L; the counter is actually restarted
+    // (i.e., `current` is overwritten with cs.num_constraints()) only when depth < 0, while the
+    // counter is actually stopped (i.e., `accumulator` is updated) only when depth becomes equal
+    // to 0. When the counter is stopped, depth is set to a negative number to ensure that the next
+    // call to `restart_labeled_constraints_counter` for label L will actually restart the counter
     depth: isize,
 }
 
@@ -404,7 +414,7 @@ impl<F: Field> ConstraintSystemAbstract<F> for ConstraintSystem<F> {
         self.num_constraints
     }
 
-    fn restart_constraints_counter(&mut self, counter_label: &str) {
+    fn restart_labeled_constraints_counter(&mut self, counter_label: &str) {
         if !self.is_in_debug_mode() {
             return;
         }
@@ -434,7 +444,7 @@ impl<F: Field> ConstraintSystemAbstract<F> for ConstraintSystem<F> {
         }
     }
 
-    fn stop_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError> {
+    fn stop_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError> {
         if !self.is_in_debug_mode() {
             return Ok(());
         }
@@ -457,7 +467,7 @@ impl<F: Field> ConstraintSystemAbstract<F> for ConstraintSystem<F> {
         Ok(())
     }
 
-    fn get_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError> {
+    fn get_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError> {
         if !self.is_in_debug_mode() {
             return Ok(0);
         }
@@ -692,16 +702,16 @@ impl<F: Field, CS: ConstraintSystemAbstract<F>> ConstraintSystemAbstract<F>
         self.0.num_constraints()
     }
 
-    fn restart_constraints_counter(&mut self, _counter_label: &str) {
-        self.0.restart_constraints_counter(_counter_label)
+    fn restart_labeled_constraints_counter(&mut self, _counter_label: &str) {
+        self.0.restart_labeled_constraints_counter(_counter_label)
     }
 
-    fn stop_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
-        self.0.stop_constraints_counter(_counter_label)
+    fn stop_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
+        self.0.stop_labeled_constraints_counter(_counter_label)
     }
 
-    fn get_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
-        self.0.get_constraints_counter(_counter_label)
+    fn get_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
+        self.0.get_labeled_constraints_counter(_counter_label)
     }
 }
 
@@ -797,16 +807,16 @@ impl<F: Field, CS: ConstraintSystemAbstract<F>> ConstraintSystemAbstract<F> for 
         (**self).num_constraints()
     }
 
-    fn restart_constraints_counter(&mut self, _counter_label: &str) {
-        (**self).restart_constraints_counter(_counter_label)
+    fn restart_labeled_constraints_counter(&mut self, _counter_label: &str) {
+        (**self).restart_labeled_constraints_counter(_counter_label)
     }
 
-    fn stop_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
-        (**self).stop_constraints_counter(_counter_label)
+    fn stop_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
+        (**self).stop_labeled_constraints_counter(_counter_label)
     }
 
-    fn get_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
-        (**self).get_constraints_counter(_counter_label)
+    fn get_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
+        (**self).get_labeled_constraints_counter(_counter_label)
     }
 }
 

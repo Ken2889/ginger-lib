@@ -8,22 +8,22 @@ use crate::darlin::{
     accumulators::{AccumulationProof, ItemAccumulator},
 };
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{serialize::*, Group, UniformRand};
+use algebra::{serialize::*, Group, UniformRand, EndoMulCurve};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
-use poly_commit::{ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey, IPACurve}, Error as PCError, LabeledCommitment, PolynomialCommitment, read_fe_from_challenge};
+use poly_commit::{ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey}, Error as PCError, LabeledCommitment, PolynomialCommitment, read_fe_from_challenge};
 pub use poly_commit::ipa_pc::DLogItem;
 use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use num_traits::{Zero, One};
 
-pub struct DLogItemAccumulator<G: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct DLogItemAccumulator<G: EndoMulCurve, FS: FiatShamirRng + 'static> {
     _group: PhantomData<G>,
     _fs_rng: PhantomData<FS>,
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
@@ -129,7 +129,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
     type AccumulatorProverKey = CommitterKey<G>;
     type AccumulatorVerifierKey = VerifierKey<G>;
     type AccumulationProof = AccumulationProof<G>;
@@ -325,15 +325,15 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 /// A composite dlog accumulator/item, comprised of several single dlog items
 /// from both groups of the EC cycle.
 #[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualDLogItem<G1: IPACurve, G2: IPACurve>(
+pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
     pub(crate) Vec<DLogItem<G1>>,
     pub(crate) Vec<DLogItem<G2>>,
 );
 
 pub struct DualDLogItemAccumulator<
     'a,
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 > {
     _lifetime: PhantomData<&'a ()>,
@@ -345,8 +345,8 @@ pub struct DualDLogItemAccumulator<
 // Straight-forward generalization of the dlog item aggregation to DualDLogItem.
 impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>,
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
@@ -462,7 +462,7 @@ mod test {
     use std::marker::PhantomData;
     use derivative::Derivative;
 
-    fn get_test_fs_rng<G: IPACurve, FS: FiatShamirRng>() -> FS {
+    fn get_test_fs_rng<G: EndoMulCurve, FS: FiatShamirRng>() -> FS {
         let mut seed_builder = FiatShamirRngSeed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize().unwrap();
@@ -481,7 +481,7 @@ mod test {
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
-    struct VerifierData<'a, G: IPACurve> {
+    struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
         query_map: QueryMap<'a, G::ScalarField>,
@@ -500,7 +500,7 @@ mod test {
         ck: Option<CommitterKey<G>>,
     ) -> Result<VerifierData<'a, G>, PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -624,7 +624,7 @@ mod test {
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
     fn accumulation_test<G, D, FS>() -> Result<(), PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -714,7 +714,7 @@ mod test {
     // and batch verify their dlog items.
     fn batch_verification_test<G, D, FS>() -> Result<(), PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {

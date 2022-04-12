@@ -150,31 +150,6 @@ pub(crate) fn single_point_multi_poly_open<'a,
             }
         }
 
-        /*let poly_lc = LinearCombination::new_from_val(
-            &lambda,
-            labeled_polynomials
-                .into_iter()
-                .map(|poly| {
-                    if poly.is_hiding() {
-                        is_hiding = true;
-                    }
-                    poly.polynomial()
-                })
-                .collect(),
-        );
-
-        let rands_lc = if is_hiding {
-            LinearCombination::new_from_val(
-                &lambda,
-                labeled_randomnesses
-                    .into_iter()
-                    .map(|rand| rand.randomness())
-                    .collect(),
-            )
-        } else {
-            LinearCombination::empty()
-        };*/
-
         PC::open(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
     }
 
@@ -211,17 +186,6 @@ pub(crate) fn single_point_multi_poly_succinct_verify<'a,
         combined_value += value;
     }
 
-    /*let commitments_lc = LinearCombination::new_from_val(
-        &lambda,
-        labeled_commitments
-            .into_iter()
-            .map(|comm| comm.commitment())
-            .collect(),
-    );
-
-    let combined_value =
-        LinearCombination::new_from_val(&lambda, values.into_iter().collect()).combine();
-    */
     end_timer!(combine_time);
 
     PC::succinct_verify(vk, &commitments_lc, point, combined_value, proof, fs_rng)
@@ -233,7 +197,6 @@ fn multi_point_multi_poly_open<'a, 'b,
     G: Group,
     PC: PolynomialCommitment<G>,
     LabelIT: 'b + IntoIterator<Item=PolynomialLabel> + Clone,
-    //PolyIT: IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
     QueryIT: IntoIterator<Item = (&'b PointLabel, &'b (G::ScalarField, LabelIT))>,
     RandIT: IntoIterator<Item = &'a LabeledRandomness<PC::Randomness>>,
 >(
@@ -823,10 +786,10 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
     /// Multiply a `commitment` of `Self` to a challenge.
     /// `chal` bits are supposed to be in LE bit order.
-    fn mul_commitment_by_challenge(commimtent: Self::Commitment, chal: Vec<bool>)
-        -> Result<Self::Commitment, Self::Error> {
+    fn mul_commitment_by_challenge(commitment: Self::Commitment, chal: Vec<bool>)
+            -> Result<Self::Commitment, Self::Error> {
         let challenge = Self::challenge_to_scalar(chal)?;
-        Ok(commimtent*&challenge)
+        Ok(commitment *&challenge)
     }
 
     /// Transform a challenge to its representation in the scalar field.

@@ -1,9 +1,9 @@
-use algebra::{Group, ToConstraintField};
+use algebra::{EndoMulCurve, Group, ToConstraintField};
 use blake2::{Blake2s, Digest};
 use criterion::*;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{ipa_pc::{IPACurve, InnerProductArgPC}, PolynomialCommitment};
+use poly_commit::{ipa_pc::{InnerProductArgPC}, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
@@ -13,8 +13,8 @@ use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
 fn bench_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     D: Digest,
     FS: FiatShamirRng + 'static,
 >(
@@ -23,9 +23,9 @@ fn bench_batch_verification<
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);

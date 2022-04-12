@@ -24,12 +24,8 @@ use rayon::prelude::*;
 use digest::Digest;
 
 use num_traits::{One, Zero};
-use trait_set::trait_set;
 
 use algebra::EndoMulCurve;
-trait_set! {
-    pub trait IPACurve = EndoMulCurve;
-}
 
 use fiat_shamir::FiatShamirRng;
 
@@ -39,12 +35,12 @@ mod tests;
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
 /// The inner product argument from [BCMS20](https://eprint.iacr.org/2020/499).
-pub struct InnerProductArgPC<G: IPACurve, FS: FiatShamirRng> {
+pub struct InnerProductArgPC<G: EndoMulCurve, FS: FiatShamirRng> {
     _projective: PhantomData<G>,
     _fs: PhantomData<FS>,
 }
 
-impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
     /// `PROTOCOL_NAME` is used as a seed for the setup function.
     const PROTOCOL_NAME: &'static [u8] = b"PC-DL-BCMS-2020";
 
@@ -212,7 +208,7 @@ impl<G: IPACurve, FS: FiatShamirRng> InnerProductArgPC<G, FS> {
 }
 
 /// Implementation of the PolynomialCommitment trait for the BCMS scheme.
-impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArgPC<G, FS> {
     type CommitterKey = CommitterKey<G>;
     type VerifierKey = VerifierKey<G>;
     // The succinct part of the verifier returns the dlog reduction challenges that

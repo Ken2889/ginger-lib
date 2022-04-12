@@ -1,13 +1,10 @@
 //! The proof data struct (and its components) of a final Darlin, i.e. last node of
 //! our conversion/exiting chain.
 use crate::darlin::{accumulators::dlog::DLogItem, pcd::simple_marlin::MarlinProof};
-use algebra::{
-    serialize::*, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
-    UniformRand,
-};
+use algebra::{serialize::*, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField, UniformRand, EndoMulCurve};
 use fiat_shamir::FiatShamirRng;
 use poly_commit::ipa_pc::{
-    CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial, IPACurve,
+    CommitterKey as DLogCommitterKey, InnerProductArgPC, SuccinctCheckPolynomial,
 };
 use derivative::Derivative;
 use rand::RngCore;
@@ -18,14 +15,14 @@ use rand::RngCore;
 /// Note: Later the struct could include more elements as we might want to defer
 /// addional algebraic checks over G1::BaseField.
 #[derive(Default, Clone, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct FinalDarlinDeferredData<G1: IPACurve, G2: IPACurve> {
+pub struct FinalDarlinDeferredData<G1: EndoMulCurve, G2: EndoMulCurve> {
     // the dlog accumulator from the previous node, a Rainbow-Marlin node in G2
     pub(crate) previous_acc: DLogItem<G2>,
     // the dlog accumulator from the pre-previous node, a Rainbow-Marlin node in G1
     pub(crate) pre_previous_acc: DLogItem<G1>,
 }
 
-impl<G1: IPACurve, G2: IPACurve> SemanticallyValid for FinalDarlinDeferredData<G1, G2> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve> SemanticallyValid for FinalDarlinDeferredData<G1, G2> {
     fn is_valid(&self) -> bool {
         self.previous_acc.is_valid() && self.pre_previous_acc.is_valid()
     }
@@ -33,9 +30,9 @@ impl<G1: IPACurve, G2: IPACurve> SemanticallyValid for FinalDarlinDeferredData<G
 
 impl<G1, G2> FinalDarlinDeferredData<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
@@ -95,9 +92,9 @@ where
 
 impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     /// Conversion of the MarlinDeferredData to circuit inputs, which are elements
@@ -176,14 +173,14 @@ where
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// A FinalDarlinProof has two dlog accumulators, one from the previous, and on from the
 /// pre-previous node of the conversion chain.
-pub struct FinalDarlinProof<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct FinalDarlinProof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// Full Marlin proof without deferred arithmetics in G1.
     pub proof: MarlinProof<G1, FS>,
     /// Deferred accumulators
     pub deferred: FinalDarlinDeferredData<G1, G2>,
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> SemanticallyValid
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> SemanticallyValid
     for FinalDarlinProof<G1, G2, FS>
 {
     fn is_valid(&self) -> bool {

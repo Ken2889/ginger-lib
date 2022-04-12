@@ -8,12 +8,12 @@ use crate::darlin::{
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
     DomainExtendedIpaPc,
 };
-use algebra::{Group, ToConstraintField};
+use algebra::{EndoMulCurve, Group, ToConstraintField};
 use bench_utils::*;
 use fiat_shamir::FiatShamirRng;
 use marlin::VerifierKey as MarlinVerifierKey;
 use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey, IPACurve},
+    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey},
 };
 use rand::RngCore;
 use rayon::prelude::*;
@@ -34,9 +34,9 @@ pub fn get_accumulators<G1, G2, FS: FiatShamirRng>(
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Vec<DLogItem<G1>>, Vec<DLogItem<G2>>), Option<Vec<usize>>>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let accumulators_time = start_timer!(|| "Compute accumulators");
@@ -103,9 +103,9 @@ pub fn accumulate_proofs<G1, G2, FS: FiatShamirRng>(
     g2_ck: &DLogCommitterKey<G2>,
 ) -> Result<(Option<AccumulationProof<G1>>, Option<AccumulationProof<G2>>), Option<Vec<usize>>>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let accumulation_time = start_timer!(|| "Accumulate proofs");
@@ -168,9 +168,9 @@ pub fn verify_aggregated_proofs<G1, G2, FS: FiatShamirRng, R: RngCore>(
     rng: &mut R,
 ) -> Result<bool, Option<Vec<usize>>>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let verification_time = start_timer!(|| "Verify aggregated proofs");
@@ -240,9 +240,9 @@ pub fn batch_verify_proofs<G1, G2, FS: FiatShamirRng + 'static, R: RngCore>(
     rng: &mut R,
 ) -> Result<bool, Option<Vec<usize>>>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let verification_time = start_timer!(|| "Batch verify proofs");

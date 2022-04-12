@@ -501,13 +501,13 @@ pub trait PolynomialCommitmentVerifierGadget<
             cs.ns(|| "absorb commitment to polynomial h"),
             proof.get_h_commitment().clone(),
         )?;
-        let evaluation_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
+        let x_point_bits = random_oracle.enforce_get_challenge::<_, 128>(
             cs.ns(|| "squeeze evaluation point for multi-point multi-poly verify"),
         )?;
 
-        let evaluation_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
+        let x_point = NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(
             cs.ns(|| "evaluation point to field gadget"),
-            evaluation_point_bits
+            x_point_bits
                 .iter()
                 .rev()
                 .cloned()
@@ -515,19 +515,20 @@ pub trait PolynomialCommitmentVerifierGadget<
                 .as_slice(),
         )?;
 
-        /* fetch evaluations of the input polynomials over the evaluation point from the proof.
+        /* fetch evaluations of the input polynomials over the challenge point x from the proof.
         Note that evaluations are sorted in the proof according to the lexicographical order of
         the labels of the polynomials they refers to
-        (i.e., evaluation_bits[i] is the evaluation for the polynomial with commitment sorted_commitments[i])
+        (i.e., evaluation_over_x_bits[i] is the evaluation for the polynomial with
+        commitment sorted_commitments[i])
         */
-        let evaluations_bits = proof.get_evaluations();
+        let evaluations_over_x_bits = proof.get_evaluations();
 
-        let mut evaluations = evaluations_bits.iter().enumerate().map(|(i, eval_bits)|
+        let mut evaluations_over_x = evaluations_over_x_bits.iter().enumerate().map(|(i, eval_bits)|
             NonNativeFieldGadget::<G::ScalarField, ConstraintF>::from_bits(cs.ns(|| format!("convert {}-th evaluation in multi-point proof to field element",i)), eval_bits)
         ).collect::<Result<Vec<_>, SynthesisError>>()?;
 
         /*
-        Given a set of points x_1, ..., x_n, an evaluation point x distinct from all the other
+        Given a set of points x_1, ..., x_n, a challenge point x distinct from all the other
         points, m evaluations v_1, ..., v_m of m polynomials over x and a set of evaluations of the
         m polynomials over some points x_1, ..., x_n, we need to compute a single batched
         value as follows. For a point x_i, consider the set S_i as the set of evaluations (y_{i,j}, v_{i,j})
@@ -553,7 +554,7 @@ pub trait PolynomialCommitmentVerifierGadget<
             // to compute the inverse of `evaluation_point - point`
             //ToDo: can probably be removed as inverse will fail if evaluation_point and point are equal,
             // to be confirmed in review
-            evaluation_point.enforce_not_equal(
+            x_point.enforce_not_equal(
                 cs.ns(|| {
                     format!(
                         "enforce evaluation_point != point with label {}",
@@ -563,7 +564,7 @@ pub trait PolynomialCommitmentVerifierGadget<
                 &point,
             )?;
 
-            let z_i_over_z_value = evaluation_point
+            let z_i_over_z_value = x_point
                 .sub(
                     cs.ns(|| format!("evaluation_point - point with label {}", point_label)),
                     &point,
@@ -578,7 +579,7 @@ pub trait PolynomialCommitmentVerifierGadget<
 
             for label in poly_labels.iter() {
                 let combined_label = format!("{}:{}", label, point_label); // unique label across all iterations obtained by combining label and point_label
-                let v_i = evaluations.get(
+                let v_i = evaluations_over_x.get(
                     *label_map.get(label).ok_or(SynthesisError::Other(format!(
                         "evaluation over batch point for polynomial with label {} not found",
                         label
@@ -643,22 +644,22 @@ pub trait PolynomialCommitmentVerifierGadget<
             ))?;
 
         // absorb the evaluations of the polynomials in the random oracle
-        let to_be_absorbed = evaluations_bits.iter().flatten().cloned().collect::<Vec<_>>();
+        let to_be_absorbed = evaluations_over_x_bits.iter().flatten().cloned().collect::<Vec<_>>();
         random_oracle.enforce_record(cs.ns(|| "absorb evaluations over batch point"), to_be_absorbed.as_slice())?;
 
-        evaluations.push(batched_value);
+        evaluations_over_x.push(batched_value);
         let labeled_h_commitment = LabeledCommitmentGadget::new(H_POLY_LABEL.to_string(), proof.get_h_commitment().clone());
 
         sorted_commitments.push(&labeled_h_commitment);
 
 
         Self::succinct_verify_single_point_multi_poly(cs.ns(|| "succinct verify on batched"),
-        vk,
-        sorted_commitments,
-        &evaluation_point,
-  evaluations.as_slice(),
-  proof.get_proof(),
-        random_oracle,
+                                                      vk,
+                                                      sorted_commitments,
+                                                      &x_point,
+                                                      evaluations_over_x.as_slice(),
+                                                      proof.get_proof(),
+                                                      random_oracle,
         )
     }
 }
