@@ -8,7 +8,7 @@ use algebra::{
 use blake2::Blake2s;
 use digest::Digest;
 
-use super::{InnerProductArgPC};
+use super::InnerProductArgPC;
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
 use crate::Error;
