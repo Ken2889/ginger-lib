@@ -80,6 +80,17 @@ pub use constraints::*;
 #[cfg(not(feature = "minimize-proof-size"))]
 const H_POLY_LABEL: &str = "h-poly";
 
+/// The degree of the random polynomials employed in the proving system to hide secret polynomials
+/// involved in zk proofs vary depending on the implementation of poly-commit. This function allows
+/// the proving system to correctly compute without bothering which implementation of poly-commit
+/// is employed
+pub const fn degree_correction_for_zk_security() -> usize {
+    #[cfg(not(feature = "minimize-proof-size"))]
+    return 1;
+    #[cfg(feature = "minimize-proof-size")]
+    return 0;
+}
+
 /// `QueryMap` is the set of queries that are to be made to a set of labeled polynomials or linear combinations.
 ///
 ///  Each element of a `QueryMap` maps a `point_label` to a pair (`point`, `poly_labels`), where
@@ -808,6 +819,7 @@ pub trait PolynomialCommitment<G: Group>: Sized {
 
         res
     }
+
     /// Multiply a `commitment` of `Self` to a challenge.
     /// `chal` bits are supposed to be in LE bit order.
     fn mul_commitment_by_challenge(commimtent: Self::Commitment, chal: Vec<bool>)
