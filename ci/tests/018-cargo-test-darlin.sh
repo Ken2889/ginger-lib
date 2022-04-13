@@ -8,7 +8,7 @@ cargo $CARGOARGS test
 
 cd ../poly-commit
 cargo $CARGOARGS test
-cargo $CARGOARGS test --features="circuit-friendly"
+cargo $CARGOARGS test --features="minimize-proof-size"
 
 cd ../marlin
 cargo $CARGOARGS test

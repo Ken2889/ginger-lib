@@ -1,9 +1,11 @@
-use crate::{BDFGMultiPointProof, PCKey, PCVerifierState, PolynomialLabel};
+use crate::{BDFGMultiPointProof, PCVerifierState, PolynomialLabel};
 use algebra::{Group, PrimeField};
 use r1cs_std::groups::GroupGadget;
 use r1cs_std::prelude::AllocGadget;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+#[cfg(not(feature = "minimize-proof-size"))]
+use r1cs_std::boolean::Boolean;
 
 /// A commitment gadget plus its label, needed for reference.
 #[derive(Derivative)]
@@ -64,21 +66,13 @@ pub trait MultiPointProofGadget<
     /// get the commitment of polynomial h, which is computed in the opening proof of multi-point assertion
     fn get_h_commitment(&self) -> &Self::CommitmentGadget;
 
+    /// get the evaluations of the polynomials over the batching point
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn get_evaluations(&self) -> &Vec<Vec<Boolean>>;
 }
 
 /// Gadget for the state returned by verifier in case of successful verification
 pub trait VerifierStateGadget<VS: PCVerifierState, ConstraintF: PrimeField>:
     Clone + Debug + Eq + PartialEq + AllocGadget<VS, ConstraintF>
 {
-}
-/// Interface for the gadget representing the verifier key
-pub trait VerifierKeyGadget<VK: PCKey, ConstraintF: PrimeField>:
-    Clone + Debug + Eq + PartialEq + AllocGadget<VK, ConstraintF>
-{
-    /// Get the maximum degree for a segment of a polynomial whose commitments can be verified
-    /// with `self`
-    fn degree(&self) -> usize;
-
-    /// Get the gadget for the hash of the verifier key `VK` represented by `self`
-    fn get_hash(&self) -> &[u8];
 }

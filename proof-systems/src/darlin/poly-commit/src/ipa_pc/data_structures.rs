@@ -6,10 +6,9 @@
 //! introduced.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
-use super::IPACurve;
 use crate::*;
 use crate::{PCKey, Vec};
-use algebra::PrimeField;
+use algebra::{PrimeField, ToBits, EndoMulCurve};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -27,7 +26,7 @@ use std::{
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct CommitterKey<G: IPACurve> {
+pub struct CommitterKey<G: EndoMulCurve> {
     /// The base point vector used for the coefficients of the polynomial.
     pub comm_key: Vec<G::AffineRep>,
 
@@ -42,7 +41,7 @@ pub struct CommitterKey<G: IPACurve> {
     pub hash: Vec<u8>,
 }
 
-impl<G: IPACurve> SemanticallyValid for CommitterKey<G> {
+impl<G: EndoMulCurve> SemanticallyValid for CommitterKey<G> {
     // Technically this function is redundant, since the keys are generated
     // through a deterministic procedure starting from a public string.
     fn is_valid(&self) -> bool {
@@ -50,7 +49,7 @@ impl<G: IPACurve> SemanticallyValid for CommitterKey<G> {
     }
 }
 
-impl<G: IPACurve> PCKey for CommitterKey<G> {
+impl<G: EndoMulCurve> PCKey for CommitterKey<G> {
     /// Outputs the maximum degree supported by this key
     fn degree(&self) -> usize {
         self.comm_key.len() - 1
@@ -101,7 +100,7 @@ pub type VerifierKey<G> = CommitterKey<G>;
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G: IPACurve> {
+pub struct Proof<G: EndoMulCurve> {
     /// Vector of left elements for each of the log_d iterations in `open`
     pub l_vec: Vec<G>,
 
@@ -122,7 +121,7 @@ pub struct Proof<G: IPACurve> {
     pub rand: Option<G::ScalarField>,
 }
 
-impl<G: IPACurve> PCProof for Proof<G> {
+impl<G: EndoMulCurve> PCProof for Proof<G> {
     fn degree(&self) -> Result<usize, Error> {
         if self.l_vec.len() != self.r_vec.len() {
             Err(Error::IncorrectInputLength(
@@ -137,7 +136,7 @@ impl<G: IPACurve> PCProof for Proof<G> {
     }
 }
 
-impl<G: IPACurve> SemanticallyValid for Proof<G> {
+impl<G: EndoMulCurve> SemanticallyValid for Proof<G> {
     fn is_valid(&self) -> bool {
         self.l_vec.is_valid() &&
             self.r_vec.is_valid() &&
@@ -162,7 +161,7 @@ impl<G: IPACurve> SemanticallyValid for Proof<G> {
     }
 }
 
-impl<G: IPACurve> CanonicalSerialize for Proof<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for Proof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // l_vec
         // More than enough for practical applications
@@ -277,7 +276,7 @@ impl<G: IPACurve> CanonicalSerialize for Proof<G> {
     }
 }
 
-impl<G: IPACurve> CanonicalDeserialize for Proof<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for Proof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read l_vec
         let l_vec_len: u8 = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -433,20 +432,25 @@ impl<G: IPACurve> CanonicalDeserialize for Proof<G> {
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct MultiPointProof<G: IPACurve> {
+pub struct MultiPointProof<G: EndoMulCurve> {
     /// This is a "classical" single-point multi-poly proof which involves all commitments:
     /// commitments from the initial claim and the new "h_comm"
     pub proof: Proof<G>,
 
     /// Commitment to the h(X) polynomial
     pub h_commitment: G,
+
+    /// Evaluations of the polynomials on the batch evaluation point
+    #[cfg(not(feature = "minimize-proof-size"))]
+    pub(crate) evaluations: Vec<G::ScalarField>,
 }
 
-impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
+impl<G: EndoMulCurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
     type Commitment = G;
     type Proof = Proof<G>;
 
     #[inline]
+    #[cfg(feature = "minimize-proof-size")]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self {
         Self {
             proof,
@@ -454,6 +458,15 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
         }
     }
 
+    #[inline]
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn new(proof: Self::Proof, h_commitment: Self::Commitment, evaluations: Vec<G::ScalarField>) -> Self {
+        Self {
+            proof,
+            h_commitment,
+            evaluations,
+        }
+    }
 
 
     #[inline]
@@ -465,16 +478,20 @@ impl<G: IPACurve> BDFGMultiPointProof<G> for MultiPointProof<G> {
     fn get_h_commitment(&self) -> &Self::Commitment {
         &self.h_commitment
     }
+
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn get_evaluations(&self) -> &Vec<G::ScalarField> {
+        &self.evaluations
+    }
 }
 
-impl<G: IPACurve> SemanticallyValid for MultiPointProof<G> {
+impl<G: EndoMulCurve> SemanticallyValid for MultiPointProof<G> {
     fn is_valid(&self) -> bool {
         self.proof.is_valid() && self.h_commitment.is_valid()
     }
 }
 
-//ToDo: optimize serialization of evaluations
-impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for MultiPointProof<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize proof
         CanonicalSerialize::serialize(&self.proof, &mut writer)?;
@@ -483,11 +500,20 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
         // to be able to reconstruct the other coordinate
         CanonicalSerialize::serialize(&self.h_commitment, &mut writer)?;
 
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     fn serialized_size(&self) -> usize {
+        #[cfg(feature = "minimize-proof-size")]
         return self.proof.serialized_size() + self.h_commitment.serialized_size();
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return self.proof.serialized_size() + self.h_commitment.serialized_size() + self.evaluations.serialized_size();
+
     }
 
     fn serialize_without_metadata<W: Write>(
@@ -499,6 +525,10 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
 
         // Serialize h_comm
         CanonicalSerialize::serialize_without_metadata(&self.h_commitment, &mut writer)?;
+
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize_without_metadata(&self.evaluations, &mut writer)?;
 
         Ok(())
     }
@@ -512,16 +542,24 @@ impl<G: IPACurve> CanonicalSerialize for MultiPointProof<G> {
         // to be able to reconstruct the other coordinate
         CanonicalSerialize::serialize_uncompressed(&self.h_commitment, &mut writer)?;
 
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize_uncompressed(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
+        #[cfg(feature = "minimize-proof-size")]
         return self.proof.uncompressed_size() + self.h_commitment.uncompressed_size();
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return self.proof.uncompressed_size() + self.h_commitment.uncompressed_size() + self.evaluations.uncompressed_size();
     }
 }
 
-impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for MultiPointProof<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Read proof
         let proof: Proof<G> = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -529,10 +567,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
@@ -542,10 +592,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -556,10 +618,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         // Read commitment to h(X)
         let h_commitment: G = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -574,10 +648,22 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
         let h_commitment: G =
             CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+        return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }
 
@@ -588,18 +674,16 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
 /// and can be evaluated in `O(log(degree))` time, and the final committer key
 /// G_final can be computed via an MSM from its coefficients.
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub struct SuccinctCheckPolynomial<G: IPACurve> {
+pub struct SuccinctCheckPolynomial<G: EndoMulCurve> {
     #[doc(hidden)]
     pub chals: Vec<G::ScalarField>,
-    #[cfg(feature = "circuit-friendly")]
     #[doc(hidden)]
     pub endo_chals: Vec<G::ScalarField>,
 }
 
-impl<G: IPACurve> SuccinctCheckPolynomial<G> {
+impl<G: EndoMulCurve> SuccinctCheckPolynomial<G> {
     /// Construct Self starting from the challenges.
     /// Will automatically calculate also the endo versions of them
-    #[cfg(feature = "circuit-friendly")]
     pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
         //use algebra::ToBits;
 
@@ -619,22 +703,9 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
         Self { chals, endo_chals }
     }
 
-    /// Construct Self starting from the challenges
-    #[cfg(not(feature = "circuit-friendly"))]
-    pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
-        Self { chals }
-    }
-
     /// Get endo chals from this polynomial
-    #[cfg(feature = "circuit-friendly")]
     pub fn get_chals(&self) -> &[G::ScalarField] {
         self.endo_chals.as_slice()
-    }
-
-    /// Get chals from this polynomial
-    #[cfg(not(feature = "circuit-friendly"))]
-    pub fn get_chals(&self) -> &[G::ScalarField] {
-        self.chals.as_slice()
     }
 
     /// Slightly optimized way to compute it, taken from
@@ -683,7 +754,7 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
     }
 }
 
-impl<G: IPACurve> CanonicalSerialize for SuccinctCheckPolynomial<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         let len = self.chals.len() as u8;
@@ -703,7 +774,7 @@ impl<G: IPACurve> CanonicalSerialize for SuccinctCheckPolynomial<G> {
     }
 }
 
-impl<G: IPACurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let len = <u8 as CanonicalDeserialize>::deserialize(&mut reader)?;
@@ -717,52 +788,22 @@ impl<G: IPACurve> CanonicalDeserialize for SuccinctCheckPolynomial<G> {
     }
 }
 
-impl<G: IPACurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
-    #[cfg(feature = "circuit-friendly")]
+impl<G: EndoMulCurve> SemanticallyValid for SuccinctCheckPolynomial<G> {
     fn is_valid(&self) -> bool {
         self.chals.is_valid() && self.endo_chals.is_valid()
-    }
-
-    #[cfg(not(feature = "circuit-friendly"))]
-    fn is_valid(&self) -> bool {
-        self.chals.is_valid()
-    }
-}
-
-/// Succinct check polynomial tagged with a label
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LabeledSuccinctCheckPolynomial<'a, G: IPACurve> {
-    label: PolynomialLabel,
-    check_poly: &'a SuccinctCheckPolynomial<G>,
-}
-
-impl<'a, G: IPACurve> LabeledSuccinctCheckPolynomial<'a, G> {
-    pub fn new(label: PolynomialLabel, check_poly: &'a SuccinctCheckPolynomial<G>) -> Self {
-        Self {
-            label,
-            check_poly
-        }
-    }
-
-    pub fn get_label(&self) -> &PolynomialLabel {
-        &self.label
-    }
-
-    pub fn get_poly(&self) -> &SuccinctCheckPolynomial<G> {
-        self.check_poly
     }
 }
 
 /// The succinct part of the verifier returns a succinct-check polynomial and final comm key
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub struct DLogItem<G: IPACurve> {
+pub struct DLogItem<G: EndoMulCurve> {
     /// check_poly = h(X) = prod (1 + xi_{log(d+1) - i} * X^{2^i} )
     pub check_poly: SuccinctCheckPolynomial<G>,
     /// final comm key
     pub final_comm_key: G,
 }
 
-impl<G: IPACurve> CanonicalSerialize for DLogItem<G> {
+impl<G: EndoMulCurve> CanonicalSerialize for DLogItem<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // GFinal will always be 1 segment and without any shift
         CanonicalSerialize::serialize(&self.final_comm_key, &mut writer)?;
@@ -795,7 +836,7 @@ impl<G: IPACurve> CanonicalSerialize for DLogItem<G> {
     }
 }
 
-impl<G: IPACurve> CanonicalDeserialize for DLogItem<G> {
+impl<G: EndoMulCurve> CanonicalDeserialize for DLogItem<G> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // GFinal will always be 1 segment and without any shift
         let final_comm_key = CanonicalDeserialize::deserialize(&mut reader)?;
@@ -849,10 +890,10 @@ impl<G: IPACurve> CanonicalDeserialize for DLogItem<G> {
     }
 }
 
-impl<G: IPACurve> SemanticallyValid for DLogItem<G> {
+impl<G: EndoMulCurve> SemanticallyValid for DLogItem<G> {
     fn is_valid(&self) -> bool {
         self.final_comm_key.is_valid() && self.check_poly.is_valid()
     }
 }
 
-impl<G: IPACurve> PCVerifierState for DLogItem<G> {}
+impl<G: EndoMulCurve> PCVerifierState for DLogItem<G> {}

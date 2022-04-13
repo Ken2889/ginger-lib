@@ -9,11 +9,11 @@ use crate::darlin::{
     FinalDarlin, FinalDarlinVerifierKey,
     DomainExtendedIpaPc,
 };
-use algebra::{Group, ToConstraintField};
+use algebra::{EndoMulCurve, Group, ToConstraintField};
 use bench_utils::*;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey, IPACurve},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
 use derivative::Derivative;
@@ -22,7 +22,7 @@ use std::marker::PhantomData;
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -32,9 +32,9 @@ pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 's
 
 impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {
@@ -54,8 +54,8 @@ where
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
 pub struct FinalDarlinPCDVerifierKey<
     'a,
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 > {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<
@@ -65,7 +65,7 @@ pub struct FinalDarlinPCDVerifierKey<
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
+impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>
     AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, FS>
 {
@@ -76,9 +76,9 @@ impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 
 impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {

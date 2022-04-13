@@ -56,7 +56,7 @@ fiat-shamir = { path = "./src/darlin/fiat-shamir", features = ["tweedle"] }
 [features]
 print-trace = [ "bench-utils/print-trace", "marlin/print-trace", "poly-commit/print-trace" ]
 llvm_asm = ["algebra/llvm_asm", "marlin/asm", "poly-commit/asm"]
-circuit-friendly = ["marlin/circuit-friendly", "poly-commit/circuit-friendly"]
+circuit-friendly = ["marlin/circuit-friendly"]
 
 
 [[bench]]

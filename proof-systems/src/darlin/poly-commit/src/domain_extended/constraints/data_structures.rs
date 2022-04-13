@@ -7,6 +7,10 @@ use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::groups::group_vec::GroupGadgetVec;
 use r1cs_std::prelude::AllocGadget;
 use std::borrow::Borrow;
+#[cfg(not(feature = "minimize-proof-size"))]
+use r1cs_std::boolean::Boolean;
+#[cfg(not(feature = "minimize-proof-size"))]
+use algebra::ToBits;
 
 /// Gadget for multi-point proof for domain extended poly-commit verifier gadget
 pub struct DomainExtendedMultiPointProofGadget<
@@ -17,6 +21,8 @@ pub struct DomainExtendedMultiPointProofGadget<
 > {
     proof: PCG::ProofGadget,
     h_commitment: GroupGadgetVec<ConstraintF, PC::Commitment, PCG::CommitmentGadget>,
+    #[cfg(not(feature = "minimize-proof-size"))]
+    evaluations: Vec<Vec<Boolean>>,
 }
 
 impl<ConstraintF, G, PC, PCG>
@@ -51,12 +57,29 @@ where
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
 
-        Ok(
+        #[cfg(feature = "minimize-proof-size")]
+            return Ok(
             Self{
                 proof,
                 h_commitment,
             }
-        )
+        );
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let mut evaluations = Vec::with_capacity(mpp.evaluations.len());
+            for (i, value) in mpp.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn alloc_input<F, T, CS: ConstraintSystemAbstract<ConstraintF>>(
@@ -81,12 +104,29 @@ where
                 || Ok(mpp.get_h_commitment().clone()),
             )?;
 
-        Ok(
+        #[cfg(feature = "minimize-proof-size")]
+        return Ok(
             Self{
                 proof,
                 h_commitment,
             }
-        )
+        );
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+        return {
+            let mut evaluations = Vec::with_capacity(mpp.evaluations.len());
+            for (i, value) in mpp.evaluations.iter().enumerate() {
+                evaluations.push(Vec::<Boolean>::alloc_input(cs.ns(|| format!("alloc evaluation {} for multi-point proof", i)), || {
+                    Ok(value.write_bits())
+                })?);
+            }
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }
 
@@ -110,5 +150,10 @@ where
     }
     fn get_h_commitment(&self) -> &Self::CommitmentGadget {
         &self.h_commitment
+    }
+
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn get_evaluations(&self) -> &Vec<Vec<Boolean>> {
+        &self.evaluations
     }
 }

@@ -6,29 +6,24 @@
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::{
     accumulators::{AccumulationProof, ItemAccumulator},
-    DomainExtendedIpaPc,
 };
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{serialize::*, Group, GroupVec, UniformRand};
+use algebra::{serialize::*, Group, UniformRand, EndoMulCurve};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
-use poly_commit::{
-    ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey, IPACurve},
-    Error as PCError, LabeledCommitment, PolynomialCommitment,
-};
+use poly_commit::{ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey}, Error as PCError, LabeledCommitment, PolynomialCommitment, read_fe_from_challenge};
 pub use poly_commit::ipa_pc::DLogItem;
 use rand::RngCore;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use num_traits::{Zero, One};
-use poly_commit::ipa_pc::LabeledSuccinctCheckPolynomial;
 
-pub struct DLogItemAccumulator<G: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct DLogItemAccumulator<G: EndoMulCurve, FS: FiatShamirRng + 'static> {
     _group: PhantomData<G>,
     _fs_rng: PhantomData<FS>,
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     /// The personalization string for this protocol. Used to personalize the
     /// Fiat-Shamir rng.
     pub const PROTOCOL_NAME: &'static [u8] = b"DL-ACC-2021";
@@ -69,14 +64,13 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
+        let z = read_fe_from_challenge(fs_rng
+            .get_challenge::<128>()?
+            .to_vec()
         ).map_err(|e| {
-                end_timer!(poly_time);
-                end_timer!(succinct_time);
-                PCError::Other(e.to_string())
+            end_timer!(poly_time);
+            end_timer!(succinct_time);
+            PCError::Other(e.to_string())
         })?;
 
         let comms_values = previous_accumulators
@@ -90,7 +84,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
                 let labeled_comm = {
                     let comm = final_comm_key;
 
-                    LabeledCommitment::new(format!("check_poly_{}", i), GroupVec::new(vec![comm]))
+                    LabeledCommitment::new(format!("check_poly_{}", i), comm)
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
@@ -120,7 +114,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
-        let verifier_state = DomainExtendedIpaPc::<G, FS>::succinct_single_point_multi_poly_verify(
+        let verifier_state = InnerProductArgPC::<G, FS>::succinct_single_point_multi_poly_verify(
             vk, comms.iter(), z, values.iter(), &proof.pc_proof, &mut fs_rng
         ).map_err(|e| {
             end_timer!(check_time);
@@ -135,7 +129,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> DLogItemAccumulator<G, FS> {
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccumulator<G, FS> {
     type AccumulatorProverKey = CommitterKey<G>;
     type AccumulatorVerifierKey = VerifierKey<G>;
     type AccumulationProof = AccumulationProof<G>;
@@ -246,10 +240,9 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng
-                .get_challenge::<128>()?
-                .to_vec()
+        let z = read_fe_from_challenge(fs_rng
+            .get_challenge::<128>()?
+            .to_vec()
         ).map_err(|e| {
             end_timer!(accumulate_time);
             PCError::Other(e.to_string())
@@ -257,10 +250,9 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 
         // Collect check_poly from the accumulators
         let check_poly = accumulators
-            .iter()
-            .enumerate()
-            .map(|(i, acc)|
-            LabeledSuccinctCheckPolynomial::new(format!("check_poly_{}", i), &acc.check_poly))
+            .into_iter()
+            .map(|acc|
+            acc.check_poly)
             .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
@@ -333,15 +325,15 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> ItemAccumulator for DLogItemAccum
 /// A composite dlog accumulator/item, comprised of several single dlog items
 /// from both groups of the EC cycle.
 #[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DualDLogItem<G1: IPACurve, G2: IPACurve>(
+pub struct DualDLogItem<G1: EndoMulCurve, G2: EndoMulCurve>(
     pub(crate) Vec<DLogItem<G1>>,
     pub(crate) Vec<DLogItem<G2>>,
 );
 
 pub struct DualDLogItemAccumulator<
     'a,
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 > {
     _lifetime: PhantomData<&'a ()>,
@@ -353,8 +345,8 @@ pub struct DualDLogItemAccumulator<
 // Straight-forward generalization of the dlog item aggregation to DualDLogItem.
 impl<'a, G1, G2, FS> ItemAccumulator for DualDLogItemAccumulator<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>,
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>,
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>,
     FS: FiatShamirRng + 'static,
 {
     type AccumulatorProverKey = (&'a CommitterKey<G1>, &'a CommitterKey<G2>);
@@ -457,19 +449,20 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::SemanticallyValid;
+    use algebra::{SemanticallyValid, GroupVec};
     use poly_commit::{
         ipa_pc::Proof,
         DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial,
         PolynomialCommitment, QueryMap, PCKey,
     };
+    use crate::darlin::DomainExtendedIpaPc;
     use blake2::Blake2s;
     use digest::Digest;
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
     use derivative::Derivative;
 
-    fn get_test_fs_rng<G: IPACurve, FS: FiatShamirRng>() -> FS {
+    fn get_test_fs_rng<G: EndoMulCurve, FS: FiatShamirRng>() -> FS {
         let mut seed_builder = FiatShamirRngSeed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize().unwrap();
@@ -488,7 +481,7 @@ mod test {
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
-    struct VerifierData<'a, G: IPACurve> {
+    struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
         query_map: QueryMap<'a, G::ScalarField>,
@@ -507,7 +500,7 @@ mod test {
         ck: Option<CommitterKey<G>>,
     ) -> Result<VerifierData<'a, G>, PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -631,7 +624,7 @@ mod test {
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
     fn accumulation_test<G, D, FS>() -> Result<(), PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -721,7 +714,7 @@ mod test {
     // and batch verify their dlog items.
     fn batch_verification_test<G, D, FS>() -> Result<(), PCError>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {

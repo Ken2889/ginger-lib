@@ -34,6 +34,10 @@ where
 
     /// Commitment to the h(X) polynomial
     pub h_commitment: GroupVec<G>,
+
+    /// Evaluations of the polynomials on the batch evaluation point
+    #[cfg(not(feature = "minimize-proof-size"))]
+    pub(crate) evaluations: Vec<G::ScalarField>,
 }
 
 impl<G, P> BDFGMultiPointProof<G> for DomainExtendedMultiPointProof<G, P>
@@ -45,10 +49,21 @@ where
     type Proof = P;
 
     #[inline]
+    #[cfg(feature = "minimize-proof-size")]
     fn new(proof: Self::Proof, h_commitment: Self::Commitment) -> Self {
         Self {
             proof,
             h_commitment,
+        }
+    }
+
+    #[inline]
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn new(proof: Self::Proof, h_commitment: Self::Commitment, evaluations: Vec<G::ScalarField>) -> Self {
+        Self {
+            proof,
+            h_commitment,
+            evaluations,
         }
     }
 
@@ -60,6 +75,11 @@ where
     #[inline]
     fn get_h_commitment(&self) -> &Self::Commitment {
         &self.h_commitment
+    }
+
+    #[cfg(not(feature = "minimize-proof-size"))]
+    fn get_evaluations(&self) -> &Vec<G::ScalarField> {
+        &self.evaluations
     }
 }
 
@@ -94,11 +114,21 @@ where
             CanonicalSerialize::serialize(item, &mut writer)?;
         }
 
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     fn serialized_size(&self) -> usize {
+        #[cfg(feature = "minimize-proof-size")]
          return self.proof.serialized_size()
+            + 1
+            + (self.h_commitment.len() * self.h_commitment[0].serialized_size());
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return self.proof.serialized_size() + self.evaluations.serialized_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].serialized_size());
     }
@@ -114,6 +144,10 @@ where
         for item in self.h_commitment.iter() {
             CanonicalSerialize::serialize_without_metadata(item, &mut writer)?;
         }
+
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize_without_metadata(&self.evaluations, &mut writer)?;
 
         Ok(())
     }
@@ -135,12 +169,22 @@ where
             CanonicalSerialize::serialize_uncompressed(item, &mut writer)?;
         }
 
+        // serialize evaluations over batch point, if available
+        #[cfg(not(feature = "minimize-proof-size"))]
+        CanonicalSerialize::serialize_uncompressed(&self.evaluations, &mut writer)?;
+
         Ok(())
     }
 
     #[inline]
     fn uncompressed_size(&self) -> usize {
+        #[cfg(feature = "minimize-proof-size")]
             return self.proof.uncompressed_size()
+            + 1
+            + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size());
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return self.proof.uncompressed_size() + self.evaluations.uncompressed_size()
             + 1
             + (self.h_commitment.len() * self.h_commitment[0].uncompressed_size());
     }
@@ -163,10 +207,22 @@ where
             h_commitment.push(item);
         }
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+            return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
@@ -181,11 +237,22 @@ where
             h_commitment.push(item);
         }
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+            return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
 
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -201,10 +268,22 @@ where
             h_commitment.push(item);
         }
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+            return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 
     #[inline]
@@ -222,9 +301,21 @@ where
             h_commitment.push(item);
         }
 
-        Ok(Self {
+        #[cfg(feature = "minimize-proof-size")]
+            return Ok(Self {
             proof,
             h_commitment,
-        })
+        });
+
+        #[cfg(not(feature = "minimize-proof-size"))]
+            return {
+            let evaluations: Vec<G::ScalarField> = CanonicalDeserialize::deserialize_uncompressed_unchecked(&mut reader)?;
+
+            Ok(Self {
+                proof,
+                h_commitment,
+                evaluations,
+            })
+        };
     }
 }

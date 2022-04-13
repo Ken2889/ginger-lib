@@ -1,10 +1,10 @@
-use algebra::{serialize::*, Group, ToConstraintField};
+use algebra::{serialize::*, Group, ToConstraintField, EndoMulCurve};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{ipa_pc::{IPACurve, InnerProductArgPC}, PolynomialCommitment};
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::accumulators::dlog::DLogItemAccumulator;
 use proof_systems::darlin::accumulators::ItemAccumulator;
 use proof_systems::darlin::pcd::GeneralPCD;
@@ -16,8 +16,8 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 fn bench_succinct_part_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -27,9 +27,9 @@ fn bench_succinct_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
@@ -80,8 +80,8 @@ fn bench_succinct_part_batch_verification<
 }
 
 fn bench_hard_part_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -91,9 +91,9 @@ fn bench_hard_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
@@ -153,8 +153,8 @@ fn bench_hard_part_batch_verification<
 }
 
 fn bench_batch_verification_complete<
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
 >(
@@ -164,9 +164,9 @@ fn bench_batch_verification_complete<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
+    G1: EndoMulCurve<BaseField = <G2 as Group>::ScalarField>
         + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
+    G2: EndoMulCurve<BaseField = <G1 as Group>::ScalarField>
         + ToConstraintField<<G1 as Group>::ScalarField>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);

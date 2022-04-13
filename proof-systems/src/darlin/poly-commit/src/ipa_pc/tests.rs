@@ -3,18 +3,19 @@
 
 use algebra::{
     curves::tweedle::dee::DeeJacobian as TweedleDee, serialize_no_metadata, CanonicalSerialize,
+    EndoMulCurve,
 };
 use blake2::Blake2s;
 use digest::Digest;
 
-use super::{IPACurve, InnerProductArgPC};
+use super::InnerProductArgPC;
 use crate::ipa_pc::CommitterKey;
 use crate::tests::TestUtils;
 use crate::Error;
 use crate::{DomainExtendedPolynomialCommitment, PCKey, PolynomialCommitment};
 use rand::thread_rng;
 
-impl<G: IPACurve> TestUtils for CommitterKey<G> {
+impl<G: EndoMulCurve> TestUtils for CommitterKey<G> {
     fn randomize(&mut self) {
         let mut rng = thread_rng();
         self.comm_key = self
@@ -192,7 +193,6 @@ macro_rules! generate_pc_tests {
 
 type PC<G, FS> = InnerProductArgPC<G, FS>;
 
-#[cfg(not(feature = "circuit-friendly"))]
 mod chacha_fs {
     use super::*;
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
@@ -212,7 +212,6 @@ mod chacha_fs {
     );
 }
 
-#[cfg(feature = "circuit-friendly")]
 mod poseidon_fs {
     use super::*;
     use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
