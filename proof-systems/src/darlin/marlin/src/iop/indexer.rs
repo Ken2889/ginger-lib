@@ -88,7 +88,7 @@ pub struct Index<F: PrimeField> {
     /// the indexer polynomials `row(X)`, `col(X)`, `row.col(X)`, and `val.row.col(X)` of it.
     pub c_arith: MatrixArithmetization<F>,
 
-    #[cfg(feature = "circuit-friendly")]
+    #[cfg(feature = "commit-vanishing-polys")]
     /// The vanishing polynomials over domains H, K, and X.
     pub vanishing_polys: Vec<LabeledPolynomial<F>>,
 }
@@ -157,7 +157,7 @@ impl<F: PrimeField> Index<F> {
         ]
         .into_iter();
 
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let result = result.chain(self.vanishing_polys.iter());
 
         result
@@ -258,7 +258,7 @@ impl<F: PrimeField> IOP<F> {
         let c_arith = arithmetize_matrix("c", &mut c, &domain_k, &domain_h, &domain_b)?;
         end_timer!(c_arithmetization_time);
 
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let vanishing_polys = {
             let vanishing_polys_time =
                 start_timer!(|| "Commit to vanishing polys on domains H, K, and X");
@@ -280,7 +280,7 @@ impl<F: PrimeField> IOP<F> {
             a_arith,
             b_arith,
             c_arith,
-            #[cfg(feature = "circuit-friendly")]
+            #[cfg(feature = "commit-vanishing-polys")]
             vanishing_polys,
         })
     }

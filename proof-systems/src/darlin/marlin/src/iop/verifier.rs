@@ -162,7 +162,7 @@ impl<F: PrimeField> IOP<F> {
         let queries_at_g_beta = BTreeSet::from_iter(vec!["u_1".to_string()]);
         let queries_at_g_gamma = BTreeSet::from_iter(vec!["u_2".to_string()]);
 
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let (queries_at_alpha, queries_at_beta, queries_at_gamma) = {
             let queries_at_alpha = BTreeSet::from_iter(vec!["v_h".to_string()]);
 
@@ -182,7 +182,7 @@ impl<F: PrimeField> IOP<F> {
             map.insert("gamma".to_string(), (gamma, queries_at_gamma));
             map.insert("g * beta".to_string(), (g_h * beta, queries_at_g_beta));
             map.insert("g * gamma".to_string(), (g_k * gamma, queries_at_g_gamma));
-            #[cfg(feature = "circuit-friendly")]
+            #[cfg(feature = "commit-vanishing-polys")]
             {
                 let alpha = state.first_round_msg.as_ref().unwrap().clone().alpha;
                 map.insert("alpha".to_string(), (alpha, queries_at_alpha));
