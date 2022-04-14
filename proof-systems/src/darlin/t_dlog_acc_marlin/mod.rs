@@ -595,6 +595,13 @@ where
             return Err(Error::IOPError(result.unwrap_err()));
         }
 
+        let result = IOP::verify_dlog_aggregation(&evaluations, &verifier_state);
+
+        if result.is_err() {
+            end_timer!(iop_verification_time);
+            return Err(Error::IOPError(result.unwrap_err()));
+        }
+
         fs_rng.record(proof.evaluations.clone())?;
 
         // Perform succinct verification of opening proof
