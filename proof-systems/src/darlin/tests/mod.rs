@@ -18,14 +18,14 @@ mod test {
     use algebra::{
         curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
         serialize::test_canonical_serialize_deserialize,
-        CanonicalDeserialize, CanonicalSerialize, Group, SemanticallyValid, ToConstraintField,
-        UniformRand,
+        CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, SemanticallyValid,
+        ToConstraintField, UniformRand,
     };
     use blake2::Blake2s;
     use fiat_shamir::FiatShamirRng;
     use marlin::VerifierKey as MarlinVerifierKey;
     use poly_commit::{
-        ipa_pc::{IPACurve, CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey},
+        ipa_pc::{CommitterKey as DLogCommitterKey, IPACurve, VerifierKey as DLogVerifierKey},
         PolynomialCommitment,
     };
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
@@ -48,27 +48,18 @@ mod test {
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
     fn test_accumulation<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
-        vks: &mut [MarlinVerifierKey<
-            G1,
-            DomainExtendedIpaPc<G1, FS>,
-        >],
+        vks: &mut [MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, FS>]>,
-        fake_vks: Option<
-            &[MarlinVerifierKey<
-                G1,
-                DomainExtendedIpaPc<G1, FS>,
-            >],
-        >,
+        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>]>,
         rng: &mut R,
     ) where
-        G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-            + ToConstraintField<<G2 as Group>::ScalarField>,
-        G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-            + ToConstraintField<<G1 as Group>::ScalarField>,
+        G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+        G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+        G1: DualCycle<G2>,
     {
         // Accumulate PCDs
         let (proof_g1, proof_g2) =
@@ -203,33 +194,18 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<
-        'a,
-        G1: IPACurve,
-        G2: IPACurve,
-        FS: FiatShamirRng,
-        R: RngCore,
-    >(
+    fn test_batch_verification<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
-        vks: &mut [MarlinVerifierKey<
-            G1,
-            DomainExtendedIpaPc<G1, FS>,
-        >],
+        vks: &mut [MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
         verifier_key_g1: &DLogVerifierKey<G1>,
         verifier_key_g2: &DLogVerifierKey<G2>,
         fake_pcds: Option<&[GeneralPCD<'a, G1, G2, FS>]>,
-        fake_vks: Option<
-            &[MarlinVerifierKey<
-                G1,
-                DomainExtendedIpaPc<G1, FS>,
-            >],
-        >,
+        fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>]>,
         rng: &mut R,
     ) where
-        G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-            + ToConstraintField<<G2 as Group>::ScalarField>,
-        G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-            + ToConstraintField<<G1 as Group>::ScalarField>,
+        G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+        G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+        G1: DualCycle<G2>,
     {
         // Batch Verify
         assert!(batch_verify_proofs::<G1, G2, FS, R>(
@@ -338,14 +314,8 @@ mod test {
     #[cfg(feature = "circuit-friendly")]
     type FsRngDum = fiat_shamir::poseidon::TweedleFrPoseidonFSRng;
 
-    type TestIPAPCDee = DomainExtendedIpaPc<
-        DeeJacobian,
-        FsRngDee,
-    >;
-    type TestIPAPCDum = DomainExtendedIpaPc<
-        DumJacobian,
-        FsRngDum,
-    >;
+    type TestIPAPCDee = DomainExtendedIpaPc<DeeJacobian, FsRngDee>;
+    type TestIPAPCDum = DomainExtendedIpaPc<DumJacobian, FsRngDum>;
 
     #[test]
     fn test_simple_marlin_proof_aggregator() {
@@ -357,8 +327,10 @@ mod test {
         let segment_size = 1 << max_pow;
 
         // Generate keys
-        let (committer_key_g1, verifier_key_g1) = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
-        let (committer_key_g2, verifier_key_g2) = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g1, verifier_key_g1) =
+            TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g2, verifier_key_g2) =
+            TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         // Generate fake params
         let (mut committer_key_g1_fake, mut verifier_key_g1_fake) =
@@ -393,13 +365,14 @@ mod test {
             generated_proofs += iteration_num_proofs;
             let iteration_segment_size = 1 << (generation_rng.gen_range(5..max_pow));
             let iteration_num_constraints = iteration_segment_size;
-            let (mut iteration_pcds, mut iteration_vks) = generate_simple_marlin_test_data::<Blake2s, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                (&committer_key_g1, &verifier_key_g1),
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds, mut iteration_vks) =
+                generate_simple_marlin_test_data::<Blake2s, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    (&committer_key_g1, &verifier_key_g1),
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             assert!(&iteration_pcds[0].proof.is_valid());
             test_canonical_serialize_deserialize(true, &iteration_pcds[0].proof);
@@ -425,9 +398,7 @@ mod test {
         let mut simple_marlin_pcds = pcds
             .into_iter()
             .map(|simple_marlin_pcd| {
-                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FsRngDee>(
-                    simple_marlin_pcd,
-                )
+                GeneralPCD::SimpleMarlin::<DeeJacobian, DumJacobian, FsRngDee>(simple_marlin_pcd)
             })
             .collect::<Vec<_>>();
 
@@ -471,8 +442,10 @@ mod test {
         let segment_size = 1 << max_pow;
 
         //Generate keys
-        let (committer_key_g1, verifier_key_g1) = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
-        let (committer_key_g2, verifier_key_g2) = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g1, verifier_key_g1) =
+            TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g2, verifier_key_g2) =
+            TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         // Generate fake params
         let (mut committer_key_g1_fake, mut verifier_key_g1_fake) =
@@ -518,14 +491,15 @@ mod test {
             generated_proofs += iteration_num_proofs;
             let iteration_segment_size = 1 << (generation_rng.gen_range(5..max_pow));
             let iteration_num_constraints = iteration_segment_size;
-            let (mut iteration_pcds, mut iteration_vks) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                (&committer_key_g1, &verifier_key_g1),
-                (&committer_key_g2, &verifier_key_g2),
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds, mut iteration_vks) =
+                generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    (&committer_key_g1, &verifier_key_g1),
+                    (&committer_key_g2, &verifier_key_g2),
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             assert!(&iteration_pcds[0].final_darlin_proof.is_valid());
             test_canonical_serialize_deserialize(true, &iteration_pcds[0].final_darlin_proof);
@@ -534,14 +508,15 @@ mod test {
             pcds.append(&mut iteration_pcds);
             final_darlin_vks.append(&mut iteration_vks);
 
-            let (mut iteration_pcds_fake, mut iteration_vks_fake) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                iteration_num_constraints - 1,
-                iteration_segment_size,
-                (&committer_key_g1_fake, &verifier_key_g1_fake),
-                (&committer_key_g2_fake, &verifier_key_g2_fake),
-                iteration_num_proofs,
-                generation_rng,
-            );
+            let (mut iteration_pcds_fake, mut iteration_vks_fake) =
+                generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                    iteration_num_constraints - 1,
+                    iteration_segment_size,
+                    (&committer_key_g1_fake, &verifier_key_g1_fake),
+                    (&committer_key_g2_fake, &verifier_key_g2_fake),
+                    iteration_num_proofs,
+                    generation_rng,
+                );
 
             pcds_fake.append(&mut iteration_pcds_fake);
             final_darlin_vks_fake.append(&mut iteration_vks_fake);
@@ -593,8 +568,10 @@ mod test {
         let segment_size = 1 << max_pow;
 
         //Generate keys
-        let (committer_key_g1, verifier_key_g1) = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
-        let (committer_key_g2, verifier_key_g2) = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g1, verifier_key_g1) =
+            TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g2, verifier_key_g2) =
+            TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         // Generate fake params
         let (mut committer_key_g1_fake, mut verifier_key_g1_fake) =
@@ -644,13 +621,14 @@ mod test {
             // Randomly choose if to generate a SimpleMarlinProof or a FinalDarlinProof
             let simple: bool = generation_rng.gen();
             if simple {
-                let (iteration_pcds, mut iteration_vks) = generate_simple_marlin_test_data::<Blake2s, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    (&committer_key_g1, &verifier_key_g1),
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds, mut iteration_vks) =
+                    generate_simple_marlin_test_data::<Blake2s, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        (&committer_key_g1, &verifier_key_g1),
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 assert!(&iteration_pcds[0].proof.is_valid());
                 test_canonical_serialize_deserialize(true, &iteration_pcds[0].proof);
@@ -681,14 +659,15 @@ mod test {
                 pcds_fake.append(&mut iteration_pcds_fake);
                 vks_fake.append(&mut iteration_vks_fake);
             } else {
-                let (iteration_pcds, mut iteration_vks) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    (&committer_key_g1, &verifier_key_g1),
-                    (&committer_key_g2, &verifier_key_g2),
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds, mut iteration_vks) =
+                    generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        (&committer_key_g1, &verifier_key_g1),
+                        (&committer_key_g2, &verifier_key_g2),
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 assert!(&iteration_pcds[0].final_darlin_proof.is_valid());
                 test_canonical_serialize_deserialize(true, &iteration_pcds[0].final_darlin_proof);
@@ -702,14 +681,15 @@ mod test {
                 pcds.append(&mut iteration_pcds);
                 vks.append(&mut iteration_vks);
 
-                let (iteration_pcds_fake, mut iteration_vks_fake) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
-                    iteration_num_constraints - 1,
-                    iteration_segment_size,
-                    (&committer_key_g1_fake, &verifier_key_g1_fake),
-                    (&committer_key_g2_fake, &verifier_key_g2_fake),
-                    iteration_num_proofs,
-                    generation_rng,
-                );
+                let (iteration_pcds_fake, mut iteration_vks_fake) =
+                    generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
+                        iteration_num_constraints - 1,
+                        iteration_segment_size,
+                        (&committer_key_g1_fake, &verifier_key_g1_fake),
+                        (&committer_key_g2_fake, &verifier_key_g2_fake),
+                        iteration_num_proofs,
+                        generation_rng,
+                    );
 
                 let mut iteration_pcds_fake = iteration_pcds_fake
                     .into_iter()
@@ -754,8 +734,10 @@ mod test {
         let segment_size = 1 << 17;
 
         //Generate keys
-        let (committer_key_g1, verifier_key_g1) = TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
-        let (committer_key_g2, verifier_key_g2) = TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g1, verifier_key_g1) =
+            TestIPAPCDee::setup::<Blake2s>(segment_size - 1).unwrap();
+        let (committer_key_g2, verifier_key_g2) =
+            TestIPAPCDum::setup::<Blake2s>(segment_size - 1).unwrap();
 
         let generation_rng = &mut thread_rng();
 
@@ -764,8 +746,7 @@ mod test {
 
         if Path::new(file_path).exists() {
             let fs = File::open(file_path).unwrap();
-            proof =
-                FinalDarlinProof::<_, _, FsRngDee>::deserialize(fs).unwrap();
+            proof = FinalDarlinProof::<_, _, FsRngDee>::deserialize(fs).unwrap();
         } else {
             let (iteration_pcds, _) = generate_final_darlin_test_data::<Blake2s, _, _, _, _>(
                 num_constraints - 1,
@@ -822,7 +803,11 @@ mod test {
         );
         println!(
             "------ {} - final_comm_key",
-            proof.deferred.pre_previous_acc.final_comm_key.serialized_size()
+            proof
+                .deferred
+                .pre_previous_acc
+                .final_comm_key
+                .serialized_size()
         );
         println!(
             "------ {} - check_poly",

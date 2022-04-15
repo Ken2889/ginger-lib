@@ -3,7 +3,10 @@ use blake2::{Blake2s, Digest};
 use criterion::*;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{ipa_pc::{IPACurve, InnerProductArgPC}, PolynomialCommitment};
+use poly_commit::{
+    ipa_pc::{IPACurve, InnerProductArgPC},
+    PolynomialCommitment,
+};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
@@ -12,29 +15,25 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
-    D: Digest,
-    FS: FiatShamirRng + 'static,
->(
+fn bench_batch_verification<G1: IPACurve, G2: IPACurve, D: Digest, FS: FiatShamirRng + 'static>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
     let num_constraints = 1 << 19;
 
     //Generate DLOG keys
-    let (committer_key_g1, verifier_key_g1) = InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
-    let (committer_key_g2, verifier_key_g2) = InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g1, verifier_key_g1) =
+        InnerProductArgPC::<G1, FS>::setup::<D>(segment_size - 1).unwrap();
+    let (committer_key_g2, verifier_key_g2) =
+        InnerProductArgPC::<G2, FS>::setup::<D>(segment_size - 1).unwrap();
 
     let (final_darlin_pcd, index_vk) = generate_final_darlin_test_data::<D, G1, G2, FS, _>(
         num_constraints - 1,

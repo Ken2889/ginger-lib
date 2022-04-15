@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use crate::darlin::accumulators::dlog::DualDLogItem;
 use crate::darlin::t_dlog_acc_marlin::data_structures::DualSumcheckItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
@@ -20,6 +21,8 @@ pub struct VerifierState<'a, G1: IPACurve, G2: IPACurve> {
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
     /// the previous inner-sumcheck accumulator
     pub previous_inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
+    /// the previous dlog accumulator
+    pub previous_dlog_acc: &'a DualDLogItem<G2, G1>,
 
     /// First round verifier message.
     pub first_round_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
@@ -68,6 +71,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
     pub fn verifier_init<'a>(
         index_info: &IndexInfo<G1, G2>,
         previous_inner_sumcheck_acc: &'a DualSumcheckItem<G2, G1>,
+        previous_dlog_acc: &'a DualDLogItem<G2, G1>,
     ) -> Result<VerifierState<'a, G1, G2>, Error> {
         let num_formatted_variables = index_info.num_inputs + index_info.num_witness;
         let num_constraints = index_info.num_constraints;
@@ -78,6 +82,7 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
         let state = VerifierState {
             domain_h,
             previous_inner_sumcheck_acc,
+            previous_dlog_acc,
             first_round_msg: None,
             second_round_msg: None,
             third_round_msg: None,

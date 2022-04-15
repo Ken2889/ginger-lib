@@ -263,10 +263,9 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for TestCircuit2c<F> {
 }
 
 fn generate_keys<
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
     FS: FiatShamirRng,
     D: Digest,
     CS: ConstraintSynthesizer<G1::ScalarField>,

@@ -1,20 +1,25 @@
 use crate::{
     bytes::{FromBytes, ToBytes},
     fields::{PrimeField, SquareRootField},
-    UniformRand
+    UniformRand,
 };
-use crate::{CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid, ToConstraintField};
+use crate::{
+    CanonicalDeserialize, CanonicalSerialize, FromBytesChecked, SemanticallyValid,
+    ToConstraintField,
+};
 
+use num_traits::Zero;
+use serde::*;
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use num_traits::Zero;
-use serde::*;
 
 mod group_vec;
 pub use group_vec::*;
+mod dual_cycle;
+pub use dual_cycle::*;
 
 #[cfg(test)]
 pub mod tests;

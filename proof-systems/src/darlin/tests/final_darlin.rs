@@ -8,7 +8,7 @@ use crate::darlin::{
     FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
     DomainExtendedIpaPc,
 };
-use algebra::{Group, ToConstraintField, UniformRand};
+use algebra::{DualCycle, Group, ToConstraintField, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
@@ -73,10 +73,9 @@ pub struct TestPrevPCD<G1: IPACurve, G2: IPACurve> {
 
 impl<G1, G2> PCD for TestPrevPCD<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     type PCDAccumulator = TestAcc;
     type PCDVerifierKey = TestPCDVk;
@@ -135,10 +134,9 @@ pub struct TestCircuit<G1: IPACurve, G2: IPACurve> {
 
 impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     fn generate_constraints<CS: ConstraintSystemAbstract<G1::ScalarField>>(
         self,
@@ -231,10 +229,9 @@ where
 
 impl<G1, G2> PCDCircuit<G1> for TestCircuit<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     type SetupData = CircuitInfo<G1, G2>;
     type AdditionalData = (G1::ScalarField, G1::ScalarField);
@@ -316,10 +313,9 @@ pub fn generate_test_pcd<
     rng: &mut R,
 ) -> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     let prev_pcd = TestPrevPCD::<G1, G2> {
         // as we have already generated a dummy deferred for CircuitInfo, let's
@@ -372,10 +368,9 @@ pub fn generate_test_data<
     >,
 )
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     // Trim committer key and verifier key
     let config = PCDParameters { segment_size };

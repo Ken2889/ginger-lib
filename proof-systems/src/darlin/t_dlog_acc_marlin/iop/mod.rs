@@ -140,16 +140,13 @@ impl<G1: IPACurve, G2: IPACurve> IOP<G1, G2> {
 
     pub fn verify_dlog_aggregation(
         evals: &poly_commit::Evaluations<G1::ScalarField>,
-        state: &verifier::VerifierState<G1, G2, PC1, PC2>,
+        state: &verifier::VerifierState<G1, G2>,
     ) -> Result<(), Error> {
         if state.third_round_msg.is_none() {
             return Err(Error::Other("Third round message is empty".to_owned()));
         }
         let gamma = state.third_round_msg.unwrap().gamma;
-        let prev_dlog_poly_at_gamma = state.previous_acc.non_native[0]
-            .1
-            .check_poly
-            .evaluate(gamma);
+        let prev_dlog_poly_at_gamma = state.previous_dlog_acc.1[0].check_poly.evaluate(gamma);
         let prev_dlog_poly_at_gamma_from_prover =
             get_poly_eval(evals, "prev_bullet_poly", "gamma")?;
 

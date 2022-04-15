@@ -30,10 +30,9 @@ fn bench_succinct_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -96,10 +95,9 @@ fn bench_hard_part_batch_verification<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -171,10 +169,9 @@ fn bench_batch_verification_complete<
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);

@@ -6,7 +6,7 @@ use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
 use algebra::CanonicalSerialize;
 use algebra::{
-    get_best_evaluation_domain, serialize_no_metadata, DensePolynomial,
+    get_best_evaluation_domain, serialize_no_metadata, DensePolynomial, DualCycle,
     Evaluations as EvaluationsOnDomain, Group, GroupVec, ToConstraintField,
 };
 use bench_utils::{end_timer, start_timer};
@@ -42,10 +42,9 @@ pub struct TDLogAccMarlin<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, D: Dige
 
 impl<G1, G2, FS, D> TDLogAccMarlin<G1, G2, FS, D>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
     D: Digest,
 {
@@ -195,6 +194,7 @@ where
         let verifier_init_state = IOP::verifier_init(
             &index_pk.index_vk.index.index_info,
             previous_inner_sumcheck_acc,
+            previous_dlog_acc,
         )?;
 
         let mut fs_rng = Self::fiat_shamir_rng_init(
@@ -495,8 +495,11 @@ where
     > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
-        let verifier_init_state =
-            IOP::verifier_init(&index_vk.index.index_info, prev_inner_sumcheck_acc)?;
+        let verifier_init_state = IOP::verifier_init(
+            &index_vk.index.index_info,
+            prev_inner_sumcheck_acc,
+            prev_dlog_acc,
+        )?;
 
         let x_poly_comm = index_vk
             .lagrange_comms

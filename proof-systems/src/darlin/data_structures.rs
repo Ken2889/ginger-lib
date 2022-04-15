@@ -1,7 +1,9 @@
 //! The proof data struct (and its components) of a final Darlin, i.e. last node of
 //! our conversion/exiting chain.
 use crate::darlin::pcd::simple_marlin::MarlinProof;
-use algebra::{serialize::*, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField};
+use algebra::{
+    serialize::*, DualCycle, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
+};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::ipa_pc::{CommitterKey as DLogCommitterKey, DLogItem, IPACurve};
@@ -28,10 +30,9 @@ impl<G1: IPACurve, G2: IPACurve> SemanticallyValid for FinalDarlinDeferredData<G
 
 impl<G1, G2> FinalDarlinDeferredData<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
     pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
@@ -48,10 +49,9 @@ where
 
 impl<G1, G2> ToConstraintField<G1::ScalarField> for FinalDarlinDeferredData<G1, G2>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
 {
     /// Conversion of the MarlinDeferredData to circuit inputs, which are elements
     /// over G1::ScalarField.

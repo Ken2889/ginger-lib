@@ -15,16 +15,16 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{Group, ToConstraintField, UniformRand};
+use algebra::{DualCycle, Group, ToConstraintField, UniformRand};
+use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey, IPACurve},
+    ipa_pc::{CommitterKey as DLogCommitterKey, IPACurve, VerifierKey as DLogVerifierKey},
     Error as PCError, PCKey,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::RngCore;
 use std::fmt::Debug;
-use derivative::Derivative;
 
 pub mod error;
 pub mod final_darlin;
@@ -44,7 +44,10 @@ impl PCDParameters {
         &self,
         params: (&DLogCommitterKey<G>, &DLogVerifierKey<G>),
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
-        Ok((params.0.trim(self.segment_size - 1)?, params.1.trim(self.segment_size - 1)?))
+        Ok((
+            params.0.trim(self.segment_size - 1)?,
+            params.1.trim(self.segment_size - 1)?,
+        ))
     }
 }
 
@@ -148,10 +151,9 @@ pub enum GeneralPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 // Testing functions
 impl<'a, G1, G2, FS> GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {
     pub fn randomize_usr_ins<R: RngCore>(&mut self, rng: &mut R) {
@@ -195,10 +197,9 @@ pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, 
 
 impl<'a, G1, G2, FS> PCD for GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve<BaseField = <G2 as Group>::ScalarField>
-        + ToConstraintField<<G2 as Group>::ScalarField>,
-    G2: IPACurve<BaseField = <G1 as Group>::ScalarField>
-        + ToConstraintField<<G1 as Group>::ScalarField>,
+    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
+    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {
     type PCDAccumulator = DualDLogItemAccumulator<'a, G1, G2, FS>;
