@@ -196,45 +196,37 @@ where
         evals: &poly_commit::Evaluations<G1::ScalarField>,
         state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
-        if state.first_round_msg.is_none() {
-            return Err(Error::Other("First round message is empty".to_owned()));
-        }
-        if state.second_round_msg.is_none() {
-            return Err(Error::Other("Second round message is empty".to_owned()));
-        }
         if state.third_round_msg.is_none() {
             return Err(Error::Other("Third round message is empty".to_owned()));
         }
 
-        let lambda = state.third_round_msg.unwrap().lambda;
-
         let curr_bridging_poly_at_alpha = get_poly_eval(evals, "curr_bridging_poly", "alpha")?;
-        let curr_bridging_poly_at_gamma = get_poly_eval(evals, "curr_bridging_poly", "gamma")?;
-        let prev_bridging_poly_at_prev_alpha =
-            get_poly_eval(evals, "prev_bridging_poly", "prev_alpha")?;
-        let prev_bridging_poly_at_gamma = get_poly_eval(evals, "prev_bridging_poly", "gamma")?;
         let t_at_beta = get_poly_eval(evals, "t", "beta")?;
-        let prev_t_acc_poly_at_beta = get_poly_eval(evals, "prev_t_acc_poly", "beta")?;
-        let curr_t_acc_poly_at_beta = get_poly_eval(evals, "curr_t_acc_poly", "beta")?;
 
-        let check_first_round_1 = curr_bridging_poly_at_alpha - t_at_beta;
-        let check_first_round_2 = prev_bridging_poly_at_prev_alpha - prev_t_acc_poly_at_beta;
-        let check_second_round = curr_bridging_poly_at_gamma + lambda * prev_bridging_poly_at_gamma
-            - curr_t_acc_poly_at_beta;
-
-        if !check_first_round_1.is_zero() {
+        if curr_bridging_poly_at_alpha != t_at_beta {
             return Err(Error::VerificationEquationFailed(
                 "Inner sumcheck aggregation first round: current bridging poly".to_owned(),
             ));
         }
 
-        if !check_first_round_2.is_zero() {
+        let prev_bridging_poly_at_prev_alpha =
+            get_poly_eval(evals, "prev_bridging_poly", "prev_alpha")?;
+        let prev_t_acc_poly_at_beta = get_poly_eval(evals, "prev_t_acc_poly", "beta")?;
+
+        if prev_bridging_poly_at_prev_alpha != prev_t_acc_poly_at_beta {
             return Err(Error::VerificationEquationFailed(
                 "Inner sumcheck aggregation first round: previous bridging poly".to_owned(),
             ));
         }
 
-        if !check_second_round.is_zero() {
+        let curr_bridging_poly_at_gamma = get_poly_eval(evals, "curr_bridging_poly", "gamma")?;
+        let prev_bridging_poly_at_gamma = get_poly_eval(evals, "prev_bridging_poly", "gamma")?;
+        let curr_t_acc_poly_at_beta = get_poly_eval(evals, "curr_t_acc_poly", "beta")?;
+        let lambda = state.third_round_msg.unwrap().lambda;
+
+        if curr_bridging_poly_at_gamma + lambda * prev_bridging_poly_at_gamma
+            != curr_t_acc_poly_at_beta
+        {
             return Err(Error::VerificationEquationFailed(
                 "Inner sumcheck aggregation second round".to_owned(),
             ));
