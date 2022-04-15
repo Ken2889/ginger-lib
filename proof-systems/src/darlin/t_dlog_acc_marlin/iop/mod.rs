@@ -116,29 +116,26 @@ where
         evals: &poly_commit::Evaluations<G1::ScalarField>,
         state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
-        let domain_h = &state.domain_h;
-
         let public_input = Self::format_public_input(public_input);
+
+        let domain_h = &state.domain_h;
         let domain_x = get_best_evaluation_domain::<G1::ScalarField>(public_input.len())
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-        if state.first_round_msg.is_none() {
-            return Err(Error::Other("First round message is empty".to_owned()));
-        }
+        let (alpha, eta) = match &state.first_round_msg {
+            Some(msg) => (msg.alpha, msg.get_etas()),
+            None => return Err(Error::Other("First round message is empty".to_owned())),
+        };
 
-        let first_round_msg = state.first_round_msg.as_ref().unwrap();
-        let alpha = first_round_msg.alpha;
-        let eta = &first_round_msg.get_etas();
-
-        let beta = match state.second_round_msg {
-            Some(v) => v.beta,
-            None => Err(Error::Other("Second round message is empty".to_owned()))?,
+        let beta = match &state.second_round_msg {
+            Some(msg) => msg.beta,
+            None => return Err(Error::Other("Second round message is empty".to_owned())),
         };
 
         let v_H_at_beta = domain_h.evaluate_vanishing_polynomial(beta);
 
         // Evaluate polynomials at beta
-        let l_alpha_beta = state.domain_h.eval_lagrange_kernel(alpha, beta);
+        let l_alpha_beta = domain_h.eval_lagrange_kernel(alpha, beta);
         let v_X_at_beta = domain_x.evaluate_vanishing_polynomial(beta);
 
         let w_at_beta = get_poly_eval(evals, "w", "beta")?;
@@ -172,10 +169,11 @@ where
         evals: &poly_commit::Evaluations<G1::ScalarField>,
         state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
-        if state.third_round_msg.is_none() {
-            return Err(Error::Other("Third round message is empty".to_owned()));
-        }
-        let gamma = state.third_round_msg.unwrap().gamma;
+        let gamma = match &state.third_round_msg {
+            Some(msg) => msg.gamma,
+            None => return Err(Error::Other("Third round message is empty".to_owned())),
+        };
+
         let prev_dlog_poly_at_gamma = state.previous_acc.non_native[0]
             .1
             .check_poly
@@ -196,9 +194,10 @@ where
         evals: &poly_commit::Evaluations<G1::ScalarField>,
         state: &verifier::VerifierState<G1, G2, PC1, PC2>,
     ) -> Result<(), Error> {
-        if state.third_round_msg.is_none() {
-            return Err(Error::Other("Third round message is empty".to_owned()));
-        }
+        let lambda = match &state.third_round_msg {
+            Some(msg) => msg.lambda,
+            None => return Err(Error::Other("Third round message is empty".to_owned())),
+        };
 
         let curr_bridging_poly_at_alpha = get_poly_eval(evals, "curr_bridging_poly", "alpha")?;
         let t_at_beta = get_poly_eval(evals, "t", "beta")?;
@@ -222,7 +221,6 @@ where
         let curr_bridging_poly_at_gamma = get_poly_eval(evals, "curr_bridging_poly", "gamma")?;
         let prev_bridging_poly_at_gamma = get_poly_eval(evals, "prev_bridging_poly", "gamma")?;
         let curr_t_acc_poly_at_beta = get_poly_eval(evals, "curr_t_acc_poly", "beta")?;
-        let lambda = state.third_round_msg.unwrap().lambda;
 
         if curr_bridging_poly_at_gamma + lambda * prev_bridging_poly_at_gamma
             != curr_t_acc_poly_at_beta
