@@ -944,7 +944,8 @@ impl<G: IPACurve> ToConstraintField<G::ScalarField> for DLogItem<G> {
     }
 }
 
-/// The hard part of the verifier returns the bullet polynomial.
+/// The hard part of the verifier returns the bullet polynomial in order that an accumulation SNARK
+/// prover does not need to recompute it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifierOutput<G: IPACurve> {
     /// the bullet_poly in coefficient form

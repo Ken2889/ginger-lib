@@ -1,7 +1,3 @@
-//! The data structures for Coboundary Marlin:
-//!     - prover and verifier key,
-//!     - the SNARK proof,
-//! and implementations for serialization and deserialization.
 use crate::darlin::accumulators::inner_sumcheck::InnerSumcheckKey;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::IOP;

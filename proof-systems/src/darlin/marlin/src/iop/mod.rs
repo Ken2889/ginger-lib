@@ -383,9 +383,9 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
         }
     }
 
-    // Compute domain evaluations of L_H(X,y) = -(y^n - 1) / n * X / (X-y) using batch inversion
-    // and index reversion.
-    // Costs essentially a vector product and a batch inversion.
+    // Compute domain evaluations of L_H(X,y) = -(y^n - 1) / n * X / (X-y) (for y not from the
+    // domain H), using batch inversion and index reversion.
+    // Costs only O(domain_size) many field multiplications.
     fn domain_eval_lagrange_kernel(&self, y: F) -> Result<Vec<F>, Error> {
         let v_at_y = self.evaluate_vanishing_polynomial(y);
         if v_at_y.is_zero() {
@@ -404,7 +404,7 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
     }
 
     // The Fourier representation of the bivariate Lagrange polynomial is used to compute the
-    // univariate sliced polynomial:
+    // univariate sliced polynomial in O(domain_size) many field multiplications:
     //   L_H(X, y) = 1/n * (1 + y^(n-1)*X + y^(n-2)*X^2 + ... + y^2*X^(n-2) + y*X^(n-1))
     fn slice_lagrange_kernel(&self, y: F) -> DensePolynomial<F> {
         let domain_size = self.size();

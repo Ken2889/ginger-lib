@@ -54,8 +54,8 @@ pub trait PCVerifierState:
 
 /// Defines the minimal interface of the verifier output from hard
 /// verify part.
-/// It can be used to output some intermediate calculation results which can
-/// be useful for later postprocessing.
+/// It can be used to output some intermediate calculation results which in some situations are not
+/// wanted to be recomputed (e.g. the full-length witness polynomials involved in the hard part"
 pub trait PCVerifierOutput: Clone + Debug + Eq + PartialEq {}
 
 /// Defines the minimal interface for opening proofs for a polynomial commitment

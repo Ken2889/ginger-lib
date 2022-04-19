@@ -514,7 +514,7 @@ pub fn balance_matrices<F: Field>(
     }
 }
 
-/// Convert the A, B, and C matrices fo the R1CS into the SparseMatrix format representation used
+/// Convert the A, B, and C matrices for the R1CS into the SparseMatrix format representation used
 /// inside the proving system.
 pub fn post_process_matrices<F: PrimeField>(
     cs: &mut ConstraintSystem<F>,

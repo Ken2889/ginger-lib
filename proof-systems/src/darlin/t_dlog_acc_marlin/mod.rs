@@ -153,8 +153,9 @@ where
         Ok(fs_rng)
     }
 
-    /// Produce a zkSNARK which proves both the satisfiability of circuit `c` and the statements of
-    /// the previous accumulators `previous_inner_sumcheck_acc` and `previous_dlog_acc`.
+    /// Produce a (zk) Accumulator-SNARK which proves both the satisfiability of circuit `c` and the
+    /// statements of the previous accumulator `previous_acc`, which comprises both an
+    /// inner-sumcheck dlog and dlog accumulator.
     /// Need in input also the polynomials associated to the two accumulators, namely
     /// `previous_inner_sumcheck_poly` and `previous_bullet_poly`.
     /// In typical recursive usage, the accumulators and their respective polynomials are generated
