@@ -1,4 +1,4 @@
-use algebra::{Group, ToConstraintField};
+use algebra::{DualCycle, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -16,7 +16,7 @@ use proof_systems::darlin::{
 use rand::{thread_rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-fn bench_verify<G1: IPACurve, G2: IPACurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
+fn bench_verify<G1, G2, D, FS>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -25,6 +25,8 @@ fn bench_verify<G1: IPACurve, G2: IPACurve, D: 'static + Digest, FS: FiatShamirR
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -83,7 +85,7 @@ fn bench_verify<G1: IPACurve, G2: IPACurve, D: 'static + Digest, FS: FiatShamirR
     group.finish();
 }
 
-fn bench_accumulate<G1: IPACurve, G2: IPACurve, D: 'static + Digest, FS: FiatShamirRng + 'static>(
+fn bench_accumulate<G1, G2, D, FS>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -92,6 +94,8 @@ fn bench_accumulate<G1: IPACurve, G2: IPACurve, D: 'static + Digest, FS: FiatSha
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);

@@ -1,4 +1,4 @@
-use algebra::{serialize::*, Group, ToConstraintField};
+use algebra::{serialize::*, DualCycle, Group, ToConstraintField};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -18,12 +18,7 @@ use rand::thread_rng;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-fn bench_succinct_part_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
-    D: Digest + 'static,
-    FS: FiatShamirRng + 'static,
->(
+fn bench_succinct_part_batch_verification<G1, G2, D, FS>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -33,6 +28,8 @@ fn bench_succinct_part_batch_verification<
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -83,12 +80,7 @@ fn bench_succinct_part_batch_verification<
     group.finish();
 }
 
-fn bench_hard_part_batch_verification<
-    G1: IPACurve,
-    G2: IPACurve,
-    D: Digest + 'static,
-    FS: FiatShamirRng + 'static,
->(
+fn bench_hard_part_batch_verification<G1, G2, D, FS>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -98,6 +90,8 @@ fn bench_hard_part_batch_verification<
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);
@@ -161,12 +155,7 @@ fn bench_hard_part_batch_verification<
     group.finish();
 }
 
-fn bench_batch_verification_complete<
-    G1: IPACurve,
-    G2: IPACurve,
-    D: Digest + 'static,
-    FS: FiatShamirRng + 'static,
->(
+fn bench_batch_verification_complete<G1, G2, D, FS>(
     c: &mut Criterion,
     bench_name: &str,
     segment_size: usize,
@@ -176,6 +165,8 @@ fn bench_batch_verification_complete<
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
+    D: Digest + 'static,
+    FS: FiatShamirRng + 'static,
 {
     let rng = &mut XorShiftRng::seed_from_u64(1234567890u64);
     let mut group = c.benchmark_group(bench_name);

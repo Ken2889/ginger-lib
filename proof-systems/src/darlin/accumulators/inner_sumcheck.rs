@@ -304,7 +304,7 @@ pub trait InnerSumcheckKey<G: Group, PC: PolynomialCommitment<G>> {
     fn get_domain_h(&self) -> Box<dyn EvaluationDomain<G::ScalarField>>;
 }
 
-pub type DualInnerSumcheckItemAccumulator<'a, G1, G2, PC1, PC2, K1, K2> = DualAccumulator<
+pub type DualInnerSumcheckAccumulator<'a, G1, G2, PC1, PC2, K1, K2> = DualAccumulator<
     'a,
     InnerSumcheckAccumulator<'a, G1, PC1, K1>,
     InnerSumcheckAccumulator<'a, G2, PC2, K2>,
