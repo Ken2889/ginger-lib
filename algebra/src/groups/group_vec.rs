@@ -307,7 +307,7 @@ impl<G: Group> Group for GroupVec<G> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod tests {
     use super::*;
     use crate::{
@@ -325,7 +325,9 @@ mod tests {
     fn group_vec_group_test() {
         let (a, mut b) = {
             let rng = &mut thread_rng();
-            (GroupVec::<TweedleDee>::rand(MAX_LENGTH, rng), GroupVec::<TweedleDee>::rand(MAX_LENGTH, rng))
+            let a_len: u16 = rng.gen_range(1..MAX_LENGTH);
+            let b_len: u16 = rng.gen_range(1..MAX_LENGTH);
+            (GroupVec::<TweedleDee>::rand(a_len, rng), GroupVec::<TweedleDee>::rand(b_len, rng))
         };
 
         let mut rng = XorShiftRng::seed_from_u64(1231275789u64);

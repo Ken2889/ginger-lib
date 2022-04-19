@@ -10,11 +10,9 @@ impl VariableBaseMSM {
     /// This implementation uses affine arithmetics and batch inversion. 
     /// Given base points `G[i]` together with scalars `c[i]`, `i=1,..n`, we write 
     ///    c[i] = sum  c[i,j] * D^j,
+    /// with digits `c[i,j]` from the interval `{0,...,D-1}`, and compute 
     ///    s[j] = Sum_i c[i,j] * G[i],
-    /// for each order `j`. 
-    /// The final result of the multi-scalar multiplication is then combined by 
-    ///    s = Sum_j  A^j * s[j], 
-    /// using double-and-add.
+    /// for each order `j` using the Pippenger-Yao bucket method.
     /// WARNING: This function allows scalars and bases to have different length
     /// (as long as scalars.len() <= bases.len()): internally, bases are trimmed
     /// to have the same length of the scalars; this may lead to potential message

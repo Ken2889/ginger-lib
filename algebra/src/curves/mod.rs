@@ -29,7 +29,7 @@ pub mod tests;
 pub use self::models::*;
 
 /// Projective representation of an elliptic curve point.
-/// This trait t serves curve-specific functions not covered
+/// This trait serves curve-specific functions not covered
 /// by the Group trait, in particular representation-specific
 /// (i.e. mixed-type) arithmetic functions, that usually are
 /// significantly faster.

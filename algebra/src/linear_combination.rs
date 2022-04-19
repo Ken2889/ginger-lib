@@ -101,7 +101,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod test {
     use rand::thread_rng;
 
@@ -143,7 +143,7 @@ mod test {
     }
 
     /// Initialize a random LC from a single batching scalar and a vector of  points and checks that the result of combine is indeed
-    /// given by (0 * point_0) + (scalar * point_1) + (scalar^2 * point_2) + ... + (scalar^n-1 * point_n-1) 
+    /// given by (1 * point_0) + (scalar * point_1) + (scalar^2 * point_2) + ... + (scalar^n-1 * point_n-1) 
     fn test_scalar_point_algebraic_lc_combine<G: Group>(batching_scalar: G::ScalarField, points: Vec<G>) {
         let points_ref = points.iter().collect::<Vec<_>>();
 

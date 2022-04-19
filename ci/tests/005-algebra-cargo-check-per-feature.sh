@@ -5,11 +5,11 @@ set -xeo pipefail
 
 retval=0
 cd algebra
-cargo $CARGOARGS check --features "parallel" || retval="$?"
-cargo $CARGOARGS check --features "fft" || retval="$?"
-cargo $CARGOARGS check --features "n_fold" || retval="$?"
-cargo $CARGOARGS check --features "tweedle" || retval="$?"
-cargo $CARGOARGS check --features "secp256k1" || retval="$?"
-cargo $CARGOARGS check --features "ed25519" || retval="$?"
-cargo $CARGOARGS check --features "full" || retval="$?"
+cargo $CARGOARGS check --tests --features "parallel" || retval="$?"
+cargo $CARGOARGS check --tests --features "fft" || retval="$?"
+cargo $CARGOARGS check --tests --features "n_fold" || retval="$?"
+cargo $CARGOARGS check --tests --features "tweedle" || retval="$?"
+cargo $CARGOARGS check --tests --features "secp256k1" || retval="$?"
+cargo $CARGOARGS check --tests --features "ed25519" || retval="$?"
+cargo $CARGOARGS check --tests --features "full" || retval="$?"
 exit "$retval"
