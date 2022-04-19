@@ -411,9 +411,9 @@ impl<F: PrimeField> LagrangeKernel<F> for Box<dyn EvaluationDomain<F>> {
         let inv_domain_size = self.size_inv();
         let mut coeff = Vec::with_capacity(domain_size);
         coeff.push(inv_domain_size);
-        let mut c = y;
+        let mut c = y * inv_domain_size;
         for _ in 0..domain_size - 1 {
-            coeff.push(c * inv_domain_size);
+            coeff.push(c);
             c *= y;
         }
         coeff[1..].reverse();
