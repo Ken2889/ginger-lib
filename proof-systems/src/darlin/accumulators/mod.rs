@@ -63,7 +63,7 @@ pub trait Accumulator {
 
     /// Check the validity of a single accumulator item.
     /// If successful, return the polynomial(s) behind the accumulator succinct descriptor.
-    fn check_item<R: RngCore>(
+    fn check_and_expand_item<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulator: &Self::Item,
         rng: &mut R,
@@ -72,14 +72,14 @@ pub trait Accumulator {
     /// Check the validity of multiple accumulators.
     /// A default implementation is provided in terms of `check_item`.
     /// This implementation can be overridden so as to exploit
-    fn check_items<R: RngCore>(
+    fn check_and_expand_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
     ) -> Result<Option<Vec<Self::ExpandedItem>>, Error> {
         let mut output = Vec::with_capacity(accumulators.len());
         for acc in accumulators {
-            let out = Self::check_item(vk, acc, rng)?;
+            let out = Self::check_and_expand_item(vk, acc, rng)?;
             if out.is_some() {
                 output.push(out.unwrap())
             } else {
@@ -92,12 +92,12 @@ pub trait Accumulator {
     /// Decide whether an/the public accumulator/s are correct,
     /// i.e. whether they satisfy the non-efficient predicate.
     /// Typically involves non-succinct MSMs.
-    fn check_items_optimized<R: RngCore>(
+    fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
     ) -> Result<bool, Error> {
-        let output = Self::check_items(vk, accumulators, rng)?;
+        let output = Self::check_and_expand_items(vk, accumulators, rng)?;
         Ok(output.is_some())
     }
 

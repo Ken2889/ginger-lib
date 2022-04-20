@@ -245,23 +245,19 @@ where
     let result_g1 = if accs_g1.is_empty() {
         true
     } else {
-        DLogAccumulator::<G1, FS>::check_items_optimized::<R>(g1_vk, &accs_g1, rng).map_err(
-            |_| {
-                end_timer!(verification_time);
-                None
-            },
-        )?
+        DLogAccumulator::<G1, FS>::check_items::<R>(g1_vk, &accs_g1, rng).map_err(|_| {
+            end_timer!(verification_time);
+            None
+        })?
     };
 
     let result_g2 = if accs_g2.is_empty() {
         true
     } else {
-        DLogAccumulator::<G2, FS>::check_items_optimized::<R>(g2_vk, &accs_g2, rng).map_err(
-            |_| {
-                end_timer!(verification_time);
-                None
-            },
-        )?
+        DLogAccumulator::<G2, FS>::check_items::<R>(g2_vk, &accs_g2, rng).map_err(|_| {
+            end_timer!(verification_time);
+            None
+        })?
     };
 
     end_timer!(verification_time);

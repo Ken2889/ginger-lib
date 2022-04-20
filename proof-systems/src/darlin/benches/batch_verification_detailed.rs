@@ -135,13 +135,9 @@ fn bench_hard_part_batch_verification<G1, G2, D, FS>(
                 bn.iter(|| {
                     // Verify accumulators (hard part)
                     assert!(
-                        DLogAccumulator::<G1, FS>::check_items_optimized(
-                            &verifier_key_g1,
-                            &accs_g1,
-                            rng
-                        )
-                        .unwrap()
-                            && DLogAccumulator::<G2, FS>::check_items_optimized(
+                        DLogAccumulator::<G1, FS>::check_items(&verifier_key_g1, &accs_g1, rng)
+                            .unwrap()
+                            && DLogAccumulator::<G2, FS>::check_items(
                                 &verifier_key_g2,
                                 &accs_g2,
                                 rng

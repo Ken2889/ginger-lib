@@ -32,17 +32,17 @@ where
         A1::expand_items(&vk.1, accumulator.non_native.as_slice())
     }
 
-    fn check_item<R: RngCore>(
+    fn check_and_expand_item<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulator: &Self::Item,
         rng: &mut R,
     ) -> Result<Option<Self::ExpandedItem>, Error> {
-        let check_0 = A0::check_items_optimized(&vk.0, &accumulator.native.as_slice(), rng)?;
+        let check_0 = A0::check_items(&vk.0, &accumulator.native.as_slice(), rng)?;
         if !check_0 {
             return Ok(None);
         }
 
-        let check_1 = A1::check_items(&vk.1, &accumulator.non_native.as_slice(), rng)?;
+        let check_1 = A1::check_and_expand_items(&vk.1, &accumulator.non_native.as_slice(), rng)?;
         if check_1.is_none() {
             return Ok(None);
         }
@@ -51,7 +51,7 @@ where
         Ok(Some(check_1))
     }
 
-    fn check_items<R: RngCore>(
+    fn check_and_expand_items<R: RngCore>(
         _vk: &Self::VerifierKey,
         _accumulators: &[Self::Item],
         _rng: &mut R,
@@ -59,7 +59,7 @@ where
         todo!()
     }
 
-    fn check_items_optimized<R: RngCore>(
+    fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
@@ -68,7 +68,7 @@ where
             .iter()
             .flat_map(|acc| acc.native.clone())
             .collect::<Vec<_>>();
-        let check_0 = A0::check_items_optimized(&vk.0, acc_0.as_slice(), rng)?;
+        let check_0 = A0::check_items(&vk.0, acc_0.as_slice(), rng)?;
         if !check_0 {
             return Ok(false);
         }
@@ -77,7 +77,7 @@ where
             .iter()
             .flat_map(|acc| acc.non_native.clone())
             .collect::<Vec<_>>();
-        let check_1 = A1::check_items_optimized(&vk.1, acc_1.as_slice(), rng)?;
+        let check_1 = A1::check_items(&vk.1, acc_1.as_slice(), rng)?;
         if !check_1 {
             return Ok(false);
         }

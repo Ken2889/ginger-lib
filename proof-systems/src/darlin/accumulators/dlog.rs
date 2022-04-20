@@ -163,7 +163,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
         ))
     }
 
-    fn check_item<R: RngCore>(
+    fn check_and_expand_item<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulator: &Self::Item,
         _rng: &mut R,
@@ -178,7 +178,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
         }
     }
 
-    fn check_items<R: RngCore>(
+    fn check_and_expand_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
@@ -262,7 +262,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.
-    fn check_items_optimized<R: RngCore>(
+    fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
@@ -440,12 +440,11 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
 
         // Verify the aggregated accumulator
         let hard_time = start_timer!(|| "DLOG hard part");
-        let result =
-            Self::check_items_optimized::<R>(vk, &vec![new_acc.unwrap()], rng).map_err(|e| {
-                end_timer!(hard_time);
-                end_timer!(check_acc_time);
-                e
-            })?;
+        let result = Self::check_items::<R>(vk, &vec![new_acc.unwrap()], rng).map_err(|e| {
+            end_timer!(hard_time);
+            end_timer!(check_acc_time);
+            e
+        })?;
         end_timer!(hard_time);
 
         end_timer!(check_acc_time);
@@ -861,7 +860,7 @@ mod test {
             assert!(accumulators.is_valid());
 
             // batch verify the extracted dlog items
-            assert!(DLogAccumulator::<G, FS>::check_items_optimized(
+            assert!(DLogAccumulator::<G, FS>::check_items(
                 &vk,
                 &accumulators,
                 rng
@@ -888,7 +887,7 @@ mod test {
                     max_degree,
                 )?;
             let dlog_item = DLogItem::generate_random::<_, FS>(rng, &ck);
-            let res = DLogAccumulator::<_, FS>::check_items_optimized(&vk, &[dlog_item], rng)?;
+            let res = DLogAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
 
             assert!(res);
         }
@@ -914,7 +913,7 @@ mod test {
                     max_degree,
                 )?;
             let dlog_item = DLogItem::generate_trivial(&ck);
-            let res = DLogAccumulator::<_, FS>::check_items_optimized(&vk, &[dlog_item], rng)?;
+            let res = DLogAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
 
             assert!(res);
         }

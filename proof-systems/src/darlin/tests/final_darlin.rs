@@ -36,7 +36,7 @@ impl Accumulator for TestAcc {
         Ok(())
     }
 
-    fn check_item<R: RngCore>(
+    fn check_and_expand_item<R: RngCore>(
         _vk: &Self::VerifierKey,
         _accumulator: &Self::Item,
         _rng: &mut R,

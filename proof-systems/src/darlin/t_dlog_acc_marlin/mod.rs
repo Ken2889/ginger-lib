@@ -631,7 +631,7 @@ where
         ),
         Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
     > {
-        let check_acc = DualTDLogAccumulator::<_, _, _, _, FS>::check_item(
+        let check_acc = DualTDLogAccumulator::<_, _, _, _, FS>::check_and_expand_item(
             &(
                 &(&(index_vk_g1, pc_vk_g1), pc_vk_g1),
                 &(&(index_vk_g2, pc_vk_g2), pc_vk_g2),

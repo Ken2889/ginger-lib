@@ -63,7 +63,7 @@ where
         Ok(Evaluations::from_vec_and_domain(t_evals, domain_h.clone()).interpolate())
     }
 
-    fn check_item<R: RngCore>(
+    fn check_and_expand_item<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulator: &Self::Item,
         _rng: &mut R,
@@ -78,7 +78,7 @@ where
         }
     }
 
-    fn check_items<R: RngCore>(
+    fn check_and_expand_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
@@ -112,7 +112,7 @@ where
         }
     }
 
-    fn check_items_optimized<R: RngCore>(
+    fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,

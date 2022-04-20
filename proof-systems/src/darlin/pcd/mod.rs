@@ -128,7 +128,7 @@ pub trait PCD: Sized + Send + Sync {
         vk: &Self::PCDVerifierKey,
         rng: &mut R,
     ) -> Result<bool, PCDError> {
-        <Self::PCDAccumulator as Accumulator>::check_items_optimized::<R>(vk.as_ref(), &[acc], rng)
+        <Self::PCDAccumulator as Accumulator>::check_items::<R>(vk.as_ref(), &[acc], rng)
             .map_err(|e| PCDError::FailedHardVerification(e.to_string()))
     }
 
