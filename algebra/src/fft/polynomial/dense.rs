@@ -531,7 +531,7 @@ impl<F: Field> SemanticallyValid for DensePolynomial<F> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tweedle"))]
 mod tests {
     use crate::domain::get_best_evaluation_domain;
     use crate::fields::tweedle::fr::Fr;
