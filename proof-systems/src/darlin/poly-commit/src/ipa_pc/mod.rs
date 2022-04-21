@@ -5,13 +5,12 @@
 //! * a seperate aggregation prover for the verifier "hard" parts.
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
-use crate::read_fe_from_challenge;
 use crate::Error;
 use crate::{Polynomial, PolynomialCommitment, PCKey, PCProof};
 use crate::{ToString, Vec};
 use algebra::msm::VariableBaseMSM;
 use algebra::{
-    serialize_no_metadata, Field, PrimeField,
+    serialize_no_metadata, Field, PrimeField, FromBits,
     SemanticallyValid, CanonicalSerialize, UniformRand,
 };
 use rand_core::RngCore;
@@ -533,7 +532,8 @@ impl<G: IPACurve, FS: FiatShamirRng> PolynomialCommitment<G> for InnerProductArg
 
             // Save always round challenge as a normal 128 bits G::ScalarField element
             let chal = fs_rng.get_challenge::<128>()?;
-            let raw_round_chal = read_fe_from_challenge::<G::ScalarField>(chal.to_vec())?;
+            let raw_round_chal = G::ScalarField::read_bits(chal.to_vec())
+                .map_err(|e| Error::Other(e.to_string()))?;
             round_challenges.push(raw_round_chal);
             round_challenge = raw_round_chal;
 

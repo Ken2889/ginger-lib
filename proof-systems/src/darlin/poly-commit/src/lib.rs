@@ -40,7 +40,7 @@ mod tests;
 
 pub use algebra::fft::DensePolynomial as Polynomial;
 use algebra::{
-    serialize::*, Field, PrimeField, Group, LinearCombination, SemanticallyValid,
+    serialize::*, Field, Group, LinearCombination, SemanticallyValid, FromBits
 };
 use rand_core::RngCore;
 use std::{
@@ -329,9 +329,8 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     }
 
     /// Transform a challenge to its representation in the scalar field.
-    /// 'chal' bits are supposed to be in LE bit order.
     fn challenge_to_scalar(chal: Vec<bool>) -> Result<G::ScalarField, Self::Error> {
-        let chal = read_fe_from_challenge::<G::ScalarField>(chal)
+        let chal = G::ScalarField::read_bits(chal)
             .map_err(|e| Error::Other(e.to_string()))?;
         Ok(chal)
     }
@@ -922,21 +921,4 @@ pub fn evaluate_query_map_to_vec<'a, F: Field>(
         }
     }
     v
-}
-
-/// Transform a challenge to its representation in the field F.
-/// 'chal' bits are supposed to be in LE bit order.
-pub(crate) fn read_fe_from_challenge<F: PrimeField>(mut chal: Vec<bool>) -> Result<F, Error> {
-    
-    // Pad before reversing if necessary
-    if chal.len() < F::size_in_bits() {
-        chal.append(&mut vec![false; F::size_in_bits() - chal.len()])
-    }
-
-    // Reverse and read (as read_bits read in BE)
-    chal.reverse();
-    let scalar = F::read_bits(chal)
-        .map_err(|e| Error::Other(e.to_string()))?;
-
-    Ok(scalar)
 }

@@ -177,7 +177,8 @@ pub trait EndoMulCurve: Curve {
     /// Apply `Phi`
     fn apply_endomorphism(&self) -> Self;
 
-    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent scalar
+    /// Conversion of a bit sequence used in `endo_mul()` into its equivalent scalar.
+    /// Bits must be in LE bit order.
     fn endo_rep_to_scalar(bits: Vec<bool>) -> Result<Self::ScalarField, Error> {
         let mut a: Self::ScalarField = 2u64.into();
         let mut b: Self::ScalarField = 2u64.into();

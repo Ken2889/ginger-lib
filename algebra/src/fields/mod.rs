@@ -353,9 +353,10 @@ impl<F: PrimeField> ToBits for F {
     }
 }
 
-// Defines a prime field element from a big endian vector of booleans, which
-// does not exceed the length of the modulus.
 impl<F: PrimeField> FromBits for F {
+    /// Defines a prime field element from a big endian vector of booleans, which
+    /// does not exceed the length of the modulus.
+    /// If bits.len() < MODULUS_BITS, bits are prepended with 0s to reach MODULUS_BITS.
     #[inline]
     fn read_bits(bits: Vec<bool>) -> Result<Self, Error> {
         let modulus_bits = <Self as PrimeField>::Params::MODULUS_BITS as usize;
