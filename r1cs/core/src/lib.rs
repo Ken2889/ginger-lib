@@ -85,6 +85,9 @@ impl Ord for Index {
 /// in the field `F`.
 /// The `(coeff, var)` pairs in a `LinearCombination` are kept sorted according
 /// to the index of the variable in its constraint system.
+/// TODO: To not confuse this with the LinearCombination defined in algebra::linear_combination,
+///       we should rename this to something like R1CSLinearCombination.
+///       In reality, we should be able to implement this re-using the one defined in algebra. 
 #[derive(Debug, Clone, Hash)]
 pub struct LinearCombination<F: Field>(pub SmallVec<F>);
 
