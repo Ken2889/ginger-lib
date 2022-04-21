@@ -608,15 +608,14 @@ impl<G: IPACurve> SuccinctCheckPolynomial<G> {
     pub fn from_chals(chals: Vec<G::ScalarField>) -> Self {
         use algebra::ToBits;
 
+        // We know that only the first 128 bits are relevant
+        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
         let endo_chals = chals
             .iter()
             .map(|chal| {
                 // Serialize FE
                 let mut bits = chal.write_bits();
-                // Reverse bits as endo_rep_to_scalar requires them to be in LE
-                bits.reverse();
-                // We know that only the first 128 bits are relevant
-                bits = bits[..128].to_vec();                
+                bits = bits[to_skip..].to_vec();                
                 // Read endo scalar
                 G::endo_rep_to_scalar(bits).unwrap()
             }).collect();
