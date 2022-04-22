@@ -1,10 +1,12 @@
 #![allow(non_snake_case)]
 
+use crate::darlin::accumulators::inner_sumcheck::SuccinctInnerSumcheckDescriptor;
+use crate::darlin::accumulators::t_dlog::DualTDLogItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
     VerifierFirstMsg, VerifierSecondMsg, VerifierThirdMsg,
 };
-use crate::darlin::t_dlog_acc_marlin::iop::{DualTDLogItem, IOP};
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
 use algebra::{
     get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
@@ -13,18 +15,16 @@ use bench_utils::{end_timer, start_timer};
 use marlin::iop::sparse_linear_algebra::mat_vec_mul;
 use marlin::iop::{BoundaryPolynomial, Error, LagrangeKernel};
 use num_traits::Zero;
-use poly_commit::{LabeledPolynomial, Polynomial, PolynomialCommitment};
+use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError, SynthesisMode};
 use rand_core::RngCore;
 use rayon::prelude::*;
 
 /// State for the IOP prover.
-pub struct ProverState<'a, G1, G2, PC1, PC2>
+pub struct ProverState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     formatted_input_assignment: Vec<G1::ScalarField>,
     witness_assignment: Vec<G1::ScalarField>,
@@ -40,10 +40,10 @@ where
         LabeledPolynomial<G1::ScalarField>,
     )>,
 
-    index: &'a Index<G1, G2>,
+    index: &'a Index<G1>,
 
     /// the previous accumulator
-    acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
+    acc: &'a DualTDLogItem<G2, G1>,
 
     /// the random values sent by the verifier in the first round
     verifier_first_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
@@ -55,16 +55,14 @@ where
     domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
 }
 
-impl<'a, G1, G2, PC1, PC2> ProverState<'a, G1, G2, PC1, PC2>
+impl<'a, G1, G2> ProverState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     /// Get the public input.
     pub fn public_input(&self) -> Vec<G1::ScalarField> {
-        IOP::<G1, G2, PC1, PC2>::unformat_public_input(&self.formatted_input_assignment)
+        IOP::<G1, G2>::unformat_public_input(&self.formatted_input_assignment)
     }
     /// Return the variable vector, with input variables and witness variables already indexed
     /// according to the treatment of the input domain `domain_x` as a subdomain of the full
@@ -180,25 +178,17 @@ impl<F: Field> ProverAccumulatorOracles<F> {
 
 /* The prover rounds
 */
-impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     /// Preparation of the prover, computes the witness vector `y`.
     pub fn prover_init<'a, C: ConstraintSynthesizer<G1::ScalarField>>(
-        index: &'a Index<G1, G2>,
+        index: &'a Index<G1>,
         c: C,
-        acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
-    ) -> Result<
-        (
-            ProverInitOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+        acc: &'a DualTDLogItem<G2, G1>,
+    ) -> Result<(ProverInitOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -268,16 +258,10 @@ where
     ///   `w(X)`, `y_A(X)` and `y_B(X)`
     /// [HGB]: https://eprint.iacr.org/2021/930
     pub fn prover_first_round<'a, R: RngCore>(
-        mut state: ProverState<'a, G1, G2, PC1, PC2>,
+        mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<
-        (
-            ProverFirstOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(ProverFirstOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
         let domain_x = &state.domain_x;
@@ -432,13 +416,13 @@ where
     /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
     pub fn prover_second_round<'a, R: RngCore>(
         ver_message: &VerifierFirstMsg<G1::ScalarField>,
-        mut state: ProverState<'a, G1, G2, PC1, PC2>,
+        mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
     ) -> Result<
         (
             ProverSecondOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2, PC1, PC2>,
+            ProverState<'a, G1, G2>,
         ),
         Error,
     > {
@@ -672,14 +656,8 @@ where
     /// It is the first round of the inner-sumcheck aggregation.
     pub fn prover_third_round<'a>(
         ver_message: &VerifierSecondMsg<G1::ScalarField>,
-        state: ProverState<'a, G1, G2, PC1, PC2>,
-    ) -> Result<
-        (
-            ProverThirdOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+        state: ProverState<'a, G1, G2>,
+    ) -> Result<(ProverThirdOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::ThirdRound");
 
         let ProverState { index, .. } = state;
@@ -715,7 +693,7 @@ where
 
         let prev_bridging_poly_time = start_timer!(|| "Compute prev_bridging_poly");
 
-        let eta = &state.acc.non_native[0].0.eta;
+        let eta = &state.acc.non_native[0].t_item.succinct_descriptor.eta;
 
         let prev_bridging_poly_on_h: Vec<_> = m_a
             .iter()
@@ -752,11 +730,11 @@ where
     /// It is the second round of the inner-sumcheck aggregation.
     pub fn prover_fourth_round<'a>(
         ver_message: &VerifierThirdMsg<G1::ScalarField>,
-        state: ProverState<'a, G1, G2, PC1, PC2>,
+        state: ProverState<'a, G1, G2>,
     ) -> Result<
         (
             ProverFourthOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2, PC1, PC2>,
+            ProverState<'a, G1, G2>,
         ),
         Error,
     > {
@@ -765,7 +743,7 @@ where
             "ProverState should include verifier_first_msg when prover_third_round is called",
         );
         let eta = &verifier_first_msg.get_etas();
-        let eta_prime = &state.acc.non_native[0].0.eta;
+        let eta_prime = &state.acc.non_native[0].t_item.succinct_descriptor.eta;
         let lambda = ver_message.lambda;
         let gamma = ver_message.gamma;
 
@@ -775,24 +753,17 @@ where
             .map(|(&eta, &eta_prime)| eta + lambda * eta_prime)
             .collect();
 
-        let l_x_gamma_evals_time = start_timer!(|| "Compute l_x_gamma evals");
-        let l_x_gamma_evals_on_h = state.domain_h.domain_eval_lagrange_kernel(gamma)?;
-        end_timer!(l_x_gamma_evals_time);
+        let curr_t_acc_poly_time = start_timer!(|| "Compute curr_t_acc_poly");
 
-        let curr_t_acc_poly_time = start_timer!(|| "Compute curr_t_acc_poly evaluations");
+        let curr_t_acc_succinct_descriptor = SuccinctInnerSumcheckDescriptor {
+            alpha: gamma,
+            eta: eta_second.clone(),
+        };
 
-        let curr_t_acc_poly_on_h = marlin::IOP::calculate_t(
-            vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &eta_second,
-            state.domain_h.clone(),
-            &l_x_gamma_evals_on_h,
-        )?;
+        let curr_t_acc_poly = curr_t_acc_succinct_descriptor
+            .expand(state.index)
+            .map_err(|err| Error::Other(err.to_string()))?;
 
-        let curr_t_acc_poly = EvaluationsOnDomain::from_vec_and_domain(
-            curr_t_acc_poly_on_h.clone(),
-            state.domain_h.clone(),
-        )
-        .interpolate();
         end_timer!(curr_t_acc_poly_time);
 
         let oracles = ProverFourthOracles {

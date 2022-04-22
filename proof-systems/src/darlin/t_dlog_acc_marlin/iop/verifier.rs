@@ -1,30 +1,29 @@
 #![allow(non_snake_case)]
 
+use crate::darlin::accumulators::t_dlog::DualTDLogItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
-use crate::darlin::t_dlog_acc_marlin::iop::{DualTDLogItem, IOP};
+use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
 use algebra::{get_best_evaluation_domain, EvaluationDomain, Field, FromBits, Group};
 use fiat_shamir::FiatShamirRng;
 use marlin::iop::Error;
 use num_traits::{One, Zero};
-use poly_commit::{PolynomialCommitment, QueryMap};
+use poly_commit::QueryMap;
 use r1cs_core::SynthesisError;
 use std::collections::BTreeSet;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 /// State of the IOP verifier
-pub struct VerifierState<'a, G1, G2, PC1, PC2>
+pub struct VerifierState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     /// Domain H.
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
     /// the previous inner-sumcheck accumulator
-    pub previous_acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
+    pub previous_acc: &'a DualTDLogItem<G2, G1>,
 
     /// First round verifier message.
     pub first_round_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
@@ -68,18 +67,16 @@ pub struct VerifierThirdMsg<G: Group> {
     pub lambda: G::ScalarField,
 }
 
-impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     /// Preparation of the verifier.
     pub fn verifier_init<'a>(
-        index_info: &IndexInfo<G1, G2>,
-        previous_acc: &'a DualTDLogItem<G2, G1, PC2, PC1>,
-    ) -> Result<VerifierState<'a, G1, G2, PC1, PC2>, Error> {
+        index_info: &IndexInfo<G1>,
+        previous_acc: &'a DualTDLogItem<G2, G1>,
+    ) -> Result<VerifierState<'a, G1, G2>, Error> {
         let num_formatted_variables = index_info.num_inputs + index_info.num_witness;
         let num_constraints = index_info.num_constraints;
         let padded_matrix_dim = std::cmp::max(num_formatted_variables, num_constraints);
@@ -99,15 +96,9 @@ where
     /// The verifier first round, samples the random challenges `eta` and `alpha` for reducing the R1CS identies
     /// to a sumcheck.
     pub fn verifier_first_round<'a, FS: FiatShamirRng>(
-        mut state: VerifierState<'a, G1, G2, PC1, PC2>,
+        mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut FS,
-    ) -> Result<
-        (
-            VerifierFirstMsg<G1::ScalarField>,
-            VerifierState<'a, G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(VerifierFirstMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
         let chals = fs_rng.get_many_challenges::<128>(2)?;
 
         let alpha = G1::ScalarField::read_bits(chals[0].to_vec())
@@ -135,12 +126,12 @@ where
     /// Second round of the verifier, samples the random challenge `beta` for probing
     /// the outer sumcheck identity.
     pub fn verifier_second_round<'a, R: FiatShamirRng>(
-        mut state: VerifierState<'a, G1, G2, PC1, PC2>,
+        mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
     ) -> Result<
         (
             VerifierSecondMsg<G1::ScalarField>,
-            VerifierState<'a, G1, G2, PC1, PC2>,
+            VerifierState<'a, G1, G2>,
         ),
         Error,
     > {
@@ -162,15 +153,9 @@ where
     /// Third round of the verifier, samples the random challenges `gamma` and `lambda` for the
     /// inner sumcheck aggregation.
     pub fn verifier_third_round<'a, R: FiatShamirRng>(
-        mut state: VerifierState<'a, G1, G2, PC1, PC2>,
+        mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
-    ) -> Result<
-        (
-            VerifierThirdMsg<G1::ScalarField>,
-            VerifierState<'a, G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(VerifierThirdMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
         let chals = fs_rng.get_many_challenges::<128>(2)?;
 
         let gamma = G1::ScalarField::read_bits(chals[0].to_vec())
@@ -197,20 +182,17 @@ where
 
     /// Output the query state and next round state.
     pub fn verifier_query_map<'a, 'b>(
-        state: VerifierState<G1, G2, PC1, PC2>,
-    ) -> Result<
-        (
-            QueryMap<'b, G1::ScalarField>,
-            VerifierState<G1, G2, PC1, PC2>,
-        ),
-        Error,
-    > {
+        state: VerifierState<G1, G2>,
+    ) -> Result<(QueryMap<'b, G1::ScalarField>, VerifierState<G1, G2>), Error> {
         if state.second_round_msg.is_none() {
             return Err(Error::Other("Second round message is empty".to_owned()));
         }
         let beta = state.second_round_msg.unwrap().beta;
         let alpha = state.first_round_msg.as_ref().unwrap().alpha;
-        let prev_alpha = state.previous_acc.non_native[0].0.alpha;
+        let prev_alpha = state.previous_acc.non_native[0]
+            .t_item
+            .succinct_descriptor
+            .alpha;
         let gamma = state.third_round_msg.unwrap().gamma;
 
         let g_h = state.domain_h.group_gen();

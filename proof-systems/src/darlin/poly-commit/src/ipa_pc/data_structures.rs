@@ -7,10 +7,11 @@
 //!
 //! [BCMS20]: https://eprint.iacr.org/2020/499
 use super::IPACurve;
-use crate::ipa_pc::InnerProductArgPC;
 use crate::*;
 use crate::{PCKey, Vec};
-use algebra::{DensePolynomial, PrimeField, ToBits, ToConstraintField, UniformRand};
+#[cfg(feature = "circuit-friendly")]
+use algebra::ToBits;
+use algebra::{DensePolynomial, PrimeField};
 use std::{
     convert::TryFrom,
     io::{Read, Write},
@@ -755,62 +756,6 @@ pub struct DLogItem<G: IPACurve> {
     pub final_comm_key: G,
 }
 
-impl<G: IPACurve> DLogItem<G> {
-    /// Generate a random (but valid) instance of `DLogItem`, for test purposes only.
-    pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key: &CommitterKey<G>,
-    ) -> Self {
-        // Generate valid accumulator over G1 starting from random xi_s
-        let log_key_len = algebra::log2(committer_key.comm_key.len());
-        let chals = (0..log_key_len as usize)
-            .map(|_| u128::rand(rng).into())
-            .collect();
-        let check_poly = SuccinctCheckPolynomial::from_chals(chals);
-        let final_comm_key = InnerProductArgPC::<G, FS>::inner_commit(
-            committer_key.comm_key.as_slice(),
-            check_poly.compute_coeffs().as_slice(),
-            None,
-            None,
-        )
-        .unwrap();
-
-        Self {
-            check_poly,
-            final_comm_key,
-        }
-    }
-
-    /// Generate a random invalid instance of `DLogItem`, for test purposes only.
-    pub fn generate_invalid<R: RngCore, FS: FiatShamirRng>(
-        rng: &mut R,
-        committer_key: &CommitterKey<G>,
-    ) -> Self {
-        let mut result = Self::generate_random::<_, FS>(rng, committer_key);
-        result.final_comm_key = G::rand(rng);
-        result
-    }
-
-    /// Generate the trivial `DLogItem`.
-    pub fn generate_trivial(committer_key: &CommitterKey<G>) -> Self {
-        // We define a trivial DLogItem as having all `xi_s` equal to zero.
-        // This corresponds to a degree-0 bullet polynomial identically equal to one, which in turn
-        // implies that the `g_final` is equal to the first element of the committer key.
-        let check_poly = SuccinctCheckPolynomial::from_chals(vec![]);
-        let final_comm_key = G::from_affine(&committer_key.comm_key[0]);
-        Self {
-            check_poly,
-            final_comm_key,
-        }
-    }
-
-    /// Compute the polynomial associated to the accumulator.
-    pub fn compute_poly(&self) -> DensePolynomial<G::ScalarField> {
-        let coeffs = self.check_poly.compute_coeffs();
-        DensePolynomial::from_coefficients_vec(coeffs)
-    }
-}
-
 impl<G: IPACurve> CanonicalSerialize for DLogItem<G> {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // GFinal will always be 1 segment and without any shift
@@ -905,44 +850,6 @@ impl<G: IPACurve> SemanticallyValid for DLogItem<G> {
 }
 
 impl<G: IPACurve> PCVerifierState for DLogItem<G> {}
-
-impl<G: IPACurve> ToConstraintField<G::ScalarField> for DLogItem<G> {
-    fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Box<(dyn std::error::Error)>> {
-        let mut fes = Vec::new();
-
-        // The final_comm_key belongs to G::BaseField, so we convert it into elements of
-        // G::ScalarField
-        let final_comm_key = self.final_comm_key.clone();
-        let mut final_comm_key_g1_bits = Vec::new();
-        let c_fes = final_comm_key.to_field_elements()?;
-        for fe in c_fes {
-            final_comm_key_g1_bits.append(&mut fe.write_bits());
-        }
-        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
-
-        // The challenges of check_poly are by default 128 bit elements from G1::ScalarField
-        // (we do field arithmetics with them lateron).
-        // Since we do not want to waste space, we serialize them all to bits and pack them into
-        // native field elements as efficient as possible (yet secure).
-        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
-        let mut check_poly_bits = Vec::new();
-        for fe in self.check_poly.chals.iter() {
-            let bits = fe.write_bits();
-            // write_bits() outputs a Big Endian bit order representation of fe and the same
-            // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
-            // e.g. we need to skip the first MODULUS_BITS - 128 bits.
-            debug_assert!(
-                <[bool] as ToConstraintField<G::ScalarField>>::to_field_elements(&bits[to_skip..])
-                    .unwrap()[0]
-                    == *fe
-            );
-            check_poly_bits.extend_from_slice(&bits[to_skip..]);
-        }
-        fes.append(&mut check_poly_bits.to_field_elements()?);
-
-        Ok(fes)
-    }
-}
 
 /// The hard part of the verifier returns the bullet polynomial in order that an accumulation SNARK
 /// prover does not need to recompute it.

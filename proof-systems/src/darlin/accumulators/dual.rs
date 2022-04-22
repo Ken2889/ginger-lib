@@ -1,9 +1,11 @@
-use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
+use crate::darlin::accumulators::ipa_accumulator::IPAAccumulatorItem;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
+use crate::darlin::IPACurve;
 use algebra::{
-    CanonicalDeserialize, CanonicalSerialize, Field, Read, SerializationError, ToConstraintField,
-    Write,
+    CanonicalDeserialize, CanonicalSerialize, DualCycle, Read, SerializationError,
+    ToConstraintField, Write,
 };
+use bench_utils::{end_timer, start_timer};
 use derivative::Derivative;
 use rand_core::RngCore;
 use std::marker::PhantomData;
@@ -23,47 +25,15 @@ where
     type VerifierKey = (&'a A0::VerifierKey, &'a A1::VerifierKey);
     type Proof = (A0::Proof, A1::Proof);
     type Item = DualAccumulatorItem<A0::Item, A1::Item>;
-    type ExpandedItem = Vec<A1::ExpandedItem>;
-
-    fn expand_item(
-        vk: &Self::VerifierKey,
-        accumulator: &Self::Item,
-    ) -> Result<Self::ExpandedItem, Error> {
-        A1::expand_items(&vk.1, accumulator.non_native.as_slice())
-    }
-
-    fn check_and_expand_item<R: RngCore>(
-        vk: &Self::VerifierKey,
-        accumulator: &Self::Item,
-        rng: &mut R,
-    ) -> Result<Option<Self::ExpandedItem>, Error> {
-        let check_0 = A0::check_items(&vk.0, &accumulator.native.as_slice(), rng)?;
-        if !check_0 {
-            return Ok(None);
-        }
-
-        let check_1 = A1::check_and_expand_items(&vk.1, &accumulator.non_native.as_slice(), rng)?;
-        if check_1.is_none() {
-            return Ok(None);
-        }
-        let check_1 = check_1.unwrap();
-
-        Ok(Some(check_1))
-    }
-
-    fn check_and_expand_items<R: RngCore>(
-        _vk: &Self::VerifierKey,
-        _accumulators: &[Self::Item],
-        _rng: &mut R,
-    ) -> Result<Option<Vec<Self::ExpandedItem>>, Error> {
-        todo!()
-    }
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
-        accumulators: &[Self::Item],
+        accumulators: &[DualAccumulatorItem<A0::Item, A1::Item>],
         rng: &mut R,
     ) -> Result<bool, Error> {
+        let check_time = start_timer!(|| "Check dual accumulators");
+
+        let check_native_time = start_timer!(|| "Check native part of accumulators");
         let acc_0 = accumulators
             .iter()
             .flat_map(|acc| acc.native.clone())
@@ -72,7 +42,9 @@ where
         if !check_0 {
             return Ok(false);
         }
+        end_timer!(check_native_time);
 
+        let check_non_native_time = start_timer!(|| "Check non-native part of accumulators");
         let acc_1 = accumulators
             .iter()
             .flat_map(|acc| acc.non_native.clone())
@@ -81,7 +53,9 @@ where
         if !check_1 {
             return Ok(false);
         }
+        end_timer!(check_non_native_time);
 
+        end_timer!(check_time);
         return Ok(true);
     }
 
@@ -152,21 +126,21 @@ where
     }
 
     fn trivial_item(vk: &Self::VerifierKey) -> Result<Self::Item, Error> {
-        Ok(Self::Item {
+        Ok(DualAccumulatorItem {
             native: vec![A0::trivial_item(&vk.0)?],
             non_native: vec![A1::trivial_item(&vk.1)?],
         })
     }
 
     fn random_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
-        Ok(Self::Item {
+        Ok(DualAccumulatorItem {
             native: vec![A0::random_item(&vk.0, rng)?],
             non_native: vec![A1::random_item(&vk.1, rng)?],
         })
     }
 
     fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
-        Ok(Self::Item {
+        Ok(DualAccumulatorItem {
             native: vec![A0::invalid_item(&vk.0, rng)?],
             non_native: vec![A1::invalid_item(&vk.1, rng)?],
         })
@@ -192,15 +166,17 @@ where
 {
 }
 
-impl<I0, I1, F> ToConstraintField<F> for DualAccumulatorItem<I0, I1>
+impl<G0, G1, I0, I1> ToConstraintField<G0::ScalarField> for DualAccumulatorItem<I0, I1>
 where
-    I0: AccumulatorItem + ToConstraintField<F>,
-    I1: AccumulatorItem + ToDualField<F>,
-    F: Field,
+    G0: IPACurve,
+    G1: IPACurve,
+    G0: DualCycle<G1>,
+    I0: IPAAccumulatorItem<Curve = G0>,
+    I1: IPAAccumulatorItem<Curve = G1>,
 {
-    fn to_field_elements(&self) -> Result<Vec<F>, Error> {
-        let mut fes_0 = self.native.to_field_elements()?;
-        let mut fes_1 = self.non_native.to_dual_field_elements()?;
+    fn to_field_elements(&self) -> Result<Vec<G0::ScalarField>, Error> {
+        let mut fes_0 = self.native.to_scalar_field_elements()?;
+        let mut fes_1 = self.non_native.to_base_field_elements()?;
         fes_0.append(&mut fes_1);
         Ok(fes_0)
     }

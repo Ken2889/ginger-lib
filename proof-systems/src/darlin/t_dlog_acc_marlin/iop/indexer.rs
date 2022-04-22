@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use algebra::{serialize::*, ToBytes};
+use algebra::{get_best_evaluation_domain, serialize::*, EvaluationDomain, ToBytes};
 use derivative::Derivative;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 
@@ -10,7 +10,6 @@ use bench_utils::{add_to_trace, end_timer, start_timer};
 use marlin::iop::indexer::{balance_matrices, num_non_zero, post_process_matrices};
 use marlin::iop::sparse_linear_algebra::SparseMatrix;
 use marlin::iop::Error;
-use poly_commit::PolynomialCommitment;
 use std::marker::PhantomData;
 
 /// Information about the index, including the field of definition, the number of
@@ -26,7 +25,7 @@ use std::marker::PhantomData;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IndexInfo<G1: IPACurve, G2: IPACurve> {
+pub struct IndexInfo<G1: IPACurve> {
     /// The total number of witnesses in the constraint system.
     pub num_witness: usize,
     /// The total number of public inputs in the constraint system.
@@ -38,11 +37,18 @@ pub struct IndexInfo<G1: IPACurve, G2: IPACurve> {
 
     #[doc(hidden)]
     pub g1: PhantomData<G1>,
-    #[doc(hidden)]
-    pub g2: PhantomData<G2>,
 }
 
-impl<G1: IPACurve, G2: IPACurve> ToBytes for IndexInfo<G1, G2> {
+impl<G1: IPACurve> IndexInfo<G1> {
+    pub fn get_domain_h(&self) -> Option<Box<dyn EvaluationDomain<G1::ScalarField>>> {
+        get_best_evaluation_domain(std::cmp::max(
+            self.num_constraints,
+            self.num_witness + self.num_inputs,
+        ))
+    }
+}
+
+impl<G1: IPACurve> ToBytes for IndexInfo<G1> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         self.num_witness
@@ -71,9 +77,9 @@ impl<G1: IPACurve, G2: IPACurve> ToBytes for IndexInfo<G1, G2> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// The "indexed" version of the constraint system.
 /// Besides auxiliary information on the index, contains the R1CS matrices `M=A,B,C`.
-pub struct Index<G1: IPACurve, G2: IPACurve> {
+pub struct Index<G1: IPACurve> {
     /// Information about the index.
-    pub index_info: IndexInfo<G1, G2>,
+    pub index_info: IndexInfo<G1>,
 
     /// The `A` matrix for the R1CS instance, in sparse representation.
     pub a: SparseMatrix<G1::ScalarField>,
@@ -83,16 +89,14 @@ pub struct Index<G1: IPACurve, G2: IPACurve> {
     pub c: SparseMatrix<G1::ScalarField>,
 }
 
-impl<G1, G2, PC1, PC2> IOP<G1, G2, PC1, PC2>
+impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
-    PC1: PolynomialCommitment<G1>,
-    PC2: PolynomialCommitment<G2>,
 {
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.
-    pub fn index<C: ConstraintSynthesizer<G1::ScalarField>>(c: C) -> Result<Index<G1, G2>, Error> {
+    pub fn index<C: ConstraintSynthesizer<G1::ScalarField>>(c: C) -> Result<Index<G1>, Error> {
         let index_time = start_timer!(|| "IOP::Index");
 
         let constraint_time = start_timer!(|| "Generating constraints");
@@ -127,7 +131,6 @@ where
             num_constraints: ics.num_constraints,
             num_non_zero: num_non_zero(&mut ics),
             g1: PhantomData,
-            g2: PhantomData,
         };
 
         let (domain_h, _, domain_x, _) = marlin::IOP::build_domains(

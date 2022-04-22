@@ -27,21 +27,13 @@ impl Accumulator for TestAcc {
     type VerifierKey = ();
     type Proof = ();
     type Item = ();
-    type ExpandedItem = ();
 
-    fn expand_item(
+    fn check_items<R: RngCore>(
         _vk: &Self::VerifierKey,
-        _accumulator: &Self::Item,
-    ) -> Result<Self::ExpandedItem, AccError> {
-        Ok(())
-    }
-
-    fn check_and_expand_item<R: RngCore>(
-        _vk: &Self::VerifierKey,
-        _accumulator: &Self::Item,
+        _accumulators: &[Self::Item],
         _rng: &mut R,
-    ) -> Result<Option<Self::ExpandedItem>, AccError> {
-        Ok(Some(()))
+    ) -> Result<bool, AccError> {
+        Ok(true)
     }
 
     fn accumulate_items(
@@ -76,7 +68,7 @@ impl Accumulator for TestAcc {
         _vk: &Self::VerifierKey,
         _rng: &mut R,
     ) -> Result<Self::Item, AccError> {
-        Ok(())
+        unimplemented!()
     }
 }
 

@@ -54,9 +54,9 @@ mod t_dlog_acc_marlin {
     use super::*;
 
     use crate::darlin::accumulators::dual::DualAccumulatorItem;
+    use crate::darlin::accumulators::t_dlog::{DualTDLogAccumulator, TDLogAccumulator};
     use crate::darlin::accumulators::Accumulator;
     use crate::darlin::t_dlog_acc_marlin::data_structures::PC;
-    use crate::darlin::t_dlog_acc_marlin::iop::{DualTDLogAccumulator, TDLogAccumulator};
     use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
     use crate::darlin::IPACurve;
     use algebra::{
@@ -149,34 +149,20 @@ mod t_dlog_acc_marlin {
             test_canonical_serialize_deserialize(true, &index_pk_g2);
             test_canonical_serialize_deserialize(true, &index_vk_g2);
 
-            let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, _, _, FS>::random_item(
+            let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, FS>::random_item(
                 &(
-                    &(&(&index_vk_g2, &pc_vk_g2), &pc_vk_g2),
-                    &(&(&index_vk_g1, &pc_vk_g1), &pc_vk_g1),
+                    &(&index_vk_g2.index, &pc_vk_g2),
+                    &(&index_vk_g1.index, &pc_vk_g1),
                 ),
                 rng,
             )
             .unwrap();
-
-            let t_dlog_polys = DualTDLogAccumulator::<_, _, _, _, FS>::expand_item(
-                &(
-                    &(&(&index_vk_g2, &pc_vk_g2), &pc_vk_g2),
-                    &(&(&index_vk_g1, &pc_vk_g1), &pc_vk_g1),
-                ),
-                &dual_t_dlog_acc,
-            )
-            .unwrap();
-
-            let t_poly_g1 = &t_dlog_polys[0].0;
-            let bullet_poly_g1 = &t_dlog_polys[0].1;
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,
-                t_poly_g1,
-                bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             );
@@ -220,35 +206,21 @@ mod t_dlog_acc_marlin {
             the succinct verification of the proof fails.
              */
             let t_dlog_acc_g1_invalid =
-                TDLogAccumulator::invalid_item(&(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1), rng)
+                TDLogAccumulator::<_, FS>::invalid_item(&(&index_vk_g1.index, &pc_pk_g1), rng)
                     .unwrap();
             let t_dlog_acc_g2_valid =
-                TDLogAccumulator::random_item(&(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2), rng)
+                TDLogAccumulator::<_, FS>::random_item(&(&index_vk_g2.index, &pc_pk_g2), rng)
                     .unwrap();
             let dual_t_dlog_acc = DualAccumulatorItem {
                 native: vec![t_dlog_acc_g2_valid],
                 non_native: vec![t_dlog_acc_g1_invalid],
             };
 
-            let t_dlog_polys = DualTDLogAccumulator::expand_item(
-                &(
-                    &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                    &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
-                ),
-                &dual_t_dlog_acc,
-            )
-            .unwrap();
-
-            let t_poly_g1 = &t_dlog_polys[0].0;
-            let bullet_poly_g1 = &t_dlog_polys[0].1;
-
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,
-                &t_poly_g1,
-                &bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             )
@@ -269,35 +241,21 @@ mod t_dlog_acc_marlin {
             accumulator is merely forwarded).
              */
             let t_dlog_acc_g1_valid =
-                TDLogAccumulator::random_item(&(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1), rng)
+                TDLogAccumulator::<_, FS>::random_item(&(&index_vk_g1.index, &pc_pk_g1), rng)
                     .unwrap();
             let t_dlog_acc_g2_invalid =
-                TDLogAccumulator::invalid_item(&(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2), rng)
+                TDLogAccumulator::<_, FS>::invalid_item(&(&index_vk_g2.index, &pc_pk_g2), rng)
                     .unwrap();
             let dual_t_dlog_acc = DualAccumulatorItem {
                 native: vec![t_dlog_acc_g2_invalid],
                 non_native: vec![t_dlog_acc_g1_valid],
             };
 
-            let t_dlog_polys = DualTDLogAccumulator::expand_item(
-                &(
-                    &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                    &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
-                ),
-                &dual_t_dlog_acc,
-            )
-            .unwrap();
-
-            let t_poly_g1 = &t_dlog_polys[0].0;
-            let bullet_poly_g1 = &t_dlog_polys[0].1;
-
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
                 &index_pk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,
-                &t_poly_g1,
-                &bullet_poly_g1,
                 zk,
                 if zk { Some(rng) } else { None },
             )

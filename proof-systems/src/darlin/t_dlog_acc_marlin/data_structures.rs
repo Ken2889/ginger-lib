@@ -1,13 +1,11 @@
-use crate::darlin::accumulators::inner_sumcheck::InnerSumcheckKey;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::IOP;
 use crate::darlin::IPACurve;
 use algebra::serialize::*;
-use algebra::{get_best_evaluation_domain, EvaluationDomain, ToBytes};
+use algebra::ToBytes;
 use bench_utils::add_to_trace;
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
-use marlin::iop::sparse_linear_algebra::SparseMatrix;
 use num_traits::Zero;
 use poly_commit::ipa_pc::InnerProductArgPC;
 use poly_commit::{DomainExtendedPolynomialCommitment, PolynomialCommitment};
@@ -27,41 +25,18 @@ pub(crate) type PC<G, FS> = DomainExtendedPolynomialCommitment<G, InnerProductAr
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct VerifierKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     /// The index itself.
-    pub index: Index<G1, G2>,
+    pub index: Index<G1>,
     /// Commitments of the lagrange polynomials over the input domain.
     pub lagrange_comms: Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>,
     /// Hash of the above elements
     pub vk_hash: Vec<u8>,
+
+    pub _g2: PhantomData<G2>,
 }
 
 impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> VerifierKey<G1, G2, FS> {
     pub fn get_hash(&self) -> &[u8] {
         &self.vk_hash
-    }
-}
-
-impl<G1, G2, FS> InnerSumcheckKey<G1, PC<G1, FS>> for VerifierKey<G1, G2, FS>
-where
-    G1: IPACurve,
-    G2: IPACurve,
-    FS: FiatShamirRng + 'static,
-{
-    fn get_matrix_a(&self) -> &SparseMatrix<G1::ScalarField> {
-        &self.index.a
-    }
-
-    fn get_matrix_b(&self) -> &SparseMatrix<G1::ScalarField> {
-        &self.index.b
-    }
-
-    fn get_matrix_c(&self) -> &SparseMatrix<G1::ScalarField> {
-        &self.index.c
-    }
-
-    fn get_domain_h(&self) -> Box<dyn EvaluationDomain<G1::ScalarField>> {
-        let num_constraints = self.index.index_info.num_constraints;
-        let num_variables = self.index.index_info.num_witness + self.index.index_info.num_inputs;
-        get_best_evaluation_domain(std::cmp::max(num_constraints, num_variables)).unwrap()
     }
 }
 
@@ -189,7 +164,7 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
         }
 
         // Check evaluations num
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2,FS>>::PROVER_POLYNOMIALS.len() +
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() +
             3 // boundary polynomial and the two bridge polynomials are evaluated at two different
               // points
         ;
@@ -243,8 +218,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalSerialize for Proof
             .flatten()
             .for_each(|comm| size += comm.serialized_size());
 
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         // Evaluations size
         size += evaluations_num * self.evaluations[0].serialized_size();
@@ -301,8 +276,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalSerialize for Proof
             .flatten()
             .for_each(|comm| size += comm.uncompressed_size());
 
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         // Evaluations size
         size += evaluations_num * self.evaluations[0].uncompressed_size();
@@ -335,8 +310,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Pro
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
@@ -375,8 +350,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Pro
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
@@ -416,8 +391,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Pro
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {
@@ -460,8 +435,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Pro
         }
 
         // Deserialize evaluations
-        let evaluations_num = IOP::<G1, G2, PC<G1, FS>, PC<G2, FS>>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
-                                                                                                   // points
+        let evaluations_num = IOP::<G1, G2>::PROVER_POLYNOMIALS.len() + 3; // boundary polynomial and the two bridge polynomials are evaluated at two different
+                                                                           // points
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
         for _ in 0..evaluations_num {

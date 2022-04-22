@@ -330,33 +330,21 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
 
                     let dual_t_dlog_acc = DualTDLogAccumulator::random_item(
                         &(
-                            &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                            &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
+                            &(&(&index_vk_g2.index, &pc_pk_g2), &pc_pk_g2),
+                            &(&(&index_vk_g1.index, &pc_pk_g1), &pc_pk_g1),
                         ),
                         &mut rng,
                     )
                     .unwrap();
 
-                    let (t_poly, bullet_poly) = DualTDLogAccumulator::expand_item(
-                        &(
-                            &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                            &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
-                        ),
-                        &dual_t_dlog_acc,
-                    )
-                    .unwrap()[0]
-                        .clone();
-
-                    (circ, dual_t_dlog_acc, bullet_poly, t_poly)
+                    (circ, dual_t_dlog_acc)
                 },
-                |(c, dual_t_dlog_acc, bullet_poly, t_poly)| {
+                |(c, dual_t_dlog_acc)| {
                     TDLogAccMarlin::<G1, G2, FS, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,
                         &dual_t_dlog_acc,
-                        &t_poly,
-                        &bullet_poly,
                         false,
                         None,
                     )
@@ -416,31 +404,19 @@ fn bench_prover_trivial_prev_acc_helper<C1, C2>(
                     let circ = C1::generate_random(num_constraints, &mut rng);
 
                     let dual_t_dlog_acc = DualTDLogAccumulator::trivial_item(&(
-                        &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                        &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
+                        &(&(&index_vk_g2.index, &pc_pk_g2), &pc_pk_g2),
+                        &(&(&index_vk_g1.index, &pc_pk_g1), &pc_pk_g1),
                     ))
                     .unwrap();
 
-                    let (t_poly, bullet_poly) = DualTDLogAccumulator::expand_item(
-                        &(
-                            &(&(&index_vk_g2, &pc_pk_g2), &pc_pk_g2),
-                            &(&(&index_vk_g1, &pc_pk_g1), &pc_pk_g1),
-                        ),
-                        &dual_t_dlog_acc,
-                    )
-                    .unwrap()[0]
-                        .clone();
-
-                    (circ, dual_t_dlog_acc, bullet_poly, t_poly)
+                    (circ, dual_t_dlog_acc)
                 },
-                |(c, dual_t_dlog_acc, bullet_poly, t_poly)| {
+                |(c, dual_t_dlog_acc)| {
                     TDLogAccMarlin::<G1, G2, FS, D>::prove(
                         &index_pk_g1,
                         &pc_pk_g1,
                         c,
                         &dual_t_dlog_acc,
-                        &t_poly,
-                        &bullet_poly,
                         false,
                         None,
                     )

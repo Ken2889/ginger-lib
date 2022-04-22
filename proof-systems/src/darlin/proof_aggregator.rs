@@ -1,9 +1,10 @@
 //! Utilities for proof post-processing of `GeneralPCD`, i.e. SimpleMarlin and
 //! FinalDarlin PCD, using batch verification and aggregation of their dlog hard parts.
+use crate::darlin::accumulators::dlog::AccumulationProof;
 use crate::darlin::{
     accumulators::{
         dlog::{DLogAccumulator, DLogItem},
-        AccumulationProof, Accumulator,
+        Accumulator,
     },
     pcd::{DualPCDVerifierKey, GeneralPCD, PCD},
     DomainExtendedIpaPc,

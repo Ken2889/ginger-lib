@@ -5,24 +5,25 @@
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
-use crate::darlin::accumulators::{AccumulatorItem, Error};
-use crate::darlin::{
-    accumulators::{AccumulationProof, Accumulator},
-    DomainExtendedIpaPc,
-};
+use crate::darlin::accumulators::ipa_accumulator::{IPAAccumulator, IPAAccumulatorItem};
+use crate::darlin::accumulators::{Accumulator, Error};
+use crate::darlin::DomainExtendedIpaPc;
 use algebra::polynomial::DensePolynomial as Polynomial;
-use algebra::{DensePolynomial, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand};
+use algebra::serialize::*;
+use algebra::{
+    DensePolynomial, Group, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand,
+};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::{One, Zero};
 pub use poly_commit::ipa_pc::DLogItem;
-use poly_commit::ipa_pc::{LabeledSuccinctCheckPolynomial, SuccinctCheckPolynomial};
+use poly_commit::ipa_pc::{LabeledSuccinctCheckPolynomial, Proof, SuccinctCheckPolynomial};
 use poly_commit::{
     ipa_pc::{CommitterKey, IPACurve, InnerProductArgPC, VerifierKey},
     Error as PCError, LabeledCommitment, PolynomialCommitment,
 };
 use rand::RngCore;
+
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
@@ -149,116 +150,9 @@ where
 
 impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
     type ProverKey = CommitterKey<G>;
-    type VerifierKey = VerifierKey<G>;
+    type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
     type Proof = AccumulationProof<G>;
-    type Item = DLogItem<G>;
-    type ExpandedItem = DensePolynomial<G::ScalarField>;
-
-    fn expand_item(
-        _vk: &Self::VerifierKey,
-        accumulator: &Self::Item,
-    ) -> Result<Self::ExpandedItem, Error> {
-        Ok(Polynomial::from_coefficients_vec(
-            accumulator.check_poly.compute_coeffs(),
-        ))
-    }
-
-    fn check_and_expand_item<R: RngCore>(
-        vk: &Self::VerifierKey,
-        accumulator: &Self::Item,
-        _rng: &mut R,
-    ) -> Result<Option<Self::ExpandedItem>, Error> {
-        let check_poly = Self::expand_item(vk, accumulator)?;
-        let (check_poly_comm, _) =
-            InnerProductArgPC::<G, FS>::commit(vk, &check_poly, false, None)?;
-        if check_poly_comm == accumulator.final_comm_key {
-            Ok(Some(check_poly))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn check_and_expand_items<R: RngCore>(
-        vk: &Self::VerifierKey,
-        accumulators: &[Self::Item],
-        rng: &mut R,
-    ) -> Result<Option<Vec<Self::ExpandedItem>>, Error> {
-        let check_time = start_timer!(|| "Check accumulators");
-
-        let final_comm_keys = accumulators
-            .iter()
-            .map(|acc| acc.final_comm_key)
-            .collect::<Vec<_>>();
-        let xi_s_vec = accumulators
-            .iter()
-            .map(|acc| acc.check_poly.clone())
-            .collect::<Vec<_>>();
-
-        let batching_time = start_timer!(|| "Combine check polynomials and final comm keys");
-
-        // Sample the batching challenge (using a cryptographically secure rng)
-        let random_scalar = G::ScalarField::rand(rng);
-        let mut batching_chal = G::ScalarField::one();
-
-        // Collect the powers of the batching challenge in a vector
-        let mut batching_chal_pows = vec![G::ScalarField::zero(); xi_s_vec.len()];
-        for i in 0..batching_chal_pows.len() {
-            batching_chal_pows[i] = batching_chal;
-            batching_chal *= &random_scalar;
-        }
-
-        let check_polys = xi_s_vec
-            .iter()
-            .map(|check_poly| Polynomial::from_coefficients_vec(check_poly.compute_coeffs()))
-            .collect::<Vec<_>>();
-
-        // Compute the linear combination of the reduction polys,
-        //  h_bar(X) = sum_k lambda^k * h(xi's[k],X).
-        let combined_check_poly = batching_chal_pows
-            .par_iter()
-            .zip(check_polys.clone())
-            .map(|(&chal, check_poly)| check_poly * chal)
-            .reduce(
-                || Polynomial::zero(),
-                |acc, scaled_poly| &acc - &scaled_poly,
-            );
-        end_timer!(batching_time);
-
-        // The dlog "hard part", checking that G_bar = sum_k lambda^k * G_f[k] == Comm(h_bar(X))
-        // The equation to check would be:
-        // lambda_1 * gfin_1 + ... + lambda_n * gfin_n - combined_h_1 * g_vk_1 - ... - combined_h_m * g_vk_m = 0
-        // Where combined_h_i = lambda_1 * h_1_i + ... + lambda_n * h_n_i
-        // We do final verification and the batching of the GFin in a single MSM
-        let hard_time = start_timer!(|| "Batch verify hard parts");
-        let final_val = InnerProductArgPC::<G, FS>::inner_commit(
-            // The vk might be oversized, but the VariableBaseMSM function, will "trim"
-            // the bases in order to be as big as the scalars vector, so no need to explicitly
-            // trim the vk here.
-            &[
-                G::batch_normalization_into_affine(final_comm_keys)
-                    .unwrap()
-                    .as_slice(),
-                vk.comm_key.as_slice(),
-            ]
-            .concat(),
-            &[
-                batching_chal_pows.as_slice(),
-                combined_check_poly.coeffs.as_slice(),
-            ]
-            .concat(),
-            None,
-            None,
-        )
-        .map_err(|e| PCError::IncorrectInputLength(e.to_string()))?;
-        end_timer!(hard_time);
-
-        if !final_val.is_zero() {
-            end_timer!(check_time);
-            return Ok(None);
-        }
-        end_timer!(check_time);
-        Ok(Some(check_polys))
-    }
+    type Item = <Self as IPAAccumulator>::Item;
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.
@@ -486,19 +380,92 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
     }
 
     fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
-        let mut result = Self::random_item(vk, rng)?;
-        result.final_comm_key = G::rand(rng);
-        Ok(result)
+        let log_key_len = algebra::log2(vk.comm_key.len());
+        let chals = (0..log_key_len as usize)
+            .map(|_| u128::rand(rng).into())
+            .collect();
+        let check_poly = SuccinctCheckPolynomial::from_chals(chals);
+
+        let final_comm_key = G::rand(rng);
+
+        Ok(Self::Item {
+            check_poly,
+            final_comm_key,
+        })
     }
 }
 
-impl<G> AccumulatorItem for DLogItem<G> where G: IPACurve {}
+impl<G: IPACurve, FS: FiatShamirRng + 'static> IPAAccumulator for DLogAccumulator<G, FS> {
+    type Curve = G;
+    type VerifierKey = VerifierKey<G>;
+    type Item = DLogItem<G>;
 
-impl<G> ToDualField<G::BaseField> for DLogItem<G>
+    fn batch_items<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<
+        (
+            Self::Curve,
+            DensePolynomial<<Self::Curve as Group>::ScalarField>,
+        ),
+        Error,
+    > {
+        let compute_chals_time = start_timer!(|| "Compute batching challenges");
+        let batching_chals = {
+            let random_scalar = G::ScalarField::rand(rng);
+            let num_batching_chals = accumulators.len();
+            let mut batching_chals = Vec::with_capacity(num_batching_chals);
+            let mut batching_chal = G::ScalarField::one();
+            for _ in 0..num_batching_chals {
+                batching_chals.push(batching_chal);
+                batching_chal *= random_scalar;
+            }
+            batching_chals
+        };
+        end_timer!(compute_chals_time);
+
+        let batch_time = start_timer!(|| "Batch commitments and polynomials");
+        let (batched_comm, batched_poly) = batching_chals
+            .into_par_iter()
+            .zip(accumulators.into_par_iter())
+            .map(|(chal, item)| {
+                (
+                    item.final_comm_key * &chal,
+                    DensePolynomial::from_coefficients_vec(
+                        item.check_poly.compute_scaled_coeffs(chal),
+                    ),
+                )
+            })
+            .reduce(
+                || (G::zero(), DensePolynomial::<G::ScalarField>::zero()),
+                |a, b| (a.0 + b.0, a.1 + b.1),
+            );
+        end_timer!(batch_time);
+
+        Ok((batched_comm, batched_poly))
+    }
+}
+
+/// General struct of an aggregation proof. Typically, such proof stems from an
+/// interactive oracle protocol (IOP) and a polynomial commitment scheme.
+#[derive(Clone, Default, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct AccumulationProof<G: IPACurve> {
+    /// Commitments to the polynomials produced by the prover.
+    pub commitments: Vec<Vec<G>>,
+    /// Evaluations of these polynomials.
+    pub evaluations: Vec<G::ScalarField>,
+    /// An evaluation proof from the polynomial commitment.
+    pub pc_proof: Proof<G>,
+}
+
+impl<G> IPAAccumulatorItem for DLogItem<G>
 where
     G: IPACurve,
 {
-    fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+    type Curve = G;
+
+    fn to_base_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
         // The final_comm_key already consists of elements belonging to G::BaseField.
@@ -526,6 +493,42 @@ where
 
         Ok(fes)
     }
+
+    fn to_scalar_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
+        let mut fes = Vec::new();
+
+        // The final_comm_key belongs to G::BaseField, so we convert it into elements of
+        // G::ScalarField
+        let final_comm_key = self.final_comm_key.clone();
+        let mut final_comm_key_g1_bits = Vec::new();
+        let c_fes = final_comm_key.to_field_elements()?;
+        for fe in c_fes {
+            final_comm_key_g1_bits.append(&mut fe.write_bits());
+        }
+        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
+
+        // The challenges of check_poly are by default 128 bit elements from G1::ScalarField
+        // (we do field arithmetics with them lateron).
+        // Since we do not want to waste space, we serialize them all to bits and pack them into
+        // native field elements as efficient as possible (yet secure).
+        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
+        let mut check_poly_bits = Vec::new();
+        for fe in self.check_poly.chals.iter() {
+            let bits = fe.write_bits();
+            // write_bits() outputs a Big Endian bit order representation of fe and the same
+            // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
+            // e.g. we need to skip the first MODULUS_BITS - 128 bits.
+            debug_assert!(
+                <[bool] as ToConstraintField<G::ScalarField>>::to_field_elements(&bits[to_skip..])
+                    .unwrap()[0]
+                    == *fe
+            );
+            check_poly_bits.extend_from_slice(&bits[to_skip..]);
+        }
+        fes.append(&mut check_poly_bits.to_field_elements()?);
+
+        Ok(fes)
+    }
 }
 
 pub type DualDLogAccumulator<'a, G1, G2, FS> =
@@ -535,13 +538,13 @@ pub type DualDLogItem<G1, G2> = DualAccumulatorItem<DLogItem<G1>, DLogItem<G2>>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::{test_canonical_serialize_deserialize, SemanticallyValid};
+    use algebra::{test_canonical_serialize_deserialize, DualCycle, SemanticallyValid};
     use blake2::Blake2s;
     use derivative::Derivative;
     use digest::Digest;
     use poly_commit::{
-        ipa_pc::Proof, DomainExtendedMultiPointProof, DomainExtendedPolynomialCommitment,
-        Evaluations, LabeledPolynomial, PCKey, PolynomialCommitment, QueryMap,
+        ipa_pc::Proof, DomainExtendedMultiPointProof, Evaluations, LabeledPolynomial, PCKey,
+        PolynomialCommitment, QueryMap,
     };
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
@@ -869,61 +872,27 @@ mod test {
         Ok(())
     }
 
-    fn random_accumulator_test<G, D, FS>() -> Result<(), Error>
-    where
-        G: IPACurve,
-        D: Digest + 'static,
-        FS: FiatShamirRng + 'static,
-    {
-        let rng = &mut thread_rng();
-
-        let max_degree = rand::distributions::Uniform::from(2..=128);
-        let num_samples = 10;
-
-        for _ in 0..num_samples {
-            let max_degree = rng.sample(max_degree);
-            let (ck, vk) =
-                DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
-                    max_degree,
-                )?;
-            let dlog_item = DLogItem::generate_random::<_, FS>(rng, &ck);
-            let res = DLogAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
-
-            assert!(res);
-        }
-
-        Ok(())
-    }
-
-    fn trivial_accumulator_test<G, D, FS>() -> Result<(), Error>
-    where
-        G: IPACurve,
-        D: Digest + 'static,
-        FS: FiatShamirRng + 'static,
-    {
-        let rng = &mut thread_rng();
-
-        let max_degree = rand::distributions::Uniform::from(2..=128);
-        let num_samples = 10;
-
-        for _ in 0..num_samples {
-            let max_degree = rng.sample(max_degree);
-            let (ck, vk) =
-                DomainExtendedPolynomialCommitment::<G, InnerProductArgPC<G, FS>>::setup::<D>(
-                    max_degree,
-                )?;
-            let dlog_item = DLogItem::generate_trivial(&ck);
-            let res = DLogAccumulator::<_, FS>::check_items(&vk, &[dlog_item], rng)?;
-
-            assert!(res);
-        }
-
-        Ok(())
-    }
-
+    use crate::darlin::accumulators::tests::{get_committer_key, test_check_items};
     use algebra::curves::tweedle::{
         dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
     };
+
+    fn test_dlog_check_items<G1, G2, FS, D>(pc_max_degree: usize, num_items: usize)
+    where
+        G1: IPACurve,
+        G2: IPACurve,
+        G1: DualCycle<G2>,
+        FS: FiatShamirRng + 'static,
+        D: Digest,
+    {
+        let rng = &mut thread_rng();
+        let vk_g1 = get_committer_key::<G1, FS, D>(pc_max_degree);
+        let vk_g2 = get_committer_key::<G2, FS, D>(pc_max_degree);
+
+        test_check_items::<DLogAccumulator<G1, FS>, _>(&vk_g1, num_items, rng);
+
+        test_check_items::<DualDLogAccumulator<G1, G2, FS>, _>(&(&vk_g1, &vk_g2), num_items, rng);
+    }
 
     #[cfg(not(feature = "circuit-friendly"))]
     mod chacha_fs {
@@ -943,17 +912,13 @@ mod test {
         }
 
         #[test]
-        fn test_tweedle_random_accumulator() {
-            random_accumulator_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-            random_accumulator_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>().unwrap();
-        }
-
-        #[test]
-        fn test_tweedle_trivial_accumulator() {
-            trivial_accumulator_test::<TweedleDee, Blake2s, FiatShamirChaChaRng<Blake2s>>()
-                .unwrap();
-            trivial_accumulator_test::<TweedleDum, Blake2s, FiatShamirChaChaRng<Blake2s>>()
-                .unwrap();
+        fn test_tweedle_dlog_check_items() {
+            test_dlog_check_items::<TweedleDee, TweedleDum, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                127, 10,
+            );
+            test_dlog_check_items::<TweedleDum, TweedleDee, FiatShamirChaChaRng<Blake2s>, Blake2s>(
+                127, 10,
+            );
         }
     }
 
@@ -975,15 +940,13 @@ mod test {
         }
 
         #[test]
-        fn test_tweedle_random_accumulator() {
-            random_accumulator_test::<TweedleDee, Blake2s, TweedleFqPoseidonFSRng>().unwrap();
-            random_accumulator_test::<TweedleDum, Blake2s, TweedleFrPoseidonFSRng>().unwrap();
-        }
-
-        #[test]
-        fn test_tweedle_trivial_accumulator() {
-            trivial_accumulator_test::<TweedleDee, Blake2s, TweedleFqPoseidonFSRng>().unwrap();
-            trivial_accumulator_test::<TweedleDum, Blake2s, TweedleFrPoseidonFSRng>().unwrap();
+        fn test_tweedle_dlog_check_items() {
+            test_dlog_check_items::<TweedleDee, TweedleDum, TweedleFqPoseidonFSRng, Blake2s>(
+                127, 10,
+            );
+            test_dlog_check_items::<TweedleDum, TweedleDee, TweedleFrPoseidonFSRng, Blake2s>(
+                127, 10,
+            );
         }
     }
 }

@@ -1,5 +1,7 @@
 //! The proof data struct (and its components) of a final Darlin, i.e. last node of
 //! our conversion/exiting chain.
+use crate::darlin::accumulators::dlog::DLogAccumulator;
+use crate::darlin::accumulators::Accumulator;
 use crate::darlin::pcd::simple_marlin::MarlinProof;
 use algebra::{
     serialize::*, DualCycle, Group, PrimeField, SemanticallyValid, ToBits, ToConstraintField,
@@ -35,14 +37,15 @@ where
     G1: DualCycle<G2>,
 {
     // generates random FinalDarlinDeferredData, for test purposes only.
-    pub fn generate_random<R: RngCore, FS: FiatShamirRng>(
+    pub fn generate_random<R: RngCore, FS: FiatShamirRng + 'static>(
         rng: &mut R,
         committer_key_g1: &DLogCommitterKey<G1>,
         committer_key_g2: &DLogCommitterKey<G2>,
     ) -> Self {
         Self {
-            previous_acc: DLogItem::generate_random::<_, FS>(rng, committer_key_g2),
-            pre_previous_acc: DLogItem::generate_random::<_, FS>(rng, committer_key_g1),
+            previous_acc: DLogAccumulator::<G2, FS>::random_item(committer_key_g2, rng).unwrap(),
+            pre_previous_acc: DLogAccumulator::<G1, FS>::random_item(committer_key_g1, rng)
+                .unwrap(),
         }
     }
 }
