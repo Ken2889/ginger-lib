@@ -14,9 +14,16 @@ pub fn check_field_equals<F1: Field, F2: Field>() -> bool {
     std::any::TypeId::of::<F1>() == std::any::TypeId::of::<F2>()
 }
 
+/// A Poseidon-based Fiat-shamir RNG, whose design is based on a duplex Sponge construction;
+/// For efficiency reasons, this implementation:
+/// - Doesn't record any additional information regarding the amount and the length
+///   of the input data;
+/// - Doesn't always trigger a permutation as a consequence of sampling a challenge, if a
+///   permutation was just triggered by previous calls to `record`;
+/// Thus, this implementation is safe to use in protocols in which it's clear a priori
+/// the exact amount and length of data to be recorded.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Debug(bound = ""))]
-/// A Poseidon-based Fiat-shamir RNG, designed as a duplex Sponge construction.
 pub struct PoseidonFSRng<
     F: PrimeField,
     P: PoseidonParameters<Fr = F>,
@@ -177,7 +184,7 @@ where
         Ok(new_inst)
     }
 
-    /// Record new data as part of this Fiat-Shamir transform
+    /// Record new data as part of this Fiat-Shamir transform.
     fn record<RecordF: Field, R: Recordable<RecordF>>(
         &mut self,
         data: R,

@@ -80,7 +80,7 @@ pub trait Recordable<F: Field>: ToConstraintField<F> + CanonicalSerialize {}
 
 impl<F: Field, T: ToConstraintField<F> + CanonicalSerialize> Recordable<F> for T {}
 
-/// General trait for Fiat-Shamir transform, designed as a fs_rng-based construction.
+/// General trait for Fiat-Shamir transform, designed as a sponge-based construction.
 pub trait FiatShamirRng: Sized + Default {
     /// Internal State
     type State: Clone + Debug + Eq + PartialEq;

@@ -11,6 +11,9 @@ const GET_CHALLENGE_PREFIX: &'static [u8] = b"GET_CHALLENGE";
 
 /// A `SeedableRng` that refreshes its seed by hashing together the previous seed
 /// and the new seed material.
+/// This implementation doesn't record any additional information regarding the
+/// amount and the length of the input data, so it's safe to use only in protocols
+/// in which it's clear a priori the exact amount and length of data to be recorded.
 pub struct FiatShamirChaChaRng<D: Digest> {
     r: ChaChaRng,
     seed: GenericArray<u8, D::OutputSize>,
@@ -86,7 +89,7 @@ impl<D: Digest> FiatShamirRng for FiatShamirChaChaRng<D> {
     }
 
     /// Refresh `self.seed` with new material. Achieved by setting
-    /// `self.seed = H(self.seed || new_seed)`.
+    /// `self.seed = H(new_seed || self.seed)`.
     fn record<F: Field, R: Recordable<F>>(&mut self, data: R) -> Result<&mut Self, Error> {
         let mut bytes = Vec::new();
         data.serialize_without_metadata(&mut bytes)
