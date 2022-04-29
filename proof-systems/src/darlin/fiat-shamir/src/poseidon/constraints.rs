@@ -76,7 +76,7 @@ where
         Ok(self.pending_outputs.pop().unwrap())
     }
 
-    /// Enforce squeezing of 'num_bits' Booleans.
+    /// Enforce the output of 'num_bits' many bits from 'self'. 
     fn enforce_get_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         &mut self,
         mut cs: CS,
@@ -253,6 +253,8 @@ mod test {
         P: PoseidonParameters<Fr = ConstraintF>,
         DOP: DensityOptimizedPoseidonQuinticSBoxParameters<ConstraintF, P>,
     {
+        assert!(N <= <ConstraintF as PrimeField>::Params::CAPACITY as usize);
+
         let mut cs = ConstraintSystem::<ConstraintF>::new(SynthesisMode::Debug);
 
         // Initialize Poseidon

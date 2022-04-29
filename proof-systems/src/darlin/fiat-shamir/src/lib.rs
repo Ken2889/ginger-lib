@@ -1,4 +1,4 @@
-//! A fs_rng-like random oracle for Fiat-Shamir transform usage.
+//! A sponge-like random oracle for Fiat-Shamir transform usage.
 
 use crate::error::Error;
 use algebra::{serialize_no_metadata, CanonicalSerialize, Field, ToConstraintField};

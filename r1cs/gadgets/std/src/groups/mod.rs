@@ -163,6 +163,8 @@ pub trait EndoMulCurveGadget<G: EndoMulCurve, ConstraintF: Field>: GroupGadget<G
     /// Enforce conversion of a bit sequence used in `endo_mul()` into its equivalent
     /// scalar (bits) and return them in little-endian form.
     /// We assume 'bits' being in little-endian form too.
+    /// This default implementation is for ConstraintF = Self::BaseField.
+    /// Costs 1fbSM + 1 endoMul = 2.5 * Self::ScalarField::MODULUS_BITS + 3.5 * bits.len() constraints.
     fn endo_rep_to_scalar_bits<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
         bits: Vec<Boolean>
@@ -838,13 +840,16 @@ pub(crate) mod test {
             let a_native = G::rand(&mut thread_rng());
             let a_g = GG::alloc(&mut cs.ns(|| "generate_a"), || Ok(a_native)).unwrap();
     
-            let scalar: G::ScalarField = u128::rand(&mut thread_rng()).into();
+            let scalar: G::ScalarField = loop {
+                let r = u128::rand(&mut thread_rng());
+                if r != 0u128 { break r.into() }
+            };
             let mut scalar_bits_native = scalar.write_bits();
             scalar_bits_native.reverse();
             scalar_bits_native = scalar_bits_native.as_slice()[..128].to_vec();
             
             assert!(scalar_bits_native.len() == 128);
-            assert!(!scalar_bits_native.iter().all(|b| !b));
+            assert!(!scalar_bits_native.iter().all(|b| !b)); // Non-zero part was truncated
     
             let scalar_bits_g = Vec::<Boolean>::alloc(
                 cs.ns(|| "alloc scalar bits"),

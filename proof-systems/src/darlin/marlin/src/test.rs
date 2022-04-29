@@ -68,6 +68,8 @@ mod marlin {
     };
     use rand::thread_rng;
 
+    // TODO: It might be helpful to consider one of the circuits we have in benches/
+    //       for this test.
     fn test_circuit<G: Group, PC: PolynomialCommitment<G>, D: Digest>(
         num_samples: usize,
         num_constraints: usize,

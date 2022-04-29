@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = [
   "Daniele Di Benedetto <daniele@horizenlabs.io>",
 ]
-description = "A library for constructing polynomial commitment schemes for use in zkSNARKs"
+description = "A library for constructing Fiat Shamir transforms using a random oracle based on a dual sponge construction"
 include = ["Cargo.toml", "src", "LICENSE-APACHE", "LICENSE-MIT"]
 license = "MIT/Apache-2.0"
 edition = "2018"

@@ -593,10 +593,14 @@ impl<G: IPACurve> CanonicalDeserialize for MultiPointProof<G> {
 /// G_final can be computed via an MSM from its coefficients.
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct SuccinctCheckPolynomial<G: IPACurve> {
-    #[doc(hidden)]
+    /// Challenges of the dlog reduction steps
     pub chals: Vec<G::ScalarField>,
     #[cfg(feature = "circuit-friendly")]
-    #[doc(hidden)]
+    /// Representation of challenges in a curve for a which a non-trivial
+    /// endomorphism `Phi` of the form `Phi(x,y) = (zeta*x,y)` is defined.
+    /// Enforcing scalar multiplications in a R1CS circuit is cheaper with
+    /// scalars in this form, so we save them too if "circuit-friendly" feature
+    /// is enabled.
     pub endo_chals: Vec<G::ScalarField>,
 }
 

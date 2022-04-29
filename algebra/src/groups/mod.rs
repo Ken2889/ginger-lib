@@ -18,6 +18,7 @@ pub use group_vec::*;
 #[cfg(test)]
 pub mod tests;
 
+/// Interface for a group
 pub trait Group:
     'static
     + ToBytes
@@ -51,6 +52,7 @@ pub trait Group:
     + for<'a> MulAssign<&'a <Self as Group>::ScalarField>
     + ToConstraintField<<Self as Group>::BaseField>
 {
+    // temporary workaround, we restrict to algebraic groups of order "p^n".
     type BaseField: PrimeField + SquareRootField;
     type ScalarField: PrimeField;
 

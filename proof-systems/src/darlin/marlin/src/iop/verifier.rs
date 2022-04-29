@@ -60,6 +60,8 @@ impl<F: PrimeField> IOP<F> {
         let domain_k = get_best_evaluation_domain::<F>(index_info.num_non_zero)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
+        // As 'alpha' is never involved in scalar multiplications,
+        // is not needed to compute its endo representation.
         let alpha = F::read_bits(
             fs_rng
                 .get_challenge::<128>()?
@@ -72,6 +74,8 @@ impl<F: PrimeField> IOP<F> {
             ))?
         }
 
+        // As 'eta' is never involved in scalar multiplications,
+        // is not needed to compute its endo representation.
         let eta = F::read_bits(
             fs_rng
                 .get_challenge::<128>()?
@@ -97,6 +101,9 @@ impl<F: PrimeField> IOP<F> {
         mut state: VerifierState<F>,
         fs_rng: &mut R,
     ) -> Result<(VerifierSecondMsg<F>, VerifierState<F>), Error> {
+
+        // As 'beta' is never involved in scalar multiplications,
+        // is not needed to compute its endo representation.
         let beta = F::read_bits(
             fs_rng
                 .get_challenge::<128>()?
