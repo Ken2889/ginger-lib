@@ -1,15 +1,15 @@
 //! A polynomial represented in coefficient form.
 use crate::{get_best_evaluation_domain, DenseOrSparsePolynomial, EvaluationDomain, Evaluations};
 use crate::{
-    serialize::*, Field, FromBytes, FromBytesChecked,
-    PrimeField, SemanticallyValid, ToBytes, ToConstraintField, Error
+    serialize::*, Error, Field, FromBytes, FromBytesChecked, PrimeField, SemanticallyValid,
+    ToBytes, ToConstraintField,
 };
+use num_traits::Zero;
 use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
 use std::io::{Read, Result as IoResult, Write};
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign};
-use num_traits::Zero;
 
 /// Stores a polynomial in coefficient form.
 #[derive(Clone, PartialEq, Eq, Hash, Default, CanonicalSerialize, CanonicalDeserialize)]
@@ -438,10 +438,9 @@ impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<
 
 impl<'a, F: PrimeField> MulAssign<&'a F> for DensePolynomial<F> {
     fn mul_assign(&mut self, other: &'a F) {
-        <DensePolynomial<F> as MulAssign<&DensePolynomial<F>>>::mul_assign(
-            self,
-            &DensePolynomial::from_coefficients_slice(&[*other]),
-        );
+        for coeff in self.coeffs.iter_mut() {
+            *coeff *= other;
+        }
     }
 }
 
@@ -449,10 +448,9 @@ impl<F: PrimeField> Mul<F> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn mul(self, other: F) -> DensePolynomial<F> {
-        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
-            &self,
-            &DensePolynomial::from_coefficients_slice(&[other]),
-        )
+        let mut result = self.clone();
+        result.mul_assign(&other);
+        result
     }
 }
 
@@ -460,10 +458,9 @@ impl<'a, F: PrimeField> Mul<&'a F> for DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn mul(self, other: &'a F) -> DensePolynomial<F> {
-        <&DensePolynomial<F> as Mul<&DensePolynomial<F>>>::mul(
-            &self,
-            &DensePolynomial::from_coefficients_slice(&[*other]),
-        )
+        let mut result = self.clone();
+        result.mul_assign(other);
+        result
     }
 }
 
@@ -524,8 +521,8 @@ mod tests {
     use crate::fields::Field;
     use crate::polynomial::*;
     use crate::UniformRand;
+    use num_traits::{One, Zero};
     use rand::thread_rng;
-    use num_traits::{Zero, One};
 
     #[test]
     fn double_polynomials_random() {
