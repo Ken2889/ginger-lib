@@ -665,7 +665,7 @@ impl Boolean {
     ) -> Result<Vec<Self>, SynthesisError> 
         where
             ConstraintF: Field,
-            CS: ConstraintSystem<ConstraintF>,
+            CS: ConstraintSystemAbstract<ConstraintF>,
     {
         let b: &[u64] = element.as_ref();
 
