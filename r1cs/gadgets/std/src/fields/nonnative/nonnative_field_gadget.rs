@@ -1256,15 +1256,6 @@ impl<SimulationF: PrimeField, ConstraintF: PrimeField> FieldGadget<SimulationF, 
         Ok(Self::from_value(cs, &SimulationF::one()))
     }
 
-    fn conditionally_add_constant<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &self,
-        _cs: CS,
-        _cond: &Boolean,
-        _other: SimulationF,
-    ) -> Result<Self, SynthesisError> {
-        unimplemented!();
-    }
-
     /// Addition of non-natives, outputs non-normal form.
     fn add<CS: ConstraintSystemAbstract<ConstraintF>>(
         &self,
