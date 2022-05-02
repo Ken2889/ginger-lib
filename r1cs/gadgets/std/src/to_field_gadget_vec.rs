@@ -6,10 +6,7 @@ use algebra::{
 use crate::fields::fp::FpGadget;
 use crate::{
     fields::FieldGadget,
-    groups::curves::short_weierstrass::{
-        short_weierstrass_jacobian::AffineGadget as SWJAffineGadget,
-        short_weierstrass_projective::AffineGadget as SWPAffineGadget,
-    },
+    groups::curves::short_weierstrass::short_weierstrass_jacobian::AffineGadget as SWJAffineGadget,
     groups::curves::twisted_edwards::AffineGadget as TEAffineGadget,
 };
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError as Error};
@@ -56,28 +53,6 @@ impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for () {
         _cs: CS,
     ) -> Result<Vec<Self::FieldGadget>, Error> {
         Ok(Vec::new())
-    }
-}
-
-impl<M, ConstraintF, FG> ToConstraintFieldGadget<ConstraintF>
-    for SWPAffineGadget<M, ConstraintF, FG>
-where
-    M: SWModelParameters,
-    ConstraintF: PrimeField,
-    FG: FieldGadget<M::BaseField, ConstraintF>
-        + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
-{
-    type FieldGadget = FpGadget<ConstraintF>;
-
-    #[inline]
-    fn to_field_gadget_elements<CS: ConstraintSystemAbstract<ConstraintF>>(
-        &self,
-        mut cs: CS,
-    ) -> Result<Vec<Self::FieldGadget>, Error> {
-        let mut x_fe = self.x.to_field_gadget_elements(cs.ns(|| "x"))?;
-        let y_fe = self.y.to_field_gadget_elements(cs.ns(|| "y"))?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
     }
 }
 

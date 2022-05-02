@@ -5,7 +5,6 @@ use crate::{
     curves::{
         models::{SWModelParameters, TEModelParameters},
         short_weierstrass_jacobian::Jacobian,
-        short_weierstrass_projective::Projective,
         twisted_edwards_extended::TEExtended,
         Curve,
     }
@@ -50,21 +49,6 @@ impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> fo
     fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
         // TODO: Fix this as the into_affine() calls results in an error if called on Self::zero()
         let affine: <Jacobian<M> as Curve>::AffineRep = (*self).try_into()?;
-        let mut x_fe = affine.x.to_field_elements()?;
-        let y_fe = affine.y.to_field_elements()?;
-        x_fe.extend_from_slice(&y_fe);
-        Ok(x_fe)
-    }
-}
-
-impl<M: SWModelParameters, ConstraintF: Field> ToConstraintField<ConstraintF> for Projective<M>
-    where
-        M::BaseField: ToConstraintField<ConstraintF>,
-{
-    #[inline]
-    fn to_field_elements(&self) -> Result<Vec<ConstraintF>, Error> {
-        // TODO: Fix this as the into_affine() calls results in an error if called on Self::zero()
-        let affine: <Projective<M> as Curve>::AffineRep = (*self).try_into()?;
         let mut x_fe = affine.x.to_field_elements()?;
         let y_fe = affine.y.to_field_elements()?;
         x_fe.extend_from_slice(&y_fe);
