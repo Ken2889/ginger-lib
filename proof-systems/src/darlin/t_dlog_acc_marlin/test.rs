@@ -130,23 +130,19 @@ mod t_dlog_acc_marlin {
                 num_variables,
             };
 
-            let (index_pk_g1, index_vk_g1) =
+            let index_vk_g1 =
                 TDLogAccMarlin::<G1, G2, FS, D>::circuit_specific_setup(&pc_pk_g1, circ_g1)
                     .unwrap();
-            let (index_pk_g2, index_vk_g2) =
+            let index_vk_g2 =
                 TDLogAccMarlin::<G2, G1, FS, D>::circuit_specific_setup(&pc_pk_g2, circ_g2)
                     .unwrap();
 
-            assert!(index_pk_g1.is_valid());
             assert!(index_vk_g1.is_valid());
-            assert!(index_pk_g2.is_valid());
             assert!(index_vk_g2.is_valid());
 
             println!("Called index");
 
-            test_canonical_serialize_deserialize(true, &index_pk_g1);
             test_canonical_serialize_deserialize(true, &index_vk_g1);
-            test_canonical_serialize_deserialize(true, &index_pk_g2);
             test_canonical_serialize_deserialize(true, &index_vk_g2);
 
             let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, FS>::random_item(
@@ -159,7 +155,7 @@ mod t_dlog_acc_marlin {
             .unwrap();
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                &index_pk_g1,
+                &index_vk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,
@@ -217,7 +213,7 @@ mod t_dlog_acc_marlin {
             };
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                &index_pk_g1,
+                &index_vk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,
@@ -252,7 +248,7 @@ mod t_dlog_acc_marlin {
             };
 
             let proof = TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                &index_pk_g1,
+                &index_vk_g1,
                 &pc_pk_g1,
                 circ_g1,
                 &dual_t_dlog_acc,

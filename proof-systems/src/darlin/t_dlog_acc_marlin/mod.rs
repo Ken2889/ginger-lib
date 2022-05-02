@@ -85,10 +85,8 @@ where
     pub fn circuit_specific_setup<C: ConstraintSynthesizer<G1::ScalarField>>(
         committer_key: &<PC<G1, FS> as PolynomialCommitment<G1>>::CommitterKey,
         c: C,
-    ) -> Result<
-        (ProverKey<G1, G2, FS>, VerifierKey<G1, G2, FS>),
-        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
-    > {
+    ) -> Result<VerifierKey<G1, G2, FS>, Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>>
+    {
         let index_time = start_timer!(|| "Marlin::Index");
 
         let index = IOP::<G1, G2>::index(c)?;
@@ -124,11 +122,7 @@ where
             _g2: PhantomData,
         };
 
-        let index_pk = ProverKey {
-            index_vk: index_vk.clone(),
-        };
-
-        Ok((index_pk, index_vk))
+        Ok(index_vk)
     }
 
     fn fiat_shamir_rng_init(
@@ -178,7 +172,7 @@ where
         let prover_time = start_timer!(|| "Marlin::Prover");
 
         let (prover_init_oracles, prover_init_state) =
-            IOP::prover_init(&index_pk.index_vk.index, c, previous_acc)?;
+            IOP::prover_init(&index_pk.index, c, previous_acc)?;
 
         let x_poly_comm_time = start_timer!(|| "Committing to input poly");
         let (init_comms, init_comm_rands) = <PC<G1, FS> as PolynomialCommitment<G1>>::commit_many(
@@ -189,16 +183,11 @@ where
         .map_err(Error::from_pc_err)?;
         end_timer!(x_poly_comm_time);
 
-        let verifier_init_state =
-            IOP::verifier_init(&index_pk.index_vk.index.index_info, previous_acc)?;
+        let verifier_init_state = IOP::verifier_init(&index_pk.index.index_info, previous_acc)?;
 
-        let mut fs_rng = Self::fiat_shamir_rng_init(
-            pc_pk,
-            &index_pk.index_vk,
-            init_comms[0].commitment(),
-            previous_acc,
-        )
-        .map_err(Error::from_pc_err)?;
+        let mut fs_rng =
+            Self::fiat_shamir_rng_init(pc_pk, &index_pk, init_comms[0].commitment(), previous_acc)
+                .map_err(Error::from_pc_err)?;
 
         /*  First round of the compiled and Fiat-Shamir transformed oracle proof
          */
@@ -322,7 +311,7 @@ where
         let previous_inner_sumcheck_poly = previous_acc.non_native[0]
             .t_item
             .succinct_descriptor
-            .expand(&index_pk.index_vk.index)
+            .expand(&index_pk.index)
             .map_err(|err| Error::Other(err.to_string()))?;
 
         let previous_bullet_poly = DensePolynomial::from_coefficients_vec(

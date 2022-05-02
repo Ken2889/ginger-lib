@@ -40,19 +40,7 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> VerifierKey<G1, G2
     }
 }
 
-/// The prover key for a specific R1CS.
-#[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-    Debug(bound = ""),
-    Eq(bound = ""),
-    PartialEq(bound = "")
-)]
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct ProverKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
-    /// The index verifier key.
-    pub index_vk: VerifierKey<G1, G2, FS>,
-}
+pub type ProverKey<G1, G2, FS> = VerifierKey<G1, G2, FS>;
 
 /// The SNARK proof itself.
 #[derive(Derivative)]
@@ -132,14 +120,6 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
 {
     fn is_valid(&self) -> bool {
         true
-    }
-}
-
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
-    for ProverKey<G1, G2, FS>
-{
-    fn is_valid(&self) -> bool {
-        self.index_vk.is_valid()
     }
 }
 
