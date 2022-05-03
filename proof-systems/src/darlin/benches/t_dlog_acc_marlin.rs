@@ -23,11 +23,9 @@ use fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
 use poly_commit::PCKey;
+use proof_systems::darlin::accumulators::t_dlog::DualTDLogAccumulator;
 use proof_systems::darlin::accumulators::Accumulator;
-use proof_systems::darlin::t_dlog_acc_marlin::data_structures::{
-    ProverKey, VerifierKey as MarlinVerifierKey,
-};
-use proof_systems::darlin::t_dlog_acc_marlin::iop::DualTDLogAccumulator;
+use proof_systems::darlin::t_dlog_acc_marlin::data_structures::VerifierKey as TDLogAccMarlinVerifierKey;
 use proof_systems::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
 use rand_core::RngCore;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -270,8 +268,7 @@ fn generate_keys<G1, G2, FS, D, CS>(
 ) -> (
     CommitterKey<G1>,
     VerifierKey<G1>,
-    ProverKey<G1, G2, FS>,
-    MarlinVerifierKey<G1, G2, FS>,
+    TDLogAccMarlinVerifierKey<G1, G2, FS>,
 )
 where
     G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
@@ -286,9 +283,9 @@ where
             .unwrap();
     let pc_pk = pc_pk.trim(segment_size).unwrap();
     let pc_vk = pc_vk.trim(segment_size).unwrap();
-    let (index_pk, index_vk) =
+    let index_vk =
         TDLogAccMarlin::<G1, G2, FS, D>::circuit_specific_setup(&pc_pk, circuit).unwrap();
-    (pc_pk, pc_vk, index_pk, index_vk)
+    (pc_pk, pc_vk, index_vk)
 }
 
 fn bench_prover_single_prev_acc_helper<C1, C2>(
@@ -302,11 +299,11 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
     let mut rng = OsRng::default();
 
     let c_g1 = C1::generate_random(num_constraints, &mut rng);
-    let (pc_pk_g1, _pc_vk_g1, index_pk_g1, index_vk_g1) =
+    let (pc_pk_g1, _pc_vk_g1, index_vk_g1) =
         generate_keys::<G1, G2, FS, D, _>(num_constraints, segment_size, c_g1);
 
     let c_g2 = C2::generate_random(num_constraints, &mut rng);
-    let (pc_pk_g2, _pc_vk_g2, _index_pk_g2, index_vk_g2) =
+    let (pc_pk_g2, _pc_vk_g2, index_vk_g2) =
         generate_keys::<G2, G1, FS, D, _>(num_constraints, segment_size, c_g2);
 
     add_to_trace!(
@@ -328,10 +325,10 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
                 || {
                     let circ = C1::generate_random(num_constraints, &mut rng);
 
-                    let dual_t_dlog_acc = DualTDLogAccumulator::random_item(
+                    let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, FS>::random_item(
                         &(
-                            &(&(&index_vk_g2.index, &pc_pk_g2), &pc_pk_g2),
-                            &(&(&index_vk_g1.index, &pc_pk_g1), &pc_pk_g1),
+                            &(&index_vk_g2.index, &pc_pk_g2),
+                            &(&index_vk_g1.index, &pc_pk_g1),
                         ),
                         &mut rng,
                     )
@@ -341,7 +338,7 @@ fn bench_prover_single_prev_acc_helper<C1, C2>(
                 },
                 |(c, dual_t_dlog_acc)| {
                     TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                        &index_pk_g1,
+                        &index_vk_g1,
                         &pc_pk_g1,
                         c,
                         &dual_t_dlog_acc,
@@ -377,11 +374,11 @@ fn bench_prover_trivial_prev_acc_helper<C1, C2>(
     let mut rng = OsRng::default();
 
     let c_g1 = C1::generate_random(num_constraints, &mut rng);
-    let (pc_pk_g1, _pc_vk_g1, index_pk_g1, index_vk_g1) =
+    let (pc_pk_g1, _pc_vk_g1, index_vk_g1) =
         generate_keys::<G1, G2, FS, D, _>(num_constraints, segment_size, c_g1);
 
     let c_g2 = C2::generate_random(num_constraints, &mut rng);
-    let (pc_pk_g2, _pc_vk_g2, _, index_vk_g2) =
+    let (pc_pk_g2, _pc_vk_g2, index_vk_g2) =
         generate_keys::<G2, G1, FS, D, _>(num_constraints, segment_size, c_g2);
 
     add_to_trace!(
@@ -403,17 +400,19 @@ fn bench_prover_trivial_prev_acc_helper<C1, C2>(
                 || {
                     let circ = C1::generate_random(num_constraints, &mut rng);
 
-                    let dual_t_dlog_acc = DualTDLogAccumulator::trivial_item(&(
-                        &(&(&index_vk_g2.index, &pc_pk_g2), &pc_pk_g2),
-                        &(&(&index_vk_g1.index, &pc_pk_g1), &pc_pk_g1),
-                    ))
+                    let dual_t_dlog_acc = DualTDLogAccumulator::<_, _, FS>::trivial_item(
+                        &(&(
+                            &(&index_vk_g2.index, &pc_pk_g2),
+                            &(&index_vk_g1.index, &pc_pk_g1),
+                        )),
+                    )
                     .unwrap();
 
                     (circ, dual_t_dlog_acc)
                 },
                 |(c, dual_t_dlog_acc)| {
                     TDLogAccMarlin::<G1, G2, FS, D>::prove(
-                        &index_pk_g1,
+                        &index_vk_g1,
                         &pc_pk_g1,
                         c,
                         &dual_t_dlog_acc,
