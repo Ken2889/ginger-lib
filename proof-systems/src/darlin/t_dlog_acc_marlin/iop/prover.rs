@@ -476,7 +476,7 @@ where
         // by using the domains evals of its components (which are already present anyway)
         let t_evals_on_h = marlin::IOP::calculate_t(
             vec![&state.index.a, &state.index.b, &state.index.c].into_iter(),
-            &eta,
+            eta,
             domain_h.clone(),
             &l_x_alpha_evals_on_h,
         )?;
@@ -693,7 +693,7 @@ where
 
         let prev_bridging_poly_time = start_timer!(|| "Compute prev_bridging_poly");
 
-        let eta = &state.acc.non_native[0].t_item.succinct_descriptor.eta;
+        let eta = &state.acc.non_native[0].t_item.succinct_descriptor.etas;
 
         let prev_bridging_poly_on_h: Vec<_> = m_a
             .iter()
@@ -739,25 +739,14 @@ where
         Error,
     > {
         let round_time = start_timer!(|| "IOP::Prover::FourthRound");
-        let verifier_first_msg = state.verifier_first_msg.as_ref().expect(
-            "ProverState should include verifier_first_msg when prover_third_round is called",
-        );
-        let eta = &verifier_first_msg.get_etas();
-        let eta_prime = &state.acc.non_native[0].t_item.succinct_descriptor.eta;
-        let lambda = ver_message.lambda;
+        let etas = ver_message.etas;
         let gamma = ver_message.gamma;
-
-        let eta_second: Vec<_> = eta
-            .iter()
-            .zip(eta_prime.iter())
-            .map(|(&eta, &eta_prime)| eta + lambda * eta_prime)
-            .collect();
 
         let curr_t_acc_poly_time = start_timer!(|| "Compute curr_t_acc_poly");
 
         let curr_t_acc_succinct_descriptor = SuccinctInnerSumcheckDescriptor {
             alpha: gamma,
-            eta: eta_second.clone(),
+            etas: etas,
         };
 
         let curr_t_acc_poly = curr_t_acc_succinct_descriptor

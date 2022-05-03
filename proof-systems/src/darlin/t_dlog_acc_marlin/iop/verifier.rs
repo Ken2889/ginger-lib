@@ -46,8 +46,8 @@ pub struct VerifierFirstMsg<G: Group> {
 
 impl<G: Group> VerifierFirstMsg<G> {
     /// Return a vector with the three randomizers [1, eta, eta^2]
-    pub fn get_etas(&self) -> Vec<G::ScalarField> {
-        return vec![G::ScalarField::one(), self.eta, self.eta.square()];
+    pub fn get_etas(&self) -> [G::ScalarField; 3] {
+        return [G::ScalarField::one(), self.eta, self.eta.square()];
     }
 }
 
@@ -65,6 +65,7 @@ pub struct VerifierThirdMsg<G: Group> {
     pub gamma: G::ScalarField,
     /// Randomizer for the aggregation of circuit polynomials.
     pub lambda: G::ScalarField,
+    pub etas: [G::ScalarField; 3],
 }
 
 impl<G1, G2> IOP<G1, G2>
@@ -174,7 +175,25 @@ where
         let lambda = G1::ScalarField::read_bits(chals[0].to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
 
-        let msg = VerifierThirdMsg { gamma, lambda };
+        let verifier_first_msg = state.first_round_msg.as_ref().expect(
+            "ProverState should include verifier_first_msg when prover_third_round is called",
+        );
+        let etas = verifier_first_msg.get_etas();
+        let etas_prime = state.previous_acc.non_native[0]
+            .t_item
+            .succinct_descriptor
+            .etas;
+
+        let etas_second = etas
+            .iter()
+            .zip(etas_prime.iter())
+            .map(|(&eta, &eta_prime)| eta + gamma * eta_prime);
+
+        let msg = VerifierThirdMsg {
+            gamma,
+            lambda,
+            etas: array_init::from_iter(etas_second).unwrap(),
+        };
         state.third_round_msg = Some(msg);
 
         Ok((msg, state))

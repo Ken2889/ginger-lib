@@ -7,6 +7,7 @@ use algebra::{
     CanonicalDeserialize, CanonicalSerialize, DensePolynomial, Error, Evaluations, Group, GroupVec,
     PrimeField, Read, SerializationError, ToBits, ToConstraintField, UniformRand, Write,
 };
+use array_init::array_init;
 use bench_utils::{end_timer, start_timer};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
@@ -95,7 +96,7 @@ where
     fn trivial_item(_vk: &Self::VerifierKey) -> Result<Self::Item, Error> {
         let succinct_descriptor = SuccinctInnerSumcheckDescriptor {
             alpha: G::ScalarField::zero(),
-            eta: vec![G::ScalarField::zero(); 3],
+            etas: [G::ScalarField::zero(); 3],
         };
         Ok(Self::Item {
             succinct_descriptor,
@@ -105,12 +106,8 @@ where
 
     fn random_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
         let alpha: G::ScalarField = u128::rand(rng).into();
-        let eta: Vec<_> = (0..3)
-            .into_iter()
-            .map(|_| G::ScalarField::rand(rng))
-            .collect();
-
-        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, eta };
+        let etas = array_init(|_| G::ScalarField::rand(rng));
+        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
 
         let t_poly = succinct_descriptor.expand(vk.0)?;
         let (c, _) = DomainExtendedIpaPc::<_, FS>::commit(&vk.1, &t_poly, false, None).unwrap();
@@ -123,12 +120,8 @@ where
 
     fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
         let alpha: G::ScalarField = u128::rand(rng).into();
-        let eta: Vec<_> = (0..3)
-            .into_iter()
-            .map(|_| G::ScalarField::rand(rng))
-            .collect();
-
-        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, eta };
+        let etas = array_init(|_| G::ScalarField::rand(rng));
+        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
 
         let c = (0..Self::get_num_segments(vk))
             .into_iter()
@@ -216,15 +209,10 @@ where
                 // instead of expanding the succinct descriptor into the evaluations of the t_poly
                 // and then scaling them by chal, we exploit the linearity in eta of the succinct
                 // descriptor by scaling the succinct descriptor and then expanding
-                let scaled_descriptor = SuccinctInnerSumcheckDescriptor {
-                    alpha: acc.succinct_descriptor.alpha,
-                    eta: acc
-                        .succinct_descriptor
-                        .eta
-                        .iter()
-                        .map(|&eta| eta * chal)
-                        .collect::<Vec<_>>(),
-                };
+                let mut scaled_descriptor = acc.succinct_descriptor.clone();
+                for eta in scaled_descriptor.etas.iter_mut() {
+                    *eta *= chal;
+                }
                 scaled_descriptor.expand_into_evaluations(vk.0).unwrap()
             })
             .reduce(zero_evals, |a, b| &a + &b);
@@ -266,7 +254,7 @@ pub struct SuccinctInnerSumcheckDescriptor<G: IPACurve> {
     /// Sampling point.
     pub alpha: G::ScalarField,
     /// Batching randomness.
-    pub eta: Vec<G::ScalarField>,
+    pub etas: [G::ScalarField; 3],
 }
 
 impl<G: IPACurve> SuccinctInnerSumcheckDescriptor<G> {
@@ -280,7 +268,7 @@ impl<G: IPACurve> SuccinctInnerSumcheckDescriptor<G> {
 
         let t_evals = marlin::IOP::calculate_t(
             vec![matrix_a, matrix_b, matrix_c].into_iter(),
-            self.eta.as_slice(),
+            &self.etas,
             domain_h.clone(),
             &l_x_alpha_evals,
         )
@@ -315,7 +303,7 @@ where
             challenge_bits.extend_from_slice(&bits[to_skip..]);
         }
         // The eta challenges are 3 generic elements from G::ScalarField. We convert them to bits.
-        for fe in self.succinct_descriptor.eta.iter() {
+        for fe in self.succinct_descriptor.etas.iter() {
             let bits = fe.write_bits();
             challenge_bits.extend_from_slice(&bits);
         }
@@ -343,7 +331,7 @@ where
         // 128-bit challenge, we wouldn't save anything from packing the challenges into bits.
         // Therefore we keep them as they are.
         fes.push(self.succinct_descriptor.alpha);
-        fes.append(&mut self.succinct_descriptor.eta.clone());
+        fes.extend_from_slice(&self.succinct_descriptor.etas);
 
         Ok(fes)
     }

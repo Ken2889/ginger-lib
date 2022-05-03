@@ -611,16 +611,9 @@ where
 
         let dlog_verifier_state = opening_result.unwrap();
 
-        let mut eta = verifier_state.first_round_msg.unwrap().get_etas();
-        for (eta, eta_prime) in eta
-            .iter_mut()
-            .zip(prev_acc.non_native[0].t_item.succinct_descriptor.eta.iter())
-        {
-            *eta += verifier_state.third_round_msg.unwrap().lambda * eta_prime;
-        }
         let new_t_succinct_descriptor = SuccinctInnerSumcheckDescriptor {
             alpha: verifier_state.third_round_msg.unwrap().gamma,
-            eta,
+            etas: verifier_state.third_round_msg.unwrap().etas,
         };
 
         let new_t_commitment = proof.commitments[3][0].clone();
