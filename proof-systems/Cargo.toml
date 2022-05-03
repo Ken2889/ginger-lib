@@ -45,6 +45,7 @@ serde = { version = "=1.0.130", features = ["derive"]}
 derivative = { version = "=2.2.0" }
 num-traits = { version = "=0.2.14", default-features = false }
 itertools = { version = "=0.10.3" }
+array-init = "=2.0.0"
 
 [dev-dependencies]
 csv = { version = "=1.1.6" }

@@ -1,6 +1,7 @@
 mod error;
 mod flags;
 
+use array_init::try_array_init;
 pub use error::*;
 pub use flags::*;
 pub use std::io::{Read, Write};
@@ -337,10 +338,7 @@ impl<T: CanonicalSerialize, const N: usize> CanonicalSerialize for [T; N] {
     }
 
     #[inline]
-    fn serialize_without_metadata<W: Write>(
-        &self,
-        writer: W,
-    ) -> Result<(), SerializationError> {
+    fn serialize_without_metadata<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
         self.as_ref().serialize_without_metadata(writer)
     }
 
@@ -352,6 +350,34 @@ impl<T: CanonicalSerialize, const N: usize> CanonicalSerialize for [T; N] {
     #[inline]
     fn uncompressed_size(&self) -> usize {
         self.as_ref().uncompressed_size()
+    }
+}
+
+impl<T: CanonicalDeserialize + Default, const N: usize> CanonicalDeserialize for [T; N] {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(try_array_init(|_| T::deserialize(&mut reader))?)
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(try_array_init(|_| T::deserialize_unchecked(&mut reader))?)
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(try_array_init(|_| {
+            T::deserialize_uncompressed(&mut reader)
+        })?)
+    }
+
+    #[inline]
+    fn deserialize_uncompressed_unchecked<R: Read>(
+        mut reader: R,
+    ) -> Result<Self, SerializationError> {
+        Ok(try_array_init(|_| {
+            T::deserialize_uncompressed_unchecked(&mut reader)
+        })?)
     }
 }
 
