@@ -46,7 +46,7 @@ where
     acc: &'a DualTDLogItem<G2, G1>,
 
     /// the random values sent by the verifier in the first round
-    verifier_first_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
+    verifier_first_msg: Option<VerifierFirstMsg<G1>>,
 
     /// domain X, sized for the public input
     domain_x: Box<dyn EvaluationDomain<G1::ScalarField>>,
@@ -88,90 +88,90 @@ where
     }
 }
 
-pub struct ProverInitOracles<F: Field> {
+pub struct ProverInitOracles<G: IPACurve> {
     /// The public input polynomial `x`
-    pub x: LabeledPolynomial<F>,
+    pub x: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverInitOracles<F> {
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+impl<G: IPACurve> ProverInitOracles<G> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.x].into_iter()
     }
 }
 
 /// The first set of prover oracles.
-pub struct ProverFirstOracles<F: Field> {
+pub struct ProverFirstOracles<G: IPACurve> {
     /// The randomized witness polynomial `w`.
-    pub w: LabeledPolynomial<F>,
+    pub w: LabeledPolynomial<G::ScalarField>,
     /// The randomized y_A(X)= Sum_{z in H} A(X,z)*y(z)
-    pub y_a: LabeledPolynomial<F>,
+    pub y_a: LabeledPolynomial<G::ScalarField>,
     /// The randomized y_B(X)= Sum_{z in H} B(X,z)*y(z)
-    pub y_b: LabeledPolynomial<F>,
+    pub y_b: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverFirstOracles<F> {
+impl<G: IPACurve> ProverFirstOracles<G> {
     /// Iterate over the polynomials output by the prover in the first round.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.w, &self.y_a, &self.y_b].into_iter()
     }
 }
 
 /// The second set of prover oracles.
-pub struct ProverSecondOracles<F: Field> {
+pub struct ProverSecondOracles<G: IPACurve> {
     /// The boundary polynomial U_1(X) for the outer sumcheck
-    pub u_1: LabeledPolynomial<F>,
+    pub u_1: LabeledPolynomial<G::ScalarField>,
     /// The quotient polynomial h_1(X) in the outer sumcheck identity.
-    pub h_1: LabeledPolynomial<F>,
+    pub h_1: LabeledPolynomial<G::ScalarField>,
     /// The circuit polynomial T_eta(alpha, X).
-    pub t: LabeledPolynomial<F>,
+    pub t: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverSecondOracles<F> {
+impl<G: IPACurve> ProverSecondOracles<G> {
     /// Iterate over the polynomials output by the prover in the second round.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.u_1, &self.h_1, &self.t].into_iter()
     }
 }
 
 /// The third set of prover oracles.
-pub struct ProverThirdOracles<F: Field> {
+pub struct ProverThirdOracles<G: IPACurve> {
     /// The current bridging polynomial
-    pub curr_bridging_poly: LabeledPolynomial<F>,
+    pub curr_bridging_poly: LabeledPolynomial<G::ScalarField>,
     /// The previous bridging polynomial
-    pub prev_bridging_poly: LabeledPolynomial<F>,
+    pub prev_bridging_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverThirdOracles<F> {
+impl<G: IPACurve> ProverThirdOracles<G> {
     /// Iterate over the polynomials output by the prover in the third round.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.curr_bridging_poly, &self.prev_bridging_poly].into_iter()
     }
 }
 
 /// The fourth set of prover oracles.
-pub struct ProverFourthOracles<F: Field> {
+pub struct ProverFourthOracles<G: IPACurve> {
     /// The new circuit polynomial
-    pub curr_t_acc_poly: LabeledPolynomial<F>,
+    pub curr_t_acc_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverFourthOracles<F> {
+impl<G: IPACurve> ProverFourthOracles<G> {
     /// Iterate over the polynomials output by the prover in the third round.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.curr_t_acc_poly].into_iter()
     }
 }
 
 /// The polynomials associated to the accumulators.
-pub struct ProverAccumulatorOracles<F: Field> {
+pub struct ProverAccumulatorOracles<G: IPACurve> {
     /// The inner sumcheck accumulator polynomial.
-    pub prev_t_acc_poly: LabeledPolynomial<F>,
+    pub prev_t_acc_poly: LabeledPolynomial<G::ScalarField>,
     /// The bullet polynomial of the previous dlog accumulator.
-    pub prev_bullet_poly: LabeledPolynomial<F>,
+    pub prev_bullet_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<F: Field> ProverAccumulatorOracles<F> {
+impl<G: IPACurve> ProverAccumulatorOracles<G> {
     /// Iterate over the accumulator polynomials.
-    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<F>> {
+    pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.prev_t_acc_poly, &self.prev_bullet_poly].into_iter()
     }
 }
@@ -188,7 +188,7 @@ where
         index: &'a Index<G1>,
         c: C,
         acc: &'a DualTDLogItem<G2, G1>,
-    ) -> Result<(ProverInitOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+    ) -> Result<(ProverInitOracles<G1>, ProverState<'a, G1, G2>), Error> {
         let init_time = start_timer!(|| "IOP::Prover::Init");
 
         let witnesses_time = start_timer!(|| "Compute witnesses");
@@ -261,7 +261,7 @@ where
         mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<(ProverFirstOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+    ) -> Result<(ProverFirstOracles<G1>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FirstRound");
         let domain_h = &state.domain_h;
         let domain_x = &state.domain_x;
@@ -415,17 +415,11 @@ where
     /// results from batching and reducing the R1CS identities.
     /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
     pub fn prover_second_round<'a, R: RngCore>(
-        ver_message: &VerifierFirstMsg<G1::ScalarField>,
+        ver_message: &VerifierFirstMsg<G1>,
         mut state: ProverState<'a, G1, G2>,
         zk: bool,
         rng: &mut R,
-    ) -> Result<
-        (
-            ProverSecondOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(ProverSecondOracles<G1>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::SecondRound");
 
         let domain_h = &state.domain_h;
@@ -655,9 +649,9 @@ where
     /// Prover third round of the algebraic oracle proof.
     /// It is the first round of the inner-sumcheck aggregation.
     pub fn prover_third_round<'a>(
-        ver_message: &VerifierSecondMsg<G1::ScalarField>,
+        ver_message: &VerifierSecondMsg<G1>,
         state: ProverState<'a, G1, G2>,
-    ) -> Result<(ProverThirdOracles<G1::ScalarField>, ProverState<'a, G1, G2>), Error> {
+    ) -> Result<(ProverThirdOracles<G1>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::ThirdRound");
 
         let ProverState { index, .. } = state;
@@ -729,15 +723,9 @@ where
     /// Prover fourth round of the algebraic oracle proof.
     /// It is the second round of the inner-sumcheck aggregation.
     pub fn prover_fourth_round<'a>(
-        ver_message: &VerifierThirdMsg<G1::ScalarField>,
+        ver_message: &VerifierThirdMsg<G1>,
         state: ProverState<'a, G1, G2>,
-    ) -> Result<
-        (
-            ProverFourthOracles<G1::ScalarField>,
-            ProverState<'a, G1, G2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(ProverFourthOracles<G1>, ProverState<'a, G1, G2>), Error> {
         let round_time = start_timer!(|| "IOP::Prover::FourthRound");
         let etas = ver_message.etas;
         let gamma = ver_message.gamma;

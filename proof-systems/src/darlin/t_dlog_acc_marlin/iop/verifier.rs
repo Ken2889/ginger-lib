@@ -4,7 +4,7 @@ use crate::darlin::accumulators::t_dlog::DualTDLogItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
-use algebra::{get_best_evaluation_domain, EvaluationDomain, Field, FromBits, Group};
+use algebra::{get_best_evaluation_domain, EvaluationDomain, Field, FromBits};
 use fiat_shamir::FiatShamirRng;
 use marlin::iop::Error;
 use num_traits::{One, Zero};
@@ -26,25 +26,25 @@ where
     pub previous_acc: &'a DualTDLogItem<G2, G1>,
 
     /// First round verifier message.
-    pub first_round_msg: Option<VerifierFirstMsg<G1::ScalarField>>,
+    pub first_round_msg: Option<VerifierFirstMsg<G1>>,
     /// Second round verifier message.
-    pub second_round_msg: Option<VerifierSecondMsg<G1::ScalarField>>,
+    pub second_round_msg: Option<VerifierSecondMsg<G1>>,
     /// Third round verifier message.
-    pub third_round_msg: Option<VerifierThirdMsg<G1::ScalarField>>,
+    pub third_round_msg: Option<VerifierThirdMsg<G1>>,
 
     g2: PhantomData<G2>,
 }
 
 /// First message of the verifier.
 #[derive(Clone)]
-pub struct VerifierFirstMsg<G: Group> {
+pub struct VerifierFirstMsg<G: IPACurve> {
     /// Query for the random polynomial.
     pub alpha: G::ScalarField,
     /// Randomizer for the lincheck for `A`, `B`, and `C`.
     pub eta: G::ScalarField,
 }
 
-impl<G: Group> VerifierFirstMsg<G> {
+impl<G: IPACurve> VerifierFirstMsg<G> {
     /// Return a vector with the three randomizers [1, eta, eta^2]
     pub fn get_etas(&self) -> [G::ScalarField; 3] {
         return [G::ScalarField::one(), self.eta, self.eta.square()];
@@ -53,14 +53,14 @@ impl<G: Group> VerifierFirstMsg<G> {
 
 /// Second verifier message.
 #[derive(Copy, Clone)]
-pub struct VerifierSecondMsg<G: Group> {
+pub struct VerifierSecondMsg<G: IPACurve> {
     /// Query for the second round of polynomials.
     pub beta: G::ScalarField,
 }
 
 /// Third verifier message.
 #[derive(Copy, Clone)]
-pub struct VerifierThirdMsg<G: Group> {
+pub struct VerifierThirdMsg<G: IPACurve> {
     /// Query for the third round of polynomials.
     pub gamma: G::ScalarField,
     /// Randomizer for the aggregation of circuit polynomials.
@@ -99,7 +99,7 @@ where
     pub fn verifier_first_round<'a, FS: FiatShamirRng>(
         mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut FS,
-    ) -> Result<(VerifierFirstMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
+    ) -> Result<(VerifierFirstMsg<G1>, VerifierState<'a, G1, G2>), Error> {
         let chals = fs_rng.get_many_challenges::<128>(2)?;
 
         let alpha = G1::ScalarField::read_bits(chals[0].to_vec())
@@ -129,13 +129,7 @@ where
     pub fn verifier_second_round<'a, R: FiatShamirRng>(
         mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
-    ) -> Result<
-        (
-            VerifierSecondMsg<G1::ScalarField>,
-            VerifierState<'a, G1, G2>,
-        ),
-        Error,
-    > {
+    ) -> Result<(VerifierSecondMsg<G1>, VerifierState<'a, G1, G2>), Error> {
         let beta = G1::ScalarField::read_bits(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
 
@@ -156,7 +150,7 @@ where
     pub fn verifier_third_round<'a, R: FiatShamirRng>(
         mut state: VerifierState<'a, G1, G2>,
         fs_rng: &mut R,
-    ) -> Result<(VerifierThirdMsg<G1::ScalarField>, VerifierState<'a, G1, G2>), Error> {
+    ) -> Result<(VerifierThirdMsg<G1>, VerifierState<'a, G1, G2>), Error> {
         let chals = fs_rng.get_many_challenges::<128>(2)?;
 
         let gamma = G1::ScalarField::read_bits(chals[0].to_vec())
