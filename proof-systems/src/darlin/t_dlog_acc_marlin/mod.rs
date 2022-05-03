@@ -4,6 +4,7 @@ use crate::darlin::accumulators::inner_sumcheck::{
 use crate::darlin::accumulators::t_dlog::{DualTDLogAccumulator, DualTDLogItem, TDLogItem};
 use crate::darlin::accumulators::Accumulator;
 use crate::darlin::t_dlog_acc_marlin::data_structures::{Proof, ProverKey, VerifierKey, PC};
+use crate::darlin::t_dlog_acc_marlin::iop::verifier::VerifierState;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
 use algebra::{
@@ -21,7 +22,7 @@ use poly_commit::ipa_pc::CommitterKey;
 use poly_commit::optional_rng::OptionalRng;
 use poly_commit::{
     evaluate_query_map_to_vec, Evaluations, LabeledCommitment, LabeledPolynomial,
-    LabeledRandomness, PCKey, PolynomialCommitment,
+    LabeledRandomness, PCKey, PolynomialCommitment, QueryMap,
 };
 use r1cs_core::ConstraintSynthesizer;
 use rand::{thread_rng, RngCore};
@@ -445,16 +446,22 @@ where
         }
     }
 
-    /// Succinctly verify a proof as produced by `fn prove()`.
-    /// Perform the IOP verification, and check the succinct part of the polynomial opening proof.
-    /// If successful, return the new accumulators.
-    pub fn succinct_verify<'a>(
+    pub fn verify_iop<'a>(
         pc_vk: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
         index_vk: &VerifierKey<G1, G2, FS>,
         public_input: &[G1::ScalarField],
-        prev_acc: &DualTDLogItem<G2, G1>,
+        prev_acc: &'a DualTDLogItem<G2, G1>,
         proof: &Proof<G1, G2, FS>,
-    ) -> Result<DualTDLogItem<G1, G2>, Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>> {
+    ) -> Result<
+        (
+            QueryMap<'a, G1::ScalarField>,
+            Evaluations<'a, G1::ScalarField>,
+            Vec<LabeledCommitment<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
+            VerifierState<'a, G1, G2>,
+            <PC<G1, FS> as PolynomialCommitment<G1>>::RandomOracle,
+        ),
+        Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>,
+    > {
         let iop_verification_time = start_timer!(|| "Verify Sumcheck equations");
 
         let verifier_init_state = IOP::verifier_init(&index_vk.index.index_info, prev_acc)?;
@@ -556,21 +563,38 @@ where
             return Err(Error::IOPError(result.unwrap_err()));
         }
 
+        end_timer!(iop_verification_time);
+
+        Ok((query_map, evaluations, commitments, verifier_state, fs_rng))
+    }
+
+    pub fn succinct_verify_opening<'a>(
+        pc_vk: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        proof: &Proof<G1, G2, FS>,
+        labeled_comms: Vec<LabeledCommitment<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
+        query_map: QueryMap<'a, G1::ScalarField>,
+        evaluations: Evaluations<'a, G1::ScalarField>,
+        verifier_state: VerifierState<'a, G1, G2>,
+        fs_rng: &mut <PC<G1, FS> as PolynomialCommitment<G1>>::RandomOracle,
+    ) -> Result<DualTDLogItem<G1, G2>, Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>> {
+        let check_time = start_timer!(|| "Succinct check of opening proof");
+
         fs_rng.record(proof.evaluations.clone())?;
 
         // Perform succinct verification of opening proof
         let result =
             <PC<G1, FS> as PolynomialCommitment<G1>>::succinct_multi_point_multi_poly_verify(
                 pc_vk,
-                &commitments,
+                &labeled_comms,
                 &query_map,
                 &evaluations,
                 &proof.pc_proof,
-                &mut fs_rng,
+                fs_rng,
             );
 
+        end_timer!(check_time);
+
         if result.is_err() {
-            end_timer!(iop_verification_time);
             return Err(Error::PolynomialCommitmentError(result.unwrap_err()));
         }
 
@@ -580,6 +604,10 @@ where
                 poly_commit::Error::FailedSuccinctCheck,
             ));
         }
+
+        let new_accs_time = start_timer!(|| "Compute new accumulators");
+
+        let prev_acc = verifier_state.previous_acc;
 
         let dlog_verifier_state = opening_result.unwrap();
 
@@ -595,9 +623,11 @@ where
             eta,
         };
 
+        let new_t_commitment = proof.commitments[3][0].clone();
+
         let new_t_acc = InnerSumcheckItem {
             succinct_descriptor: new_t_succinct_descriptor,
-            c: fourth_comms[0].clone(),
+            c: new_t_commitment,
         };
         let new_dlog_acc = dlog_verifier_state;
 
@@ -615,9 +645,33 @@ where
             }],
         };
 
-        end_timer!(iop_verification_time);
+        end_timer!(new_accs_time);
 
         Ok(new_t_dlog_acc)
+    }
+
+    /// Succinctly verify a proof as produced by `fn prove()`.
+    /// Perform the IOP verification, and check the succinct part of the polynomial opening proof.
+    /// If successful, return the new accumulators.
+    pub fn succinct_verify<'a>(
+        pc_vk: &<PC<G1, FS> as PolynomialCommitment<G1>>::VerifierKey,
+        index_vk: &VerifierKey<G1, G2, FS>,
+        public_input: &[G1::ScalarField],
+        prev_acc: &DualTDLogItem<G2, G1>,
+        proof: &Proof<G1, G2, FS>,
+    ) -> Result<DualTDLogItem<G1, G2>, Error<<PC<G1, FS> as PolynomialCommitment<G1>>::Error>> {
+        let (query_map, evaluations, labeled_comms, verifier_state, mut fs_rng) =
+            Self::verify_iop(pc_vk, index_vk, public_input, prev_acc, proof)?;
+
+        Self::succinct_verify_opening(
+            pc_vk,
+            proof,
+            labeled_comms,
+            query_map,
+            evaluations,
+            verifier_state,
+            &mut fs_rng,
+        )
     }
 
     /// Perform the full check of both the inner-sumcheck and dlog accumulators.
