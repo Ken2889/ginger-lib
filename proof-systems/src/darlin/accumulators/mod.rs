@@ -105,11 +105,10 @@ pub trait BatchableAccumulator {
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<
-        (
-            Self::Group,
-            DensePolynomial<<Self::Group as Group>::ScalarField>,
-        ),
-        Error,
-    >;
+    ) -> Result<BatchResult<Self::Group>, Error>;
+}
+
+pub struct BatchResult<G: Group> {
+    pub batched_commitment: G,
+    pub batched_polynomial: DensePolynomial<G::ScalarField>,
 }

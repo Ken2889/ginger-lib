@@ -1,14 +1,14 @@
 use crate::darlin::accumulators::dlog::DLogAccumulator;
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::inner_sumcheck::{InnerSumcheckAccumulator, InnerSumcheckItem};
-use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{
     Accumulator, AccumulatorItem, AsNonNativeItem, Error, NonNativeItem,
 };
+use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::IPACurve;
 use algebra::serialize::*;
-use algebra::{DensePolynomial, Group, ToConstraintField, UniformRand};
+use algebra::{ToConstraintField, UniformRand};
 use bench_utils::{end_timer, start_timer};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
@@ -42,16 +42,19 @@ where
         let check_time = start_timer!(|| "Perform batched check of t-dlog accumulators");
 
         let batch_time = start_timer!(|| "Batch t-dlog accumulators");
-        let (batched_comm, batched_poly) = Self::batch_items(vk, accumulators, rng)?;
+        let BatchResult {
+            batched_commitment,
+            batched_polynomial,
+        } = Self::batch_items(vk, accumulators, rng)?;
         end_timer!(batch_time);
 
         let commit_time = start_timer!(|| "Commit batched t-dlog polynomial");
         let (batched_poly_comm, _) =
-            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_poly, false, None).unwrap();
+            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_polynomial, false, None).unwrap();
         end_timer!(commit_time);
 
         end_timer!(check_time);
-        Ok(batched_poly_comm == batched_comm)
+        Ok(batched_poly_comm == batched_commitment)
     }
 
     fn accumulate_items(
@@ -106,36 +109,37 @@ where
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<
-        (
-            Self::Group,
-            DensePolynomial<<Self::Group as Group>::ScalarField>,
-        ),
-        Error,
-    > {
+    ) -> Result<BatchResult<G>, Error> {
         let (t_accs, dlog_accs): (Vec<_>, Vec<_>) = accumulators
             .iter()
             .map(|acc| (acc.t_item.clone(), acc.dlog_item.clone()))
             .unzip();
 
         let batch_t_acc_time = start_timer!(|| "Batch t accumulator");
-        let (batched_t_comm, batched_t_poly) =
-            InnerSumcheckAccumulator::<G, FS>::batch_items(vk, t_accs.as_slice(), rng)?;
+        let BatchResult {
+            batched_commitment: batched_t_comm,
+            batched_polynomial: batched_t_poly,
+        } = InnerSumcheckAccumulator::<G, FS>::batch_items(vk, t_accs.as_slice(), rng)?;
         end_timer!(batch_t_acc_time);
 
         let batch_dlog_acc_time = start_timer!(|| "Batch dlog accumulator");
-        let (batched_dlog_comm, batched_dlog_poly) =
-            DLogAccumulator::<G, FS>::batch_items(&vk.1, dlog_accs.as_slice(), rng)?;
+        let BatchResult {
+            batched_commitment: batched_dlog_comm,
+            batched_polynomial: batched_dlog_poly,
+        } = DLogAccumulator::<G, FS>::batch_items(&vk.1, dlog_accs.as_slice(), rng)?;
         end_timer!(batch_dlog_acc_time);
 
         let batch_t_and_dlog_time =
             start_timer!(|| "Batch together already batched t and dlog accumulators");
         let batching_chal = G::ScalarField::rand(rng);
-        let batched_comm = batched_t_comm + batched_dlog_comm * &batching_chal;
-        let batched_poly = batched_t_poly + batched_dlog_poly * &batching_chal;
+        let batched_commitment = batched_t_comm + batched_dlog_comm * &batching_chal;
+        let batched_polynomial = batched_t_poly + batched_dlog_poly * &batching_chal;
         end_timer!(batch_t_and_dlog_time);
 
-        Ok((batched_comm, batched_poly))
+        Ok(BatchResult {
+            batched_commitment,
+            batched_polynomial,
+        })
     }
 }
 

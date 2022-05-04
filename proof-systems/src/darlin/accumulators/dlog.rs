@@ -5,14 +5,11 @@
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error, NonNativeItem};
+use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::DomainExtendedIpaPc;
-use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::serialize::*;
-use algebra::{
-    DensePolynomial, Group, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand,
-};
+use algebra::{DensePolynomial, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::{One, Zero};
@@ -192,10 +189,10 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
             .par_iter()
             .zip(xi_s_vec)
             .map(|(&chal, check_poly)| {
-                Polynomial::from_coefficients_vec(check_poly.compute_scaled_coeffs(-chal))
+                DensePolynomial::from_coefficients_vec(check_poly.compute_scaled_coeffs(-chal))
             })
             .reduce(
-                || Polynomial::zero(),
+                || DensePolynomial::zero(),
                 |acc, scaled_poly| &acc + &scaled_poly,
             );
         end_timer!(batching_time);
@@ -405,13 +402,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> BatchableAccumulator for DLogAccu
         _vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<
-        (
-            Self::Group,
-            DensePolynomial<<Self::Group as Group>::ScalarField>,
-        ),
-        Error,
-    > {
+    ) -> Result<BatchResult<G>, Error> {
         let compute_chals_time = start_timer!(|| "Compute batching challenges");
         let batching_chals = {
             let random_scalar = G::ScalarField::rand(rng);
@@ -427,7 +418,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> BatchableAccumulator for DLogAccu
         end_timer!(compute_chals_time);
 
         let batch_time = start_timer!(|| "Batch commitments and polynomials");
-        let (batched_comm, batched_poly) = batching_chals
+        let (batched_commitment, batched_polynomial) = batching_chals
             .into_par_iter()
             .zip(accumulators.into_par_iter())
             .map(|(chal, item)| {
@@ -444,7 +435,10 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> BatchableAccumulator for DLogAccu
             );
         end_timer!(batch_time);
 
-        Ok((batched_comm, batched_poly))
+        Ok(BatchResult {
+            batched_commitment,
+            batched_polynomial,
+        })
     }
 }
 
@@ -613,7 +607,7 @@ mod test {
                     0
                 }
             }
-            let poly = Polynomial::rand(degree, rng);
+            let poly = DensePolynomial::rand(degree, rng);
 
             polynomials.push(LabeledPolynomial::new(poly_label, poly, hiding))
         }

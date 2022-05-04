@@ -1,10 +1,10 @@
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
 use algebra::{
-    CanonicalDeserialize, CanonicalSerialize, DensePolynomial, Error, Evaluations, Group, GroupVec,
+    CanonicalDeserialize, CanonicalSerialize, DensePolynomial, Error, Evaluations, GroupVec,
     PrimeField, Read, SerializationError, ToBits, ToConstraintField, UniformRand, Write,
 };
 use array_init::array_init;
@@ -64,17 +64,19 @@ where
         let check_time = start_timer!(|| "Perform batched check of inner-sumcheck accumulators");
 
         let batch_time = start_timer!(|| "Batch inner-sumcheck accumulators");
-        let (batched_comm, batched_poly) =
-            InnerSumcheckAccumulator::<G, FS>::batch_items(vk, accumulators, rng)?;
+        let BatchResult {
+            batched_commitment,
+            batched_polynomial,
+        } = InnerSumcheckAccumulator::<G, FS>::batch_items(vk, accumulators, rng)?;
         end_timer!(batch_time);
 
         let commit_time = start_timer!(|| "Commit batched inner-sumcheck polynomial");
         let (batched_poly_comm, _) =
-            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_poly, false, None).unwrap();
+            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_polynomial, false, None).unwrap();
         end_timer!(commit_time);
 
         end_timer!(check_time);
-        Ok(batched_poly_comm == batched_comm)
+        Ok(batched_poly_comm == batched_commitment)
     }
 
     fn accumulate_items(
@@ -150,15 +152,12 @@ where
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<
-        (
-            Self::Group,
-            DensePolynomial<<Self::Group as Group>::ScalarField>,
-        ),
-        Error,
-    > {
+    ) -> Result<BatchResult<G>, Error> {
         if accumulators.is_empty() {
-            return Ok((G::zero(), DensePolynomial::<G::ScalarField>::zero()));
+            return Ok(BatchResult {
+                batched_commitment: G::zero(),
+                batched_polynomial: DensePolynomial::<G::ScalarField>::zero(),
+            });
         }
 
         let segment_size = Self::get_segment_size(vk);
@@ -181,7 +180,7 @@ where
         end_timer!(compute_chals_time);
 
         let batch_comm_time = start_timer!(|| "Batch commitments");
-        let batched_comm = accumulators
+        let batched_commitment = accumulators
             .par_iter()
             .zip(chals_for_batching.par_iter())
             .flat_map_iter(|(item, batching_chal)| {
@@ -233,7 +232,10 @@ where
             .reduce(|| DensePolynomial::zero(), |a, b| a + b);
         end_timer!(batch_poly_segments_time);
 
-        Ok((batched_comm, batched_segmented_t_poly))
+        Ok(BatchResult {
+            batched_commitment,
+            batched_polynomial: batched_segmented_t_poly,
+        })
     }
 }
 
