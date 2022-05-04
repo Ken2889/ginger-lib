@@ -50,11 +50,10 @@ where
     G: IPACurve,
     FS: FiatShamirRng,
 {
-    type Group = G;
     type ProverKey = ();
     type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
     type Proof = ();
-    type Item = InnerSumcheckItem<Self::Group>;
+    type Item = InnerSumcheckItem<G>;
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,

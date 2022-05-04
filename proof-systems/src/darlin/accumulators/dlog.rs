@@ -146,11 +146,10 @@ where
 }
 
 impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
-    type Group = G;
-    type ProverKey = CommitterKey<Self::Group>;
+    type ProverKey = CommitterKey<G>;
     type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
-    type Proof = AccumulationProof<Self::Group>;
-    type Item = DLogItem<Self::Group>;
+    type Proof = AccumulationProof<G>;
+    type Item = DLogItem<G>;
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.

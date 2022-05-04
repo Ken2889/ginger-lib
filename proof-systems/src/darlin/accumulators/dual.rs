@@ -20,9 +20,9 @@ impl<'a, A0, A1> Accumulator for DualAccumulator<'a, A0, A1>
 where
     A0: 'a + Accumulator,
     A1: 'a + Accumulator,
-    for<'b> NonNativeItem<'b, A1::Item>: ToConstraintField<<A0::Group as Group>::ScalarField>,
+    for<'b> NonNativeItem<'b, A1::Item>:
+        ToConstraintField<<<A0::Item as AccumulatorItem>::Group as Group>::ScalarField>,
 {
-    type Group = A0::Group;
     type ProverKey = (&'a A0::ProverKey, &'a A1::ProverKey);
     type VerifierKey = (&'a A0::VerifierKey, &'a A1::VerifierKey);
     type Proof = (A0::Proof, A1::Proof);

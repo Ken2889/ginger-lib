@@ -28,7 +28,6 @@ pub struct TestAcc<G: Group> {
 }
 
 impl<G: Group> Accumulator for TestAcc<G> {
-    type Group = G;
     type ProverKey = ();
     type VerifierKey = ();
     type Proof = ();

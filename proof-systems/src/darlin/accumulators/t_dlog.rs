@@ -28,11 +28,10 @@ where
     G: IPACurve,
     FS: FiatShamirRng + 'static,
 {
-    type Group = G;
     type ProverKey = ();
     type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
     type Proof = ();
-    type Item = TDLogItem<Self::Group>;
+    type Item = TDLogItem<G>;
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,

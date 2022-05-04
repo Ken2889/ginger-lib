@@ -24,11 +24,10 @@ pub type Error = Box<dyn std::error::Error>;
 /// and verifying aggregation, as well as checking ("deciding") if an item
 /// satisfies the predicate.
 pub trait Accumulator {
-    type Group: Group;
     type ProverKey;
     type VerifierKey;
     type Proof;
-    type Item: AccumulatorItem<Group = Self::Group>;
+    type Item: AccumulatorItem;
 
     /// Decide whether an/the public accumulator/s are correct,
     /// i.e. whether they satisfy the non-efficient predicate.
