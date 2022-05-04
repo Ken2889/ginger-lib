@@ -9,8 +9,6 @@
 use super::IPACurve;
 use crate::*;
 use crate::{PCKey, Vec};
-#[cfg(feature = "circuit-friendly")]
-use algebra::ToBits;
 use algebra::{DensePolynomial, PrimeField, ToBits, ToConstraintField};
 use std::{
     convert::TryFrom,
