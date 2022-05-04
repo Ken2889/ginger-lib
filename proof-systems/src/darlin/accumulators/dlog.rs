@@ -4,9 +4,9 @@
 //! reduction steps) is the polynomial commitment of the succinct 'reduction polynomial'
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
-use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error, NonNativeItem};
 use crate::darlin::DomainExtendedIpaPc;
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::serialize::*;
@@ -464,7 +464,7 @@ impl<G: IPACurve> AccumulatorItem for DLogItem<G> {
     type Group = G;
 }
 
-impl<G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<DLogItem<G>> {
+impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, DLogItem<G>> {
     fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 

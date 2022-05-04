@@ -1,6 +1,6 @@
-use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem};
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, NonNativeItem};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
 use algebra::{
@@ -311,7 +311,7 @@ impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
     type Group = G;
 }
 
-impl<G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<InnerSumcheckItem<G>> {
+impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, InnerSumcheckItem<G>> {
     fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 

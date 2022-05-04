@@ -1,4 +1,6 @@
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
+use crate::darlin::accumulators::{
+    Accumulator, AccumulatorItem, AsNonNativeItem, Error, NonNativeItem,
+};
 use algebra::{
     CanonicalDeserialize, CanonicalSerialize, Group, Read, SerializationError, ToConstraintField,
     Write,
@@ -18,7 +20,7 @@ impl<'a, A0, A1> Accumulator for DualAccumulator<'a, A0, A1>
 where
     A0: 'a + Accumulator,
     A1: 'a + Accumulator,
-    NonNativeItem<A1::Item>: ToConstraintField<<A0::Group as Group>::ScalarField>,
+    for<'b> NonNativeItem<'b, A1::Item>: ToConstraintField<<A0::Group as Group>::ScalarField>,
 {
     type Group = A0::Group;
     type ProverKey = (&'a A0::ProverKey, &'a A1::ProverKey);
@@ -154,24 +156,22 @@ pub struct DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
-    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
+    for<'b> NonNativeItem<'b, I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
 {
     pub native: Vec<I0>,
     pub non_native: Vec<I1>,
 }
 
-pub struct NonNativeItem<T: AccumulatorItem>(pub T);
-
 impl<I0, I1> ToConstraintField<<I0::Group as Group>::ScalarField> for DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
-    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
+    for<'b> NonNativeItem<'b, I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
 {
     fn to_field_elements(&self) -> Result<Vec<<I0::Group as Group>::ScalarField>, Error> {
         let mut fes = self.native.to_field_elements()?;
         for el in self.non_native.iter() {
-            let mut fe = NonNativeItem(el.clone()).to_field_elements()?;
+            let mut fe = el.as_non_native().to_field_elements()?;
             fes.append(&mut fe);
         }
         Ok(fes)
@@ -182,7 +182,7 @@ impl<I0, I1> AccumulatorItem for DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
-    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
+    for<'b> NonNativeItem<'b, I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
 {
     type Group = I0::Group;
 }
