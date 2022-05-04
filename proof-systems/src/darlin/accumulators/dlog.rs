@@ -5,7 +5,7 @@
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error, NonNativeItem};
 use crate::darlin::DomainExtendedIpaPc;
 use algebra::polynomial::DensePolynomial as Polynomial;
@@ -151,7 +151,7 @@ where
 impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
     type Group = G;
     type ProverKey = CommitterKey<Self::Group>;
-    type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
+    type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
     type Proof = AccumulationProof<Self::Group>;
     type Item = DLogItem<Self::Group>;
 
@@ -396,7 +396,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> IPAAccumulator for DLogAccumulator<G, FS> {
+impl<G: IPACurve, FS: FiatShamirRng + 'static> BatchableAccumulator for DLogAccumulator<G, FS> {
     type Group = G;
     type VerifierKey = VerifierKey<G>;
     type Item = DLogItem<G>;

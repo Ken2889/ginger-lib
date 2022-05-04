@@ -1,7 +1,7 @@
 use crate::darlin::accumulators::dlog::DLogAccumulator;
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::inner_sumcheck::{InnerSumcheckAccumulator, InnerSumcheckItem};
-use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{
     Accumulator, AccumulatorItem, AsNonNativeItem, Error, NonNativeItem,
 };
@@ -30,7 +30,7 @@ where
 {
     type Group = G;
     type ProverKey = ();
-    type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
+    type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
     type Proof = ();
     type Item = TDLogItem<Self::Group>;
 
@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<'a, G, FS> IPAAccumulator for TDLogAccumulator<'a, G, FS>
+impl<'a, G, FS> BatchableAccumulator for TDLogAccumulator<'a, G, FS>
 where
     G: IPACurve,
     FS: FiatShamirRng + 'static,

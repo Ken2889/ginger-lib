@@ -7,14 +7,13 @@
 //! Although within recursion we do not separate accumulation strategy from the SNARK on protocol level,
 //! we nevertheless serve this functionality for post processing outside the PCD.
 use algebra::serialize::*;
-use algebra::{Group, ToConstraintField};
+use algebra::{DensePolynomial, Group, ToConstraintField};
 use rand::RngCore;
 use std::fmt::Debug;
 
 pub mod dlog;
 pub mod dual;
 pub mod inner_sumcheck;
-pub mod ipa_accumulator;
 pub mod t_dlog;
 #[cfg(test)]
 mod tests;
@@ -95,4 +94,22 @@ impl<T: AccumulatorItem> AsNonNativeItem<T> for &T {
     fn as_non_native(&self) -> NonNativeItem<T> {
         NonNativeItem(self)
     }
+}
+
+pub trait BatchableAccumulator {
+    type Group: Group;
+    type VerifierKey;
+    type Item: AccumulatorItem<Group = Self::Group>;
+
+    fn batch_items<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<
+        (
+            Self::Group,
+            DensePolynomial<<Self::Group as Group>::ScalarField>,
+        ),
+        Error,
+    >;
 }

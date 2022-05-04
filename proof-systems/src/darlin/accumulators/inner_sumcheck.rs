@@ -1,5 +1,5 @@
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::BatchableAccumulator;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, NonNativeItem};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
@@ -52,7 +52,7 @@ where
 {
     type Group = G;
     type ProverKey = ();
-    type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
+    type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
     type Proof = ();
     type Item = InnerSumcheckItem<Self::Group>;
 
@@ -137,7 +137,7 @@ where
     }
 }
 
-impl<'a, G, FS> IPAAccumulator for InnerSumcheckAccumulator<'a, G, FS>
+impl<'a, G, FS> BatchableAccumulator for InnerSumcheckAccumulator<'a, G, FS>
 where
     G: IPACurve,
     FS: FiatShamirRng,
