@@ -8,7 +8,11 @@ use crate::darlin::{
     pcd::{error::PCDError, final_darlin::FinalDarlinPCD, PCDCircuit, PCDParameters, PCD},
     DomainExtendedIpaPc, FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
-use algebra::{DualCycle, Group, ToConstraintField, UniformRand};
+use algebra::{
+    CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, Read, SerializationError,
+    ToConstraintField, UniformRand, Write,
+};
+use derivative::Derivative;
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
@@ -16,17 +20,19 @@ use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError}
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::Rng;
 use rand::RngCore;
+use std::marker::PhantomData;
 
 // Dummy Acc used for testing
-pub struct TestAcc {}
+pub struct TestAcc<G: Group> {
+    g: PhantomData<G>,
+}
 
-impl AccumulatorItem for () {}
-
-impl Accumulator for TestAcc {
+impl<G: Group> Accumulator for TestAcc<G> {
+    type Group = G;
     type ProverKey = ();
     type VerifierKey = ();
     type Proof = ();
-    type Item = ();
+    type Item = TestItem<G>;
 
     fn check_items<R: RngCore>(
         _vk: &Self::VerifierKey,
@@ -40,7 +46,7 @@ impl Accumulator for TestAcc {
         _ck: &Self::ProverKey,
         _accumulators: Vec<Self::Item>,
     ) -> Result<(Self::Item, Self::Proof), AccError> {
-        Ok(((), ()))
+        Ok((Self::Item::default(), ()))
     }
 
     fn verify_accumulated_items<R: RngCore>(
@@ -54,14 +60,14 @@ impl Accumulator for TestAcc {
     }
 
     fn trivial_item(_vk: &Self::VerifierKey) -> Result<Self::Item, AccError> {
-        Ok(())
+        Ok(Self::Item::default())
     }
 
     fn random_item<R: RngCore>(
         _vk: &Self::VerifierKey,
         _rng: &mut R,
     ) -> Result<Self::Item, AccError> {
-        Ok(())
+        Ok(Self::Item::default())
     }
 
     fn invalid_item<R: RngCore>(
@@ -70,6 +76,30 @@ impl Accumulator for TestAcc {
     ) -> Result<Self::Item, AccError> {
         unimplemented!()
     }
+}
+
+// Dummy accumulator item for use inside TestAcc
+#[derive(Derivative)]
+#[derivative(Clone, Debug, Eq, PartialEq)]
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct TestItem<G: Group> {
+    g: PhantomData<G>,
+}
+
+impl<G: Group> Default for TestItem<G> {
+    fn default() -> Self {
+        Self { g: PhantomData }
+    }
+}
+
+impl<G: Group> ToConstraintField<G::ScalarField> for TestItem<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Box<dyn std::error::Error>> {
+        Ok(Vec::new())
+    }
+}
+
+impl<G: Group> AccumulatorItem for TestItem<G> {
+    type Group = G;
 }
 
 // Test PCDVk
@@ -94,7 +124,7 @@ where
     G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
     G1: DualCycle<G2>,
 {
-    type PCDAccumulator = TestAcc;
+    type PCDAccumulator = TestAcc<G1>;
     type PCDVerifierKey = TestPCDVk;
 
     // there is nothing to succinctly verify
@@ -102,7 +132,7 @@ where
         &self,
         _vk: &Self::PCDVerifierKey,
     ) -> Result<<Self::PCDAccumulator as Accumulator>::Item, PCDError> {
-        Ok(())
+        Ok(<Self::PCDAccumulator as Accumulator>::Item::default())
     }
 }
 

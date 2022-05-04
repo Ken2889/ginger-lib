@@ -1,7 +1,7 @@
 //! Submodule that implements the algebraic oracle proof for t-dlog-accumulator Marlin.
 
 use crate::darlin::IPACurve;
-use algebra::get_best_evaluation_domain;
+use algebra::{get_best_evaluation_domain, DualCycle};
 use num_traits::{One, Zero};
 use r1cs_core::SynthesisError;
 use std::marker::PhantomData;
@@ -23,6 +23,7 @@ pub struct IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     g1: PhantomData<G1>,
     g2: PhantomData<G2>,
@@ -32,6 +33,7 @@ impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// The labels for the polynomials output by the prover.
     #[rustfmt::skip]

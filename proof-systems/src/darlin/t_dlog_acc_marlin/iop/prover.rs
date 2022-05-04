@@ -9,7 +9,8 @@ use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
 use algebra::{
-    get_best_evaluation_domain, EvaluationDomain, Evaluations as EvaluationsOnDomain, Field,
+    get_best_evaluation_domain, DualCycle, EvaluationDomain, Evaluations as EvaluationsOnDomain,
+    Field,
 };
 use bench_utils::{end_timer, start_timer};
 use marlin::iop::sparse_linear_algebra::mat_vec_mul;
@@ -25,6 +26,7 @@ pub struct ProverState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     formatted_input_assignment: Vec<G1::ScalarField>,
     witness_assignment: Vec<G1::ScalarField>,
@@ -59,6 +61,7 @@ impl<'a, G1, G2> ProverState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// Get the public input.
     pub fn public_input(&self) -> Vec<G1::ScalarField> {
@@ -182,6 +185,7 @@ impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// Preparation of the prover, computes the witness vector `y`.
     pub fn prover_init<'a, C: ConstraintSynthesizer<G1::ScalarField>>(
@@ -414,6 +418,13 @@ where
     /// Prover second round of the algebraic oracle proof, the "outer sumcheck" that
     /// results from batching and reducing the R1CS identities.
     /// Determines the oracles for `T(alpha, X)`, `U_1(X)` and `h_1(X)`.
+    // Note: the outer sumcheck identity is
+    //      T(alpha,X) * y(X) - L_H(X,alpha) * y_eta(X) = U_1(gX) - U_1(X) + h_1(X) * (X^n-1),
+    // with
+    //      y(X) = x(X) + (X^l-1) * w(X)
+    //      y_eta(X) = y_A(X) + eta * y_B(X) + eta^2 * y_A(X) * y_B(X)
+    // Even though `T(alpha,X)` can be computed from public data, the prover still provides a
+    // commitment for it in order to make inner-sumcheck aggregation possible.
     pub fn prover_second_round<'a, R: RngCore>(
         ver_message: &VerifierFirstMsg<G1>,
         mut state: ProverState<'a, G1, G2>,

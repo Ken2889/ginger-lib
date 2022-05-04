@@ -1,6 +1,6 @@
-use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::ipa_accumulator::{IPAAccumulator, IPAAccumulatorItem};
-use crate::darlin::accumulators::Accumulator;
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
 use algebra::{
@@ -50,10 +50,11 @@ where
     G: IPACurve,
     FS: FiatShamirRng,
 {
+    type Group = G;
     type ProverKey = ();
     type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
     type Proof = ();
-    type Item = <Self as IPAAccumulator>::Item;
+    type Item = InnerSumcheckItem<Self::Group>;
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
@@ -141,7 +142,7 @@ where
     G: IPACurve,
     FS: FiatShamirRng,
 {
-    type Curve = G;
+    type Group = G;
     type VerifierKey = (&'a Index<G>, &'a CommitterKey<G>);
     type Item = InnerSumcheckItem<G>;
 
@@ -151,8 +152,8 @@ where
         rng: &mut R,
     ) -> Result<
         (
-            Self::Curve,
-            DensePolynomial<<Self::Curve as Group>::ScalarField>,
+            Self::Group,
+            DensePolynomial<<Self::Group as Group>::ScalarField>,
         ),
         Error,
     > {
@@ -283,39 +284,8 @@ impl<G: IPACurve> SuccinctInnerSumcheckDescriptor<G> {
     }
 }
 
-impl<G> IPAAccumulatorItem for InnerSumcheckItem<G>
-where
-    G: IPACurve,
-{
-    type Curve = G;
-
-    fn to_base_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
-        let mut fes = Vec::new();
-
-        // The commitment c consists of G::BaseField elements only.
-        fes.append(&mut self.c.to_field_elements()?);
-
-        // The alpha challenge is a 128 bit element from G::ScalarField. We convert it to bits.
-        let mut challenge_bits = Vec::new();
-        {
-            let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
-            let bits = self.succinct_descriptor.alpha.write_bits();
-            challenge_bits.extend_from_slice(&bits[to_skip..]);
-        }
-        // The eta challenges are 3 generic elements from G::ScalarField. We convert them to bits.
-        for fe in self.succinct_descriptor.etas.iter() {
-            let bits = fe.write_bits();
-            challenge_bits.extend_from_slice(&bits);
-        }
-
-        // We pack the full bit vector into native field elements as efficiently as possible (yet
-        // still secure).
-        fes.append(&mut challenge_bits.to_field_elements()?);
-
-        Ok(fes)
-    }
-
-    fn to_scalar_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
+impl<G: IPACurve> ToConstraintField<G::ScalarField> for InnerSumcheckItem<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
         let mut fes = Vec::new();
 
         // The commitment c is over G::BaseField. We serialize it to bits and pack it safely into
@@ -332,6 +302,38 @@ where
         // Therefore we keep them as they are.
         fes.push(self.succinct_descriptor.alpha);
         fes.extend_from_slice(&self.succinct_descriptor.etas);
+
+        Ok(fes)
+    }
+}
+
+impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
+    type Group = G;
+}
+
+impl<G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<InnerSumcheckItem<G>> {
+    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+        let mut fes = Vec::new();
+
+        // The commitment c consists of G::BaseField elements only.
+        fes.append(&mut self.0.c.to_field_elements()?);
+
+        // The alpha challenge is a 128 bit element from G::ScalarField. We convert it to bits.
+        let mut challenge_bits = Vec::new();
+        {
+            let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
+            let bits = self.0.succinct_descriptor.alpha.write_bits();
+            challenge_bits.extend_from_slice(&bits[to_skip..]);
+        }
+        // The eta challenges are 3 generic elements from G::ScalarField. We convert them to bits.
+        for fe in self.0.succinct_descriptor.etas.iter() {
+            let bits = fe.write_bits();
+            challenge_bits.extend_from_slice(&bits);
+        }
+
+        // We pack the full bit vector into native field elements as efficiently as possible (yet
+        // still secure).
+        fes.append(&mut challenge_bits.to_field_elements()?);
 
         Ok(fes)
     }

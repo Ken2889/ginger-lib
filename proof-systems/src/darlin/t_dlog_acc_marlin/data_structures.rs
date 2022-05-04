@@ -2,7 +2,7 @@ use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::IOP;
 use crate::darlin::IPACurve;
 use algebra::serialize::*;
-use algebra::ToBytes;
+use algebra::{DualCycle, ToBytes};
 use bench_utils::add_to_trace;
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
@@ -123,8 +123,12 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
     }
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
-    for Proof<G1, G2, FS>
+impl<G1, G2, FS> algebra::SemanticallyValid for Proof<G1, G2, FS>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    G1: DualCycle<G2>,
+    FS: FiatShamirRng,
 {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
@@ -172,7 +176,13 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> ToBytes for VerifierKey<G1, 
     }
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalSerialize for Proof<G1, G2, FS> {
+impl<G1, G2, FS> CanonicalSerialize for Proof<G1, G2, FS>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    G1: DualCycle<G2>,
+    FS: FiatShamirRng,
+{
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // Serialize commitments: we know in advance exactly how many polynomials will be
         // committed, so we can skip writing the corresponding sizes.
@@ -269,7 +279,13 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalSerialize for Proof
     }
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> CanonicalDeserialize for Proof<G1, G2, FS> {
+impl<G1, G2, FS> CanonicalDeserialize for Proof<G1, G2, FS>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    G1: DualCycle<G2>,
+    FS: FiatShamirRng,
+{
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         // Deserialize commitments
         let num_rounds = 4;

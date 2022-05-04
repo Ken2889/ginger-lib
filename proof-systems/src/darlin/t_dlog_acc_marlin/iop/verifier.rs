@@ -4,7 +4,7 @@ use crate::darlin::accumulators::t_dlog::DualTDLogItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
-use algebra::{get_best_evaluation_domain, EvaluationDomain, Field, FromBits};
+use algebra::{get_best_evaluation_domain, DualCycle, EvaluationDomain, Field, FromBits};
 use fiat_shamir::FiatShamirRng;
 use marlin::iop::Error;
 use num_traits::{One, Zero};
@@ -19,6 +19,7 @@ pub struct VerifierState<'a, G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// Domain H.
     pub domain_h: Box<dyn EvaluationDomain<G1::ScalarField>>,
@@ -72,6 +73,7 @@ impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// Preparation of the verifier.
     pub fn verifier_init<'a>(

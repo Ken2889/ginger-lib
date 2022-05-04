@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use algebra::{get_best_evaluation_domain, serialize::*, EvaluationDomain, ToBytes};
+use algebra::{get_best_evaluation_domain, serialize::*, DualCycle, EvaluationDomain, ToBytes};
 use derivative::Derivative;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 
@@ -93,6 +93,7 @@ impl<G1, G2> IOP<G1, G2>
 where
     G1: IPACurve,
     G2: IPACurve,
+    G1: DualCycle<G2>,
 {
     /// Generate the index for this constraint system, which essentially contains
     /// the indexer polynomials for the R1CS matrices.

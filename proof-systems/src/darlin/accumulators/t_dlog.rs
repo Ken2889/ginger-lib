@@ -1,12 +1,12 @@
 use crate::darlin::accumulators::dlog::DLogAccumulator;
-use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem, NonNativeItem};
 use crate::darlin::accumulators::inner_sumcheck::{InnerSumcheckAccumulator, InnerSumcheckItem};
-use crate::darlin::accumulators::ipa_accumulator::{IPAAccumulator, IPAAccumulatorItem};
-use crate::darlin::accumulators::{Accumulator, Error};
+use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::IPACurve;
 use algebra::serialize::*;
-use algebra::{DensePolynomial, Group, UniformRand};
+use algebra::{DensePolynomial, Group, ToConstraintField, UniformRand};
 use bench_utils::{end_timer, start_timer};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
@@ -26,10 +26,11 @@ where
     G: IPACurve,
     FS: FiatShamirRng + 'static,
 {
+    type Group = G;
     type ProverKey = ();
     type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
     type Proof = ();
-    type Item = <Self as IPAAccumulator>::Item;
+    type Item = TDLogItem<Self::Group>;
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
@@ -95,7 +96,7 @@ where
     G: IPACurve,
     FS: FiatShamirRng + 'static,
 {
-    type Curve = G;
+    type Group = G;
     type VerifierKey = (&'a Index<G>, &'a CommitterKey<G>);
     type Item = TDLogItem<G>;
 
@@ -105,8 +106,8 @@ where
         rng: &mut R,
     ) -> Result<
         (
-            Self::Curve,
-            DensePolynomial<<Self::Curve as Group>::ScalarField>,
+            Self::Group,
+            DensePolynomial<<Self::Group as Group>::ScalarField>,
         ),
         Error,
     > {
@@ -144,19 +145,23 @@ pub struct TDLogItem<G: IPACurve> {
     pub dlog_item: DLogItem<G>,
 }
 
-impl<G: IPACurve> IPAAccumulatorItem for TDLogItem<G> {
-    type Curve = G;
-
-    fn to_base_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
-        let mut fes_0 = self.t_item.to_base_field_elements()?;
-        let mut fes_1 = self.dlog_item.to_base_field_elements()?;
+impl<G: IPACurve> ToConstraintField<G::ScalarField> for TDLogItem<G> {
+    fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
+        let mut fes_0 = self.t_item.to_field_elements()?;
+        let mut fes_1 = self.dlog_item.to_field_elements()?;
         fes_0.append(&mut fes_1);
         Ok(fes_0)
     }
+}
 
-    fn to_scalar_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
-        let mut fes_0 = self.t_item.to_scalar_field_elements()?;
-        let mut fes_1 = self.dlog_item.to_scalar_field_elements()?;
+impl<G: IPACurve> AccumulatorItem for TDLogItem<G> {
+    type Group = G;
+}
+
+impl<G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<TDLogItem<G>> {
+    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+        let mut fes_0 = NonNativeItem(self.0.t_item.clone()).to_field_elements()?;
+        let mut fes_1 = NonNativeItem(self.0.dlog_item.clone()).to_field_elements()?;
         fes_0.append(&mut fes_1);
         Ok(fes_0)
     }

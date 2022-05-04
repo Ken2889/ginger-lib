@@ -1,9 +1,7 @@
-use crate::darlin::accumulators::ipa_accumulator::IPAAccumulatorItem;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
-use crate::darlin::IPACurve;
 use algebra::{
-    CanonicalDeserialize, CanonicalSerialize, DualCycle, Read, SerializationError,
-    ToConstraintField, Write,
+    CanonicalDeserialize, CanonicalSerialize, Group, Read, SerializationError, ToConstraintField,
+    Write,
 };
 use bench_utils::{end_timer, start_timer};
 use derivative::Derivative;
@@ -20,7 +18,9 @@ impl<'a, A0, A1> Accumulator for DualAccumulator<'a, A0, A1>
 where
     A0: 'a + Accumulator,
     A1: 'a + Accumulator,
+    NonNativeItem<A1::Item>: ToConstraintField<<A0::Group as Group>::ScalarField>,
 {
+    type Group = A0::Group;
     type ProverKey = (&'a A0::ProverKey, &'a A1::ProverKey);
     type VerifierKey = (&'a A0::VerifierKey, &'a A1::VerifierKey);
     type Proof = (A0::Proof, A1::Proof);
@@ -28,7 +28,7 @@ where
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
-        accumulators: &[DualAccumulatorItem<A0::Item, A1::Item>],
+        accumulators: &[Self::Item],
         rng: &mut R,
     ) -> Result<bool, Error> {
         let check_time = start_timer!(|| "Check dual accumulators");
@@ -154,30 +154,35 @@ pub struct DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
+    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
 {
     pub native: Vec<I0>,
     pub non_native: Vec<I1>,
+}
+
+pub struct NonNativeItem<T: AccumulatorItem>(pub T);
+
+impl<I0, I1> ToConstraintField<<I0::Group as Group>::ScalarField> for DualAccumulatorItem<I0, I1>
+where
+    I0: AccumulatorItem,
+    I1: AccumulatorItem,
+    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
+{
+    fn to_field_elements(&self) -> Result<Vec<<I0::Group as Group>::ScalarField>, Error> {
+        let mut fes = self.native.to_field_elements()?;
+        for el in self.non_native.iter() {
+            let mut fe = NonNativeItem(el.clone()).to_field_elements()?;
+            fes.append(&mut fe);
+        }
+        Ok(fes)
+    }
 }
 
 impl<I0, I1> AccumulatorItem for DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
+    NonNativeItem<I1>: ToConstraintField<<I0::Group as Group>::ScalarField>,
 {
-}
-
-impl<G0, G1, I0, I1> ToConstraintField<G0::ScalarField> for DualAccumulatorItem<I0, I1>
-where
-    G0: IPACurve,
-    G1: IPACurve,
-    G0: DualCycle<G1>,
-    I0: IPAAccumulatorItem<Curve = G0>,
-    I1: IPAAccumulatorItem<Curve = G1>,
-{
-    fn to_field_elements(&self) -> Result<Vec<G0::ScalarField>, Error> {
-        let mut fes_0 = self.native.to_scalar_field_elements()?;
-        let mut fes_1 = self.non_native.to_base_field_elements()?;
-        fes_0.append(&mut fes_1);
-        Ok(fes_0)
-    }
+    type Group = I0::Group;
 }

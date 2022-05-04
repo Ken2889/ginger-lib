@@ -7,13 +7,14 @@
 //! Although within recursion we do not separate accumulation strategy from the SNARK on protocol level,
 //! we nevertheless serve this functionality for post processing outside the PCD.
 use algebra::serialize::*;
+use algebra::{Group, ToConstraintField};
 use rand::RngCore;
 use std::fmt::Debug;
 
 pub mod dlog;
 pub mod dual;
 pub mod inner_sumcheck;
-mod ipa_accumulator;
+pub mod ipa_accumulator;
 pub mod t_dlog;
 #[cfg(test)]
 mod tests;
@@ -24,10 +25,11 @@ pub type Error = Box<dyn std::error::Error>;
 /// and verifying aggregation, as well as checking ("deciding") if an item
 /// satisfies the predicate.
 pub trait Accumulator {
+    type Group: Group;
     type ProverKey;
     type VerifierKey;
     type Proof;
-    type Item: AccumulatorItem;
+    type Item: AccumulatorItem<Group = Self::Group>;
 
     /// Decide whether an/the public accumulator/s are correct,
     /// i.e. whether they satisfy the non-efficient predicate.
@@ -67,4 +69,12 @@ pub trait Accumulator {
     fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error>;
 }
 
-pub trait AccumulatorItem: Clone + Debug + CanonicalSerialize + CanonicalDeserialize {}
+pub trait AccumulatorItem:
+    Clone
+    + Debug
+    + CanonicalSerialize
+    + CanonicalDeserialize
+    + ToConstraintField<<<Self as AccumulatorItem>::Group as Group>::ScalarField>
+{
+    type Group: Group;
+}

@@ -4,9 +4,9 @@
 //! reduction steps) is the polynomial commitment of the succinct 'reduction polynomial'
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
-use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::ipa_accumulator::{IPAAccumulator, IPAAccumulatorItem};
-use crate::darlin::accumulators::{Accumulator, Error};
+use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::ipa_accumulator::IPAAccumulator;
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
 use crate::darlin::DomainExtendedIpaPc;
 use algebra::polynomial::DensePolynomial as Polynomial;
 use algebra::serialize::*;
@@ -149,10 +149,11 @@ where
 }
 
 impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
-    type ProverKey = CommitterKey<G>;
+    type Group = G;
+    type ProverKey = CommitterKey<Self::Group>;
     type VerifierKey = <Self as IPAAccumulator>::VerifierKey;
-    type Proof = AccumulationProof<G>;
-    type Item = <Self as IPAAccumulator>::Item;
+    type Proof = AccumulationProof<Self::Group>;
+    type Item = DLogItem<Self::Group>;
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.
@@ -396,7 +397,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
 }
 
 impl<G: IPACurve, FS: FiatShamirRng + 'static> IPAAccumulator for DLogAccumulator<G, FS> {
-    type Curve = G;
+    type Group = G;
     type VerifierKey = VerifierKey<G>;
     type Item = DLogItem<G>;
 
@@ -406,8 +407,8 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> IPAAccumulator for DLogAccumulato
         rng: &mut R,
     ) -> Result<
         (
-            Self::Curve,
-            DensePolynomial<<Self::Curve as Group>::ScalarField>,
+            Self::Group,
+            DensePolynomial<<Self::Group as Group>::ScalarField>,
         ),
         Error,
     > {
@@ -459,17 +460,16 @@ pub struct AccumulationProof<G: IPACurve> {
     pub pc_proof: Proof<G>,
 }
 
-impl<G> IPAAccumulatorItem for DLogItem<G>
-where
-    G: IPACurve,
-{
-    type Curve = G;
+impl<G: IPACurve> AccumulatorItem for DLogItem<G> {
+    type Group = G;
+}
 
-    fn to_base_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+impl<G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<DLogItem<G>> {
+    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
         // The final_comm_key already consists of elements belonging to G::BaseField.
-        let final_comm_key = self.final_comm_key.clone();
+        let final_comm_key = self.0.final_comm_key.clone();
         fes.append(&mut final_comm_key.to_field_elements()?);
 
         // Convert the challenges of check_poly, which are 128 bit elements from G::ScalarField,
@@ -477,43 +477,7 @@ where
         // as possible (yet still secure).
         let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
         let mut check_poly_bits = Vec::new();
-        for fe in self.check_poly.chals.iter() {
-            let bits = fe.write_bits();
-            // write_bits() outputs a Big Endian bit order representation of fe and the same
-            // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
-            // e.g. we need to skip the first MODULUS_BITS - 128 bits.
-            debug_assert!(
-                <[bool] as ToConstraintField<G::ScalarField>>::to_field_elements(&bits[to_skip..])
-                    .unwrap()[0]
-                    == *fe
-            );
-            check_poly_bits.extend_from_slice(&bits[to_skip..]);
-        }
-        fes.append(&mut check_poly_bits.to_field_elements()?);
-
-        Ok(fes)
-    }
-
-    fn to_scalar_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
-        let mut fes = Vec::new();
-
-        // The final_comm_key belongs to G::BaseField, so we convert it into elements of
-        // G::ScalarField
-        let final_comm_key = self.final_comm_key.clone();
-        let mut final_comm_key_g1_bits = Vec::new();
-        let c_fes = final_comm_key.to_field_elements()?;
-        for fe in c_fes {
-            final_comm_key_g1_bits.append(&mut fe.write_bits());
-        }
-        fes.append(&mut final_comm_key_g1_bits.to_field_elements()?);
-
-        // The challenges of check_poly are by default 128 bit elements from G1::ScalarField
-        // (we do field arithmetics with them lateron).
-        // Since we do not want to waste space, we serialize them all to bits and pack them into
-        // native field elements as efficient as possible (yet secure).
-        let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
-        let mut check_poly_bits = Vec::new();
-        for fe in self.check_poly.chals.iter() {
+        for fe in self.0.check_poly.chals.iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,

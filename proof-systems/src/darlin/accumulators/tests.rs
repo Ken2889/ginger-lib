@@ -2,7 +2,7 @@ use crate::darlin::accumulators::Accumulator;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
 use crate::darlin::IPACurve;
-use algebra::{PrimeField, UniformRand};
+use algebra::{DualCycle, PrimeField, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
 use itertools::Itertools;
@@ -144,10 +144,13 @@ pub(super) fn get_committer_key<G: IPACurve, FS: FiatShamirRng, D: Digest>(
     vk
 }
 
-pub(super) fn get_index<G1: IPACurve, G2: IPACurve, R: RngCore>(
-    num_constraints: usize,
-    rng: &mut R,
-) -> Index<G1> {
+pub(super) fn get_index<G1, G2, R>(num_constraints: usize, rng: &mut R) -> Index<G1>
+where
+    G1: IPACurve,
+    G2: IPACurve,
+    G1: DualCycle<G2>,
+    R: RngCore,
+{
     let a = G1::ScalarField::rand(rng);
     let b = G1::ScalarField::rand(rng);
     let mut c = a;
