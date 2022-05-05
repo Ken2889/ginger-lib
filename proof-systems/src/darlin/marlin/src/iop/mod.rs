@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn test_slice_lagrange_kernel() {
+    fn test_slice_lagrange_kernel_inside_domain() {
         // If both x and y belong to the domain, then test that
         //   L(X,y)|_{X=x} = 1 if x == y,
         //   L(X,y)|_{X=x} = 0 if x != y.
@@ -643,6 +643,19 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_slice_lagrange_kernel_outside_domain() {
+        let rng = &mut thread_rng();
+        for domain_size in 1..10 {
+            let domain = get_best_evaluation_domain::<Fr>(1 << domain_size).unwrap();
+            let alpha = Fr::rand(rng);
+            let sliced_poly = domain.slice_lagrange_kernel(alpha);
+            let evals_1 = sliced_poly.evaluate_over_domain(domain.clone()).evals;
+            let evals_2 = domain.domain_eval_lagrange_kernel(alpha).unwrap();
+            assert_eq!(evals_1, evals_2)
         }
     }
 
