@@ -513,11 +513,11 @@ where
         // Gather commitments in one vector.
         let commitments: Vec<_> = init_comms
             .iter()
+            .chain(accumulator_comms)
             .chain(first_comms)
             .chain(second_comms)
             .chain(third_comms)
             .chain(fourth_comms)
-            .chain(accumulator_comms)
             .cloned()
             .zip(IOP::<G1, G2>::polynomial_labels())
             .map(|(c, l)| LabeledCommitment::new(l, c))

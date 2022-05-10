@@ -40,6 +40,8 @@ where
     pub const PROVER_POLYNOMIALS: [&'static str; 12] = [
         // Input poly
         "x",
+        // Accumulator oracles
+        "prev_t_acc_poly", "prev_bullet_poly",
         // First round oracles
         "w", "y_a", "y_b",
         // Second round oracles
@@ -48,8 +50,6 @@ where
         "curr_bridging_poly", "prev_bridging_poly",
         // Fourth round oracle
         "curr_t_acc_poly",
-        // Accumulator oracles
-        "prev_t_acc_poly", "prev_bullet_poly",
     ];
 
     /// An iterator over the polynomials output by the indexer and the prover.
