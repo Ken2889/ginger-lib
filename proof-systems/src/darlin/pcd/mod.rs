@@ -15,7 +15,7 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{DualCycle, Group, ToConstraintField, UniformRand};
+use algebra::{DualCycle, ToConstraintField, UniformRand};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
@@ -151,8 +151,8 @@ pub enum GeneralPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 // Testing functions
 impl<'a, G1, G2, FS> GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {
@@ -197,8 +197,8 @@ pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, 
 
 impl<'a, G1, G2, FS> PCD for GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {

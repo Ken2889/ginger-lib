@@ -1,4 +1,4 @@
-use algebra::{serialize::*, DualCycle, Group, ToConstraintField};
+use algebra::{serialize::*, DualCycle};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
@@ -25,8 +25,8 @@ fn bench_succinct_part_batch_verification<G1, G2, D, FS>(
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
@@ -87,8 +87,8 @@ fn bench_hard_part_batch_verification<G1, G2, D, FS>(
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,
@@ -158,8 +158,8 @@ fn bench_batch_verification_complete<G1, G2, D, FS>(
     num_constraints: Vec<usize>,
     num_proofs: usize,
 ) where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     D: Digest + 'static,
     FS: FiatShamirRng + 'static,

@@ -9,7 +9,7 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     DomainExtendedIpaPc, FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::{DualCycle, Group, ToConstraintField};
+use algebra::DualCycle;
 use bench_utils::*;
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
@@ -32,8 +32,8 @@ pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 's
 
 impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {
@@ -67,8 +67,8 @@ impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 
 impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {

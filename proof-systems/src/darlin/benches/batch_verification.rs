@@ -1,4 +1,4 @@
-use algebra::{DualCycle, Group, ToConstraintField};
+use algebra::DualCycle;
 use blake2::{Blake2s, Digest};
 use criterion::*;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
@@ -21,8 +21,8 @@ fn bench_batch_verification<G1, G2, D, FS>(
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: IPACurve,
+    G2: IPACurve,
     G1: DualCycle<G2>,
     D: Digest,
     FS: FiatShamirRng + 'static,
