@@ -15,6 +15,8 @@ pub mod dlog;
 pub mod dual;
 pub mod inner_sumcheck;
 pub mod t_dlog;
+pub mod to_dual_field_vec;
+
 #[cfg(test)]
 mod tests;
 
@@ -75,24 +77,6 @@ pub trait AccumulatorItem:
     + ToConstraintField<<<Self as AccumulatorItem>::Group as Group>::ScalarField>
 {
     type Group: Group;
-}
-
-pub struct NonNativeItem<'a, T: AccumulatorItem>(pub &'a T);
-
-pub trait AsNonNativeItem<T: AccumulatorItem> {
-    fn as_non_native(&self) -> NonNativeItem<T>;
-}
-
-impl<T: AccumulatorItem> AsNonNativeItem<T> for T {
-    fn as_non_native(&self) -> NonNativeItem<T> {
-        NonNativeItem(self)
-    }
-}
-
-impl<T: AccumulatorItem> AsNonNativeItem<T> for &T {
-    fn as_non_native(&self) -> NonNativeItem<T> {
-        NonNativeItem(self)
-    }
 }
 
 pub trait BatchableAccumulator {

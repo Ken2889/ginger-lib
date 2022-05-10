@@ -1,9 +1,8 @@
 use crate::darlin::accumulators::dlog::DLogAccumulator;
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::inner_sumcheck::{InnerSumcheckAccumulator, InnerSumcheckItem};
-use crate::darlin::accumulators::{
-    Accumulator, AccumulatorItem, AsNonNativeItem, Error, NonNativeItem,
-};
+use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
 use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::IPACurve;
@@ -159,17 +158,17 @@ impl<G: IPACurve> ToConstraintField<G::ScalarField> for TDLogItem<G> {
     }
 }
 
-impl<G: IPACurve> AccumulatorItem for TDLogItem<G> {
-    type Group = G;
-}
-
-impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, TDLogItem<G>> {
-    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
-        let mut fes_0 = self.0.t_item.as_non_native().to_field_elements()?;
-        let mut fes_1 = self.0.dlog_item.as_non_native().to_field_elements()?;
+impl<G: IPACurve> ToDualField<G::BaseField> for TDLogItem<G> {
+    fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+        let mut fes_0 = self.t_item.to_dual_field_elements()?;
+        let mut fes_1 = self.dlog_item.to_dual_field_elements()?;
         fes_0.append(&mut fes_1);
         Ok(fes_0)
     }
+}
+
+impl<G: IPACurve> AccumulatorItem for TDLogItem<G> {
+    type Group = G;
 }
 
 pub type DualTDLogAccumulator<'a, G1, G2, FS> =

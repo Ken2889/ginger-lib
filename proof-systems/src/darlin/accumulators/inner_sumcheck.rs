@@ -1,5 +1,6 @@
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem, NonNativeItem};
+use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem};
 use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
@@ -308,26 +309,22 @@ impl<G: IPACurve> ToConstraintField<G::ScalarField> for InnerSumcheckItem<G> {
     }
 }
 
-impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
-    type Group = G;
-}
-
-impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, InnerSumcheckItem<G>> {
-    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+impl<G: IPACurve> ToDualField<G::BaseField> for InnerSumcheckItem<G> {
+    fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
         // The commitment c consists of G::BaseField elements only.
-        fes.append(&mut self.0.c.to_field_elements()?);
+        fes.append(&mut self.c.to_field_elements()?);
 
         // The alpha challenge is a 128 bit element from G::ScalarField. We convert it to bits.
         let mut challenge_bits = Vec::new();
         {
             let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
-            let bits = self.0.succinct_descriptor.alpha.write_bits();
+            let bits = self.succinct_descriptor.alpha.write_bits();
             challenge_bits.extend_from_slice(&bits[to_skip..]);
         }
         // The eta challenges are 3 generic elements from G::ScalarField. We convert them to bits.
-        for fe in self.0.succinct_descriptor.etas.iter() {
+        for fe in self.succinct_descriptor.etas.iter() {
             let bits = fe.write_bits();
             challenge_bits.extend_from_slice(&bits);
         }
@@ -338,6 +335,10 @@ impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, Inne
 
         Ok(fes)
     }
+}
+
+impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
+    type Group = G;
 }
 
 pub type DualInnerSumcheckAccumulator<'a, G1, G2, FS> =

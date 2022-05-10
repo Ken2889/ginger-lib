@@ -5,7 +5,7 @@
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error, NonNativeItem};
+use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
 use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::DomainExtendedIpaPc;
 use algebra::serialize::*;
@@ -21,6 +21,7 @@ use poly_commit::{
 };
 use rand::RngCore;
 
+use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
@@ -457,12 +458,12 @@ impl<G: IPACurve> AccumulatorItem for DLogItem<G> {
     type Group = G;
 }
 
-impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, DLogItem<G>> {
-    fn to_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
+impl<G: IPACurve> ToDualField<G::BaseField> for DLogItem<G> {
+    fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
         // The final_comm_key already consists of elements belonging to G::BaseField.
-        let final_comm_key = self.0.final_comm_key.clone();
+        let final_comm_key = self.final_comm_key.clone();
         fes.append(&mut final_comm_key.to_field_elements()?);
 
         // Convert the challenges of check_poly, which are 128 bit elements from G::ScalarField,
@@ -470,7 +471,7 @@ impl<'a, G: IPACurve> ToConstraintField<G::BaseField> for NonNativeItem<'a, DLog
         // as possible (yet still secure).
         let to_skip = <G::ScalarField as PrimeField>::size_in_bits() - 128;
         let mut check_poly_bits = Vec::new();
-        for fe in self.0.check_poly.chals.iter() {
+        for fe in self.check_poly.chals.iter() {
             let bits = fe.write_bits();
             // write_bits() outputs a Big Endian bit order representation of fe and the same
             // expects [bool].to_field_elements(): therefore we need to take the last 128 bits,
