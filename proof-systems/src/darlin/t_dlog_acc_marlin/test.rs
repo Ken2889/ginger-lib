@@ -60,8 +60,7 @@ mod t_dlog_acc_marlin {
     use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
     use crate::darlin::IPACurve;
     use algebra::{
-        serialize::test_canonical_serialize_deserialize, DualCycle, Group, SemanticallyValid,
-        ToConstraintField, UniformRand,
+        serialize::test_canonical_serialize_deserialize, DualCycle, SemanticallyValid, UniformRand,
     };
     use digest::Digest;
     use fiat_shamir::FiatShamirRng;
@@ -75,8 +74,8 @@ mod t_dlog_acc_marlin {
         num_variables: usize,
         zk: bool,
     ) where
-        G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-        G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+        G1: IPACurve,
+        G2: IPACurve,
         G1: DualCycle<G2>,
         FS: FiatShamirRng + 'static,
         D: Digest + 'static,

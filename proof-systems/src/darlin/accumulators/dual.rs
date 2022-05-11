@@ -1,5 +1,8 @@
 use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
-use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
+use crate::darlin::accumulators::{
+    Accumulator, AccumulatorItem, Error, SingleSegmentBatchingResult,
+};
+use crate::darlin::IPACurve;
 use algebra::{
     CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, Read, SerializationError,
     ToConstraintField, Write,
@@ -17,15 +20,58 @@ pub struct DualAccumulator<'a, A0, A1> {
 
 impl<'a, A0, A1> Accumulator for DualAccumulator<'a, A0, A1>
 where
-    A0: 'a + Accumulator,
-    A1: 'a + Accumulator,
-    <A0::Item as AccumulatorItem>::Group: DualCycle<<A1::Item as AccumulatorItem>::Group>,
-    A1::Item: ToDualField<<<A1::Item as AccumulatorItem>::Group as Group>::BaseField>,
+    A0: 'a
+        + Accumulator<
+            BatchingResult = SingleSegmentBatchingResult<
+                <<A0 as Accumulator>::Item as AccumulatorItem>::Curve,
+            >,
+        >,
+    A1: 'a
+        + Accumulator<
+            BatchingResult = SingleSegmentBatchingResult<
+                <<A1 as Accumulator>::Item as AccumulatorItem>::Curve,
+            >,
+        >,
+    <A0::Item as AccumulatorItem>::Curve: DualCycle<<A1::Item as AccumulatorItem>::Curve>,
+    A1::Item: ToDualField<<<A1::Item as AccumulatorItem>::Curve as Group>::BaseField>,
 {
     type ProverKey = (&'a A0::ProverKey, &'a A1::ProverKey);
     type VerifierKey = (&'a A0::VerifierKey, &'a A1::VerifierKey);
     type Proof = (A0::Proof, A1::Proof);
     type Item = DualAccumulatorItem<A0::Item, A1::Item>;
+    type BatchingResult = DualBatchingResult<
+        <A0::Item as AccumulatorItem>::Curve,
+        <A1::Item as AccumulatorItem>::Curve,
+    >;
+
+    fn batch_items<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<Self::BatchingResult, Error> {
+        let native_accs = accumulators
+            .iter()
+            .flat_map(|acc| acc.native.clone())
+            .collect::<Vec<_>>();
+        let non_native_accs = accumulators
+            .iter()
+            .flat_map(|acc| acc.non_native.clone())
+            .collect::<Vec<_>>();
+
+        Ok(DualBatchingResult {
+            native: A0::batch_items(vk.0, native_accs.as_slice(), rng)?,
+            non_native: A1::batch_items(vk.1, non_native_accs.as_slice(), rng)?,
+        })
+    }
+
+    fn check_batched_items(
+        vk: &Self::VerifierKey,
+        batching_result: &Self::BatchingResult,
+    ) -> Result<bool, Error> {
+        let native_is_valid = A0::check_batched_items(vk.0, &batching_result.native)?;
+        let non_native_is_valid = A1::check_batched_items(vk.1, &batching_result.non_native)?;
+        Ok(native_is_valid && non_native_is_valid)
+    }
 
     fn check_items<R: RngCore>(
         vk: &Self::VerifierKey,
@@ -160,14 +206,14 @@ where
     pub non_native: Vec<I1>,
 }
 
-impl<I0, I1> ToConstraintField<<I0::Group as Group>::ScalarField> for DualAccumulatorItem<I0, I1>
+impl<I0, I1> ToConstraintField<<I0::Curve as Group>::ScalarField> for DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
-    <I0 as AccumulatorItem>::Group: DualCycle<<I1 as AccumulatorItem>::Group>,
-    I1: ToDualField<<<I1 as AccumulatorItem>::Group as Group>::BaseField>,
+    <I0 as AccumulatorItem>::Curve: DualCycle<<I1 as AccumulatorItem>::Curve>,
+    I1: ToDualField<<<I1 as AccumulatorItem>::Curve as Group>::BaseField>,
 {
-    fn to_field_elements(&self) -> Result<Vec<<I0::Group as Group>::ScalarField>, Error> {
+    fn to_field_elements(&self) -> Result<Vec<<I0::Curve as Group>::ScalarField>, Error> {
         let mut fes_0 = self.native.to_field_elements()?;
         let mut fes_1 = self.non_native.to_dual_field_elements()?;
         fes_0.append(&mut fes_1);
@@ -179,8 +225,13 @@ impl<I0, I1> AccumulatorItem for DualAccumulatorItem<I0, I1>
 where
     I0: AccumulatorItem,
     I1: AccumulatorItem,
-    I0::Group: DualCycle<I1::Group>,
-    I1: ToDualField<<<I1 as AccumulatorItem>::Group as Group>::BaseField>,
+    I0::Curve: DualCycle<I1::Curve>,
+    I1: ToDualField<<<I1 as AccumulatorItem>::Curve as Group>::BaseField>,
 {
-    type Group = I0::Group;
+    type Curve = I0::Curve;
+}
+
+pub struct DualBatchingResult<G0: IPACurve, G1: IPACurve> {
+    pub native: SingleSegmentBatchingResult<G0>,
+    pub non_native: SingleSegmentBatchingResult<G1>,
 }

@@ -1,7 +1,7 @@
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
+use crate::darlin::accumulators::SingleSegmentBatchingResult;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem};
-use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::{DomainExtendedIpaPc, IPACurve};
 use algebra::{
@@ -52,109 +52,18 @@ where
     FS: FiatShamirRng,
 {
     type ProverKey = ();
-    type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
+    type VerifierKey = (&'a Index<G>, &'a CommitterKey<G>);
     type Proof = ();
     type Item = InnerSumcheckItem<G>;
-
-    fn check_items<R: RngCore>(
-        vk: &Self::VerifierKey,
-        accumulators: &[Self::Item],
-        rng: &mut R,
-    ) -> Result<bool, Error> {
-        let check_time = start_timer!(|| "Perform batched check of inner-sumcheck accumulators");
-
-        let batch_time = start_timer!(|| "Batch inner-sumcheck accumulators");
-        let BatchResult {
-            batched_commitment,
-            batched_polynomial,
-        } = InnerSumcheckAccumulator::<G, FS>::batch_items(vk, accumulators, rng)?;
-        end_timer!(batch_time);
-
-        let commit_time = start_timer!(|| "Commit batched inner-sumcheck polynomial");
-        let (batched_poly_comm, _) =
-            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_polynomial, false, None).unwrap();
-        end_timer!(commit_time);
-
-        end_timer!(check_time);
-        Ok(batched_poly_comm == batched_commitment)
-    }
-
-    fn accumulate_items(
-        _ck: &Self::ProverKey,
-        _accumulators: Vec<Self::Item>,
-    ) -> Result<(Self::Item, Self::Proof), Error> {
-        unimplemented!()
-    }
-
-    fn verify_accumulated_items<R: RngCore>(
-        _current_accumulator: &Self::Item,
-        _vk: &Self::VerifierKey,
-        _previous_accumulators: Vec<Self::Item>,
-        _proof: &Self::Proof,
-        _rng: &mut R,
-    ) -> Result<bool, Error> {
-        unimplemented!()
-    }
-
-    fn trivial_item(_vk: &Self::VerifierKey) -> Result<Self::Item, Error> {
-        let succinct_descriptor = SuccinctInnerSumcheckDescriptor {
-            alpha: G::ScalarField::zero(),
-            etas: [G::ScalarField::zero(); 3],
-        };
-        Ok(Self::Item {
-            succinct_descriptor,
-            c: GroupVec::<G>::zero(),
-        })
-    }
-
-    fn random_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
-        let alpha: G::ScalarField = u128::rand(rng).into();
-        let etas = array_init(|_| G::ScalarField::rand(rng));
-        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
-
-        let t_poly = succinct_descriptor.expand(vk.0)?;
-        let (c, _) = DomainExtendedIpaPc::<_, FS>::commit(&vk.1, &t_poly, false, None).unwrap();
-
-        Ok(Self::Item {
-            succinct_descriptor,
-            c,
-        })
-    }
-
-    fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
-        let alpha: G::ScalarField = u128::rand(rng).into();
-        let etas = array_init(|_| G::ScalarField::rand(rng));
-        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
-
-        let c = (0..Self::get_num_segments(vk))
-            .into_iter()
-            .map(|_| G::rand(rng))
-            .collect();
-        let c = GroupVec::new(c);
-
-        Ok(Self::Item {
-            succinct_descriptor,
-            c,
-        })
-    }
-}
-
-impl<'a, G, FS> BatchableAccumulator for InnerSumcheckAccumulator<'a, G, FS>
-where
-    G: IPACurve,
-    FS: FiatShamirRng,
-{
-    type Group = G;
-    type VerifierKey = (&'a Index<G>, &'a CommitterKey<G>);
-    type Item = InnerSumcheckItem<G>;
+    type BatchingResult = SingleSegmentBatchingResult<G>;
 
     fn batch_items<R: RngCore>(
         vk: &Self::VerifierKey,
         accumulators: &[Self::Item],
         rng: &mut R,
-    ) -> Result<BatchResult<G>, Error> {
+    ) -> Result<Self::BatchingResult, Error> {
         if accumulators.is_empty() {
-            return Ok(BatchResult {
+            return Ok(SingleSegmentBatchingResult {
                 batched_commitment: G::zero(),
                 batched_polynomial: DensePolynomial::<G::ScalarField>::zero(),
             });
@@ -232,9 +141,110 @@ where
             .reduce(|| DensePolynomial::zero(), |a, b| a + b);
         end_timer!(batch_poly_segments_time);
 
-        Ok(BatchResult {
+        Ok(SingleSegmentBatchingResult {
             batched_commitment,
             batched_polynomial: batched_segmented_t_poly,
+        })
+    }
+
+    fn check_batched_items(
+        vk: &Self::VerifierKey,
+        batching_result: &Self::BatchingResult,
+    ) -> Result<bool, crate::darlin::accumulators::Error> {
+        let commit_time = start_timer!(|| "Commit batched inner-sumcheck polynomial");
+
+        let (batched_poly_comm, _) = InnerProductArgPC::<G, FS>::commit(
+            vk.1,
+            &batching_result.batched_polynomial,
+            false,
+            None,
+        )
+        .unwrap();
+
+        end_timer!(commit_time);
+
+        Ok(batched_poly_comm == batching_result.batched_commitment)
+    }
+
+    fn check_items<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<bool, Error> {
+        let check_time = start_timer!(|| "Perform batched check of inner-sumcheck accumulators");
+
+        let batch_time = start_timer!(|| "Batch inner-sumcheck accumulators");
+        let SingleSegmentBatchingResult {
+            batched_commitment,
+            batched_polynomial,
+        } = InnerSumcheckAccumulator::<G, FS>::batch_items(vk, accumulators, rng)?;
+        end_timer!(batch_time);
+
+        let commit_time = start_timer!(|| "Commit batched inner-sumcheck polynomial");
+        let (batched_poly_comm, _) =
+            InnerProductArgPC::<G, FS>::commit(&vk.1, &batched_polynomial, false, None).unwrap();
+        end_timer!(commit_time);
+
+        end_timer!(check_time);
+        Ok(batched_poly_comm == batched_commitment)
+    }
+
+    fn accumulate_items(
+        _ck: &Self::ProverKey,
+        _accumulators: Vec<Self::Item>,
+    ) -> Result<(Self::Item, Self::Proof), Error> {
+        unimplemented!()
+    }
+
+    fn verify_accumulated_items<R: RngCore>(
+        _current_accumulator: &Self::Item,
+        _vk: &Self::VerifierKey,
+        _previous_accumulators: Vec<Self::Item>,
+        _proof: &Self::Proof,
+        _rng: &mut R,
+    ) -> Result<bool, Error> {
+        unimplemented!()
+    }
+
+    fn trivial_item(_vk: &Self::VerifierKey) -> Result<Self::Item, Error> {
+        let succinct_descriptor = SuccinctInnerSumcheckDescriptor {
+            alpha: G::ScalarField::zero(),
+            etas: [G::ScalarField::zero(); 3],
+        };
+        Ok(Self::Item {
+            succinct_descriptor,
+            c: GroupVec::<G>::zero(),
+        })
+    }
+
+    fn random_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
+        let alpha: G::ScalarField = u128::rand(rng).into();
+        let etas = array_init(|_| G::ScalarField::rand(rng));
+        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
+
+        let t_poly = succinct_descriptor.expand(vk.0)?;
+        let (c, _) = DomainExtendedIpaPc::<_, FS>::commit(&vk.1, &t_poly, false, None).unwrap();
+
+        Ok(Self::Item {
+            succinct_descriptor,
+            c,
+        })
+    }
+
+    fn invalid_item<R: RngCore>(vk: &Self::VerifierKey, rng: &mut R) -> Result<Self::Item, Error> {
+        let alpha: G::ScalarField = u128::rand(rng).into();
+        let etas = array_init(|_| G::ScalarField::rand(rng));
+        let succinct_descriptor = SuccinctInnerSumcheckDescriptor { alpha, etas };
+
+        let c = (0..Self::get_num_segments(vk))
+            .into_iter()
+            .map(|_| G::rand(rng))
+            .collect();
+        let c = GroupVec::new(c);
+
+        Ok(Self::Item {
+            succinct_descriptor,
+            c,
         })
     }
 }
@@ -338,7 +348,7 @@ impl<G: IPACurve> ToDualField<G::BaseField> for InnerSumcheckItem<G> {
 }
 
 impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
-    type Group = G;
+    type Curve = G;
 }
 
 pub type DualInnerSumcheckAccumulator<'a, G1, G2, FS> =

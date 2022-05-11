@@ -6,6 +6,7 @@
 //! from both groups of the EC cycle (the "current", and the "collected" ones).
 //! Although within recursion we do not separate accumulation strategy from the SNARK on protocol level,
 //! we nevertheless serve this functionality for post processing outside the PCD.
+use crate::darlin::IPACurve;
 use algebra::serialize::*;
 use algebra::{DensePolynomial, Group, ToConstraintField};
 use rand::RngCore;
@@ -30,6 +31,18 @@ pub trait Accumulator {
     type VerifierKey;
     type Proof;
     type Item: AccumulatorItem;
+    type BatchingResult;
+
+    fn batch_items<R: RngCore>(
+        vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<Self::BatchingResult, Error>;
+
+    fn check_batched_items(
+        vk: &Self::VerifierKey,
+        batching_result: &Self::BatchingResult,
+    ) -> Result<bool, Error>;
 
     /// Decide whether an/the public accumulator/s are correct,
     /// i.e. whether they satisfy the non-efficient predicate.
@@ -74,24 +87,12 @@ pub trait AccumulatorItem:
     + Debug
     + CanonicalSerialize
     + CanonicalDeserialize
-    + ToConstraintField<<<Self as AccumulatorItem>::Group as Group>::ScalarField>
+    + ToConstraintField<<<Self as AccumulatorItem>::Curve as Group>::ScalarField>
 {
-    type Group: Group;
+    type Curve: IPACurve;
 }
 
-pub trait BatchableAccumulator {
-    type Group: Group;
-    type VerifierKey;
-    type Item: AccumulatorItem<Group = Self::Group>;
-
-    fn batch_items<R: RngCore>(
-        vk: &Self::VerifierKey,
-        accumulators: &[Self::Item],
-        rng: &mut R,
-    ) -> Result<BatchResult<Self::Group>, Error>;
-}
-
-pub struct BatchResult<G: Group> {
+pub struct SingleSegmentBatchingResult<G: IPACurve> {
     pub batched_commitment: G,
     pub batched_polynomial: DensePolynomial<G::ScalarField>,
 }

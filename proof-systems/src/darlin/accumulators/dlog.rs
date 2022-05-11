@@ -5,8 +5,8 @@
 //!     h(X) = (1 + xi_d * X^1)*(1 + xi_{d-1} * X^2) * ... (1 + xi_{1}*X^{2^d}),
 //! where the xi_1,...,xi_d are the challenges of the dlog reduction.
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
+use crate::darlin::accumulators::SingleSegmentBatchingResult;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
-use crate::darlin::accumulators::{BatchResult, BatchableAccumulator};
 use crate::darlin::DomainExtendedIpaPc;
 use algebra::serialize::*;
 use algebra::{DensePolynomial, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand};
@@ -148,9 +148,72 @@ where
 
 impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
     type ProverKey = CommitterKey<G>;
-    type VerifierKey = <Self as BatchableAccumulator>::VerifierKey;
+    type VerifierKey = CommitterKey<G>;
     type Proof = AccumulationProof<G>;
     type Item = DLogItem<G>;
+    type BatchingResult = SingleSegmentBatchingResult<G>;
+
+    fn batch_items<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        accumulators: &[Self::Item],
+        rng: &mut R,
+    ) -> Result<Self::BatchingResult, Error> {
+        let compute_chals_time = start_timer!(|| "Compute batching challenges");
+        let batching_chals = {
+            let random_scalar = G::ScalarField::rand(rng);
+            let num_batching_chals = accumulators.len();
+            let mut batching_chals = Vec::with_capacity(num_batching_chals);
+            let mut batching_chal = G::ScalarField::one();
+            for _ in 0..num_batching_chals {
+                batching_chals.push(batching_chal);
+                batching_chal *= random_scalar;
+            }
+            batching_chals
+        };
+        end_timer!(compute_chals_time);
+
+        let batch_time = start_timer!(|| "Batch commitments and polynomials");
+        let (batched_commitment, batched_polynomial) = batching_chals
+            .into_par_iter()
+            .zip(accumulators.into_par_iter())
+            .map(|(chal, item)| {
+                (
+                    item.final_comm_key * &chal,
+                    DensePolynomial::from_coefficients_vec(
+                        item.check_poly.compute_scaled_coeffs(chal),
+                    ),
+                )
+            })
+            .reduce(
+                || (G::zero(), DensePolynomial::<G::ScalarField>::zero()),
+                |a, b| (a.0 + b.0, a.1 + b.1),
+            );
+        end_timer!(batch_time);
+
+        Ok(SingleSegmentBatchingResult {
+            batched_commitment,
+            batched_polynomial,
+        })
+    }
+
+    fn check_batched_items(
+        vk: &Self::VerifierKey,
+        batching_result: &Self::BatchingResult,
+    ) -> Result<bool, Error> {
+        let commit_time = start_timer!(|| "Commit batched dlog polynomial");
+
+        let (batched_poly_comm, _) = InnerProductArgPC::<G, FS>::commit(
+            vk,
+            &batching_result.batched_polynomial,
+            false,
+            None,
+        )
+        .unwrap();
+
+        end_timer!(commit_time);
+
+        Ok(batched_poly_comm == batching_result.batched_commitment)
+    }
 
     /// Batch verification of dLog items: combine reduction polynomials and their corresponding G_fins
     /// and perform a single MSM.
@@ -393,55 +456,6 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> BatchableAccumulator for DLogAccumulator<G, FS> {
-    type Group = G;
-    type VerifierKey = VerifierKey<G>;
-    type Item = DLogItem<G>;
-
-    fn batch_items<R: RngCore>(
-        _vk: &Self::VerifierKey,
-        accumulators: &[Self::Item],
-        rng: &mut R,
-    ) -> Result<BatchResult<G>, Error> {
-        let compute_chals_time = start_timer!(|| "Compute batching challenges");
-        let batching_chals = {
-            let random_scalar = G::ScalarField::rand(rng);
-            let num_batching_chals = accumulators.len();
-            let mut batching_chals = Vec::with_capacity(num_batching_chals);
-            let mut batching_chal = G::ScalarField::one();
-            for _ in 0..num_batching_chals {
-                batching_chals.push(batching_chal);
-                batching_chal *= random_scalar;
-            }
-            batching_chals
-        };
-        end_timer!(compute_chals_time);
-
-        let batch_time = start_timer!(|| "Batch commitments and polynomials");
-        let (batched_commitment, batched_polynomial) = batching_chals
-            .into_par_iter()
-            .zip(accumulators.into_par_iter())
-            .map(|(chal, item)| {
-                (
-                    item.final_comm_key * &chal,
-                    DensePolynomial::from_coefficients_vec(
-                        item.check_poly.compute_scaled_coeffs(chal),
-                    ),
-                )
-            })
-            .reduce(
-                || (G::zero(), DensePolynomial::<G::ScalarField>::zero()),
-                |a, b| (a.0 + b.0, a.1 + b.1),
-            );
-        end_timer!(batch_time);
-
-        Ok(BatchResult {
-            batched_commitment,
-            batched_polynomial,
-        })
-    }
-}
-
 /// General struct of an aggregation proof. Typically, such proof stems from an
 /// interactive oracle protocol (IOP) and a polynomial commitment scheme.
 #[derive(Clone, Default, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
@@ -455,7 +469,7 @@ pub struct AccumulationProof<G: IPACurve> {
 }
 
 impl<G: IPACurve> AccumulatorItem for DLogItem<G> {
-    type Group = G;
+    type Curve = G;
 }
 
 impl<G: IPACurve> ToDualField<G::BaseField> for DLogItem<G> {

@@ -27,11 +27,27 @@ pub struct TestAcc<G: Group> {
     g: PhantomData<G>,
 }
 
-impl<G: Group> Accumulator for TestAcc<G> {
+impl<G: IPACurve> Accumulator for TestAcc<G> {
     type ProverKey = ();
     type VerifierKey = ();
     type Proof = ();
     type Item = TestItem<G>;
+    type BatchingResult = ();
+
+    fn batch_items<R: RngCore>(
+        _vk: &Self::VerifierKey,
+        _accumulators: &[Self::Item],
+        _rng: &mut R,
+    ) -> Result<Self::BatchingResult, AccError> {
+        Ok(())
+    }
+
+    fn check_batched_items(
+        _vk: &Self::VerifierKey,
+        _batching_result: &Self::BatchingResult,
+    ) -> Result<bool, AccError> {
+        Ok(true)
+    }
 
     fn check_items<R: RngCore>(
         _vk: &Self::VerifierKey,
@@ -97,8 +113,8 @@ impl<G: Group> ToConstraintField<G::ScalarField> for TestItem<G> {
     }
 }
 
-impl<G: Group> AccumulatorItem for TestItem<G> {
-    type Group = G;
+impl<G: IPACurve> AccumulatorItem for TestItem<G> {
+    type Curve = G;
 }
 
 // Test PCDVk
