@@ -339,12 +339,15 @@ impl<G: Group, PC: PolynomialCommitment<G, Commitment = G>> PolynomialCommitment
         PC::challenge_to_scalar(chal)
     }
 
-    fn single_point_multi_poly_open<'a>(
+    fn single_point_multi_poly_open<'a,
+        IP: IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+        IR: IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
+    >(
         ck: &Self::CommitterKey,
-        labeled_polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<G::ScalarField>>,
+        labeled_polynomials: IP,
         point: G::ScalarField,
         fs_rng: &mut Self::RandomOracle,
-        labeled_randomnesses: impl IntoIterator<Item=&'a LabeledRandomness<Self::Randomness>>,
+        labeled_randomnesses: IR,
         rng: Option<&mut dyn RngCore>
     ) -> Result<Self::Proof, Self::Error> {
         let (sorted_polys, sorted_rands) = sort_according_to_segments(labeled_polynomials, labeled_randomnesses, |poly| compute_num_of_segments::<G, PC>(ck, poly), |poly| poly.label());

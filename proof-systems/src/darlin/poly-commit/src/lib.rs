@@ -129,28 +129,40 @@ pub(crate) fn single_point_multi_poly_open<'a,
         labeled_randomnesses: IR,
         // The optional rng for additional internal randomness of open()
         rng: Option<&mut dyn RngCore>,
-    ) -> Result<PC::Proof, PC::Error> {
+    ) -> Result<PC::Proof, PC::Error>
+where
+    <IP as IntoIterator>::IntoIter: DoubleEndedIterator,
+    <IR as IntoIterator>::IntoIter: DoubleEndedIterator,
+{
+        let batch_time = start_timer!(|| "single-point-multi-poly batching");
+        let combine_time = start_timer!(|| "combine polys");
         // as the statement/assertion of the opening proof is already bound to the interal state
         // of the fr_rng, we simply sample the challenge scalar for the random linear combination
         let lambda = PC::challenge_to_scalar(fs_rng.get_challenge::<128>()?.to_vec())
             .map_err(|e| Error::Other(e.to_string()))?;
         let mut is_hiding = false;
 
-        // compute the random linear combinations using the powers of lambda
+        // compute the random linear combinations using the powers of lambda. We process polynomials
+        // and randomnesses in reverse order since in verify we will use Horner scheme for batching
         let mut poly_lc = Polynomial::zero();
         let mut rands_lc = PC::Randomness::zero();
+        let mut cur_challenge = G::ScalarField::one();
 
-        for (poly, rand) in labeled_polynomials.into_iter().zip(labeled_randomnesses.into_iter()) {
-            poly_lc *= &lambda;
-            poly_lc += poly.polynomial();
-            rands_lc *= &lambda;
+        for (poly, rand) in labeled_polynomials.into_iter().rev().zip(labeled_randomnesses.into_iter().rev()) {
+            poly_lc += (cur_challenge, poly.polynomial());
             if poly.is_hiding() {
                 is_hiding = true;
-                rands_lc += rand.randomness();
+                rands_lc += &(rand.randomness().clone()*&cur_challenge);
             }
+            cur_challenge *= &lambda;
         }
+        end_timer!(combine_time);
 
-        PC::open(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng)
+        let res = PC::open(ck, poly_lc, point, is_hiding, rands_lc, fs_rng, rng);
+
+        end_timer!(batch_time);
+
+        res
     }
 
 /// Default implementation of `succinct_verify_single_point_multi_poly` for `PolynomialCommitment`,
@@ -209,7 +221,8 @@ fn multi_point_multi_poly_open<'a, 'b,
     mut rng: Option<&mut dyn RngCore>,
 ) -> Result<PC::MultiPointProof, PC::Error>
 where
-    <QueryIT as IntoIterator>::IntoIter: Clone
+    <QueryIT as IntoIterator>::IntoIter: Clone,
+    <LabelIT as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
     // The multi-point multi-poly assertion is rephrased as polynomial identity over the query map
     // Q = {x_1,...,x_m},
@@ -263,7 +276,9 @@ where
             Polynomial::from_coefficients_slice(&[-(*point), G::ScalarField::one()]);
         let mut cur_h_polynomial = Polynomial::zero();
 
-        for label in poly_labels.clone() {
+        // we process polynomials in reverse order as in verify we batch with Horner scheme for
+        // efficiency
+        for label in poly_labels.clone().into_iter().rev() {
             let labeled_polynomial = *poly_map.get(&label).ok_or(Error::MissingPolynomial {
                 label: label.to_string(),
             })?;
@@ -280,8 +295,7 @@ where
                 - &Polynomial::from_coefficients_slice(&[y_i]);
 
             // h(X) = SUM( lambda^i * ((p_i(X) - y_i) / (X - x_i)) )
-            cur_h_polynomial *= &lambda;
-            cur_h_polynomial += &polynomial;
+            cur_h_polynomial += (cur_challenge, &polynomial);
 
             // lambda^i
             cur_challenge = cur_challenge * &lambda;
@@ -347,12 +361,12 @@ where
         let mut lc_polynomial = Polynomial::zero();
         let mut lc_randomness = PC::Randomness::zero();
 
-
         for (_point_label, (point, poly_labels)) in query_map_iter_cloned {
             let z_i_over_z_value = (x_point - point).inverse().unwrap();
-            let mut lc_polynomial_for_point = Polynomial::zero();
-            let mut lc_randomness_for_point = PC::Randomness::zero();
-            for label in poly_labels.clone() {
+            let mut cur_challenge = G::ScalarField::one();
+            // we process polynomials in reverse order as in verify we batch with Horner scheme for
+            // efficiency
+            for label in poly_labels.clone().into_iter().rev() {
                 let labeled_polynomial = *poly_map.get(&label).ok_or(Error::MissingPolynomial {
                     label: label.to_string(),
                 })?;
@@ -361,18 +375,15 @@ where
                     label: label.to_string(),
                 })?;
 
-                lc_polynomial_for_point *= &lambda;
-                lc_polynomial_for_point += labeled_polynomial.polynomial();
-
-                lc_randomness_for_point *= &lambda;
+                let coeff = cur_challenge * z_i_over_z_value;
+                lc_polynomial += (coeff, labeled_polynomial.polynomial());
 
                 if has_hiding {
-                    lc_randomness_for_point += labeled_randomness.randomness();
+                    lc_randomness += labeled_randomness.randomness().clone()*&coeff;
                 }
-            }
 
-            lc_polynomial += (z_i_over_z_value, &lc_polynomial_for_point);
-            lc_randomness += &(lc_randomness_for_point * &z_i_over_z_value);
+                cur_challenge *= &lambda;
+            }
         }
 
         // LC(p_1(X),p_2(X),...,p_m(X),h(X)) = SUM ( lamda^i * z_i(x)/z(x) * p_i(X) ) -  h(X)
@@ -807,15 +818,22 @@ pub trait PolynomialCommitment<G: Group>: Sized {
     /// Note: this default implementation demands that the state of the Fiat-Shamir
     /// rng is already bound to the evaluation claim (i.e.  the commitments `label_commitments`,
     /// the point `x`, and the values `v_i`.).
-    fn single_point_multi_poly_open<'a>(
+    fn single_point_multi_poly_open<'a,
+    IP: IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+    IR: IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
+    >(
         ck: &Self::CommitterKey,
-        labeled_polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<G::ScalarField>>,
+        labeled_polynomials: IP,
         point: G::ScalarField,
         fs_rng: &mut Self::RandomOracle,
-        labeled_randomnesses: impl IntoIterator<Item = &'a LabeledRandomness<Self::Randomness>>,
+        labeled_randomnesses: IR,
         // The optional rng for additional internal randomness of open()
         rng: Option<&mut dyn RngCore>,
-    ) -> Result<Self::Proof, Self::Error> {
+    ) -> Result<Self::Proof, Self::Error>
+    where
+    <IP as IntoIterator>::IntoIter: DoubleEndedIterator,
+    <IR as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
         single_point_multi_poly_open::<G, Self, _, _>(ck, labeled_polynomials, point, fs_rng, labeled_randomnesses, rng)
     }
 
