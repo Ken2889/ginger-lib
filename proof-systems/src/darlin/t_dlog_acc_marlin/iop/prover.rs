@@ -39,7 +39,7 @@ where
     // the witness polynomial w(X), normalized by the vanishing polynomial of
     // the input domain, such that y(X) = x(X) + w(X)*Z_I(X).
     w_poly: Option<LabeledPolynomial<G1::ScalarField>>,
-    my_polys: Option<(
+    y_m_polys: Option<(
         LabeledPolynomial<G1::ScalarField>,
         LabeledPolynomial<G1::ScalarField>,
     )>,
@@ -244,7 +244,7 @@ where
             witness_assignment,
             x_poly: x_poly.clone(),
             w_poly: None,
-            my_polys: None,
+            y_m_polys: None,
             index,
             verifier_first_msg: None,
             acc,
@@ -395,7 +395,7 @@ where
         };
 
         state.w_poly = Some(w);
-        state.my_polys = Some((y_a, y_b));
+        state.y_m_polys = Some((y_a, y_b));
         end_timer!(round_time);
 
         Ok((oracles, state))
@@ -445,7 +445,7 @@ where
         let eta = &ver_message.get_etas();
 
         let summed_y_m_poly_time = start_timer!(|| "Compute y_m poly");
-        let (y_a_poly, y_b_poly) = match state.my_polys {
+        let (y_a_poly, y_b_poly) = match state.y_m_polys {
             Some(ref v) => v,
             None => return Err(Error::Other("mz_polys are empty".to_owned())),
         };
@@ -500,15 +500,8 @@ where
 
         let y_poly_time = start_timer!(|| "Compute y poly");
 
-        let domain_x =
-            get_best_evaluation_domain::<G1::ScalarField>(state.formatted_input_assignment.len())
-                .ok_or(SynthesisError::PolynomialDegreeTooLarge)
-                .unwrap();
-        let x_poly = EvaluationsOnDomain::from_vec_and_domain(
-            state.formatted_input_assignment.clone(),
-            domain_x.clone(),
-        )
-        .interpolate();
+        let x_poly = &state.x_poly;
+
         let w_poly = match state.w_poly {
             Some(ref v) => v,
             None => return Err(Error::Other("w_poly is empty".to_owned())),
@@ -523,7 +516,9 @@ where
         //      deg (y_poly) = max(|X| - 1,  |X| + |H| - 1 + zk * (1 + C) - |X|) =
         //                  =  |H| - 1 + zk * (1 + C)
         // with zk = 1 / 0, and C as given by poly-commit.
-        let mut y_poly = w_poly.polynomial().mul_by_vanishing_poly(domain_x.size());
+        let mut y_poly = w_poly
+            .polynomial()
+            .mul_by_vanishing_poly(state.domain_x.size());
         y_poly
             .coeffs
             .par_iter_mut()
