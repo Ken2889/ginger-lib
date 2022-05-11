@@ -1,12 +1,10 @@
 use algebra::DualCycle;
+use algebra::EndoMulCurve;
 use blake2::{Blake2s, Digest};
 use criterion::*;
 use fiat_shamir::chacha20::FiatShamirChaChaRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::{
-    ipa_pc::{IPACurve, InnerProductArgPC},
-    PolynomialCommitment,
-};
+use poly_commit::{ipa_pc::InnerProductArgPC, PolynomialCommitment};
 use proof_systems::darlin::pcd::GeneralPCD;
 use proof_systems::darlin::{
     proof_aggregator::batch_verify_proofs,
@@ -21,8 +19,8 @@ fn bench_batch_verification<G1, G2, D, FS>(
     segment_size: usize,
     max_proofs: Vec<usize>,
 ) where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     D: Digest,
     FS: FiatShamirRng + 'static,

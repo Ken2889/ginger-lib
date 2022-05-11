@@ -50,7 +50,8 @@ num-traits = { version = "=0.2.14", default-features = false }
 [features]
 print-trace = [ "bench-utils/print-trace", "poly-commit/print-trace" ]
 asm = [ "poly-commit/asm", "algebra/llvm_asm" ]
-circuit-friendly = ["poly-commit/circuit-friendly", "r1cs-std"]
+circuit-friendly = ["commit-vanishing-polys", "r1cs-std"]
+commit-vanishing-polys = []
 
 [[bench]]
 name = "tweedle_test_circuits"

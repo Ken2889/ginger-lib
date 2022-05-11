@@ -5,7 +5,7 @@ use derivative::Derivative;
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use bench_utils::{add_to_trace, end_timer, start_timer};
 use marlin::iop::indexer::{balance_matrices, num_non_zero, post_process_matrices};
 use marlin::iop::sparse_linear_algebra::SparseMatrix;
@@ -25,7 +25,7 @@ use std::marker::PhantomData;
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IndexInfo<G1: IPACurve> {
+pub struct IndexInfo<G1: EndoMulCurve> {
     /// The total number of witnesses in the constraint system.
     pub num_witness: usize,
     /// The total number of public inputs in the constraint system.
@@ -39,7 +39,7 @@ pub struct IndexInfo<G1: IPACurve> {
     pub g1: PhantomData<G1>,
 }
 
-impl<G1: IPACurve> IndexInfo<G1> {
+impl<G1: EndoMulCurve> IndexInfo<G1> {
     pub fn get_domain_h(&self) -> Option<Box<dyn EvaluationDomain<G1::ScalarField>>> {
         get_best_evaluation_domain(std::cmp::max(
             self.num_constraints,
@@ -48,7 +48,7 @@ impl<G1: IPACurve> IndexInfo<G1> {
     }
 }
 
-impl<G1: IPACurve> ToBytes for IndexInfo<G1> {
+impl<G1: EndoMulCurve> ToBytes for IndexInfo<G1> {
     #[inline]
     fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         self.num_witness
@@ -77,7 +77,7 @@ impl<G1: IPACurve> ToBytes for IndexInfo<G1> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 /// The "indexed" version of the constraint system.
 /// Besides auxiliary information on the index, contains the R1CS matrices `M=A,B,C`.
-pub struct Index<G1: IPACurve> {
+pub struct Index<G1: EndoMulCurve> {
     /// Information about the index.
     pub index_info: IndexInfo<G1>,
 
@@ -91,8 +91,8 @@ pub struct Index<G1: IPACurve> {
 
 impl<G1, G2> IOP<G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     /// Generate the index for this constraint system, which essentially contains

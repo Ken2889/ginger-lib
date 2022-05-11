@@ -9,13 +9,13 @@ use crate::darlin::{
     DomainExtendedIpaPc, FinalDarlin, FinalDarlinProverKey, FinalDarlinVerifierKey,
 };
 use algebra::{
-    CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, Read, SerializationError,
-    ToConstraintField, UniformRand, Write,
+    CanonicalDeserialize, CanonicalSerialize, DualCycle, EndoMulCurve, Group, Read,
+    SerializationError, ToConstraintField, UniformRand, Write,
 };
 use derivative::Derivative;
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
+use poly_commit::ipa_pc::{CommitterKey, VerifierKey};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::{alloc::AllocGadget, eq::EqGadget, fields::fp::FpGadget};
 use rand::Rng;
@@ -27,7 +27,7 @@ pub struct TestAcc<G: Group> {
     g: PhantomData<G>,
 }
 
-impl<G: IPACurve> Accumulator for TestAcc<G> {
+impl<G: EndoMulCurve> Accumulator for TestAcc<G> {
     type ProverKey = ();
     type VerifierKey = ();
     type Proof = ();
@@ -113,7 +113,7 @@ impl<G: Group> ToConstraintField<G::ScalarField> for TestItem<G> {
     }
 }
 
-impl<G: IPACurve> AccumulatorItem for TestItem<G> {
+impl<G: EndoMulCurve> AccumulatorItem for TestItem<G> {
     type Curve = G;
 }
 
@@ -128,15 +128,15 @@ impl AsRef<()> for TestPCDVk {
 
 /// For testing purposes, TestPrevPCD already serves correct sys_ins and usr_ins
 /// to the our test PCDCircuit.
-pub struct TestPrevPCD<G1: IPACurve, G2: IPACurve> {
+pub struct TestPrevPCD<G1: EndoMulCurve, G2: EndoMulCurve> {
     sys_ins: FinalDarlinDeferredData<G1, G2>,
     usr_ins: (G1::ScalarField, G1::ScalarField),
 }
 
 impl<G1, G2> PCD for TestPrevPCD<G1, G2>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     type PCDAccumulator = TestAcc<G1>;
@@ -153,7 +153,7 @@ where
 
 /// The parameters for our test circuit
 #[derive(Clone)]
-pub struct CircuitInfo<G1: IPACurve, G2: IPACurve> {
+pub struct CircuitInfo<G1: EndoMulCurve, G2: EndoMulCurve> {
     pub num_constraints: usize,
     pub num_variables: usize,
     /// just used to deduce the number of field elements to allocate on the
@@ -173,7 +173,7 @@ pub struct CircuitInfo<G1: IPACurve, G2: IPACurve> {
 /// are repeated accordingly. To acchieve the give `num_variables`, a corresponding number of
 /// dummy witness variables are allocated.
 #[derive(Clone, Default)]
-pub struct TestCircuit<G1: IPACurve, G2: IPACurve> {
+pub struct TestCircuit<G1: EndoMulCurve, G2: EndoMulCurve> {
     /// Incremental data (to be allocated as witnesses)
     pub a: Option<G1::ScalarField>,
     pub b: Option<G1::ScalarField>,
@@ -196,8 +196,8 @@ pub struct TestCircuit<G1: IPACurve, G2: IPACurve> {
 
 impl<G1, G2> ConstraintSynthesizer<G1::ScalarField> for TestCircuit<G1, G2>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     fn generate_constraints<CS: ConstraintSystemAbstract<G1::ScalarField>>(
@@ -291,8 +291,8 @@ where
 
 impl<G1, G2> PCDCircuit<G1> for TestCircuit<G1, G2>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     type SetupData = CircuitInfo<G1, G2>;
@@ -358,7 +358,13 @@ where
 /// FinalDarlinDeferred as previous PCD (via CircuitInfo).
 /// The additional data a,b is sampled randomly.
 #[allow(dead_code)]
-pub fn generate_test_pcd<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'a, R: RngCore>(
+pub fn generate_test_pcd<
+    'a,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'a,
+    R: RngCore,
+>(
     pc_ck_g1: &CommitterKey<G1>,
     final_darlin_pk: &FinalDarlinProverKey<G1, DomainExtendedIpaPc<G1, FS>>,
     info: CircuitInfo<G1, G2>,
@@ -366,8 +372,8 @@ pub fn generate_test_pcd<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'a,
     rng: &mut R,
 ) -> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     let prev_pcd = TestPrevPCD::<G1, G2> {
@@ -400,8 +406,8 @@ where
 pub fn generate_test_data<
     'a,
     D: Digest,
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     FS: FiatShamirRng + 'a,
     R: RngCore,
 >(
@@ -416,8 +422,8 @@ pub fn generate_test_data<
     Vec<FinalDarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>>,
 )
 where
-    G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-    G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     // Trim committer key and verifier key

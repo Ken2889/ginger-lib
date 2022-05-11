@@ -6,7 +6,7 @@
 //! from both groups of the EC cycle (the "current", and the "collected" ones).
 //! Although within recursion we do not separate accumulation strategy from the SNARK on protocol level,
 //! we nevertheless serve this functionality for post processing outside the PCD.
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::serialize::*;
 use algebra::{DensePolynomial, Group, ToConstraintField};
 use rand::RngCore;
@@ -89,10 +89,10 @@ pub trait AccumulatorItem:
     + CanonicalDeserialize
     + ToConstraintField<<<Self as AccumulatorItem>::Curve as Group>::ScalarField>
 {
-    type Curve: IPACurve;
+    type Curve: EndoMulCurve;
 }
 
-pub struct SingleSegmentBatchingResult<G: IPACurve> {
+pub struct SingleSegmentBatchingResult<G: EndoMulCurve> {
     pub batched_commitment: G,
     pub batched_polynomial: DensePolynomial<G::ScalarField>,
 }

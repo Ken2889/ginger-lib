@@ -58,7 +58,7 @@ mod t_dlog_acc_marlin {
     use crate::darlin::accumulators::Accumulator;
     use crate::darlin::t_dlog_acc_marlin::data_structures::PC;
     use crate::darlin::t_dlog_acc_marlin::TDLogAccMarlin;
-    use crate::darlin::IPACurve;
+    use crate::darlin::EndoMulCurve;
     use algebra::{
         serialize::test_canonical_serialize_deserialize, DualCycle, SemanticallyValid, UniformRand,
     };
@@ -74,8 +74,8 @@ mod t_dlog_acc_marlin {
         num_variables: usize,
         zk: bool,
     ) where
-        G1: IPACurve,
-        G2: IPACurve,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
         FS: FiatShamirRng + 'static,
         D: Digest + 'static,

@@ -1,6 +1,6 @@
 use algebra::{
     curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
-    DualCycle, Group,
+    DualCycle, EndoMulCurve, Group,
 };
 use blake2::Blake2s;
 
@@ -21,7 +21,7 @@ use criterion::measurement::WallTime;
 use digest::Digest;
 use fiat_shamir::poseidon::TweedleFqPoseidonFSRng;
 use fiat_shamir::FiatShamirRng;
-use poly_commit::ipa_pc::{CommitterKey, IPACurve, VerifierKey};
+use poly_commit::ipa_pc::{CommitterKey, VerifierKey};
 use poly_commit::PCKey;
 use proof_systems::darlin::accumulators::t_dlog::DualTDLogAccumulator;
 use proof_systems::darlin::accumulators::Accumulator;
@@ -271,8 +271,8 @@ fn generate_keys<G1, G2, FS, D, CS>(
     TDLogAccMarlinVerifierKey<G1, G2, FS>,
 )
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
     D: Digest,

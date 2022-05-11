@@ -214,12 +214,6 @@ mod verifier_gadget {
 
             actual_digest.enforce_equal(cs.ns(|| "check pub ins"), &expected_digest)?;
 
-            // TODO: No need to allocate it in the future, should be hardcoded
-            let pc_verifier_key_gadget = PCG::VerifierKeyGadget::alloc(
-                cs.ns(|| "alloc pc verifier key"),
-                || Ok(self.pc_vk),
-            )?;
-
             // Alloc proof to be verified
             let proof_gadget =
                 ProofGadget::<G, PC, PCG>::alloc(cs.ns(|| "alloc proof"), || Ok(self.proof))?;
@@ -227,7 +221,7 @@ mod verifier_gadget {
             // Enforce succinct proof verification
             MarlinVerifierGadget::<G, GG, PC, PCG>::succinct_verify(
                 cs.ns(|| "proof verification"),
-                &pc_verifier_key_gadget,
+                &self.pc_vk,
                 &verifier_key_gadget,
                 &public_inputs,
                 &proof_gadget,
@@ -243,13 +237,11 @@ mod verifier_gadget {
     fn alloc_data<CS, G, GG, PC, PCG, D>(
         mut cs: CS,
         index_vk: &VerifierKey<G, PC>,
-        pc_vk: &PC::VerifierKey,
         proof: &Proof<G, PC>,
         public_inputs: &[G::ScalarField],
     ) -> Result<
         (
             VerifierKeyGadget<G, PC, PCG>,
-            PCG::VerifierKeyGadget,
             ProofGadget<G, PC, PCG>,
             Vec<NonNativeFieldGadget<G::ScalarField, G::BaseField>>,
         ),
@@ -269,9 +261,6 @@ mod verifier_gadget {
                 Ok(index_vk)
             })?;
 
-        let pc_verifier_key_gadget =
-            PCG::VerifierKeyGadget::alloc(cs.ns(|| "alloc pc verifier key"), || Ok(pc_vk))?;
-
         let proof_gadget = ProofGadget::<G, PC, PCG>::alloc(cs.ns(|| "alloc proof"), || Ok(proof))?;
 
         let public_inputs = {
@@ -285,12 +274,7 @@ mod verifier_gadget {
             result
         };
 
-        Ok((
-            verifier_key_gadget,
-            pc_verifier_key_gadget,
-            proof_gadget,
-            public_inputs,
-        ))
+        Ok((verifier_key_gadget, proof_gadget, public_inputs))
     }
 
     fn test_circuit<G, GG, PC, PCG, D>(
@@ -358,11 +342,10 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+            let (verifier_key_gadget, proof_gadget, public_inputs) =
                 alloc_data::<_, G, GG, PC, PCG, D>(
                     cs.ns(|| "alloc data"),
                     &index_vk,
-                    &pc_vk,
                     &proof,
                     &correct_inputs,
                 )
@@ -370,7 +353,7 @@ mod verifier_gadget {
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::succinct_verify(
                 cs.ns(|| "proof verification"),
-                &pc_verifier_key_gadget,
+                &pc_vk,
                 &verifier_key_gadget,
                 &public_inputs,
                 &proof_gadget,
@@ -392,11 +375,10 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+            let (verifier_key_gadget, proof_gadget, public_inputs) =
                 alloc_data::<_, G, GG, PC, PCG, D>(
                     cs.ns(|| "alloc data"),
                     &index_vk,
-                    &pc_vk,
                     &proof,
                     &wrong_inputs,
                 )
@@ -404,7 +386,7 @@ mod verifier_gadget {
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify_iop(
                 cs.ns(|| "proof verification"),
-                &pc_verifier_key_gadget,
+                &pc_vk,
                 &verifier_key_gadget,
                 &public_inputs,
                 &proof_gadget,
@@ -416,11 +398,10 @@ mod verifier_gadget {
             // Test that tampering with output of verify_iop() makes succinct opening proof fail.
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+            let (verifier_key_gadget, proof_gadget, public_inputs) =
                 alloc_data::<_, G, GG, PC, PCG, D>(
                     cs.ns(|| "alloc data"),
                     &index_vk,
-                    &pc_vk,
                     &proof,
                     &correct_inputs,
                 )
@@ -430,7 +411,7 @@ mod verifier_gadget {
             let (query_map, evaluations, mut commitments, mut fs_rng) =
                 MarlinVerifierGadget::<G, GG, PC, PCG>::verify_iop(
                     cs.ns(|| "IOP verification"),
-                    &pc_verifier_key_gadget,
+                    &pc_vk,
                     &verifier_key_gadget,
                     &public_inputs,
                     &proof_gadget,
@@ -448,7 +429,7 @@ mod verifier_gadget {
             commitments.push(LabeledCommitmentGadget::new(last_comm_label, last_comm));
             MarlinVerifierGadget::<G, GG, PC, PCG>::succinct_verify_opening(
                 cs.ns(|| "succinct opening verification"),
-                &pc_verifier_key_gadget,
+                &pc_vk,
                 &proof_gadget,
                 commitments,
                 query_map,
@@ -469,11 +450,10 @@ mod verifier_gadget {
 
             let mut cs = ConstraintSystem::<G::BaseField>::new(SynthesisMode::Debug);
 
-            let (verifier_key_gadget, pc_verifier_key_gadget, proof_gadget, public_inputs) =
+            let (verifier_key_gadget, proof_gadget, public_inputs) =
                 alloc_data::<_, G, GG, PC, PCG, D>(
                     cs.ns(|| "alloc data"),
                     &index_vk,
-                    &pc_vk,
                     &proof,
                     &correct_inputs,
                 )
@@ -481,7 +461,7 @@ mod verifier_gadget {
 
             MarlinVerifierGadget::<G, GG, PC, PCG>::verify_iop(
                 cs.ns(|| "IOP verification"),
-                &pc_verifier_key_gadget,
+                &pc_vk,
                 &verifier_key_gadget,
                 &public_inputs,
                 &proof_gadget,

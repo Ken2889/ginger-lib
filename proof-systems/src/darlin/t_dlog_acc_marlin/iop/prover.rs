@@ -7,7 +7,7 @@ use crate::darlin::t_dlog_acc_marlin::iop::verifier::{
     VerifierFirstMsg, VerifierSecondMsg, VerifierThirdMsg,
 };
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::{
     get_best_evaluation_domain, DualCycle, EvaluationDomain, Evaluations as EvaluationsOnDomain,
     Field,
@@ -24,8 +24,8 @@ use rayon::prelude::*;
 /// State for the IOP prover.
 pub struct ProverState<'a, G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     formatted_input_assignment: Vec<G1::ScalarField>,
@@ -59,8 +59,8 @@ where
 
 impl<'a, G1, G2> ProverState<'a, G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     /// Get the public input.
@@ -91,19 +91,19 @@ where
     }
 }
 
-pub struct ProverInitOracles<G: IPACurve> {
+pub struct ProverInitOracles<G: EndoMulCurve> {
     /// The public input polynomial `x`
     pub x: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverInitOracles<G> {
+impl<G: EndoMulCurve> ProverInitOracles<G> {
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.x].into_iter()
     }
 }
 
 /// The first set of prover oracles.
-pub struct ProverFirstOracles<G: IPACurve> {
+pub struct ProverFirstOracles<G: EndoMulCurve> {
     /// The randomized witness polynomial `w`.
     pub w: LabeledPolynomial<G::ScalarField>,
     /// The randomized y_A(X)= Sum_{z in H} A(X,z)*y(z)
@@ -112,7 +112,7 @@ pub struct ProverFirstOracles<G: IPACurve> {
     pub y_b: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverFirstOracles<G> {
+impl<G: EndoMulCurve> ProverFirstOracles<G> {
     /// Iterate over the polynomials output by the prover in the first round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.w, &self.y_a, &self.y_b].into_iter()
@@ -120,7 +120,7 @@ impl<G: IPACurve> ProverFirstOracles<G> {
 }
 
 /// The second set of prover oracles.
-pub struct ProverSecondOracles<G: IPACurve> {
+pub struct ProverSecondOracles<G: EndoMulCurve> {
     /// The boundary polynomial U_1(X) for the outer sumcheck
     pub u_1: LabeledPolynomial<G::ScalarField>,
     /// The quotient polynomial h_1(X) in the outer sumcheck identity.
@@ -129,7 +129,7 @@ pub struct ProverSecondOracles<G: IPACurve> {
     pub t: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverSecondOracles<G> {
+impl<G: EndoMulCurve> ProverSecondOracles<G> {
     /// Iterate over the polynomials output by the prover in the second round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.u_1, &self.h_1, &self.t].into_iter()
@@ -137,14 +137,14 @@ impl<G: IPACurve> ProverSecondOracles<G> {
 }
 
 /// The third set of prover oracles.
-pub struct ProverThirdOracles<G: IPACurve> {
+pub struct ProverThirdOracles<G: EndoMulCurve> {
     /// The current bridging polynomial
     pub curr_bridging_poly: LabeledPolynomial<G::ScalarField>,
     /// The previous bridging polynomial
     pub prev_bridging_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverThirdOracles<G> {
+impl<G: EndoMulCurve> ProverThirdOracles<G> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.curr_bridging_poly, &self.prev_bridging_poly].into_iter()
@@ -152,12 +152,12 @@ impl<G: IPACurve> ProverThirdOracles<G> {
 }
 
 /// The fourth set of prover oracles.
-pub struct ProverFourthOracles<G: IPACurve> {
+pub struct ProverFourthOracles<G: EndoMulCurve> {
     /// The new circuit polynomial
     pub curr_t_acc_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverFourthOracles<G> {
+impl<G: EndoMulCurve> ProverFourthOracles<G> {
     /// Iterate over the polynomials output by the prover in the third round.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.curr_t_acc_poly].into_iter()
@@ -165,14 +165,14 @@ impl<G: IPACurve> ProverFourthOracles<G> {
 }
 
 /// The polynomials associated to the accumulators.
-pub struct ProverAccumulatorOracles<G: IPACurve> {
+pub struct ProverAccumulatorOracles<G: EndoMulCurve> {
     /// The inner sumcheck accumulator polynomial.
     pub prev_t_acc_poly: LabeledPolynomial<G::ScalarField>,
     /// The bullet polynomial of the previous dlog accumulator.
     pub prev_bullet_poly: LabeledPolynomial<G::ScalarField>,
 }
 
-impl<G: IPACurve> ProverAccumulatorOracles<G> {
+impl<G: EndoMulCurve> ProverAccumulatorOracles<G> {
     /// Iterate over the accumulator polynomials.
     pub fn iter(&self) -> impl Iterator<Item = &LabeledPolynomial<G::ScalarField>> {
         vec![&self.prev_t_acc_poly, &self.prev_bullet_poly].into_iter()
@@ -183,8 +183,8 @@ impl<G: IPACurve> ProverAccumulatorOracles<G> {
 */
 impl<G1, G2> IOP<G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     /// Preparation of the prover, computes the witness vector `y`.

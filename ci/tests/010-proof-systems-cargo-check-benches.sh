@@ -12,4 +12,4 @@ cargo $CARGOARGS check --benches --features "asm, circuit-friendly"
 
 cd ../poly-commit
 cargo $CARGOARGS check --benches --features "asm"
-cargo $CARGOARGS check --benches --features "asm, circuit-friendly"
+cargo $CARGOARGS check --benches --features "asm, minimize-proof-size"

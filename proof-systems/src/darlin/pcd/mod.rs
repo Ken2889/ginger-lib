@@ -15,11 +15,11 @@ use crate::darlin::{
         simple_marlin::{SimpleMarlinPCD, SimpleMarlinPCDVerifierKey},
     },
 };
-use algebra::{DualCycle, ToConstraintField, UniformRand};
+use algebra::{DualCycle, EndoMulCurve, ToConstraintField, UniformRand};
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{CommitterKey as DLogCommitterKey, IPACurve, VerifierKey as DLogVerifierKey},
+    ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey},
     Error as PCError, PCKey,
 };
 use r1cs_core::ConstraintSynthesizer;
@@ -40,7 +40,7 @@ impl PCDParameters {
     /// We assume the DLOG keys to be generated outside the PCD scheme,
     /// so this function actually just trim them to the segment size
     /// specified in the config.
-    pub fn universal_setup<G: IPACurve>(
+    pub fn universal_setup<G: EndoMulCurve>(
         &self,
         params: (&DLogCommitterKey<G>, &DLogVerifierKey<G>),
     ) -> Result<(DLogCommitterKey<G>, DLogVerifierKey<G>), PCError> {
@@ -59,7 +59,7 @@ impl PCDParameters {
 ///     aka deferred checks.
 /// The additional data is used only by dedicated circuits such as a base proofs or
 /// a finalizing block proofs. For the ordinary merger nodes, it is simply `None`.
-pub trait PCDCircuit<G: IPACurve>: ConstraintSynthesizer<G::ScalarField> {
+pub trait PCDCircuit<G: EndoMulCurve>: ConstraintSynthesizer<G::ScalarField> {
     /// Any data that may be needed to bootstrap the circuit that is not covered by the other
     /// fields.
     type SetupData: Clone;
@@ -143,7 +143,7 @@ pub trait PCD: Sized + Send + Sync {
 #[derivative(Clone(bound = ""))]
 /// Achieve polymorphism for PCD via an enumerable. This provides nice APIs for
 /// the proof aggregation implementation and testing.
-pub enum GeneralPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub enum GeneralPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     SimpleMarlin(SimpleMarlinPCD<'a, G1, FS>),
     FinalDarlin(FinalDarlinPCD<'a, G1, G2, FS>),
 }
@@ -151,8 +151,8 @@ pub enum GeneralPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 // Testing functions
 impl<'a, G1, G2, FS> GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {
@@ -197,8 +197,8 @@ pub type DualPCDVerifierKey<'a, G1, G2, FS> = FinalDarlinPCDVerifierKey<'a, G1, 
 
 impl<'a, G1, G2, FS> PCD for GeneralPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {

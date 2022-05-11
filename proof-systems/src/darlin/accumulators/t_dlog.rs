@@ -5,7 +5,7 @@ use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
 use crate::darlin::accumulators::SingleSegmentBatchingResult;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::serialize::*;
 use algebra::{ToConstraintField, UniformRand};
 use bench_utils::{end_timer, start_timer};
@@ -24,7 +24,7 @@ pub struct TDLogAccumulator<'a, G, FS> {
 
 impl<'a, G, FS> Accumulator for TDLogAccumulator<'a, G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 {
     type ProverKey = ();
@@ -154,12 +154,12 @@ where
 #[derive(Derivative)]
 #[derivative(Clone, Debug)]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct TDLogItem<G: IPACurve> {
+pub struct TDLogItem<G: EndoMulCurve> {
     pub t_item: InnerSumcheckItem<G>,
     pub dlog_item: DLogItem<G>,
 }
 
-impl<G: IPACurve> ToConstraintField<G::ScalarField> for TDLogItem<G> {
+impl<G: EndoMulCurve> ToConstraintField<G::ScalarField> for TDLogItem<G> {
     fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
         let mut fes_0 = self.t_item.to_field_elements()?;
         let mut fes_1 = self.dlog_item.to_field_elements()?;
@@ -168,7 +168,7 @@ impl<G: IPACurve> ToConstraintField<G::ScalarField> for TDLogItem<G> {
     }
 }
 
-impl<G: IPACurve> ToDualField<G::BaseField> for TDLogItem<G> {
+impl<G: EndoMulCurve> ToDualField<G::BaseField> for TDLogItem<G> {
     fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes_0 = self.t_item.to_dual_field_elements()?;
         let mut fes_1 = self.dlog_item.to_dual_field_elements()?;
@@ -177,7 +177,7 @@ impl<G: IPACurve> ToDualField<G::BaseField> for TDLogItem<G> {
     }
 }
 
-impl<G: IPACurve> AccumulatorItem for TDLogItem<G> {
+impl<G: EndoMulCurve> AccumulatorItem for TDLogItem<G> {
     type Curve = G;
 }
 
@@ -198,8 +198,8 @@ mod test {
         num_constraints: usize,
         num_items: usize,
     ) where
-        G1: IPACurve,
-        G2: IPACurve,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
         FS: FiatShamirRng + 'static,
         D: Digest,

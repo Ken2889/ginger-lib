@@ -6,7 +6,7 @@ use crate::darlin::accumulators::Accumulator;
 use crate::darlin::t_dlog_acc_marlin::data_structures::{Proof, ProverKey, VerifierKey, PC};
 use crate::darlin::t_dlog_acc_marlin::iop::verifier::VerifierState;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::{get_best_evaluation_domain, serialize_no_metadata, DensePolynomial, GroupVec};
 use algebra::{CanonicalSerialize, DualCycle};
 use bench_utils::{end_timer, start_timer};
@@ -32,7 +32,7 @@ mod test;
 
 /// A helper struct to bundle the t-dlog accumulator Marlin functions for setup, prove and
 /// verify.
-pub struct TDLogAccMarlin<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, D: Digest>(
+pub struct TDLogAccMarlin<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng, D: Digest>(
     #[doc(hidden)] PhantomData<G1>,
     #[doc(hidden)] PhantomData<G2>,
     #[doc(hidden)] PhantomData<FS>,
@@ -41,8 +41,8 @@ pub struct TDLogAccMarlin<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, D: Dige
 
 impl<G1, G2, FS, D> TDLogAccMarlin<G1, G2, FS, D>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
     D: Digest,

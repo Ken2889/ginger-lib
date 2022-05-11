@@ -12,10 +12,7 @@ use poly_commit::{LabeledPolynomial, Polynomial};
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisMode};
 use rand_core::RngCore;
 
-#[cfg(not(feature = "circuit-friendly"))]
-const CF: bool = false;
-#[cfg(feature = "circuit-friendly")]
-const CF: bool = true;
+const C: usize = poly_commit::degree_correction_for_zk_security();
 
 /// State for the IOP prover.
 pub struct ProverState<'a, F: PrimeField> {
@@ -263,22 +260,18 @@ impl<F: PrimeField> IOP<F> {
             })
             .collect();
 
-        // Degree of w_poly before dividing by the vanishing polynomial Z_I(X)
+        // Maximum degree of w_poly before dividing by the vanishing polynomial Z_I(X)
         // of the input domain I is equal to
-        // - Non-circuit-friendly case:
         //       |H| - 1,  if non-zk
-        //       |H|,      if zk
-        // - Circuit-friendly case:
-        //       |H| - 1, if non-zk
-        //       |H| + 1, if zk
-        // These bounds can be summarized as:
-        //       deg(w) <= |H| - 1 + zk * (1 + cf)
-        // with zk, cf = 1 / 0.
+        //       |H| + C,  if zk
+        // which can be summarized as:
+        //       deg(w) <= |H| - 1 + zk * (1 + C)
+        // with zk = 1 / 0, and C the correction given by poly-commit.
         let w_poly = {
             let w = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, domain_h.clone())
                 .interpolate();
             if zk {
-                let mut randomization_poly = Polynomial::rand(CF as usize, rng);
+                let mut randomization_poly = Polynomial::rand(C, rng);
                 randomization_poly = randomization_poly.mul_by_vanishing_poly(domain_h.size());
                 let w = &w + &randomization_poly;
 
@@ -310,7 +303,7 @@ impl<F: PrimeField> IOP<F> {
         let y_a_poly = {
             let y_a = EvaluationsOnDomain::from_vec_and_domain(y_a, domain_h.clone()).interpolate();
             if zk {
-                let mut randomization_poly = Polynomial::rand(CF as usize, rng);
+                let mut randomization_poly = Polynomial::rand(C, rng);
                 randomization_poly = randomization_poly.mul_by_vanishing_poly(domain_h.size());
                 let y_a = &y_a + &randomization_poly;
 
@@ -325,7 +318,7 @@ impl<F: PrimeField> IOP<F> {
         let y_b_poly = {
             let y_b = EvaluationsOnDomain::from_vec_and_domain(y_b, domain_h.clone()).interpolate();
             if zk {
-                let mut randomization_poly = Polynomial::rand(CF as usize, rng);
+                let mut randomization_poly = Polynomial::rand(C, rng);
                 randomization_poly = randomization_poly.mul_by_vanishing_poly(domain_h.size());
                 let y_b = &y_b + &randomization_poly;
 
@@ -336,12 +329,9 @@ impl<F: PrimeField> IOP<F> {
         };
         end_timer!(y_b_poly_time);
 
-        assert!(
-            w_poly.degree()
-                <= domain_h.size() - 1 + zk as usize * (1 + CF as usize) - domain_x.size()
-        );
-        assert!(y_a_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + CF as usize));
-        assert!(y_b_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + CF as usize));
+        assert!(w_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + C) - domain_x.size());
+        assert!(y_a_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + C));
+        assert!(y_b_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + C));
 
         let w = LabeledPolynomial::new("w".to_string(), w_poly, zk);
         let y_a = LabeledPolynomial::new("y_a".to_string(), y_a_poly, zk);
@@ -497,11 +487,11 @@ impl<F: PrimeField> IOP<F> {
         //      y_poly (X) = x(X) + v_X(X) * w^(X),
         // with w(X) = 0 on X.
         // We have
-        //      deg w^(X) = |H| - 1 + zk * (1 + cf) - |X|
+        //      deg w^(X) = |H| - 1 + zk * (1 + C) - |X|
         // and hence
-        //      deg (y_poly) = max(|X| - 1,  |X| + |H| - 1 + zk * (1 + cf) - |X|) =
-        //                  =  |H| - 1 + zk * (1 + cf)
-        // with zk, cf = 1 / 0.
+        //      deg (y_poly) = max(|X| - 1,  |X| + |H| - 1 + zk * (1 + C) - |X|) =
+        //                  =  |H| - 1 + zk * (1 + C)
+        // with zk = 1 / 0, and C as given by poly-commit.
         let mut y_poly = w_poly
             .polynomial()
             .mul_by_vanishing_poly(state.domain_x.size());
@@ -510,7 +500,7 @@ impl<F: PrimeField> IOP<F> {
             .par_iter_mut()
             .zip(&x_poly.coeffs)
             .for_each(|(y, x)| *y += x);
-        assert!(y_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + CF as usize));
+        assert!(y_poly.degree() <= domain_h.size() - 1 + zk as usize * (1 + C));
 
         end_timer!(y_poly_time);
 
@@ -573,7 +563,7 @@ impl<F: PrimeField> IOP<F> {
             if zk {
                 // The boundary polynomial is queried one time more than the other witness-related
                 // polynomials.
-                let mut randomization_poly = Polynomial::rand(1 + CF as usize, rng);
+                let mut randomization_poly = Polynomial::rand(1 + C, rng);
                 randomization_poly = randomization_poly.mul_by_vanishing_poly(domain_h.size());
 
                 // Add the randomization polynomial to u_1
@@ -611,9 +601,9 @@ impl<F: PrimeField> IOP<F> {
         // deg h_1(X) = deg(outer_poly(X)) - deg(v_H)
         //      = deg(l_x_alpha) + deg(y_a) + deg(y_b) - |H|
         //
-        // deg h_1(X) <= |H| - 1 + 2 * (|H| - 1 + zk * (1 + cf)) - |H| =
-        //          = 2 * |H| - 3 + 2 * zk * (1 + cf)
-        // with zk = 1 / 0.
+        // deg h_1(X) <= |H| - 1 + 2 * (|H| - 1 + zk * (1 + C)) - |H| =
+        //          = 2 * |H| - 3 + 2 * zk * (1 + C)
+        // with zk = 1 / 0, and C as given by poly-commit.
         let h_1_time = start_timer!(|| "Compute h_1 poly");
 
         let mut h_1 = &outer_poly + &(&u_1 - &u_1_g);
@@ -627,7 +617,7 @@ impl<F: PrimeField> IOP<F> {
         };
         end_timer!(h_1_time);
 
-        assert!(h_1.degree() <= 2 * domain_h.size() - 3 + 2 * zk as usize * (1 + CF as usize));
+        assert!(h_1.degree() <= 2 * domain_h.size() - 3 + 2 * zk as usize * (1 + C));
 
         let oracles = ProverSecondOracles {
             u_1: LabeledPolynomial::new("u_1".into(), u_1, zk),

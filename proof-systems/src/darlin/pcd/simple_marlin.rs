@@ -4,13 +4,13 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     DomainExtendedIpaPc,
 };
-use algebra::{serialize::*, SemanticallyValid};
+use algebra::{serialize::*, EndoMulCurve, SemanticallyValid};
 use bench_utils::*;
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use marlin::{Marlin, Proof, VerifierKey as MarlinVerifierKey, IOP};
 use poly_commit::{
-    ipa_pc::{IPACurve, InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
 use std::marker::PhantomData;
@@ -24,11 +24,11 @@ use std::ops::{Deref, DerefMut};
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct MarlinProof<G: IPACurve, FS: FiatShamirRng + 'static>(
+pub struct MarlinProof<G: EndoMulCurve, FS: FiatShamirRng + 'static>(
     pub Proof<G, DomainExtendedIpaPc<G, FS>>,
 );
 
-impl<G: IPACurve, FS: FiatShamirRng> Deref for MarlinProof<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> Deref for MarlinProof<G, FS> {
     type Target = Proof<G, DomainExtendedIpaPc<G, FS>>;
 
     fn deref(&self) -> &Self::Target {
@@ -36,13 +36,13 @@ impl<G: IPACurve, FS: FiatShamirRng> Deref for MarlinProof<G, FS> {
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng> DerefMut for MarlinProof<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> DerefMut for MarlinProof<G, FS> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
     fn is_valid(&self) -> bool {
         // Check commitments number and validity
         let num_rounds = 3;
@@ -77,7 +77,7 @@ impl<G: IPACurve, FS: FiatShamirRng> SemanticallyValid for MarlinProof<G, FS> {
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct SimpleMarlinPCD<'a, G: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct SimpleMarlinPCD<'a, G: EndoMulCurve, FS: FiatShamirRng + 'static> {
     pub proof: MarlinProof<G, FS>,
     pub usr_ins: Vec<G::ScalarField>,
     _lifetime: PhantomData<&'a ()>,
@@ -86,7 +86,7 @@ pub struct SimpleMarlinPCD<'a, G: IPACurve, FS: FiatShamirRng + 'static> {
 /// As every PCD, the `SimpleMarlinPCD` comes as a proof plus "statement".
 impl<'a, G, FS> SimpleMarlinPCD<'a, G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng + 'a,
 {
     pub fn new(
@@ -105,12 +105,12 @@ where
 
 /// To verify the PCD of a simple Marlin we only need the `MarlinVerifierKey` (or, the
 /// IOP verifier key) of the circuit, and the two dlog committer keys for G1 and G2.
-pub struct SimpleMarlinPCDVerifierKey<'a, G: IPACurve, FS: FiatShamirRng + 'static>(
+pub struct SimpleMarlinPCDVerifierKey<'a, G: EndoMulCurve, FS: FiatShamirRng + 'static>(
     pub &'a MarlinVerifierKey<G, DomainExtendedIpaPc<G, FS>>,
     pub &'a DLogVerifierKey<G>,
 );
 
-impl<'a, G: IPACurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
+impl<'a, G: EndoMulCurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
     for SimpleMarlinPCDVerifierKey<'a, G, FS>
 {
     fn as_ref(&self) -> &DLogVerifierKey<G> {
@@ -120,7 +120,7 @@ impl<'a, G: IPACurve, FS: FiatShamirRng> AsRef<DLogVerifierKey<G>>
 
 impl<'a, G, FS> PCD for SimpleMarlinPCD<'a, G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 {
     type PCDAccumulator = DLogAccumulator<G, FS>;

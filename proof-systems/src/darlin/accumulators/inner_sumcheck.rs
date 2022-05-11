@@ -3,7 +3,7 @@ use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
 use crate::darlin::accumulators::SingleSegmentBatchingResult;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem};
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
-use crate::darlin::{DomainExtendedIpaPc, IPACurve};
+use crate::darlin::{DomainExtendedIpaPc, EndoMulCurve};
 use algebra::{
     CanonicalDeserialize, CanonicalSerialize, DensePolynomial, Error, Evaluations, GroupVec,
     PrimeField, Read, SerializationError, ToBits, ToConstraintField, UniformRand, Write,
@@ -31,7 +31,7 @@ pub struct InnerSumcheckAccumulator<'a, G, FS> {
 
 impl<'a, G, FS> InnerSumcheckAccumulator<'a, G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng,
 {
     fn get_segment_size(vk: &<Self as Accumulator>::VerifierKey) -> usize {
@@ -48,7 +48,7 @@ where
 
 impl<'a, G, FS> Accumulator for InnerSumcheckAccumulator<'a, G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng,
 {
     type ProverKey = ();
@@ -253,7 +253,7 @@ where
 #[derive(Derivative)]
 #[derivative(Clone, Debug, Eq, PartialEq)]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct InnerSumcheckItem<G: IPACurve> {
+pub struct InnerSumcheckItem<G: EndoMulCurve> {
     /// The succinct descriptor of the accumulator.
     pub succinct_descriptor: SuccinctInnerSumcheckDescriptor<G>,
     /// Commitment of the batched circuit polynomials.
@@ -263,14 +263,14 @@ pub struct InnerSumcheckItem<G: IPACurve> {
 #[derive(Derivative)]
 #[derivative(Clone, Debug, Eq, PartialEq)]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct SuccinctInnerSumcheckDescriptor<G: IPACurve> {
+pub struct SuccinctInnerSumcheckDescriptor<G: EndoMulCurve> {
     /// Sampling point.
     pub alpha: G::ScalarField,
     /// Batching randomness.
     pub etas: [G::ScalarField; 3],
 }
 
-impl<G: IPACurve> SuccinctInnerSumcheckDescriptor<G> {
+impl<G: EndoMulCurve> SuccinctInnerSumcheckDescriptor<G> {
     fn expand_into_evaluations(&self, vk: &Index<G>) -> Result<Evaluations<G::ScalarField>, Error> {
         let domain_h = vk.index_info.get_domain_h().unwrap();
         let matrix_a = &vk.a;
@@ -296,7 +296,7 @@ impl<G: IPACurve> SuccinctInnerSumcheckDescriptor<G> {
     }
 }
 
-impl<G: IPACurve> ToConstraintField<G::ScalarField> for InnerSumcheckItem<G> {
+impl<G: EndoMulCurve> ToConstraintField<G::ScalarField> for InnerSumcheckItem<G> {
     fn to_field_elements(&self) -> Result<Vec<G::ScalarField>, Error> {
         let mut fes = Vec::new();
 
@@ -319,7 +319,7 @@ impl<G: IPACurve> ToConstraintField<G::ScalarField> for InnerSumcheckItem<G> {
     }
 }
 
-impl<G: IPACurve> ToDualField<G::BaseField> for InnerSumcheckItem<G> {
+impl<G: EndoMulCurve> ToDualField<G::BaseField> for InnerSumcheckItem<G> {
     fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
@@ -347,7 +347,7 @@ impl<G: IPACurve> ToDualField<G::BaseField> for InnerSumcheckItem<G> {
     }
 }
 
-impl<G: IPACurve> AccumulatorItem for InnerSumcheckItem<G> {
+impl<G: EndoMulCurve> AccumulatorItem for InnerSumcheckItem<G> {
     type Curve = G;
 }
 
@@ -369,8 +369,8 @@ mod test {
         num_constraints: usize,
         num_items: usize,
     ) where
-        G1: IPACurve,
-        G2: IPACurve,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
         FS: FiatShamirRng + 'static,
         D: Digest,

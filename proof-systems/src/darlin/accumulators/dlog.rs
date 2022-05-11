@@ -7,17 +7,16 @@
 use crate::darlin::accumulators::dual::{DualAccumulator, DualAccumulatorItem};
 use crate::darlin::accumulators::SingleSegmentBatchingResult;
 use crate::darlin::accumulators::{Accumulator, AccumulatorItem, Error};
-use crate::darlin::DomainExtendedIpaPc;
 use algebra::serialize::*;
-use algebra::{DensePolynomial, GroupVec, PrimeField, ToBits, ToConstraintField, UniformRand};
+use algebra::{DensePolynomial, EndoMulCurve, PrimeField, ToBits, ToConstraintField, UniformRand};
 use bench_utils::*;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::{One, Zero};
 pub use poly_commit::ipa_pc::DLogItem;
-use poly_commit::ipa_pc::{LabeledSuccinctCheckPolynomial, Proof, SuccinctCheckPolynomial};
+use poly_commit::ipa_pc::{Proof, SuccinctCheckPolynomial};
 use poly_commit::{
-    ipa_pc::{CommitterKey, IPACurve, InnerProductArgPC, VerifierKey},
-    Error as PCError, LabeledCommitment, PolynomialCommitment,
+    ipa_pc::{CommitterKey, InnerProductArgPC, VerifierKey},
+    read_fe_from_challenge, Error as PCError, LabeledCommitment, PolynomialCommitment,
 };
 use rand::RngCore;
 
@@ -32,7 +31,7 @@ pub struct DLogAccumulator<G, FS> {
 
 impl<G, FS> DLogAccumulator<G, FS>
 where
-    G: IPACurve,
+    G: EndoMulCurve,
     FS: FiatShamirRng + 'static,
 {
     /// The personalization string for this protocol. Used to personalize the
@@ -75,10 +74,7 @@ where
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng.get_challenge::<128>()?.to_vec(),
-        )
-        .map_err(|e| {
+        let z = read_fe_from_challenge(fs_rng.get_challenge::<128>()?.to_vec()).map_err(|e| {
             end_timer!(poly_time);
             end_timer!(succinct_time);
             PCError::Other(e.to_string())
@@ -95,7 +91,7 @@ where
                 let labeled_comm = {
                     let comm = final_comm_key;
 
-                    LabeledCommitment::new(format!("check_poly_{}", i), GroupVec::new(vec![comm]))
+                    LabeledCommitment::new(format!("check_poly_{}", i), comm)
                 };
 
                 // Compute the expected value, i.e. the value of the reduction polynomial at z.
@@ -125,7 +121,7 @@ where
 
         // Succinctly verify the dlog opening proof,
         // and get the new reduction polynomial (the new xi's).
-        let verifier_state = DomainExtendedIpaPc::<G, FS>::succinct_single_point_multi_poly_verify(
+        let verifier_state = InnerProductArgPC::<G, FS>::succinct_single_point_multi_poly_verify(
             vk,
             comms.iter(),
             z,
@@ -146,7 +142,7 @@ where
     }
 }
 
-impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
+impl<G: EndoMulCurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G, FS> {
     type ProverKey = CommitterKey<G>;
     type VerifierKey = CommitterKey<G>;
     type Proof = AccumulationProof<G>;
@@ -320,21 +316,15 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
         let mut fs_rng = FS::from_seed(fs_rng_init_seed)?;
 
         // Sample a new challenge z
-        let z = InnerProductArgPC::<G, FS>::challenge_to_scalar(
-            fs_rng.get_challenge::<128>()?.to_vec(),
-        )
-        .map_err(|e| {
+        let z = read_fe_from_challenge(fs_rng.get_challenge::<128>()?.to_vec()).map_err(|e| {
             end_timer!(accumulate_time);
             PCError::Other(e.to_string())
         })?;
 
         // Collect check_poly from the accumulators
         let check_poly = accumulators
-            .iter()
-            .enumerate()
-            .map(|(i, acc)| {
-                LabeledSuccinctCheckPolynomial::new(format!("check_poly_{}", i), &acc.check_poly)
-            })
+            .into_iter()
+            .map(|acc| acc.check_poly)
             .collect::<Vec<_>>();
 
         let poly_time = start_timer!(|| "Open Bullet Polys");
@@ -459,7 +449,7 @@ impl<G: IPACurve, FS: FiatShamirRng + 'static> Accumulator for DLogAccumulator<G
 /// General struct of an aggregation proof. Typically, such proof stems from an
 /// interactive oracle protocol (IOP) and a polynomial commitment scheme.
 #[derive(Clone, Default, Debug, Eq, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct AccumulationProof<G: IPACurve> {
+pub struct AccumulationProof<G: EndoMulCurve> {
     /// Commitments to the polynomials produced by the prover.
     pub commitments: Vec<Vec<G>>,
     /// Evaluations of these polynomials.
@@ -468,11 +458,11 @@ pub struct AccumulationProof<G: IPACurve> {
     pub pc_proof: Proof<G>,
 }
 
-impl<G: IPACurve> AccumulatorItem for DLogItem<G> {
+impl<G: EndoMulCurve> AccumulatorItem for DLogItem<G> {
     type Curve = G;
 }
 
-impl<G: IPACurve> ToDualField<G::BaseField> for DLogItem<G> {
+impl<G: EndoMulCurve> ToDualField<G::BaseField> for DLogItem<G> {
     fn to_dual_field_elements(&self) -> Result<Vec<G::BaseField>, Error> {
         let mut fes = Vec::new();
 
@@ -510,7 +500,7 @@ pub type DualDLogItem<G1, G2> = DualAccumulatorItem<DLogItem<G1>, DLogItem<G2>>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use algebra::{test_canonical_serialize_deserialize, DualCycle, SemanticallyValid};
+    use algebra::{test_canonical_serialize_deserialize, DualCycle, GroupVec, SemanticallyValid};
     use blake2::Blake2s;
     use derivative::Derivative;
     use digest::Digest;
@@ -521,7 +511,7 @@ mod test {
     use rand::{distributions::Distribution, thread_rng, Rng};
     use std::marker::PhantomData;
 
-    fn get_test_fs_rng<G: IPACurve, FS: FiatShamirRng>() -> FS {
+    fn get_test_fs_rng<G: EndoMulCurve, FS: FiatShamirRng>() -> FS {
         let mut seed_builder = FiatShamirRngSeed::new();
         seed_builder.add_bytes(b"TEST_SEED").unwrap();
         let fs_rng_seed = seed_builder.finalize().unwrap();
@@ -540,7 +530,7 @@ mod test {
 
     #[derive(Derivative)]
     #[derivative(Clone(bound = ""))]
-    struct VerifierData<'a, G: IPACurve> {
+    struct VerifierData<'a, G: EndoMulCurve> {
         vk: VerifierKey<G>,
         comms: Vec<LabeledCommitment<GroupVec<G>>>,
         query_map: QueryMap<'a, G::ScalarField>,
@@ -559,7 +549,7 @@ mod test {
         ck: Option<CommitterKey<G>>,
     ) -> Result<VerifierData<'a, G>, Error>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -682,7 +672,7 @@ mod test {
     // produce aggregation proofs for their dlog items and fully verify these aggregation proofs.
     fn accumulation_test<G, D, FS>() -> Result<(), Error>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -771,7 +761,7 @@ mod test {
     // and batch verify their dlog items.
     fn batch_verification_test<G, D, FS>() -> Result<(), Error>
     where
-        G: IPACurve,
+        G: EndoMulCurve,
         D: Digest + 'static,
         FS: FiatShamirRng + 'static,
     {
@@ -845,14 +835,15 @@ mod test {
     }
 
     use crate::darlin::accumulators::tests::{get_committer_key, test_check_items};
+    use crate::darlin::DomainExtendedIpaPc;
     use algebra::curves::tweedle::{
         dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum,
     };
 
     fn test_dlog_check_items<G1, G2, FS, D>(pc_max_degree: usize, num_items: usize)
     where
-        G1: IPACurve,
-        G2: IPACurve,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
         FS: FiatShamirRng + 'static,
         D: Digest,

@@ -1,6 +1,6 @@
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::IOP;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::serialize::*;
 use algebra::{DualCycle, ToBytes};
 use bench_utils::add_to_trace;
@@ -23,7 +23,7 @@ pub(crate) type PC<G, FS> = DomainExtendedPolynomialCommitment<G, InnerProductAr
     PartialEq(bound = "")
 )]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct VerifierKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct VerifierKey<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// The index itself.
     pub index: Index<G1>,
     /// Commitments of the lagrange polynomials over the input domain.
@@ -34,7 +34,7 @@ pub struct VerifierKey<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> 
     pub _g2: PhantomData<G2>,
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> VerifierKey<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> VerifierKey<G1, G2, FS> {
     pub fn get_hash(&self) -> &[u8] {
         &self.vk_hash
     }
@@ -50,7 +50,7 @@ pub type ProverKey<G1, G2, FS> = VerifierKey<G1, G2, FS>;
     Eq(bound = ""),
     PartialEq(bound = "")
 )]
-pub struct Proof<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct Proof<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// Commitments to the polynomials produced by the prover
     pub commitments: Vec<Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
     /// Evaluations of these polynomials.
@@ -61,7 +61,7 @@ pub struct Proof<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
     g2: PhantomData<G2>,
 }
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> Proof<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng> Proof<G1, G2, FS> {
     /// Construct a new proof.
     pub fn new(
         commitments: Vec<Vec<<PC<G1, FS> as PolynomialCommitment<G1>>::Commitment>>,
@@ -115,7 +115,7 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> Proof<G1, G2, FS> {
     Implement SemanticallyValid for VerifierKey, ProverKey, and Proof.
 */
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng> algebra::SemanticallyValid
     for VerifierKey<G1, G2, FS>
 {
     fn is_valid(&self) -> bool {
@@ -125,8 +125,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> algebra::SemanticallyValid
 
 impl<G1, G2, FS> algebra::SemanticallyValid for Proof<G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {
@@ -168,7 +168,7 @@ where
     Serialization and Deserialization utilities.
 */
 
-impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> ToBytes for VerifierKey<G1, G2, FS> {
+impl<G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng> ToBytes for VerifierKey<G1, G2, FS> {
     #[inline]
     fn write<W: Write>(&self, writer: W) -> std::io::Result<()> {
         self.serialize_without_metadata(writer)
@@ -178,8 +178,8 @@ impl<G1: IPACurve, G2: IPACurve, FS: FiatShamirRng> ToBytes for VerifierKey<G1, 
 
 impl<G1, G2, FS> CanonicalSerialize for Proof<G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {
@@ -281,8 +281,8 @@ where
 
 impl<G1, G2, FS> CanonicalDeserialize for Proof<G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng,
 {

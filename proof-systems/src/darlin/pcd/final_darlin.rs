@@ -9,12 +9,12 @@ use crate::darlin::{
     pcd::{error::PCDError, PCD},
     DomainExtendedIpaPc, FinalDarlin, FinalDarlinVerifierKey,
 };
-use algebra::DualCycle;
+use algebra::{DualCycle, EndoMulCurve};
 use bench_utils::*;
 use derivative::Derivative;
 use fiat_shamir::FiatShamirRng;
 use poly_commit::{
-    ipa_pc::{IPACurve, InnerProductArgPC, VerifierKey as DLogVerifierKey},
+    ipa_pc::{InnerProductArgPC, VerifierKey as DLogVerifierKey},
     DomainExtendedPolynomialCommitment, PolynomialCommitment,
 };
 use std::marker::PhantomData;
@@ -22,7 +22,7 @@ use std::marker::PhantomData;
 /// As every PCD, the `FinalDarlinPCD` comes as a proof plus "statement".
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct FinalDarlinPCD<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static> {
     /// A `FinalDarlinProof` is a Marlin proof plus deferred dlog accumulators
     pub final_darlin_proof: FinalDarlinProof<G1, G2, FS>,
     /// The user inputs form essentially the "statement" of the recursive proof.
@@ -32,8 +32,8 @@ pub struct FinalDarlinPCD<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 's
 
 impl<'a, G1, G2, FS> FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {
@@ -51,12 +51,17 @@ where
 
 /// To verify the PCD of a final Darlin we only need the `FinalDarlinVerifierKey` (or, the
 /// IOP verifier key) of the final circuit and the two dlog committer keys for G1 and G2.
-pub struct FinalDarlinPCDVerifierKey<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static> {
+pub struct FinalDarlinPCDVerifierKey<
+    'a,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
+    FS: FiatShamirRng + 'static,
+> {
     pub final_darlin_vk: &'a FinalDarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>,
     pub dlog_vks: (&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>),
 }
 
-impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
+impl<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng + 'static>
     AsRef<(&'a DLogVerifierKey<G1>, &'a DLogVerifierKey<G2>)>
     for FinalDarlinPCDVerifierKey<'a, G1, G2, FS>
 {
@@ -67,8 +72,8 @@ impl<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng + 'static>
 
 impl<'a, G1, G2, FS> PCD for FinalDarlinPCD<'a, G1, G2, FS>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     FS: FiatShamirRng + 'static,
 {

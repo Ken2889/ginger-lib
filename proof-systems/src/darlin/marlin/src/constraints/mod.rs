@@ -8,10 +8,7 @@ use algebra::EndoMulCurve;
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRngSeed;
 use poly_commit::constraints::PolynomialCommitmentVerifierGadget;
-use poly_commit::{
-    Evaluations, LabeledCommitmentGadget, PolynomialCommitment, QueryMap,
-    VerifierKeyGadget as PCVerifierKeyGadget,
-};
+use poly_commit::{Evaluations, LabeledCommitmentGadget, PCKey, PolynomialCommitment, QueryMap};
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::fields::nonnative::nonnative_field_gadget::NonNativeFieldGadget;
@@ -48,7 +45,7 @@ where
 
     pub fn verify_iop<'a, CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
-        pc_vk: &PCG::VerifierKeyGadget,
+        pc_vk: &PC::VerifierKey,
         index_vk: &VerifierKeyGadget<G, PC, PCG>,
         public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         proof: &ProofGadget<G, PC, PCG>,
@@ -174,7 +171,7 @@ where
 
     pub fn succinct_verify_opening<CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
-        pc_vk: &PCG::VerifierKeyGadget,
+        pc_vk: &PC::VerifierKey,
         proof: &ProofGadget<G, PC, PCG>,
         labeled_comms: Vec<
             LabeledCommitmentGadget<G::BaseField, PC::Commitment, PCG::CommitmentGadget>,
@@ -204,7 +201,7 @@ where
 
     pub fn succinct_verify<CS: ConstraintSystemAbstract<G::BaseField>>(
         mut cs: CS,
-        pc_vk: &PCG::VerifierKeyGadget,
+        pc_vk: &PC::VerifierKey,
         index_vk: &VerifierKeyGadget<G, PC, PCG>,
         public_input: &[NonNativeFieldGadget<G::ScalarField, G::BaseField>],
         proof: &ProofGadget<G, PC, PCG>,

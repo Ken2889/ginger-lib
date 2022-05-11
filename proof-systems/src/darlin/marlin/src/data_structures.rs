@@ -183,7 +183,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> algebra::SemanticallyValid for Proof
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         self.commitments.is_valid() &&  // Check that each commitment is valid
@@ -227,7 +227,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> 
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         // Evaluations size
@@ -288,7 +288,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalSerialize for Proof<G, PC> 
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         // Evaluations size
@@ -324,7 +324,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
@@ -366,7 +366,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
@@ -409,7 +409,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         let mut evaluations = Vec::with_capacity(evaluations_num);
@@ -454,7 +454,7 @@ impl<G: Group, PC: PolynomialCommitment<G>> CanonicalDeserialize for Proof<G, PC
         let evaluations_num = IOP::<G::ScalarField>::PROVER_POLYNOMIALS.len()
             + IOP::<G::ScalarField>::INDEXER_POLYNOMIALS.len()
             + 2; // boundary polynomials are evaluated at two different points
-        #[cfg(feature = "circuit-friendly")]
+        #[cfg(feature = "commit-vanishing-polys")]
         let evaluations_num = evaluations_num + 1; // vanishing poly v_h evaluated at two different points.
 
         let mut evaluations = Vec::with_capacity(evaluations_num);

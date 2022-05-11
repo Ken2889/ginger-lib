@@ -1,7 +1,7 @@
 use crate::darlin::accumulators::Accumulator;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::Index;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::{DualCycle, PrimeField, UniformRand};
 use digest::Digest;
 use fiat_shamir::FiatShamirRng;
@@ -137,7 +137,7 @@ pub(super) fn test_check_items<A: Accumulator, R: RngCore>(
     assert!(check_trivial_items);
 }
 
-pub(super) fn get_committer_key<G: IPACurve, FS: FiatShamirRng, D: Digest>(
+pub(super) fn get_committer_key<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(
     max_degree: usize,
 ) -> CommitterKey<G> {
     let (_, vk) = InnerProductArgPC::<G, FS>::setup::<D>(max_degree).unwrap();
@@ -146,8 +146,8 @@ pub(super) fn get_committer_key<G: IPACurve, FS: FiatShamirRng, D: Digest>(
 
 pub(super) fn get_index<G1, G2, R>(num_constraints: usize, rng: &mut R) -> Index<G1>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
     R: RngCore,
 {

@@ -2,7 +2,7 @@ use crate::darlin::accumulators::to_dual_field_vec::ToDualField;
 use crate::darlin::accumulators::{
     Accumulator, AccumulatorItem, Error, SingleSegmentBatchingResult,
 };
-use crate::darlin::IPACurve;
+use crate::darlin::EndoMulCurve;
 use algebra::{
     CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, Read, SerializationError,
     ToConstraintField, Write,
@@ -231,7 +231,7 @@ where
     type Curve = I0::Curve;
 }
 
-pub struct DualBatchingResult<G0: IPACurve, G1: IPACurve> {
+pub struct DualBatchingResult<G0: EndoMulCurve, G1: EndoMulCurve> {
     pub native: SingleSegmentBatchingResult<G0>,
     pub non_native: SingleSegmentBatchingResult<G1>,
 }

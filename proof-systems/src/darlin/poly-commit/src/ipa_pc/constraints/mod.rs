@@ -1,10 +1,10 @@
 use crate::ipa_pc::constraints::data_structures::{
-    IPAMultiPointProofGadget, IPAProofGadget, IPAVerifierKeyGadget, IPAVerifierStateGadget,
+    IPAMultiPointProofGadget, IPAProofGadget, IPAVerifierStateGadget,
     SuccinctCheckPolynomialGadget,
 };
-use crate::ipa_pc::InnerProductArgPC;
-use crate::{safe_mul_bits, Error, PolynomialCommitmentVerifierGadget};
-use algebra::{EndoMulCurve, PrimeField};
+use crate::ipa_pc::{InnerProductArgPC, VerifierKey};
+use crate::{Error, PolynomialCommitmentVerifierGadget};
+use algebra::{EndoMulCurve, Field, PrimeField};
 use fiat_shamir::constraints::FiatShamirRngGadget;
 use fiat_shamir::FiatShamirRng;
 use r1cs_core::{ConstraintSystemAbstract, SynthesisError};
@@ -43,14 +43,13 @@ impl<
         ConstraintF: PrimeField,
         G: EndoMulCurve<BaseField = ConstraintF>,
         GG: 'static
-            + EndoMulCurveGadget<G, ConstraintF>
+            + EndoMulCurveGadget<G, ConstraintF, Value=G>
             + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         FS: FiatShamirRng,
         FSG: FiatShamirRngGadget<ConstraintF>,
     > PolynomialCommitmentVerifierGadget<ConstraintF, G, InnerProductArgPC<G, FS>>
     for InnerProductArgGadget<ConstraintF, FSG, G, GG>
 {
-    type VerifierKeyGadget = IPAVerifierKeyGadget<ConstraintF, G, GG>;
     type VerifierStateGadget = IPAVerifierStateGadget<ConstraintF, G, GG>;
     type CommitmentGadget = GG;
     type ProofGadget = IPAProofGadget<ConstraintF, G, GG, FS, FSG>;
@@ -116,7 +115,7 @@ impl<
 
     fn succinct_verify<CS: ConstraintSystemAbstract<ConstraintF>>(
         mut cs: CS,
-        vk: &Self::VerifierKeyGadget,
+        vk: &VerifierKey<G>,
         commitment: &Self::CommitmentGadget,
         point: &NonNativeFieldGadget<G::ScalarField, ConstraintF>,
         value: &Vec<Boolean>,
@@ -147,9 +146,9 @@ impl<
                 cs.ns(|| "hiding_commitment * hiding_challenge"),
                 &hiding_challenge,
             )?;
-            let rand_times_s = vk.s.mul_bits(
+            let rand_times_s = GG::mul_bits_fixed_base(&vk.s,
                 cs.ns(|| "vk.s * hiding_randomness"),
-                hiding_randomness_bits.iter().rev(),
+                hiding_randomness_bits.iter().rev().cloned().collect::<Vec<_>>().as_slice(),
             )?; // reverse order of bits since mul_bits requires little endian representation
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| "add hiding_commitment*hiding_challenge to original commitment"),
@@ -166,8 +165,9 @@ impl<
 
         let mut round_challenges = Vec::with_capacity(proof.vec_l.len());
 
-        let h_prime =
-            vk.h.endo_mul(cs.ns(|| "h' = vk.h*round_challenge"), &round_challenge)?;
+        let h_prime = GG::mul_bits_fixed_base(&vk.h,
+            cs.ns(|| "h' = vk.h*round_challenge"),
+          &round_challenge)?;
         let value_times_h_prime = h_prime.mul_bits(cs.ns(|| "value*h'"), value.iter().rev())?;
         non_hiding_commitment = non_hiding_commitment
             .add(cs.ns(|| "add value*h' to commitment"), &value_times_h_prime)?;
@@ -206,18 +206,26 @@ impl<
                 }),
                 &round_challenge_bits,
             )?;
-            let round_challenge_inverse = round_challenge
-                .inverse(cs.ns(|| format!("invert round_challenge_{}", i + 1)))?;
-            let round_challenge_inverse_bits = round_challenge_inverse.to_bits_for_normal_form(
-                cs.ns(|| format!("convert round_challenge_{} inverse to bits", i + 1)),
+            // employ non determinism to compute round_challenge^{-1}*l: alloc a gadget
+            // `challenge_inv_times_l` which is expected to be equivalent to round_challenge^{-1}*l
+            // and then enforce `challenge_inv_times_l`*challenge == l
+            let challenge_inv_times_l = Self::CommitmentGadget::alloc(cs.ns(|| format! ("alloc challenge_inv_{}_*vec_l_{}", i+1, i)), || {
+                let challenge = round_challenge.get_value().ok_or(SynthesisError::AssignmentMissing)?;
+                let challenge_inverse = challenge.inverse().unwrap();
+                let l = el_vec_l.get_value().ok_or(SynthesisError::AssignmentMissing)?;
+                Ok(l * &challenge_inverse)
+            })?;
+            let l = <Self as PolynomialCommitmentVerifierGadget<
+                ConstraintF,
+                G,
+                InnerProductArgPC<G, FS>,
+            >>::mul_by_challenge(
+                cs.ns(|| format!("round_challenge_{}*challenge_inv*el_vec_l_{}", i + 1, i)),
+                &challenge_inv_times_l,
+                round_challenge_bits.iter(),
             )?;
-            // compute round_challenge^{-1}*el_vec_l dealing with the case el_vec_l is zero
-            let challenge_inv_times_l =
-                safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
-                    cs.ns(|| format!("round_challenge_inverse_{}*vec_l_{}", i + 1, i)),
-                    el_vec_l,
-                    round_challenge_inverse_bits.iter().rev(),
-                )?;
+            l.enforce_equal(cs.ns(|| format!("check equality for el_vec_l_{}", i)), &el_vec_l)?;
+
             non_hiding_commitment = non_hiding_commitment.add(
                 cs.ns(|| {
                     format!(
@@ -241,9 +249,8 @@ impl<
         )?;
         let v_prime = c.mul(cs.ns(|| "v'=c*h(point)"), &bullet_polynomial_evaluation)?;
         let c_times_final_comm_key =
-            safe_mul_bits::<ConstraintF, G, InnerProductArgPC<G, FS>, Self, _, _>(
+            proof.final_comm_key.mul_bits(
                 cs.ns(|| "c*g_final"),
-                &proof.final_comm_key,
                 proof.c.iter().rev(),
             )?;
         let v_prime_bits = v_prime.to_bits_for_normal_form(cs.ns(|| "v' to bits"))?;

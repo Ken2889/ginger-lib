@@ -18,14 +18,14 @@ mod test {
     use algebra::{
         curves::tweedle::{dee::DeeJacobian, dum::DumJacobian},
         serialize::test_canonical_serialize_deserialize,
-        CanonicalDeserialize, CanonicalSerialize, DualCycle, Group, SemanticallyValid,
-        ToConstraintField, UniformRand,
+        CanonicalDeserialize, CanonicalSerialize, DualCycle, EndoMulCurve, SemanticallyValid,
+        UniformRand,
     };
     use blake2::Blake2s;
     use fiat_shamir::FiatShamirRng;
     use marlin::VerifierKey as MarlinVerifierKey;
     use poly_commit::{
-        ipa_pc::{CommitterKey as DLogCommitterKey, IPACurve, VerifierKey as DLogVerifierKey},
+        ipa_pc::{CommitterKey as DLogCommitterKey, VerifierKey as DLogVerifierKey},
         PolynomialCommitment,
     };
     use rand::{thread_rng, Rng, RngCore, SeedableRng};
@@ -46,7 +46,7 @@ mod test {
     }
 
     /// Generic test for `accumulate_proofs` and `verify_aggregated_proofs`
-    fn test_accumulation<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, R: RngCore>(
+    fn test_accumulation<'a, G1: EndoMulCurve, G2: EndoMulCurve, FS: FiatShamirRng, R: RngCore>(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
         vks: &mut [MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
         committer_key_g1: &DLogCommitterKey<G1>,
@@ -57,8 +57,8 @@ mod test {
         fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>]>,
         rng: &mut R,
     ) where
-        G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-        G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
     {
         // Accumulate PCDs
@@ -194,7 +194,13 @@ mod test {
     }
 
     /// Generic test for `batch_verify_proofs`
-    fn test_batch_verification<'a, G1: IPACurve, G2: IPACurve, FS: FiatShamirRng, R: RngCore>(
+    fn test_batch_verification<
+        'a,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
+        FS: FiatShamirRng,
+        R: RngCore,
+    >(
         pcds: &mut [GeneralPCD<'a, G1, G2, FS>],
         vks: &mut [MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>],
         verifier_key_g1: &DLogVerifierKey<G1>,
@@ -203,8 +209,8 @@ mod test {
         fake_vks: Option<&[MarlinVerifierKey<G1, DomainExtendedIpaPc<G1, FS>>]>,
         rng: &mut R,
     ) where
-        G1: IPACurve + ToConstraintField<<G1 as Group>::BaseField>,
-        G2: IPACurve + ToConstraintField<<G2 as Group>::BaseField>,
+        G1: EndoMulCurve,
+        G2: EndoMulCurve,
         G1: DualCycle<G2>,
     {
         // Batch Verify

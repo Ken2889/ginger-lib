@@ -1,10 +1,10 @@
-use algebra::{fft::DensePolynomial as Polynomial, UniformRand};
+use algebra::{EndoMulCurve, fft::DensePolynomial as Polynomial, UniformRand};
 use blake2::Blake2s;
 use criterion::*;
 use digest::Digest;
 use fiat_shamir::{FiatShamirRng, FiatShamirRngSeed};
 use num_traits::Zero;
-use poly_commit::ipa_pc::{CommitterKey, IPACurve, InnerProductArgPC};
+use poly_commit::ipa_pc::{CommitterKey, InnerProductArgPC};
 use poly_commit::{PCKey, PolynomialCommitment};
 use rand::thread_rng;
 
@@ -14,7 +14,7 @@ struct BenchInfo {
     supported_degree: usize,
 }
 
-fn generate_ck<G: IPACurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> CommitterKey<G> {
+fn generate_ck<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> CommitterKey<G> {
     let BenchInfo {
         max_degree,
         supported_degree,
@@ -34,7 +34,7 @@ fn generate_ck<G: IPACurve, FS: FiatShamirRng, D: Digest>(info: &BenchInfo) -> C
     ck
 }
 
-fn bench_open_proof<G: IPACurve, FS: FiatShamirRng, D: Digest>(
+fn bench_open_proof<G: EndoMulCurve, FS: FiatShamirRng, D: Digest>(
     c: &mut Criterion,
     bench_name: &str,
     coeffs: usize,
@@ -90,8 +90,7 @@ fn bench_open_proof<G: IPACurve, FS: FiatShamirRng, D: Digest>(
 
 use algebra::curves::tweedle::{dee::DeeJacobian as TweedleDee, dum::DumJacobian as TweedleDum};
 
-#[cfg(not(feature = "circuit-friendly"))]
-mod benches {
+mod chacha_fs_benches {
     use super::*;
     use fiat_shamir::chacha20::FiatShamirChaChaRng;
 
@@ -116,8 +115,8 @@ mod benches {
     }
 }
 
-#[cfg(feature = "circuit-friendly")]
-mod benches {
+
+mod poseidon_fs_benches {
     use super::*;
     use fiat_shamir::poseidon::{TweedleFqPoseidonFSRng, TweedleFrPoseidonFSRng};
 
@@ -145,7 +144,8 @@ mod benches {
 criterion_group!(
     name = single_point_single_poly_open_bench;
     config = Criterion::default().sample_size(10);
-    targets = benches::bench_open_proof_tweedle_dee, benches::bench_open_proof_tweedle_dum
+    targets = chacha_fs_benches::bench_open_proof_tweedle_dee, chacha_fs_benches::bench_open_proof_tweedle_dum,
+    poseidon_fs_benches::bench_open_proof_tweedle_dee, poseidon_fs_benches::bench_open_proof_tweedle_dum
 );
 
 criterion_main!(single_point_single_poly_open_bench);

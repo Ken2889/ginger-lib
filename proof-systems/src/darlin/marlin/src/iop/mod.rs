@@ -33,7 +33,7 @@ pub struct IOP<F: PrimeField> {
 }
 
 impl<F: PrimeField> IOP<F> {
-    #[cfg(not(feature="circuit-friendly"))]
+    #[cfg(not(feature="commit-vanishing-polys"))]
     /// The labels for the polynomials output by the indexer.
     #[rustfmt::skip]
     pub const INDEXER_POLYNOMIALS: [&'static str; 12] = [
@@ -45,7 +45,7 @@ impl<F: PrimeField> IOP<F> {
         "c_row", "c_col", "c_row_col", "c_val_row_col",
     ];
 
-    #[cfg(feature="circuit-friendly")]
+    #[cfg(feature="commit-vanishing-polys")]
     /// The labels for the polynomials output by the indexer.
     #[rustfmt::skip]
     pub const INDEXER_POLYNOMIALS: [&'static str; 15] = [

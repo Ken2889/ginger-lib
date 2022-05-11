@@ -3,8 +3,9 @@
 use crate::darlin::accumulators::t_dlog::DualTDLogItem;
 use crate::darlin::t_dlog_acc_marlin::iop::indexer::IndexInfo;
 use crate::darlin::t_dlog_acc_marlin::iop::IOP;
-use crate::darlin::IPACurve;
-use algebra::{get_best_evaluation_domain, DualCycle, EvaluationDomain, Field, FromBits};
+use algebra::{
+    get_best_evaluation_domain, DualCycle, EndoMulCurve, EvaluationDomain, Field, FromBits,
+};
 use fiat_shamir::FiatShamirRng;
 use marlin::iop::Error;
 use num_traits::{One, Zero};
@@ -17,8 +18,8 @@ use std::marker::PhantomData;
 /// State of the IOP verifier
 pub struct VerifierState<'a, G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     /// Domain H.
@@ -38,14 +39,14 @@ where
 
 /// First message of the verifier.
 #[derive(Clone)]
-pub struct VerifierFirstMsg<G: IPACurve> {
+pub struct VerifierFirstMsg<G: EndoMulCurve> {
     /// Query for the random polynomial.
     pub alpha: G::ScalarField,
     /// Randomizer for the lincheck for `A`, `B`, and `C`.
     pub eta: G::ScalarField,
 }
 
-impl<G: IPACurve> VerifierFirstMsg<G> {
+impl<G: EndoMulCurve> VerifierFirstMsg<G> {
     /// Return a vector with the three randomizers [1, eta, eta^2]
     pub fn get_etas(&self) -> [G::ScalarField; 3] {
         return [G::ScalarField::one(), self.eta, self.eta.square()];
@@ -54,14 +55,14 @@ impl<G: IPACurve> VerifierFirstMsg<G> {
 
 /// Second verifier message.
 #[derive(Copy, Clone)]
-pub struct VerifierSecondMsg<G: IPACurve> {
+pub struct VerifierSecondMsg<G: EndoMulCurve> {
     /// Query for the second round of polynomials.
     pub beta: G::ScalarField,
 }
 
 /// Third verifier message.
 #[derive(Copy, Clone)]
-pub struct VerifierThirdMsg<G: IPACurve> {
+pub struct VerifierThirdMsg<G: EndoMulCurve> {
     /// Query for the third round of polynomials.
     pub gamma: G::ScalarField,
     /// Randomizer for the aggregation of circuit polynomials.
@@ -71,8 +72,8 @@ pub struct VerifierThirdMsg<G: IPACurve> {
 
 impl<G1, G2> IOP<G1, G2>
 where
-    G1: IPACurve,
-    G2: IPACurve,
+    G1: EndoMulCurve,
+    G2: EndoMulCurve,
     G1: DualCycle<G2>,
 {
     /// Preparation of the verifier.

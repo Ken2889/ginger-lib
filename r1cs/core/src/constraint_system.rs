@@ -1,8 +1,30 @@
+use std::collections::HashMap;
 use algebra::Field;
 use radix_trie::Trie;
 use std::marker::PhantomData;
 
 use crate::{Index, LinearCombination, SynthesisError, Variable};
+
+/// Instrument a code block $body to count the constraints enforced inside the block in the
+/// counter of constraint system $cs identified by $label
+//ToDo: reasoning on improving this macro to avoid the need to enclose the whole code block inside
+// a closure, maybe relying on existing crates or by writing a procedural macro.
+// In addition, it would be interesting to identify constraints employing existing namespaces,
+// rather than employing additional labels
+#[macro_export]
+macro_rules! count_constraints_for_label {
+    ($label: expr, $cs: expr, $body: expr) => {
+        {
+            $cs.restart_labeled_constraints_counter($label);
+            let mut func = || {
+                $body
+            };
+            let res = func();
+            $cs.stop_labeled_constraints_counter($label)?;
+            res
+        }
+    }
+}
 
 /// Represents a constraint system which can have new variables
 /// allocated and constrains between them formed.
@@ -73,6 +95,24 @@ pub trait ConstraintSystemAbstract<F: Field>: Sized {
 
     /// Output the number of constraints in the system.
     fn num_constraints(&self) -> usize;
+
+    //ToDo: it would be better to move the following function to the `ConstraintSystemDebugger`
+    // trait, maybe making it an associated type for `ConstraintSystemAbstract` trait
+
+    /// Start/restart counting the constraints associated to a given label. This function allows to
+    /// specify that all the constraints enforced after calling this function should be counted in
+    /// a specific counter identified by `counter_label`.
+    fn restart_labeled_constraints_counter(&mut self, counter_label: &str);
+
+    /// Stop counting the constraints associated to a given label. This function undoes a previous
+    /// call to `restart_constraints_counter`, specifying that all the constraints enforced after
+    /// calling this function should no longer be counted in the specific counter identified by
+    /// `counter_label`. The counting can be resumed by calling `restart_constraints_counter`
+    /// passing the same label
+    fn stop_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError>;
+
+    /// Get the current value of the counter for constraints associated to `counter_label`
+    fn get_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError>;
 }
 
 /// Defines debugging functionalities for a constraint system, which allow to verify which
@@ -139,6 +179,31 @@ enum NamedObject {
     Namespace,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ConstraintCounter {
+    /// Data structure employed by `ConstraintSystem` to implement labeled constraints counter. It
+    /// is currently employed only in debug mode
+    // actual value of the counter
+    accumulator: usize,
+    // this value is set to cs.num_constraints() when counting is restarted. It is employed to count
+    // the number of constraints between a call to `restart_constraints_counter` and
+    // `stop_constraints_counter`. Such number is added to `accumulator` when the counter is stopped.
+    current: usize,
+    // this integer values avoid that calls to `restart_labeled_constraints_counter` with label L
+    // in a code block whose constraints are already taken into account in a counter with the same
+    // label L are counted more than once. This use case might happen if we want to count all the
+    // constraints enforced in a set of functions where some functions may call other functions
+    // in the set.
+    // In particular, the depth of a counter identified by label L keeps track of the difference
+    // between the number of calls to `restart_labeled_constraints_counter` and
+    // `stop_labeled_constraints_counter` for the same label L; the counter is actually restarted
+    // (i.e., `current` is overwritten with cs.num_constraints()) only when depth < 0, while the
+    // counter is actually stopped (i.e., `accumulator` is updated) only when depth becomes equal
+    // to 0. When the counter is stopped, depth is set to a negative number to ensure that the next
+    // call to `restart_labeled_constraints_counter` for label L will actually restart the counter
+    depth: isize,
+}
+
 #[derive(Debug, Clone)]
 struct DebugInfo<F: Field> {
     /// A data structure for associating a name to variables, constraints and
@@ -151,6 +216,7 @@ struct DebugInfo<F: Field> {
     /// A list of the constraint names. This is populated only if `self.debug
     /// == true`.
     constraint_names: Vec<String>,
+    constraint_counters: HashMap<String, ConstraintCounter>,
     _field: PhantomData<F>,
 }
 
@@ -162,6 +228,7 @@ impl<F: Field> DebugInfo<F> {
             named_objects: map,
             current_namespace: vec![],
             constraint_names: vec![],
+            constraint_counters: HashMap::new(),
             _field: PhantomData,
         }
     }
@@ -345,6 +412,83 @@ impl<F: Field> ConstraintSystemAbstract<F> for ConstraintSystem<F> {
     }
     fn num_constraints(&self) -> usize {
         self.num_constraints
+    }
+
+    fn restart_labeled_constraints_counter(&mut self, counter_label: &str) {
+        if !self.is_in_debug_mode() {
+            return;
+        }
+        let num_constraints = self.num_constraints();
+        let debug_info = self.debug_info_as_mut();
+        match debug_info.constraint_counters.get_mut(counter_label) {
+            None =>
+                {debug_info.constraint_counters.insert(
+                    counter_label.to_string(),
+                    ConstraintCounter{
+                        accumulator: 0,
+                        current: num_constraints,
+                        depth: 0,
+                    });},
+            Some(counter) => {
+                if counter.depth < 0 {
+                    // restart the counter only if we are not already counting
+                    counter.current = num_constraints;
+                    counter.depth = 0;
+                } else {
+                    // if the counter has already been restarted, then just
+                    // increase the expected number of calls to `stop_constraints_counter` before
+                    // actually stopping the counter
+                    counter.depth += 1;
+                }
+            },
+        }
+    }
+
+    fn stop_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<(), SynthesisError> {
+        if !self.is_in_debug_mode() {
+            return Ok(());
+        }
+        let num_constraints = self.num_constraints();
+        let debug_info = self.debug_info_as_mut();
+        let counter = debug_info.constraint_counters.get_mut(counter_label)
+            .ok_or(SynthesisError::Other(format!("no counter for label {} to be stopped", counter_label)))?;
+        if counter.depth == 0 {
+            // accumulator must be updated only when the counter is stopped, as otherwise we may count
+            // several constraints multiple times
+            counter.accumulator += num_constraints - counter.current;
+            // set depth to negative value to stop counting
+            counter.depth = -1;
+        } else {
+            // if counter must not be stopped now, then just decrease the expected number of calls
+            // to `stop_constraints_counter` before actually stopping the counter
+            counter.depth -= 1;
+        }
+
+        Ok(())
+    }
+
+    fn get_labeled_constraints_counter(&mut self, counter_label: &str) -> Result<usize, SynthesisError> {
+        if !self.is_in_debug_mode() {
+            return Ok(0);
+        }
+        let num_constraints = self.num_constraints();
+        let debug_info = self.debug_info_as_mut();
+        let counter =
+            debug_info.constraint_counters.get(counter_label)
+                .ok_or(
+          SynthesisError::Other(format!("no counter found for label {}", counter_label))
+                )?;
+        // current value of the counter is given by accumulated constraints and the ones
+        Ok(
+            if counter.depth >= 0 {
+                // if counter is still counting, then we need to take into account the number of
+                // constraints since last restart, which have not been summed up yet to the
+                // accumulator
+                counter.accumulator + num_constraints - counter.current
+            } else {
+                counter.accumulator
+            }
+        )
     }
 }
 
@@ -557,6 +701,18 @@ impl<F: Field, CS: ConstraintSystemAbstract<F>> ConstraintSystemAbstract<F>
     fn num_constraints(&self) -> usize {
         self.0.num_constraints()
     }
+
+    fn restart_labeled_constraints_counter(&mut self, _counter_label: &str) {
+        self.0.restart_labeled_constraints_counter(_counter_label)
+    }
+
+    fn stop_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
+        self.0.stop_labeled_constraints_counter(_counter_label)
+    }
+
+    fn get_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
+        self.0.get_labeled_constraints_counter(_counter_label)
+    }
 }
 
 impl<F: Field, CS: ConstraintSystemAbstract<F> + ConstraintSystemDebugger<F>>
@@ -649,6 +805,18 @@ impl<F: Field, CS: ConstraintSystemAbstract<F>> ConstraintSystemAbstract<F> for 
     #[inline]
     fn num_constraints(&self) -> usize {
         (**self).num_constraints()
+    }
+
+    fn restart_labeled_constraints_counter(&mut self, _counter_label: &str) {
+        (**self).restart_labeled_constraints_counter(_counter_label)
+    }
+
+    fn stop_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<(), SynthesisError> {
+        (**self).stop_labeled_constraints_counter(_counter_label)
+    }
+
+    fn get_labeled_constraints_counter(&mut self, _counter_label: &str) -> Result<usize, SynthesisError> {
+        (**self).get_labeled_constraints_counter(_counter_label)
     }
 }
 
