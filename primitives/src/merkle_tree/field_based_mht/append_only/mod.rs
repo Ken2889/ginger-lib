@@ -395,7 +395,7 @@ mod test {
             BatchFieldBasedMerkleTreeParameters, FieldBasedAppendOnlyMHT, FieldBasedMerkleTree,
             FieldBasedMerkleTreeParameters, FieldBasedMerkleTreePath, NaiveMerkleTree,
         },
-        FieldBasedMHTPath, FieldBasedMerkleTreePrecomputedZeroConstants,
+        FieldBasedMHTPath, FieldBasedMerkleTreePrecomputedZeroConstants, 
     };
 
     fn merkle_tree_root_test<T: BatchFieldBasedMerkleTreeParameters, R: RngCore>(

@@ -1,5 +1,6 @@
 use crate::{crh::*, field_based_mht::*};
-use algebra::{serialize::*, SemanticallyValid};
+use algebra::{serialize::*, SemanticallyValid, UniformRand};
+use rand::Rng;
 use std::{
     clone::Clone,
     convert::TryFrom,
@@ -150,6 +151,27 @@ impl<T: FieldBasedMerkleTreeParameters> FieldBasedMerkleTreePath for FieldBasedM
             .for_each(|(i, (_, pos))| leaf_index += T::MERKLE_ARITY.pow(i as u32) * pos);
 
         leaf_index
+    }
+
+    fn random<R: Rng + ?Sized>(rng: &mut R, height: usize) -> Self {
+        // Generate random path
+        let mut random_path = Vec::with_capacity(height);
+        
+        for _ in 0..height {
+            // Generate random siblings
+            let siblings: Vec<T::Data> = 
+                (0..T::MERKLE_ARITY - 1)
+                    .map(|_| UniformRand::rand(rng))
+                    .collect();
+
+            // Generate random position
+            let position: usize = rng.gen_range(0..T::MERKLE_ARITY);
+
+            // Push both to path
+            random_path.push((siblings, position));
+        }
+        
+        FieldBasedMHTPath::<T>::new(random_path)
     }
 }
 
@@ -311,6 +333,24 @@ impl<T: FieldBasedMerkleTreeParameters> FieldBasedMerkleTreePath for FieldBasedB
 
         leaf_index as usize
     }
+
+    fn random<R: Rng + ?Sized>(rng: &mut R, height: usize) -> Self {
+        // Generate random path
+        let mut random_path = Vec::with_capacity(height);
+        
+        for _ in 0..height {
+            // Generate random sibling
+            let sibling: T::Data = UniformRand::rand(rng);
+
+            // Generate random position
+            let direction: bool = rng.gen();
+
+            // Push both to path
+            random_path.push((sibling, direction));
+        }
+        
+        FieldBasedBinaryMHTPath::<T>::new(random_path)
+    }
 }
 
 /// Serialization utilities for Merkle Path
@@ -375,6 +415,107 @@ impl<T: FieldBasedMerkleTreeParameters> PartialEq<FieldBasedMHTPath<T>>
     for FieldBasedBinaryMHTPath<T>
 {
     fn eq(&self, other: &FieldBasedMHTPath<T>) -> bool {
-        self == other
+
+        // Paths must have the same length
+        if self.get_length() != other.get_length() {
+            return false;
+        }
+
+        // Iterate through both paths (NOTE: Could work also converting one of the two paths into
+        // the other type and then calling the corresponding Eq, but you avoid iterating through
+        // both paths again)
+        for ((sibling, direction), (nodes, position)) in 
+            self
+                .get_raw_path()
+                .iter()
+                .zip(
+                    other
+                        .get_raw_path()
+                        .iter()
+                ) 
+        {
+            // 'nodes' must be a single element vector equal to 'sibling'
+            if nodes.len() != 1 && sibling != &nodes[0] {
+                return false;
+            }
+            
+            // 'position' must be either 0 or 1 and equal (in boolean) to 'direction'
+            if &(*direction as usize) != position {
+                return false;
+            }
+        }
+
+        // Paths are the same
+        true
     }
+}
+
+#[cfg(all(test, feature = "tweedle"))]
+mod test {
+    use std::convert::TryInto;
+
+    use crate::{
+        crh::{TweedleFrBatchPoseidonHash, TweedleFrPoseidonHash},
+        merkle_tree::TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS, FieldBasedMerkleTreeParameters, FieldBasedMerkleTreePrecomputedZeroConstants, BatchFieldBasedMerkleTreeParameters, FieldBasedMHTPath, FieldBasedBinaryMHTPath, FieldBasedMerkleTreePath,
+    };
+    use algebra::fields::tweedle::Fr;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+
+    #[derive(Clone, Debug)]
+    struct TweedleFrFieldBasedMerkleTreeParams;
+    impl FieldBasedMerkleTreeParameters for TweedleFrFieldBasedMerkleTreeParams {
+        type Data = Fr;
+        type H = TweedleFrPoseidonHash;
+        const MERKLE_ARITY: usize = 2;
+        const ZERO_NODE_CST: Option<
+            FieldBasedMerkleTreePrecomputedZeroConstants<'static, Self::H>,
+        > = Some(TWEEDLE_DEE_MHT_POSEIDON_PARAMETERS);
+    }
+    impl BatchFieldBasedMerkleTreeParameters for TweedleFrFieldBasedMerkleTreeParams {
+        type BH = TweedleFrBatchPoseidonHash;
+    }
+
+    type TestPath = FieldBasedMHTPath<TweedleFrFieldBasedMerkleTreeParams>;
+    type TestBinaryPath = FieldBasedBinaryMHTPath<TweedleFrFieldBasedMerkleTreeParams>;
+
+    #[test]
+    fn test_path_eq_operators_tweedle_fr() {
+
+        let rng= &mut XorShiftRng::seed_from_u64(1231275789u64);
+
+        let height1 = 10;
+        let height2 = 11;
+
+        // Equality sanity checks on FieldBasedMHTPath
+        let path1 = TestPath::random(rng, height1);
+        let path2 = TestPath::random(rng, height1);
+        let path3 = TestPath::random(rng, height2);
+        
+        assert_eq!(path1, path1);
+        assert_ne!(path1, path2);
+        assert_ne!(path1, path3);
+        assert_ne!(path2, path3);
+
+        // Equality sanity checks on FieldBasedBinaryMHTPath
+        let binary_path1: TestBinaryPath = path1.clone().try_into().unwrap();
+        let binary_path2: TestBinaryPath = path2.clone().try_into().unwrap();
+        let binary_path3: TestBinaryPath = path3.clone().try_into().unwrap();
+        
+        assert_eq!(binary_path1, binary_path1);
+        assert_ne!(binary_path1, binary_path2);
+        assert_ne!(binary_path1, binary_path3);
+        assert_ne!(binary_path2, binary_path3);
+
+        // Mixed equality operator sanity checks
+        assert_eq!(binary_path1, path1);
+        assert_ne!(binary_path1, path2);
+        assert_ne!(binary_path1, path3);
+        assert_ne!(binary_path2, path3);
+        
+        assert_eq!(binary_path2 != path2, false);
+        assert_eq!(binary_path1 == path2, false);
+
+    }
+
 }
