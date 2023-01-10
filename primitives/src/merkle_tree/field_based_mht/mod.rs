@@ -17,6 +17,7 @@ use crate::{
     BatchFieldBasedHash, Error, FieldBasedHash, FieldBasedHashParameters, MerkleTreeError,
 };
 use algebra::{Field, FromBytes, ToBytes};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -238,4 +239,7 @@ pub trait FieldBasedMerkleTreePath:
     /// Returns the index of the leaf, corresponding to the `self` Merkle Path, in the
     /// corresponding Merkle Tree.
     fn leaf_index(&self) -> usize;
+
+    /// Returns a random path of specified height.
+    fn random<R: Rng + ?Sized>(rng: &mut R, height: usize) -> Self;
 }
