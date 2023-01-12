@@ -90,7 +90,13 @@ where
     ) -> Result<(Self::PublicKey, Self::SecretKey), Error> {
         let keygen_time = start_timer!(|| "SchnorrSig::KeyGen");
 
-        let secret_key = G::ScalarField::rand(rng);
+        let secret_key = loop {
+            let r = G::ScalarField::rand(rng);
+            // Reject sk = 0 to avoid generating obviously weak keypair
+            if !r.is_zero() {
+                break (r);
+            }
+        };
         let public_key = parameters.generator.mul(&secret_key);
 
         end_timer!(keygen_time);
@@ -108,6 +114,10 @@ where
         let (random_scalar, verifier_challenge) = loop {
             // Sample a random scalar `k` from the prime scalar field.
             let random_scalar: G::ScalarField = G::ScalarField::rand(rng);
+            // enforce that `k != 0` to avoid leaking the secret key
+            if random_scalar.is_zero() {
+                continue
+            }
             // Commit to the random scalar via r := k · g.
             // This is the prover's first msg in the Sigma protocol.
             let prover_commitment: G = parameters.generator.mul(&random_scalar);

@@ -245,6 +245,11 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>, H: FieldBasedHash
             //Sample random element
             let k = G::ScalarField::rand(rng);
 
+            // enforce that k != 0 to avoid leaking the secret key
+            if k.is_zero() {
+                continue
+            }
+
             //R = k * G
             let r = G::prime_subgroup_generator().mul(&k);
 
