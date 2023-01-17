@@ -35,10 +35,10 @@ script:
 jobs:
   include:
     - name: bionic_rust-1.51.0_latest-CHECK
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='000,001,003,005,006,008,009,011,012,013,014,015,016,020'
+      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='000,001,003,005,006,008,009,011,012,014,015,016,017,018,019,020,021,025'
     - name: bionic_rust-1.51.0_latest-TEST
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='017,018'
+      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='022,023'
     - name: bionic_rust-1.51.0_latest-TEST_INTENSIVE
-      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='019'
+      env: IMAGE_TAG=bionic_rust-1.51.0_latest TESTS='024'
     - name: bionic_rust-nightly-2021-04-25_latest-CHECK
-      env: IMAGE_TAG=bionic_rust-nightly-2021-04-25_latest TESTS='002,004,007,010' CARGOARGS='+nightly-2021-04-25'
+      env: IMAGE_TAG=bionic_rust-nightly-2021-04-25_latest TESTS='002,004,007,010,013' CARGOARGS='+nightly-2021-04-25'
