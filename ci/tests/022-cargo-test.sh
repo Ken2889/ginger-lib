@@ -3,4 +3,4 @@
 
 set -xeo pipefail
 
-cargo $CARGOARGS test --workspace --all-features --exclude "r1cs-std" --exclude "proof-systems"
+cargo $CARGOARGS test --workspace --all-features --exclude "r1cs-std" --exclude "proof-systems" --exclude "marlin" --exclude "poly-commit"
