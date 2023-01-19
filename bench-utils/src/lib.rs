@@ -88,7 +88,7 @@ pub mod inner {
                 end_info,
                 message,
                 final_time,
-                pad = 75 - indent_amount
+                pad = 75 - indent_amount.min(75)
             );
         }};
     }

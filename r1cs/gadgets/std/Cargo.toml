@@ -26,8 +26,8 @@ license = "MIT/Apache-2.0"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
-r1cs-core = { git = "https://github.com/HorizenOfficial/ginger-lib", branch = "development" }
+algebra = { path = "../../../algebra" }
+r1cs-core = { path = "../../core" }
 derivative = "=2.2.0"
 radix_trie = "=0.2.1"
 rand = { version = "=0.8.4" }
