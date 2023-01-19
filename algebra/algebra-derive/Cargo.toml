@@ -1,6 +1,6 @@
 [package]
 name = "algebra-derive"
-version = "0.2.0"
+version = "0.5.0-alpha1"
 authors = [ "arkworks Contributors" ]
 description = "A library for deriving serialization traits"
 include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
